@@ -39,8 +39,13 @@ func _ready() -> void:
 		elif scr == "merc": _show_merc()
 	elif Net.is_online() and not multiplayer.is_server():
 		_show_lobby()
+	elif Game.autotest() == "" and Game.seen_version != Game.VERSION_NUM and Game.changelog().has(Game.VERSION_NUM):
+		_show_news()
 	else:
 		_show_main()
+	if Game.autotest() == "":
+		Game.update_changed.connect(_upd_refresh)
+		Game.check_update()
 	_autotest.call_deferred()
 
 var _back_target := ""
@@ -148,6 +153,11 @@ func _show_quick() -> void:
 func _show_main(msg := "") -> void:
 	_panel("ENEMY BEYOND")
 	_label("Pocta UFO: Enemy Unknown  -  %s" % Game.VERSION, FRAME, 9).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_upd_label = _label("", ACCENT, 9)
+	_upd_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_upd_label.custom_minimum_size = Vector2(300, 0)
+	_upd_btn = _button("Restartovat a hrát novou verzi", func(): Game.restart_game())
+	_upd_refresh()
 	if not Game.merc.get("created", true):
 		_label("Nemáš vlastního žoldáka - vytvoř si ho v \"Můj žoldák\".", Color(1.0, 0.75, 0.4), 9).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	if Campaign.has_save():
@@ -161,6 +171,7 @@ func _show_main(msg := "") -> void:
 		get_tree().change_scene_to_file("res://scenes/Geoscape.tscn"))
 	_button("Rychlá mise (bez kampaně)", _show_quick)
 	_button("Hostovat hru (2-4 hráči)", _host)
+	_button("Novinky", _show_news)
 	_button("Připojit ke hře", _show_join)
 	_button("Můj žoldák", _show_merc)
 	_button("Výstroj na misi", _show_loadout)
@@ -214,6 +225,40 @@ func _show_merc() -> void:
 
 # ---- creating a mercenary: name, looks, stats by points or by dice ---------------------------
 var _scroll: ScrollContainer
+var _upd_label: Label
+var _upd_btn: Button
+
+## The update line in the main menu (checking / downloading 45 % / ready - restart).
+func _upd_refresh() -> void:
+	if _upd_label == null or not is_instance_valid(_upd_label):
+		return
+	var t := ""
+	match Game.upd_state:
+		"checking": t = "Hledám aktualizace..."
+		"downloading": t = "Stahuji verzi %s... %d %%" % [Game.upd_version, int(Game.update_progress() * 100)]
+		"ready": t = "Verze %s je stažená - restartuj hru." % Game.upd_version
+		"full": t = "Vyšla verze %s - stáhni nový zip z GitHubu (tahle verze se nedá doplnit)." % Game.upd_version
+		"error": t = "Aktualizace: " + Game.upd_error
+		"current": t = ""
+	_upd_label.text = t
+	_upd_label.visible = t != ""
+	_upd_btn.visible = Game.upd_state == "ready"
+
+## What's new: shown once after an update, and from the main menu.
+func _show_news() -> void:
+	Game.seen_version = Game.VERSION_NUM
+	Game.save_settings()
+	_panel("NOVINKY")
+	var log: Dictionary = Game.changelog()
+	var vers := log.keys()
+	vers.sort_custom(func(a, b): return Boot.newer(a, b))
+	for i in mini(vers.size(), 4):
+		var v: String = vers[i]
+		_label("Verze " + v + (" (právě hraješ)" if v == Game.VERSION_NUM else ""), ACCENT, 11)
+		for line in log[v]:
+			var l := _label("• " + String(line), TEXT, 9)
+			l.custom_minimum_size = Vector2(380, 0)
+	_button("Pokračovat", _show_main)
 var _cr: Dictionary           # the merc being made
 var _cr_full := true          # false = only the looks (an existing merc)
 var _cr_mode := "points"      # points / dice
@@ -223,6 +268,7 @@ var _cr_vp: SubViewport
 var _cr_model: Node3D
 var _cr_rot := PI + 0.4
 var _cr_face := false
+var _cr_lock := false
 var _cr_cam: Camera3D
 var _cr_ui: PanelContainer
 
@@ -526,14 +572,22 @@ func _build_preview(parent: Node) -> void:
 	parent.add_child(tr)
 	var rrow := HBoxContainer.new()
 	parent.add_child(rrow)
-	_small_btn(rrow, "↺", func(): _cr_rot -= 0.8).custom_minimum_size = Vector2(30, 0)
-	_small_btn(rrow, "↻", func(): _cr_rot += 0.8).custom_minimum_size = Vector2(30, 0)
-	_small_btn(rrow, "Tvář / celý", func(): _cr_face = not _cr_face; _place_cam()).custom_minimum_size = Vector2(80, 0)
+	_small_btn(rrow, "↺", func(): _cr_rot -= 0.6).custom_minimum_size = Vector2(22, 0)
+	_small_btn(rrow, "↻", func(): _cr_rot += 0.6).custom_minimum_size = Vector2(22, 0)
+	_small_btn(rrow, "Tvář/celý", func(): _cr_face = not _cr_face; _place_cam()).custom_minimum_size = Vector2(50, 0)
+	var lk := _small_btn(rrow, "Zamknout" if not _cr_lock else "Odemknout", func(): pass)
+	lk.custom_minimum_size = Vector2(52, 0)
+	lk.pressed.connect(func():
+		_cr_lock = not _cr_lock
+		if _cr_lock:
+			_cr_rot = PI       # face to the camera, and stay
+		lk.text = "Odemknout" if _cr_lock else "Zamknout")
+	lk.tooltip_text = "Zastaví otáčení náhledu, ať si v klidu uděláš obličej."
 	_small_btn(rrow, "Náhodně", func():
 		var r := RandomNumberGenerator.new(); r.randomize()
 		var f: bool = _cr["look"].get("female", false)
 		_cr["look"] = Game.random_look(f, r)
-		_build_create()).custom_minimum_size = Vector2(62, 0)
+		_build_create()).custom_minimum_size = Vector2(44, 0)
 
 func _place_cam() -> void:
 	if _cr_cam == null or not is_instance_valid(_cr_cam):
@@ -561,7 +615,8 @@ func _process(delta: float) -> void:
 		p.position.x = roundf((640.0 - p.size.x) / 2.0)
 	if _cr_model and is_instance_valid(_cr_model) and _cr_vp and is_instance_valid(_cr_vp):
 		_cr_model.rotation.y = lerp_angle(_cr_model.rotation.y, _cr_rot, delta * 5.0)
-		_cr_rot += delta * (0.12 if _cr_face else 0.25)
+		if not _cr_lock:
+			_cr_rot += delta * (0.12 if _cr_face else 0.25)
 
 # ---- loadout: UFO-style equip screen --------------------------------------------------------
 func _show_loadout() -> void:
@@ -711,7 +766,9 @@ func _autotest() -> void:
 					preload("res://scripts/hud.gd").settings_ui(_box)
 					_label("Totéž najdeš ve hře v pauze (Esc).", FRAME, 8)
 					_button("Zpět", _show_main)],
-				["loadout", _show_loadout], ["join", _show_join]]
+				["loadout", _show_loadout], ["join", _show_join], ["news", _show_news],
+				["update", func(): Game.upd_state = "full"; Game.upd_version = "0.14"; _show_main()],
+				["ready", func(): Game.upd_state = "ready"; _show_main()]]
 			for e in shots:
 				e[1].call()
 				await get_tree().process_frame
@@ -746,7 +803,7 @@ func _autotest() -> void:
 		"air":
 			Net.mission_params = {"intercept": true, "id": -1, "ufo": Game.cmd_arg("ufo", "raider")}
 			get_tree().change_scene_to_file("res://scenes/Intercept.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",

@@ -2,7 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.12 prototyp"
+const VERSION := "0.13 prototyp"
+const VERSION_NUM := "0.13"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -340,6 +341,7 @@ func load_settings() -> void:
 		render_scale = cf.get_value("video", "render_scale", 1.0)
 		grass = cf.get_value("video", "grass", true)
 		fullscreen = cf.get_value("video", "fullscreen", false)
+		seen_version = cf.get_value("game", "seen_version", "")
 		voice_mode = cf.get_value("voice", "mode", "ptt")
 		mic_gate = cf.get_value("voice", "gate", 0.03)
 		mimic_ok = cf.get_value("voice", "mimic", true)
@@ -357,6 +359,7 @@ func save_settings() -> void:
 	cf.set_value("video", "render_scale", render_scale)
 	cf.set_value("video", "grass", grass)
 	cf.set_value("video", "fullscreen", fullscreen)
+	cf.set_value("game", "seen_version", seen_version)
 	cf.set_value("voice", "mode", voice_mode)
 	cf.set_value("voice", "gate", mic_gate)
 	cf.set_value("voice", "mimic", mimic_ok)
@@ -449,6 +452,7 @@ var volumetric := true     # volumetric fog (Forward+ only)
 var render_scale := 1.0    # 3D resolution (1 = native, sharp; lower = faster)
 var grass := true          # grass blades swaying in the wind
 var fullscreen := false
+var seen_version := ""     # the newest version whose "what's new" the player has seen
 var voice_mode := "ptt"    # "off", "ptt" (hold Caps Lock / N), "open" (voice activation)
 var mic_gate := 0.03       # voice activation threshold (open mic)
 var mimic_ok := true       # aliens may imitate my voice (snippets live only in RAM during a mission)
@@ -625,3 +629,92 @@ func ui_audit(root: Node, tag: String) -> int:
 			print("[UI] %s: %s %s - %s  \"%s\"" % [tag, ctl.get_class(), ctl.name, why, txt])
 	print("[UI] %s: %d problém(ů)" % [tag, bad])
 	return bad
+
+# ---- updates from GitHub ------------------------------------------------------------------
+## The menu checks GitHub once per start; a newer version is downloaded in the
+## background as a resource pack (a few MB) that Boot mounts on the next start.
+const UPDATE_URL := "https://raw.githubusercontent.com/arielistelosbutch/Enemy-Beyond/main/update/version.json"
+var upd_state := ""        # "" / checking / downloading / ready / current / error / editor
+var upd_version := ""
+var upd_error := ""
+var _upd_http: HTTPRequest
+var _upd_dl: HTTPRequest
+signal update_changed
+
+func check_update() -> void:
+	if upd_state != "":
+		return
+	if OS.has_feature("editor"):
+		upd_state = "editor"      # running from the Godot editor: updates come from the project files
+		return
+	upd_state = "checking"
+	_upd_http = HTTPRequest.new()
+	_upd_http.timeout = 15.0
+	add_child(_upd_http)
+	_upd_http.request_completed.connect(_on_version_info)
+	if _upd_http.request(UPDATE_URL + "?t=%d" % int(Time.get_unix_time_from_system())) != OK:
+		_upd_fail("nelze se připojit")
+	update_changed.emit()
+
+func _upd_fail(why: String) -> void:
+	upd_state = "error"
+	upd_error = why
+	update_changed.emit()
+
+func _on_version_info(result: int, code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
+	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+		_upd_fail("GitHub neodpověděl (%d/%d)" % [result, code])
+		return
+	var info = JSON.parse_string(body.get_string_from_utf8())
+	if typeof(info) != TYPE_DICTIONARY:
+		_upd_fail("vadné informace o verzi")
+		return
+	var v := String(info.get("version", ""))
+	var base_ok := not Boot.newer(String(info.get("min_build", "0")), Boot.BUILD_VERSION)
+	if not Boot.newer(v, VERSION_NUM):
+		upd_state = "current"
+		update_changed.emit()
+		return
+	upd_version = v
+	if not base_ok:
+		# the change needs a new .exe (engine or project settings): only point to the download
+		upd_state = "full"
+		update_changed.emit()
+		return
+	upd_state = "downloading"
+	_upd_dl = HTTPRequest.new()
+	_upd_dl.timeout = 300.0
+	_upd_dl.download_file = "user://update.pck.part"
+	add_child(_upd_dl)
+	_upd_dl.request_completed.connect(func(r: int, c: int, _hh: PackedStringArray, _b: PackedByteArray):
+		if r != HTTPRequest.RESULT_SUCCESS or c != 200:
+			_upd_fail("stahování selhalo (%d/%d)" % [r, c])
+			return
+		var d := DirAccess.open("user://")
+		if d.file_exists("update.pck"):
+			d.remove("update.pck")
+		d.rename("update.pck.part", "update.pck")
+		var f := FileAccess.open("user://update.json", FileAccess.WRITE)
+		f.store_string(JSON.stringify({"version": upd_version}))
+		f.close()
+		upd_state = "ready"
+		update_changed.emit())
+	if _upd_dl.request(String(info.get("pck", ""))) != OK:
+		_upd_fail("nelze stáhnout balík")
+	update_changed.emit()
+
+func update_progress() -> float:
+	if _upd_dl and _upd_dl.get_body_size() > 0:
+		return float(_upd_dl.get_downloaded_bytes()) / float(_upd_dl.get_body_size())
+	return 0.0
+
+func restart_game() -> void:
+	OS.create_process(OS.get_executable_path(), OS.get_cmdline_args())
+	get_tree().quit()
+
+## Changelog shipped with the game (changelog.json): version -> list of lines.
+func changelog() -> Dictionary:
+	if not FileAccess.file_exists("res://changelog.json"):
+		return {}
+	var d = JSON.parse_string(FileAccess.get_file_as_string("res://changelog.json"))
+	return d if typeof(d) == TYPE_DICTIONARY else {}

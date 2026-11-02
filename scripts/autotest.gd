@@ -27,6 +27,8 @@ func _process(delta: float) -> void:
 			states.append("%s%s" % ["x" if a.dead else ("!" if a.alert else "."), "" ])
 		out("blk=%s vet=%s players=%d aliens=%d alive=%d %s me=%s" % [m().hud.inventory_open, Game.veteran(), m().players().size(), al.size(), m().alive_aliens(), "".join(states),
 			("hp %.0f pos %s kills %d ammo %s busy %s" % [p.hp, p.global_position.snapped(Vector3.ONE * 0.1), p.kills, p.weapon().get("loaded", -1), p.busy_text if p.busy > 0 else ""]) if p else "-"])
+	if Game.cmd_arg("healtest", "") == "1" and multiplayer.is_server() and p:
+		_heal_test(p)
 	if Game.cmd_arg("speak", "") == "1" and step < 900 and t > 5.0 and not has_meta("spoke"):
 		set_meta("spoke", true)
 		var smp := PackedFloat32Array()
@@ -49,6 +51,7 @@ func _process(delta: float) -> void:
 		"uimission": _ui_mission(p)
 		"stance": _stance(p)
 		"wshot": _wshot(p)
+		"pose": _pose(p)
 		"terror": _terror(p)
 		"panic":
 			if p and step == 0 and t > 3:
@@ -493,6 +496,37 @@ func _stance(p: Node) -> void:
 	out("RESULT stance: after rest stamina %.1f sprinting again %s" % [p.stamina, p.sprinting])
 	get_tree().quit()
 
+## Third-person look at our own mercenary in every stance (gun in the hands, prone on the belly).
+func _pose(p: Node) -> void:
+	if p == null or step > 0:
+		return
+	step = 1
+	_skip_brief()
+	await get_tree().create_timer(3.5).timeout
+	m().hud.inventory_open = false
+	p.global_position = m().map["ufo"] + Vector3(4, 0.3, 16)
+	p.body.visible = true
+	var cam := Camera3D.new()
+	m().add_child(cam)
+	cam.global_position = p.global_position + Vector3(2.6, 1.3, -0.6)
+	cam.look_at(p.global_position + Vector3(0, 0.7, -0.3))
+	cam.make_current()
+	var l := OmniLight3D.new()
+	l.light_energy = 4.0
+	l.omni_range = 8.0
+	m().add_child(l)
+	l.global_position = p.global_position + Vector3(2, 2.5, 1)
+	p.set_physics_process(false)
+	for e in [["stand", false, false, false], ["crouch", true, false, false], ["prone", false, true, false], ["downed", false, false, true]]:
+		p.crouching = e[1]
+		p.prone = e[2]
+		p.downed = e[3]
+		for i in 40:
+			p._animate_body(1.0 / 30.0)
+			await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png("user://pose_%s.png" % e[0])
+	get_tree().quit()
+
 func _wshot(p: Node) -> void:
 	if p == null or step > 0:
 		return
@@ -512,6 +546,30 @@ func _uic(tag: String) -> void:
 	Game.ui_audit(m().hud, tag)
 	if DisplayServer.get_name() != "headless":
 		get_viewport().get_texture().get_image().save_png("user://ui_%s.png" % tag)
+
+var _ht := 0
+func _heal_test(p: Node) -> void:
+	var other: Node = null
+	for o in m().players():
+		if o != p:
+			other = o
+	if other == null:
+		return
+	p.hp = 999.0
+	if _ht == 0 and t > 6.0:
+		_ht = 1
+		other.hurt.rpc_id(other.get_multiplayer_authority(), 999.0, other.global_position)
+		out("HEAL: downing %s" % other.name)
+	elif _ht == 1 and t > 7.5:
+		_ht = 2
+		p.global_position = other.global_position + Vector3(1.2, 0.0, 0.5)
+		m().hud.inventory_open = false
+		out("HEAL: target=%s downed=%s medkit=%s" % [p.heal_target(), other.downed, p.has_medkit()])
+		p._use_teammate()
+		out("HEAL: busy %s %.1f" % [p.busy_text, p.busy])
+	elif _ht == 2 and t > 12.0:
+		_ht = 3
+		out("HEAL RESULT: other downed=%s hp=%.0f revives=%d" % [other.downed, other.hp, p.revives])
 
 func _skip_brief() -> void:
 	var h: Node = m().hud

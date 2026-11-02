@@ -162,6 +162,8 @@ var body_gun: Node3D
 var _shown_gun := "-"
 var gear := 0              # synced bitmask: which equipment is visible on the body
 var merc_model: Node3D
+var _sk: Skeleton3D
+var _hand_r := -1
 var body_anim: AnimationPlayer
 var _gear_nodes := {}
 var _last_body_pos := Vector3.ZERO
@@ -192,8 +194,10 @@ func _build_body(data: Dictionary) -> void:
 				mi.set_surface_override_material(i, Game.color_mat(PATCH_COLORS[idx]))
 	# face, hair, beard, headgear: chosen by the player (the merc dict travels with the spawn)
 	Game.apply_look(merc_model, data.get("merc", {}).get("look", {}))
-	# the weapon is carried in front of the chest and follows the torso
+	# the weapon follows the torso's turn and lean; its position is put in the right hand each frame
 	var sk: Skeleton3D = merc_model.find_child("Skeleton3D", true, false)
+	_sk = sk
+	_hand_r = sk.find_bone("hand.R") if sk else -1
 	body_gun = Node3D.new()
 	if sk and sk.find_bone("spine") >= 0:
 		var att := BoneAttachment3D.new()
@@ -373,12 +377,16 @@ func _animate_body(delta: float) -> void:
 		body_anim.play(want, 0.2)
 	if dead:
 		body_anim.pause()
-	# lying on the back when down
+	# down / dead: on the back. prone: on the belly, head forward, arms and gun ahead.
 	var lying := downed or dead
-	var rx := -PI / 2 if lying else (PI / 2 if prone and not lying else 0.0)
+	var rx := PI / 2 if lying else (-PI / 2 if prone else 0.0)
 	merc_model.rotation.x = lerp_angle(merc_model.rotation.x, rx, delta * 6.0)
 	merc_model.position.y = lerp(merc_model.position.y, 0.18 if (lying or prone) else 0.0, delta * 6.0)
-	merc_model.position.z = lerp(merc_model.position.z, 0.9 if lying else (-0.9 if prone else 0.0), delta * 6.0)
+	merc_model.position.z = lerp(merc_model.position.z, -0.9 if lying else (0.9 if prone else 0.0), delta * 6.0)
+	# the long gun sits in the right hand (follows the arms in every pose), not on the belly
+	if _sk and _hand_r >= 0 and body_gun:
+		var hand := _sk.global_transform * _sk.get_bone_global_pose(_hand_r)
+		body_gun.global_position = hand.origin + hand.basis.y.normalized() * -0.05
 
 func _build_viewmodel() -> void:
 	gun = Node3D.new()
@@ -690,6 +698,7 @@ func _physics_process(delta: float) -> void:
 		_actions(delta)
 	_stress(delta)
 	_bleed(delta)
+	healed_t = maxf(0.0, healed_t - delta)
 	if Input.is_action_just_pressed("flashlight"):
 		light_on = not light_on
 	flash.visible = light_on
@@ -1181,7 +1190,9 @@ func _bleed(delta: float) -> void:
 
 func _downed(delta: float) -> void:
 	head.position.y = lerp(head.position.y, 0.35, delta * 4.0)
-	bleed_left -= delta
+	healed_t = maxf(0.0, healed_t - delta)
+	if healed_t <= 0.0:
+		bleed_left -= delta      # while a medic works on you, you do not bleed out
 	if bleed_left <= 0:
 		dead = true
 		mission.hud.message("Vykrvácel jsi.", 8.0)
@@ -1216,6 +1227,7 @@ func revived(by: String) -> void:
 	downed = false
 	carried_by = 0
 	infected = false
+	healed_t = 0.0
 	hp = max(8.0, max_hp * 0.3)
 	bleeding = 0
 	crouching = true
@@ -1240,30 +1252,81 @@ func _heal_self() -> void:
 		hp = min(max_hp, hp + (20.0 if Game.has_talent(merc, "felcar") else 10.0))
 		bleeding = 0.0)
 
-func _use_teammate() -> bool:
+## The teammate E would help right now: down (first) or hurt, within reach.
+func heal_target() -> Node:
 	var best: Node = null
+	var bd := 2.8
 	for p in mission.players():
-		if p != self and p.downed and not p.dead and p.global_position.distance_to(global_position) < 2.2:
-			best = p
+		if p == self or p.dead:
+			continue
+		var d := Vector2(p.global_position.x - global_position.x, p.global_position.z - global_position.z).length()
+		if absf(p.global_position.y - global_position.y) > 1.5:
+			continue
+		var need: bool = p.downed or p.hp < p.max_hp - 1.0
+		if need and (d < bd or (p.downed and best and not best.downed and d < 2.8)):
+			if best == null or p.downed or not best.downed:
+				bd = d
+				best = p
+	return best
+
+func has_medkit() -> bool:
+	return find_item(func(it): return it["id"] == "medkit" and int(it.get("uses", 1)) > 0) != ""
+
+func _use_teammate() -> bool:
+	var best := heal_target()
 	if best == null:
 		return false
-	var slot := find_item(func(it): return it["id"] == "medkit" and int(it.get("uses", 0)) > 0)
+	var slot := find_item(func(it): return it["id"] == "medkit" and int(it.get("uses", 1)) > 0)
 	if slot != "":
 		var target := best
 		var heal_time := 2.0 if Game.has_talent(merc, "felcar") else 3.0
 		if best.infected and not Game.has_research("pitva_lihnoun"):
 			heal_time *= 1.6     # cutting the seed out takes time
-		_start_busy(heal_time, ("Vyřezávám zárodek - %s" if best.infected else "Ošetřuji %s") % best.display_name, func():
-			if inv.has(slot) and is_instance_valid(target) and target.global_position.distance_to(global_position) < 2.6:
-				inv[slot]["uses"] = int(inv[slot]["uses"]) - 1
+		var verb := "Vyřezávám zárodek - %s" if best.infected else ("Ošetřuji %s" if best.downed else "Obvazuji %s")
+		target.being_healed.rpc_id(target.get_multiplayer_authority(), display_name, heal_time)
+		_start_busy(heal_time, verb % best.display_name, func():
+			if not is_instance_valid(target) or target.dead:
+				return
+			if Vector2(target.global_position.x - global_position.x, target.global_position.z - global_position.z).length() > 3.6:
+				mission.hud.message("%s je moc daleko." % target.display_name, 2.0)
+				return
+			if inv.has(slot):
+				inv[slot]["uses"] = int(inv[slot].get("uses", 1)) - 1
 				if int(inv[slot]["uses"]) <= 0: inv.erase(slot)
-				revives += 1
-				target.revived.rpc_id(target.get_multiplayer_authority(), display_name))
-	else:
+			revives += 1
+			if target.downed:
+				target.revived.rpc_id(target.get_multiplayer_authority(), display_name)
+			else:
+				target.patched.rpc_id(target.get_multiplayer_authority(), display_name, 20.0 if Game.has_talent(merc, "felcar") else 10.0))
+	elif best.downed:
 		var me := get_multiplayer_authority()
 		best.set_carried.rpc_id(best.get_multiplayer_authority(), 0 if best.carried_by == me else me)
-		mission.hud.message("Táhneš %s" % best.display_name if best.carried_by != me else "Pustil jsi %s" % best.display_name, 2.0)
+		mission.hud.message("Táhneš %s (k lodi, nebo ke spoluhráči s lékárničkou)" % best.display_name if best.carried_by != me else "Pustil jsi %s" % best.display_name, 2.5)
+	else:
+		mission.hud.message("Na obvaz potřebuješ lékárničku.", 1.5)
 	return true
+
+## A teammate has started treating you (shown on your screen).
+var healed_by := ""
+var healed_t := 0.0
+var healed_total := 1.0
+@rpc("any_peer", "call_local", "reliable")
+func being_healed(by: String, secs: float) -> void:
+	if not is_multiplayer_authority():
+		return
+	healed_by = by
+	healed_t = secs
+	healed_total = secs
+
+## A teammate bandaged you (not down, just hurt).
+@rpc("any_peer", "call_local", "reliable")
+func patched(by: String, amount: float) -> void:
+	if not is_multiplayer_authority() or dead:
+		return
+	hp = min(max_hp, hp + amount)
+	bleeding = 0.0
+	healed_t = 0.0
+	mission.hud.message("%s tě obvázal." % by, 2.5)
 
 # ---- radio ------------------------------------------------------------------------------------
 ## Hears the radio: a handheld anywhere on you, or the helmet set (research).

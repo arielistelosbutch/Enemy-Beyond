@@ -1,0 +1,19 @@
+{
+ "0.13": [
+  "Automatické aktualizace z GitHubu a toto okno novinek.",
+  "Spoluhráči drží zbraň v rukou, ne u břicha.",
+  "Léčení spoluhráče: E u zraněného/sraženého s lékárničkou, ukazatel postupu; sražený hráč vidí, kdo ho ošetřuje.",
+  "Leh je teď na břiše (plížení), sražený leží na zádech.",
+  "Tvorba žoldáka: tlačítko Zamknout otáčení, ať můžeš v klidu ladit obličej."
+ ],
+ "0.12": [
+  "Nová sestava vetřelců: Šeďáci, Diskoll, Levité, Ohař, Ještěřani, Líhnouni, Bijci, Nádor, Ohnivec, Myslodějové, Kolos.",
+  "Civilisté, Líhnouni z nich dělají Nakažené.",
+  "Vysílačky, hlas podle vzdálenosti, vetřelci napodobují hlasy hráčů.",
+  "Tvorba vlastního žoldáka (kostky nebo body, vzhled).",
+  "Počasí: bouřka, déšť, mlha, zataženo, jasno. Ikonka postoje v HUD."
+ ],
+ "0.11": [
+  "Globus, tráva a stromy ve větru, ostřejší písmo."
+ ]
+}

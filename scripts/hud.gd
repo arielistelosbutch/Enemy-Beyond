@@ -239,6 +239,10 @@ func _draw_hud() -> void:
 		elif p.carried_by < 0:
 			who = "NĚCO TĚ TÁHNE DO TMY! Volej o pomoc!"
 		_text(c, Vector2(mid.x - 110, mid.y - 12), who if who != "" else "Plazíš se (WASD). Spoluhráč musí přijít s lékárničkou.", TEXT, 9)
+		if p.healed_t > 0:
+			_text(c, Vector2(mid.x - 110, mid.y + 8), "%s TĚ OŠETŘUJE - nehýbej se, krvácení se zastavilo" % p.healed_by, Color(0.5, 1.0, 0.5), 10)
+			c.draw_rect(Rect2(mid.x - 60, mid.y + 16, 120, 5), Color(0, 0, 0, 0.6))
+			c.draw_rect(Rect2(mid.x - 60, mid.y + 16, 120 * (1.0 - p.healed_t / maxf(p.healed_total, 0.1)), 5), Color(0.4, 1.0, 0.4))
 	elif not inventory_open and not paused and (p.aiming or p.bracing or hit_t > 0 or (not Game.two_handed(p.item_in("rh").get("id", "")) and not p.weapon().is_empty() and not p.sprinting)):
 		# crosshair only when aiming down the sights: gap grows with the spread
 		var gap: float = 3.0 + p.current_spread() * 4.0
@@ -257,6 +261,20 @@ func _draw_hud() -> void:
 		_bar(c, base, "ZDRAVÍ", p.hp / p.max_hp, Color(0.8, 0.15, 0.12))
 		_bar(c, base + Vector2(0, 11), "VÝDRŽ", p.stamina / 100.0, Color(0.3, 0.6, 0.9))
 		_bar(c, base + Vector2(0, 22), "STRACH", p.stress / 100.0, Color(0.7, 0.4, 0.9))
+	# a teammate who needs help: what E will do
+	if not p.downed and p.busy <= 0 and not inventory_open:
+		var ht: Node = p.heal_target()
+		if ht:
+			var t2 := ""
+			if p.has_medkit():
+				t2 = ("E - OŠETŘIT %s (lékárnička)" if ht.downed else "E - obvázat %s (lékárnička)") % ht.display_name
+			elif ht.downed:
+				t2 = "E - táhnout %s  (nemáš lékárničku!)" % ht.display_name
+			if t2 != "":
+				_text(c, Vector2(mid.x - 100, mid.y + 56), t2, Color(0.5, 1.0, 0.5) if p.has_medkit() else ACCENT, 10)
+	if p.busy > 0 and p.busy_total > 0 and (p.busy_text.begins_with("Ošetřuji") or p.busy_text.begins_with("Obvazuji") or p.busy_text.begins_with("Vyřezávám")):
+		c.draw_rect(Rect2(mid.x - 60, mid.y + 42, 120, 5), Color(0, 0, 0, 0.6))
+		c.draw_rect(Rect2(mid.x - 60, mid.y + 42, 120 * (1.0 - p.busy / p.busy_total), 5), Color(0.4, 1.0, 0.4))
 	if not p.downed and not mission().nearest_pickup(p.global_position).is_empty():
 		var it: Dictionary = mission().nearest_pickup(p.global_position)["item"]
 		_text(c, Vector2(mid.x - 60, mid.y + 44), "E - sebrat: " + Game.ITEMS[it["id"]]["name"], TEXT, 9)

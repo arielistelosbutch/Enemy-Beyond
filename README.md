@@ -1,6 +1,6 @@
-# Enemy Beyond — prototyp 0.12
+# Enemy Beyond — prototyp 0.13
 
-**Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.12-windows.zip](hratelny-test/EnemyBeyond-0.12-windows.zip)
+**Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.13-windows.zip](hratelny-test/EnemyBeyond-0.13-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
 Windows může napoprvé ukázat varování SmartScreen (soubor není podepsaný): „Další informace“ → „Přesto spustit“.
 Co-op: jeden hráč dá „Hostovat hru“, ostatní „Připojit ke hře“ s jeho IP (UDP port 7777; přes internet Radmin VPN / ZeroTier).
@@ -39,6 +39,9 @@ minigun (musí se roztočit, velmi těžký), raketomet, bojový nůž (zezadu s
 zprava šikmo a zleva šikmo; omráčený vetřelec je zajat živý = víc zkušeností, později víc peněz), granát, kouřový granát
 (vetřelci přes kouř nevidí), nášlapná mina, světlice, lékárnička, detektor pohybu.
 Obouruční zbraně zaberou obě ruce. Přendávání věcí trvá podle váhy a místa (opasek rychle, batoh pomalu).
+
+## Aktualizace (od verze 0.13)
+Hra si po spuštění sama zkontroluje GitHub. Menší aktualizace stáhne (pár MB) a nabídne restart, po restartu ukáže okno Novinky. Pokud je potřeba nový .exe, menu napíše, ať stáhneš nový zip.
 
 ## Počasí a postoj (verze 0.12)
 - Každá mise má jiné počasí: bouřka (déšť, blesky), déšť, hustá mlha, zataženo (tma), jasno (svítí měsíc - vidíš dál, ale ony tebe taky).
