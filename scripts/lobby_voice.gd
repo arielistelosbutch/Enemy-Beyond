@@ -18,6 +18,16 @@ var _echo_pb: AudioStreamGeneratorPlayback
 var talking := false
 var _mission_feed := PackedFloat32Array()   # what the mission's Voice takes each frame
 var _agc := 1.0                              # automatic gain: quiet mics get louder, loud ones calmer
+# diagnostics for the settings screen: is the microphone delivering, is anything going out / coming in
+var frames_in := 0          # raw microphone frames in the last second
+var _frames_acc := 0
+var _stat_t := 0.0
+var sent := 0
+var received := 0
+var opened_at := 0
+var _retries := 0
+var _since_open := 0
+var dbg_rx := PackedFloat32Array()
 
 func _ready() -> void:
 	name = "LobbyVoice"
@@ -32,7 +42,7 @@ func _want_mic() -> bool:
 		return false
 	if testing:
 		return true
-	if Game.voice_mode == "off" or Game.autotest() != "":
+	if Game.voice_mode == "off" or (Game.autotest() != "" and not Game.autotest().begins_with("mic")):
 		return false
 	return Net.is_online() or _in_mission()
 
@@ -47,6 +57,8 @@ func _process(delta: float) -> void:
 	if want and mic == null:
 		_open()
 	elif not want and mic != null:
+		if Game.autotest() != "":
+			print("[MIC] closing: online=%s mission=%s mode=%s scene=%s" % [Net.is_online(), _in_mission(), Game.voice_mode, get_tree().current_scene.name if get_tree().current_scene else "-"])
 		mic.queue_free()
 		mic = null
 		capture = null
@@ -56,6 +68,18 @@ func _process(delta: float) -> void:
 		return
 	var fresh := PackedFloat32Array()
 	var n := capture.get_frames_available() if capture else 0
+	_frames_acc += n
+	# Windows sometimes opens the device silently dead: try again a few times
+	_since_open += n
+	if _since_open == 0 and Time.get_ticks_msec() - opened_at > 2500 and _retries < 3:
+		_retries += 1
+		reopen()
+		return
+	_stat_t += delta
+	if _stat_t >= 1.0:
+		frames_in = int(_frames_acc / _stat_t)
+		_frames_acc = 0
+		_stat_t = 0.0
 	if n > 0:
 		var buf := capture.get_buffer(n)
 		var ratio := AudioServer.get_mix_rate() / float(Voice.RATE)
@@ -99,6 +123,7 @@ func _process(delta: float) -> void:
 		var part := _acc.slice(0, chunk)
 		_acc = _acc.slice(chunk)
 		_lobby_voice.rpc(Voice.encode(part))
+		sent += 1
 
 ## Automatic level: speech brought to a steady loudness (target RMS ~0.12), hiss below
 ## the gate is not pumped up, a soft limiter keeps shouts from clipping.
@@ -122,12 +147,30 @@ func _level(smp: PackedFloat32Array) -> PackedFloat32Array:
 		out[i] = x / (1.0 + absf(x) * 0.6)       # soft limiter
 	return out
 
+## The microphone the player picked in the settings (or the system default).
+static func apply_device() -> void:
+	var want: String = Game.mic_device
+	if want != "" and want in AudioServer.get_input_device_list():
+		AudioServer.input_device = want
+	else:
+		AudioServer.input_device = "Default"
+
+## Close and reopen (after choosing another device).
+func reopen() -> void:
+	if mic:
+		mic.queue_free()
+		mic = null
+		capture = null
+
 func _open() -> void:
+	apply_device()
+	opened_at = Time.get_ticks_msec()
+	_since_open = 0
 	if AudioServer.get_bus_index("Mic") < 0:
 		AudioServer.add_bus()
 		var i := AudioServer.bus_count - 1
 		AudioServer.set_bus_name(i, "Mic")
-		AudioServer.set_bus_mute(i, true)
+		AudioServer.set_bus_volume_db(i, -80.0)   # silent, but the capture still hears it (some systems give a muted bus nothing)
 		var cap := AudioEffectCapture.new()
 		cap.buffer_length = 0.6      # a slow frame (map loading) must not lose speech
 		AudioServer.add_bus_effect(i, cap)
@@ -172,6 +215,7 @@ func _lobby_voice(bytes: PackedByteArray) -> void:
 	if _in_mission():
 		return
 	var from := multiplayer.get_remote_sender_id()
+	received += 1
 	if not _chan.has(from) or not is_instance_valid(_chan[from]["player"]):
 		var ap := AudioStreamPlayer.new()
 		var g := AudioStreamGenerator.new()
@@ -192,6 +236,8 @@ func _lobby_voice(bytes: PackedByteArray) -> void:
 			pb0.push_buffer(pad)
 	ch["last"] = Time.get_ticks_msec()
 	var smp := Voice.decode(bytes)
+	if Game.autotest().begins_with("mic"):
+		dbg_rx.append_array(smp)
 	var fr := PackedVector2Array()
 	fr.resize(smp.size())
 	for i in smp.size():

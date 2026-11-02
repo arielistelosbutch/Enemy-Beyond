@@ -1,4 +1,9 @@
 {
+ "0.19": [
+  "Mikrofon: v Nastavení výběr zařízení (pokud Windows zvolí špatné), diagnostika (běží mikrofon? kolik balíčků odešlo a přišlo).",
+  "Mikrofon se sám zkusí znovu otevřít, když ze zařízení nic nejde. Test mikrofonu tě pustí se zpožděním.",
+  "Pokud diagnostika hlásí, že mikrofon neposílá zvuk: Windows Nastavení > Soukromí a zabezpečení > Mikrofon > povolit přístup desktopovým aplikacím."
+ ],
  "0.18": [
   "Myš křížem jako ruce: levé tlačítko = pravá ruka (střelba), pravé tlačítko = levá ruka (vysílačka, lékárnička, druhá pistole...).",
   "Jen pistole/revolver v ruce a levá volná: držíš ji oběma rukama, pravým tlačítkem míříš před oči jako s puškou.",

@@ -965,6 +965,25 @@ func _autotest() -> void:
 			Game.merc["name"] = "Wingman"
 			await get_tree().create_timer(1.0).timeout
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+		"michost", "micclient":
+			Game.voice_mode = "open"
+			Game.merc["name"] = "Host" if Game.autotest() == "michost" else "Klient"
+			if Game.autotest() == "michost":
+				Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			else:
+				await get_tree().create_timer(1.5).timeout
+				Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+			var lv: Node = Net.get_node("LobbyVoice")
+			for i in (8 if Game.autotest() == "micclient" or Game.cmd_arg("tomission", "") != "1" else 5):
+				await get_tree().create_timer(1.0).timeout
+				print("[MIC %s] t=%d open=%s frames/s=%d level=%.3f talking=%s sent=%d received=%d devices=%s" % [Game.autotest(), i, lv.mic != null, lv.frames_in, Game.mic_level, lv.talking, lv.sent, lv.received, AudioServer.get_input_device_list()])
+			if Game.cmd_arg("tomission", "") == "1" and Game.autotest() == "michost":
+				Net.start_mission()
+			if Game.cmd_arg("tomission", "") != "1":
+				var f := FileAccess.open("user://rx_%s.raw" % Game.autotest(), FileAccess.WRITE)
+				f.store_buffer(lv.dbg_rx.to_byte_array())
+				f.close()
+				get_tree().quit()
 		"checkall":
 			for f in DirAccess.get_files_at("res://scripts"):
 				if f.ends_with(".gd"):

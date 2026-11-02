@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.18 prototyp"
-const VERSION_NUM := "0.18"
+const VERSION := "0.19 prototyp"
+const VERSION_NUM := "0.19"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -418,6 +418,7 @@ func load_settings() -> void:
 		mic_gate = cf.get_value("voice", "gate", 0.03)
 		mimic_ok = cf.get_value("voice", "mimic", true)
 		mic_gain = cf.get_value("voice", "gain", 1.0)
+		mic_device = cf.get_value("voice", "device", "")
 		friendly_fire = cf.get_value("game", "friendly_fire", true)
 		music_volume = cf.get_value("game", "music_volume", 0.7)
 		tactical_music = cf.get_value("game", "tactical_music", false)
@@ -441,6 +442,7 @@ func save_settings() -> void:
 	cf.set_value("voice", "gate", mic_gate)
 	cf.set_value("voice", "mimic", mimic_ok)
 	cf.set_value("voice", "gain", mic_gain)
+	cf.set_value("voice", "device", mic_device)
 	cf.set_value("game", "friendly_fire", friendly_fire)
 	cf.set_value("game", "music_volume", music_volume)
 	cf.set_value("game", "tactical_music", tactical_music)
@@ -548,6 +550,7 @@ var voice_mode := "ptt"    # "off", "ptt" (hold Caps Lock / N), "open" (voice ac
 var mic_gate := 0.03       # voice activation threshold (open mic)
 var friendly_fire := true   # host's choice: bullets hit teammates too
 var mic_gain := 1.0        # own microphone loudness (x0.5 .. x4)
+var mic_device := ""       # input device name ("" = system default)
 var mic_level := 0.0       # live level for the meter (set by whoever reads the mic)
 var voice_volumes := {}    # teammate name -> 0..2 (how loud I hear them)
 func peer_volume(player_name: String) -> float:

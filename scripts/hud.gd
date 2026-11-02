@@ -901,12 +901,42 @@ static func settings_ui(box: Control) -> void:
 	meter.custom_minimum_size = Vector2(200, 6)
 	meter.add_theme_stylebox_override("fill", _meter_fill())
 	box.add_child(meter)
+	var lv: Node = Net.get_node_or_null("LobbyVoice")
+	# which microphone (Windows sometimes picks a wrong or disabled default)
+	var dev := OptionButton.new()
+	dev.focus_mode = Control.FOCUS_NONE
+	dev.add_theme_font_size_override("font_size", 9)
+	dev.clip_text = true
+	dev.custom_minimum_size = Vector2(200, 0)
+	var devs: Array = ["Default"] + Array(AudioServer.get_input_device_list()).filter(func(d): return d != "Default")
+	for i in devs.size():
+		dev.add_item(("Mikrofon: výchozí ve Windows" if devs[i] == "Default" else "Mikrofon: " + String(devs[i])))
+		if (Game.mic_device == "" and devs[i] == "Default") or devs[i] == Game.mic_device:
+			dev.select(i)
+	dev.item_selected.connect(func(i):
+		Game.mic_device = "" if devs[i] == "Default" else String(devs[i])
+		Game.save_settings()
+		if lv: lv.reopen())
+	box.add_child(dev)
+	var diag := Label.new()
+	diag.add_theme_font_size_override("font_size", 8)
+	diag.autowrap_mode = TextServer.AUTOWRAP_WORD
+	diag.custom_minimum_size = Vector2(200, 0)
+	box.add_child(diag)
 	var tick := Timer.new()
 	tick.wait_time = 0.05
 	tick.autostart = true
-	tick.timeout.connect(func(): meter.value = clampf(Game.mic_level * 6.0, 0.0, 1.0))
+	tick.timeout.connect(func():
+		meter.value = clampf(Game.mic_level * 6.0, 0.0, 1.0)
+		if lv:
+			var state := "mikrofon zavřený (otevře se v co-op hře nebo testem)"
+			if lv.mic:
+				if lv.frames_in == 0 and Time.get_ticks_msec() - lv.opened_at > 1500:
+					state = "MIKROFON NEPOSÍLÁ ZVUK - Windows: Nastavení > Soukromí > Mikrofon > povolit desktopovým aplikacím; nebo vyber jiné zařízení výše"
+				else:
+					state = "mikrofon běží (%d vzorků/s)" % lv.frames_in
+			diag.text = "%s\nOdesláno balíčků: %d, přijato: %d" % [state, lv.sent, lv.received])
 	meter.add_child(tick)
-	var lv: Node = Net.get_node_or_null("LobbyVoice")
 	var tb := Button.new()
 	tb.add_theme_font_size_override("font_size", 9)
 	tb.focus_mode = Control.FOCUS_NONE

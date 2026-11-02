@@ -30,6 +30,8 @@ var _noise_t := 0.0
 var _rms := 0.0
 var _chan := {}                  # peer -> {near, radio, pb_near, pb_radio, last}
 var _test_feed := PackedFloat32Array()   # autotest: fake microphone input at RATE
+var _dbg_t := 0.0
+var _dbg_n := 0
 var speakers := {}               # name -> seconds since heard (for the HUD)
 
 # ---- host: mimicry -----------------------------------------------------------------------
@@ -59,7 +61,7 @@ func _buses() -> void:
 		AudioServer.add_bus()
 		var i := AudioServer.bus_count - 1
 		AudioServer.set_bus_name(i, "Mic")
-		AudioServer.set_bus_mute(i, true)
+		AudioServer.set_bus_volume_db(i, -80.0)   # silent, but the capture still hears it (some systems give a muted bus nothing)
 		var cap := AudioEffectCapture.new()
 		cap.buffer_length = 0.6
 		AudioServer.add_bus_effect(i, cap)
@@ -99,6 +101,15 @@ func _buses() -> void:
 func _process(delta: float) -> void:
 	var me: Node = mission.local_player()
 	_capture(delta, me)
+	if Game.autotest().begins_with("mic"):
+		_dbg_t += delta
+		if _dbg_t > 2.0:
+			_dbg_t = 0.0
+			var lv: Node = Net.get_node("LobbyVoice")
+			if true:
+				pass
+			print("[MIC-MISSION %s] raw/s=%d samples/2s=%d fps=%d talking=%s radio=%s sent=%d received=%d level=%.3f go=%s" % [Game.autotest(), lv.frames_in, _dbg_n, Engine.get_frames_per_second(), talking, on_radio, lv.sent, lv.received, Game.mic_level, mission.go])
+			_dbg_n = 0
 	if multiplayer.is_server() and not mission.finished:
 		_mimic_tick(delta)
 		_dead_radio_tick()
@@ -118,6 +129,7 @@ func _capture(delta: float, me: Node) -> void:
 	var lv: Node = Net.get_node_or_null("LobbyVoice")
 	if lv:
 		fresh = lv.take_for_mission()
+	_dbg_n += fresh.size()
 	if not _test_feed.is_empty():
 		var k := mini(_test_feed.size(), int(RATE * delta) + 1)
 		fresh.append_array(_test_feed.slice(0, k))
@@ -159,12 +171,16 @@ func _capture(delta: float, me: Node) -> void:
 		_acc = _acc.slice(int(RATE * CHUNK))
 		var bytes := encode(part)
 		_voice.rpc(bytes, on_radio, Game.mimic_ok)
+		var lv0: Node = Net.get_node_or_null("LobbyVoice")
+		if lv0: lv0.sent += 1
 		if multiplayer.is_server() and Game.mimic_ok:
 			_store(1, bytes)
 
 @rpc("any_peer", "unreliable_ordered")
 func _voice(bytes: PackedByteArray, radio: bool, may_mimic: bool) -> void:
 	var from := multiplayer.get_remote_sender_id()
+	var lv0: Node = Net.get_node_or_null("LobbyVoice")
+	if lv0: lv0.received += 1
 	if multiplayer.is_server() and may_mimic:
 		_store(from, bytes)
 	_play(from, bytes, radio)
@@ -410,7 +426,7 @@ static func encode(smp: PackedFloat32Array) -> PackedByteArray:
 	out.resize(smp.size())
 	var k := 1.0 / log(256.0)
 	for i in smp.size():
-		var x := clampf(smp[i] * 1.6, -1.0, 1.0)   # a little gain: mics are quiet
+		var x := clampf(smp[i] * 1.2, -1.0, 1.0)   # a little gain (the level is already evened out)
 		var m := log(1.0 + 255.0 * absf(x)) * k
 		var b := int(m * 127.0)
 		if x < 0:
