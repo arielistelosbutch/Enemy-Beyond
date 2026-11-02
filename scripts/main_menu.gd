@@ -168,6 +168,12 @@ func _show_quick() -> void:
 func _show_main(msg := "") -> void:
 	_panel("ENEMY BEYOND")
 	_label("Pocta UFO: Enemy Unknown  -  %s" % Game.VERSION, FRAME, 9).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# started straight from the zip (Windows unpacks it into a temporary folder):
+	# settings, updates and the microphone may not work - say so
+	var exe := OS.get_executable_path().to_lower()
+	if not OS.has_feature("editor") and (exe.contains("\\temp\\") or exe.contains("/temp/") or exe.contains(".zip")):
+		var w := _label("Hra běží přímo ze zipu. Nejdřív zip rozbal (pravé tlačítko > Extrahovat vše) a spusť EnemyBeyond.exe z rozbalené složky, jinak nemusí fungovat mikrofon, nastavení ani aktualizace.", Color(1, 0.45, 0.35), 9)
+		w.custom_minimum_size = Vector2(300, 0)
 	_upd_label = _label("", ACCENT, 9)
 	_upd_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_upd_label.custom_minimum_size = Vector2(300, 0)

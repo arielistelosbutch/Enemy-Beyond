@@ -1,4 +1,7 @@
 {
+ "0.20": [
+  "Když se hra spustí přímo ze zipu bez rozbalení, hlavní menu na to upozorní (mikrofon, nastavení ani aktualizace pak nefungují spolehlivě)."
+ ],
  "0.19": [
   "Mikrofon: v Nastavení výběr zařízení (pokud Windows zvolí špatné), diagnostika (běží mikrofon? kolik balíčků odešlo a přišlo).",
   "Mikrofon se sám zkusí znovu otevřít, když ze zařízení nic nejde. Test mikrofonu tě pustí se zpožděním.",
