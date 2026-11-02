@@ -1,0 +1,718 @@
+extends CanvasLayer
+## Everything drawn over the 3D view: crosshair, health, ammo, motion scanner,
+## messages, the UFO-style inventory screen, pause and the mission result.
+
+const FRAME := Color(0.45, 0.65, 0.95)
+const PANEL := Color(0.04, 0.07, 0.16, 0.92)
+const TEXT := Color(0.80, 0.90, 1.0)
+const ACCENT := Color(0.95, 0.75, 0.30)
+const RED := Color(0.9, 0.2, 0.15)
+
+var inventory_open := false
+var paused := false
+
+var canvas: Control
+var msg_label: Label
+var msg_time := 0.0
+var hit_t := 0.0
+var flash_t := 0.0
+var flash_dir := 0.0
+var inv_panel: PanelContainer
+var inv_buttons := {}
+var inv_info: Label
+var held_slot := ""          # item picked up with the mouse in the inventory
+var pause_panel: PanelContainer
+var result_panel: PanelContainer
+var _last_pos := {}           # alien name -> last position (for the scanner)
+var _blips := []              # [{pos, t}]
+var _scan_t := 0.0
+var _scan_sweep := 0.0
+
+func _ready() -> void:
+	layer = 5
+	canvas = Control.new()
+	canvas.set_anchors_preset(Control.PRESET_FULL_RECT)
+	canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	canvas.draw.connect(_draw_hud)
+	add_child(canvas)
+	msg_label = Label.new()
+	msg_label.position = Vector2(20, 250)
+	msg_label.size = Vector2(600, 60)
+	msg_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	msg_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	msg_label.add_theme_font_size_override("font_size", 10)
+	msg_label.add_theme_color_override("font_color", ACCENT)
+	msg_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	msg_label.add_theme_constant_override("outline_size", 3)
+	add_child(msg_label)
+	_build_inventory()
+	_build_pause()
+
+func mission() -> Node:
+	return get_parent()
+
+func me() -> Node:
+	return mission().local_player()
+
+# ---- API used by player / mission -------------------------------------------------
+func message(text: String, secs := 3.0) -> void:
+	msg_label.text = text
+	msg_time = secs
+
+func hitmarker() -> void:
+	hit_t = 0.18
+
+# ---- voice / radio indicators ------------------------------------------------------------------
+var _talk_lbl: Label
+var _radio_lbl: Label
+var _radio_t := 0.0
+
+func _voice_ui(delta: float) -> void:
+	if _talk_lbl == null:
+		_talk_lbl = Label.new()
+		_talk_lbl.position = Vector2(10, 300)
+		_talk_lbl.add_theme_font_size_override("font_size", 8)
+		add_child(_talk_lbl)
+		_radio_lbl = Label.new()
+		_radio_lbl.position = Vector2(10, 288)
+		_radio_lbl.add_theme_font_size_override("font_size", 8)
+		_radio_lbl.add_theme_color_override("font_color", Color(0.75, 0.9, 0.6))
+		add_child(_radio_lbl)
+	var v: Node = mission().voice if mission() else null
+	if v and v.talking:
+		_talk_lbl.text = "● VYSÍLÁŠ (vysílačka)" if v.on_radio else "● MLUVÍŠ"
+		_talk_lbl.add_theme_color_override("font_color", Color(1.0, 0.75, 0.3) if v.on_radio else Color(0.9, 0.9, 0.9))
+	else:
+		_talk_lbl.text = ""
+	_radio_t -= delta
+	_radio_lbl.visible = _radio_t > 0
+
+## Somebody's voice came over the radio.
+func radio_from(who: String) -> void:
+	if _radio_lbl:
+		_radio_lbl.text = "[Vysílačka] " + who
+	_radio_t = 2.5
+
+## Kněz's touch: the screen floods violet and slowly clears.
+func psi_flash() -> void:
+	var r := ColorRect.new()
+	r.color = Color(0.45, 0.1, 0.6, 0.55)
+	r.set_anchors_preset(Control.PRESET_FULL_RECT)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(r)
+	var tw := create_tween()
+	tw.tween_property(r, "color:a", 0.0, 2.5).set_ease(Tween.EASE_IN)
+	tw.tween_callback(r.queue_free)
+
+func damage_flash(from: Vector3) -> void:
+	flash_t = 0.6
+	var p := me()
+	if p:
+		var d: Vector3 = (from - p.global_position)
+		var local: Vector3 = p.global_transform.basis.inverse() * d
+		flash_dir = atan2(local.x, -local.z)
+
+# ---- briefing: black screen, typewriter text, then the night fades in --------------------
+var _brief_bg: ColorRect
+var _brief_lbl: Label
+var _brief_t := -1.0
+var _brief_len := 0
+
+func briefing(text: String) -> void:
+	_brief_bg = ColorRect.new()
+	_brief_bg.color = Color(0, 0, 0, 1)
+	_brief_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_brief_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_brief_bg)
+	_brief_lbl = Label.new()
+	_brief_lbl.text = text
+	_brief_lbl.position = Vector2(60, 70)
+	_brief_lbl.size = Vector2(520, 220)
+	_brief_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_brief_lbl.add_theme_font_size_override("font_size", 10)
+	_brief_lbl.add_theme_color_override("font_color", Color(0.75, 0.85, 0.75))
+	_brief_lbl.visible_characters = 0
+	_brief_lbl.custom_minimum_size = Vector2(520, 0)
+	_brief_bg.add_child(_brief_lbl)
+	_brief_lbl.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_brief_lbl.position = Vector2(60, 50)
+	_brief_lbl.size = Vector2(520, 260)
+	var hint := Label.new()
+	hint.text = "Mezerník - přeskočit"
+	hint.position = Vector2(540, 335)
+	hint.add_theme_font_size_override("font_size", 8)
+	hint.add_theme_color_override("font_color", Color(0.4, 0.45, 0.4))
+	_brief_bg.add_child(hint)
+	_brief_len = text.length()
+	_brief_t = 0.0
+	inventory_open = true     # blocks the mercenary while the screen is black
+
+func _brief_tick(delta: float) -> void:
+	if _brief_t < 0:
+		return
+	_brief_t += delta
+	var typed := int(_brief_t * 40.0)
+	var hold := float(_brief_len) / 40.0 + 2.5
+	if (Input.is_action_just_pressed("jump") or Input.is_action_just_pressed("fire") or Input.is_key_pressed(KEY_ENTER)) and _brief_t < hold:
+		_brief_t = hold
+	if typed <= _brief_len and _brief_lbl.visible_characters != typed:
+		_brief_lbl.visible_characters = typed
+		if typed % 3 == 0 and _brief_lbl.text.substr(typed - 1, 1) != " ":
+			Game.play_ui(mission(), "step", -30)
+	if _brief_t > hold:
+		var a := 1.0 - (_brief_t - hold) / 2.5
+		_brief_bg.color.a = a
+		_brief_lbl.modulate.a = a
+		if a <= 0:
+			_brief_bg.queue_free()
+			_brief_t = -1.0
+		if a < 0.6 and not paused and inv_panel and not inv_panel.visible:
+			inventory_open = false
+
+func show_result(title: String, text: String) -> void:
+	_close_inventory()
+	pause_panel.visible = false
+	result_panel = _panel(title, Vector2(110, 12), Vector2(420, 0))
+	var outer: VBoxContainer = result_panel.get_child(0)
+	var sc := ScrollContainer.new()
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	outer.add_child(sc)
+	var box := VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(box)
+	var l := _lbl(box, text, TEXT, 9)
+	l.custom_minimum_size = Vector2(400, 0)
+	# as tall as the text, but never past the bottom of the screen
+	var n_lines := 0
+	for ln in text.split("\n"):
+		n_lines += maxi(1, ceili(ln.length() / 72.0))
+	sc.custom_minimum_size = Vector2(404, minf(n_lines * 13.0 + 8.0, 280.0))
+	if Game.autotest() == "":
+		_lbl(outer, "Návrat na základnu za chvíli...", FRAME, 9)
+
+# ---- frame -------------------------------------------------------------------------------
+func _process(delta: float) -> void:
+	msg_time -= delta
+	msg_label.visible = msg_time > 0
+	_brief_tick(delta)
+	_voice_ui(delta)
+	hit_t -= delta
+	flash_t -= delta
+	_scanner_update(delta)
+	if mission().finished:
+		canvas.queue_redraw()
+		return
+	if Input.is_action_just_pressed("inventory") and not paused:
+		if inventory_open: _close_inventory()
+		elif me() and not me().downed and not me().dead: _open_inventory()
+	if Input.is_action_just_pressed("pause"):
+		if inventory_open: _close_inventory()
+		elif paused: _resume()
+		else: _pause()
+	if inventory_open:
+		_refresh_inventory()
+	canvas.queue_redraw()
+
+func _draw_hud() -> void:
+	var c := canvas
+	var p := me()
+	var sz := c.size
+	var mid := sz / 2
+	# red vignette when hurt
+	if flash_t > 0:
+		var a := clampf(flash_t, 0, 0.6) * 0.6
+		c.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.6, 0, 0, a * 0.4))
+		var dir := Vector2(sin(flash_dir), -cos(flash_dir))
+		c.draw_circle(mid + dir * 70, 12, Color(1, 0.1, 0.1, a))
+	if p == null:
+		return
+	if p.dead:
+		c.draw_rect(Rect2(Vector2.ZERO, sz), Color(0, 0, 0, 0.7))
+		_text(c, Vector2(mid.x - 60, mid.y), "JSI MRTVÝ", RED, 16)
+		return
+	if p.downed:
+		c.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.25, 0, 0, 0.35 + 0.1 * sin(Time.get_ticks_msec() / 300.0)))
+		_text(c, Vector2(mid.x - 110, mid.y - 30), "V BEZVĚDOMÍ - vykrvácíš za %d s" % int(p.bleed_left), RED, 12)
+		var who := ""
+		if p.carried_by > 0:
+			who = "Někdo tě táhne do bezpečí."
+		elif p.carried_by < 0:
+			who = "NĚCO TĚ TÁHNE DO TMY! Volej o pomoc!"
+		_text(c, Vector2(mid.x - 110, mid.y - 12), who if who != "" else "Plazíš se (WASD). Spoluhráč musí přijít s lékárničkou.", TEXT, 9)
+	elif not inventory_open and not paused and (p.aiming or p.bracing or hit_t > 0 or (not Game.two_handed(p.item_in("rh").get("id", "")) and not p.weapon().is_empty() and not p.sprinting)):
+		# crosshair only when aiming down the sights: gap grows with the spread
+		var gap: float = 3.0 + p.current_spread() * 4.0
+		var col := Color(1, 1, 1, 0.8) if hit_t <= 0 else Color(1, 0.3, 0.2)
+		for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+			c.draw_line(mid + d * gap, mid + d * (gap + 5), col, 1.0)
+		if hit_t > 0:
+			for d in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+				c.draw_line(mid + d * 4, mid + d * 8, Color(1, 0.3, 0.2), 1.0)
+	# bars, bottom left (veteran: no numbers - you feel it: blood, breath, limping)
+	var base := Vector2(10, sz.y - 34)
+	if Game.veteran():
+		_blood(c, sz, p)
+		_bar(c, base + Vector2(0, 22), "VÝDRŽ", p.stamina / 100.0, Color(0.3, 0.6, 0.9))
+	else:
+		_bar(c, base, "ZDRAVÍ", p.hp / p.max_hp, Color(0.8, 0.15, 0.12))
+		_bar(c, base + Vector2(0, 11), "VÝDRŽ", p.stamina / 100.0, Color(0.3, 0.6, 0.9))
+		_bar(c, base + Vector2(0, 22), "STRACH", p.stress / 100.0, Color(0.7, 0.4, 0.9))
+	if not p.downed and not mission().nearest_pickup(p.global_position).is_empty():
+		var it: Dictionary = mission().nearest_pickup(p.global_position)["item"]
+		_text(c, Vector2(mid.x - 60, mid.y + 44), "E - sebrat: " + Game.ITEMS[it["id"]]["name"], TEXT, 9)
+	if p.bleeding > 0:
+		_text(c, base + Vector2(0, -12), "KRVÁCÍŠ - H lékárnička", RED, 9)
+	# hands, bottom: left hand on the left, right hand on the right
+	var right := Vector2(sz.x - 160, sz.y - 30)
+	_hand_text(c, p, "rh", right)
+	var rid: String = p.item_in("rh").get("id", "")
+	if not Game.two_handed(rid):
+		_hand_text(c, p, "lh", Vector2(sz.x - 330, sz.y - 30))
+	if p.item_in("back").size() > 0:
+		_text(c, right + Vector2(0, -24), "Na zádech: " + Game.ITEMS[p.inv["back"]["id"]]["short"] + " (Q)", FRAME, 8)
+	if p.spin > 0.05 and rid == "minigun":
+		c.draw_rect(Rect2(mid.x - 20, mid.y + 14, 40 * p.spin, 3), Color(1, 0.6, 0.2))
+	_stance_icon(c, Vector2(132, sz.y - 36), p)
+	if not p.light_on:
+		_text(c, right + Vector2(0, -12), "Svítilna vypnutá (F)", FRAME, 9)
+	# busy (reloading, healing...)
+	if p.busy > 0:
+		_text(c, Vector2(mid.x - 60, mid.y + 30), p.busy_text + "...", ACCENT, 10)
+	# evac
+	var ev: Vector3 = mission().map["evac"]
+	if p.global_position.distance_to(ev) < 3.5 and not p.downed:
+		_text(c, Vector2(mid.x - 120, 20), ("Drž E 2 s - odlet (všichni stojící musí být na palubě)" if not p.wants_evac else "Čekáme na ostatní..."), ACCENT, 10)
+		if p.evac_hold > 0 and not p.wants_evac:
+			c.draw_rect(Rect2(mid.x - 40, mid.y + 20, 80, 4), Color(0, 0, 0, 0.6))
+			c.draw_rect(Rect2(mid.x - 40, mid.y + 20, 80 * p.evac_hold / 2.0, 4), ACCENT)
+		_text(c, Vector2(mid.x - 120, 32), "Pokud posádka UFO žije, mise nebude splněna.", FRAME, 9)
+	# teammates
+	var y := 10.0
+	for o in mission().players():
+		if o == p: continue
+		var st: String = "MRTEV" if o.dead else ("ODVLEČEN! %d s" % int(o.bleed_left) if o.downed and o.carried_by < 0 else ("PADL! %d s" % int(o.bleed_left) if o.downed else "%d m" % int(p.global_position.distance_to(o.global_position))))
+		_text(c, Vector2(10, y + 8), "%s  %s" % [o.display_name, st], RED if o.downed or o.dead else TEXT, 9)
+		y += 11
+	if p.has_scanner():
+		_draw_scanner(c, Vector2(sz.x - 52, 52), 40.0, p)
+
+## Veteran health display: the edges of the view fill with blood.
+func _blood(c: Control, sz: Vector2, p: Node) -> void:
+	var lost := 1.0 - clampf(p.hp / p.max_hp, 0.0, 1.0)
+	if lost < 0.15:
+		return
+	var a := lost * 0.5 + 0.06 * sin(Time.get_ticks_msec() / 450.0)
+	var e := 14.0 + lost * 70.0
+	# many thin translucent layers: dense at the edge, fading inwards
+	var n := 12
+	var col := Color(0.28, 0.0, 0.0, a / float(n) * 2.2)
+	for i in n:
+		var w := e * (1.0 - float(i) / n)
+		c.draw_rect(Rect2(0, 0, w, sz.y), col)
+		c.draw_rect(Rect2(sz.x - w, 0, w, sz.y), col)
+		c.draw_rect(Rect2(0, 0, sz.x, w * 0.6), col)
+		c.draw_rect(Rect2(0, sz.y - w * 0.6, sz.x, w * 0.6), col)
+
+var _breath_t := 0.0
+func _breath(delta: float, p: Node) -> void:
+	_breath_t -= delta
+	if p.downed or p.dead or p.hp > p.max_hp * 0.5 or _breath_t > 0:
+		return
+	_breath_t = lerpf(1.6, 3.2, p.hp / (p.max_hp * 0.5))
+	Game.play_ui(mission(), "breath", -10)
+
+func _hand_text(c: Control, p: Node, slot: String, at: Vector2) -> void:
+	var it: Dictionary = p.item_in(slot)
+	var label := "P: " if slot == "rh" else "L: "
+	if it.is_empty():
+		_text(c, at + Vector2(0, 12), label + "prázdná", FRAME, 9)
+		return
+	var rule: Dictionary = Game.ITEMS[it["id"]]
+	_text(c, at, label + rule["name"], TEXT, 9)
+	if rule["type"] == "weapon":
+		var spare := 0
+		for s in p.inv:
+			if p.inv[s]["id"] == rule["ammo"]:
+				spare += int(p.inv[s].get("left", Game.ITEMS[rule["ammo"]]["rounds"]))
+		_text(c, at + Vector2(0, 12), "%d / %d   náhradní %d" % [int(it.get("loaded", 0)), Game.mag_size(it["id"]), spare], ACCENT, 10)
+	elif it.has("uses"):
+		_text(c, at + Vector2(0, 12), "%dx" % int(it["uses"]), ACCENT, 10)
+
+# ---- motion scanner ----------------------------------------------------------------------
+## Like a real motion tracker it shows only "something moves" - teammates too -
+## and a frightened mercenary sees things that are not there.
+var SCAN_RANGE := 25.0
+var _ping_t := 0.0
+var _sting_cd := 20.0
+
+func _scanner_update(delta: float) -> void:
+	SCAN_RANGE = 35.0 if Game.has_research("detektor") else 25.0
+	_scan_t -= delta
+	_ping_t -= delta
+	_sting_cd -= delta
+	_scan_sweep = fmod(_scan_sweep + delta * 1.2, 1.0)
+	for b in _blips:
+		b["t"] -= delta
+	_blips = _blips.filter(func(b): return b["t"] > 0)
+	var p := me()
+	if p == null:
+		return
+	_sting_check(p)
+	if Game.veteran():
+		_breath(delta, p)
+	if not p.has_scanner():
+		return
+	# beep faster the closer the nearest movement is
+	var near := 99.0
+	for b in _blips:
+		near = min(near, Vector2(b["pos"].x - p.global_position.x, b["pos"].z - p.global_position.z).length())
+	if near < SCAN_RANGE and _ping_t <= 0:
+		_ping_t = lerpf(0.22, 1.4, near / SCAN_RANGE)
+		Game.play_ui(mission(), "ping", -16 + (SCAN_RANGE - near) / 2.5)
+	if _scan_t > 0:
+		return
+	_scan_t = 0.5
+	var movers: Array = mission().aliens() + mission().players() + mission().civilians()
+	for a in movers:
+		if a == p or a.dead: continue
+		var pos: Vector3 = a.global_position
+		var last: Vector3 = _last_pos.get(a.name, pos)
+		_last_pos[a.name] = pos
+		if pos.distance_to(last) > 0.25 and pos.distance_to(p.global_position) < SCAN_RANGE:
+			_blips.append({"pos": pos.snapped(Vector3(2.5, 1, 2.5)), "t": 1.4})
+	# false echoes: wind in the wheat, animals - and fear
+	if randf() < (0.015 if Game.has_research("detektor") else 0.03) + p.stress / 100.0 * 0.2:
+		var ang := randf() * TAU
+		_blips.append({"pos": p.global_position + Vector3(cos(ang), 0, sin(ang)) * randf_range(6.0, SCAN_RANGE), "t": 1.0})
+
+## A musical sting the first time in a while you actually see one of them.
+func _sting_check(p: Node) -> void:
+	if _sting_cd > 0 or p.cam == null:
+		return
+	for a in mission().aliens():
+		if a.dead: continue
+		var to: Vector3 = a.global_position + Vector3(0, 0.9, 0)
+		if to.distance_to(p.cam.global_position) > 26.0 or not p.cam.is_position_in_frustum(to):
+			continue
+		var q := PhysicsRayQueryParameters3D.create(p.cam.global_position, to, 1)
+		if p.get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+			_sting_cd = 45.0
+			Game.play_ui(mission(), "sting", -4)
+			return
+
+func _draw_scanner(c: Control, center: Vector2, r: float, p: Node) -> void:
+	c.draw_circle(center, r, Color(0.02, 0.08, 0.04, 0.8))
+	c.draw_arc(center, r, 0, TAU, 24, Color(0.2, 0.8, 0.3, 0.8), 1.0)
+	c.draw_arc(center, r * 0.5, 0, TAU, 16, Color(0.2, 0.8, 0.3, 0.3), 1.0)
+	c.draw_line(center, center + Vector2(0, -r), Color(0.2, 0.8, 0.3, 0.3))
+	var rr := _scan_sweep * r
+	c.draw_arc(center, rr, 0, TAU, 24, Color(0.3, 1, 0.4, 0.25 * (1.0 - _scan_sweep)), 1.0)
+	var inv_basis: Basis = p.global_transform.basis.inverse()
+	for b in _blips:
+		var local: Vector3 = inv_basis * (b["pos"] - p.global_position)
+		var v := Vector2(local.x, local.z) / SCAN_RANGE * r
+		if v.length() > r: continue
+		c.draw_circle(center + v, 2.5, Color(0.5, 1, 0.5, clampf(b["t"], 0, 1)))
+	c.draw_circle(center, 1.5, Color(1, 1, 1))
+	_text(c, center + Vector2(-r, r + 10), "DETEKTOR", Color(0.3, 0.9, 0.4), 8)
+
+# ---- drawing helpers ---------------------------------------------------------------------
+func _text(c: Control, pos: Vector2, s: String, col: Color, size := 10) -> void:
+	var f := ThemeDB.fallback_font
+	c.draw_string_outline(f, pos, s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, 3, Color(0, 0, 0, 0.8))
+	c.draw_string(f, pos, s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
+
+## A small figure next to the bars: standing / crouched / prone / sprinting (or out of breath).
+func _stance_icon(c: Control, o: Vector2, p: Node) -> void:
+	var box := Rect2(o, Vector2(34, 34))
+	c.draw_rect(box, Color(0, 0, 0, 0.45))
+	c.draw_rect(box, FRAME, false, 1.0)
+	var col := TEXT
+	var word := "STOJÍŠ"
+	if p.prone:
+		word = "LEŽÍŠ"
+	elif p.crouching:
+		word = "KLEČÍŠ"
+	elif p.sprinting:
+		word = "SPRINT"
+		col = ACCENT
+	if p._winded:
+		col = Color(0.55, 0.65, 0.9)
+		if not p.prone and not p.crouching:
+			word = "BEZ DECHU"
+	var w := 1.6
+	if p.prone:
+		# lying flat, head to the right, rifle forward
+		var y := o.y + 26
+		c.draw_circle(Vector2(o.x + 27, y - 3), 3.0, col)
+		c.draw_line(Vector2(o.x + 6, y), Vector2(o.x + 24, y - 1), col, w + 0.6)
+		c.draw_line(Vector2(o.x + 6, y), Vector2(o.x + 2, y + 2), col, w)
+		c.draw_line(Vector2(o.x + 20, y), Vector2(o.x + 31, y + 2), col, w)
+	elif p.crouching:
+		# kneeling: one knee down
+		var hx := o.x + 17
+		c.draw_circle(Vector2(hx + 1, o.y + 9), 3.0, col)
+		c.draw_line(Vector2(hx, o.y + 12), Vector2(hx - 1, o.y + 21), col, w + 0.6)        # torso
+		c.draw_line(Vector2(hx - 1, o.y + 21), Vector2(hx + 6, o.y + 22), col, w)          # thigh forward
+		c.draw_line(Vector2(hx + 6, o.y + 22), Vector2(hx + 6, o.y + 29), col, w)          # shin down
+		c.draw_line(Vector2(hx - 1, o.y + 21), Vector2(hx - 5, o.y + 29), col, w)          # knee down
+		c.draw_line(Vector2(hx - 5, o.y + 29), Vector2(hx - 10, o.y + 29), col, w)
+		c.draw_line(Vector2(hx, o.y + 14), Vector2(hx + 8, o.y + 15), col, w)              # arms forward
+	elif p.sprinting:
+		var hx2 := o.x + 18
+		c.draw_circle(Vector2(hx2 + 3, o.y + 7), 3.0, col)
+		c.draw_line(Vector2(hx2 + 2, o.y + 10), Vector2(hx2 - 2, o.y + 19), col, w + 0.6)
+		c.draw_line(Vector2(hx2 - 2, o.y + 19), Vector2(hx2 + 6, o.y + 24), col, w)
+		c.draw_line(Vector2(hx2 + 6, o.y + 24), Vector2(hx2 + 4, o.y + 30), col, w)
+		c.draw_line(Vector2(hx2 - 2, o.y + 19), Vector2(hx2 - 8, o.y + 25), col, w)
+		c.draw_line(Vector2(hx2 - 8, o.y + 25), Vector2(hx2 - 12, o.y + 23), col, w)
+		c.draw_line(Vector2(hx2 + 1, o.y + 12), Vector2(hx2 + 7, o.y + 16), col, w)
+		c.draw_line(Vector2(hx2 + 1, o.y + 12), Vector2(hx2 - 6, o.y + 15), col, w)
+	else:
+		var hx3 := o.x + 17
+		c.draw_circle(Vector2(hx3, o.y + 6), 3.0, col)
+		c.draw_line(Vector2(hx3, o.y + 9), Vector2(hx3, o.y + 19), col, w + 0.6)
+		c.draw_line(Vector2(hx3, o.y + 19), Vector2(hx3 - 3, o.y + 30), col, w)
+		c.draw_line(Vector2(hx3, o.y + 19), Vector2(hx3 + 3, o.y + 30), col, w)
+		c.draw_line(Vector2(hx3, o.y + 11), Vector2(hx3 + 7, o.y + 14), col, w)
+		c.draw_line(Vector2(hx3, o.y + 11), Vector2(hx3 - 4, o.y + 17), col, w)
+	_text(c, o + Vector2(38, 30), word, col, 8)
+
+func _bar(c: Control, pos: Vector2, label: String, v: float, col: Color) -> void:
+	_text(c, pos + Vector2(0, 8), label, TEXT, 8)
+	var r := Rect2(pos + Vector2(42, 1), Vector2(70, 7))
+	c.draw_rect(r, Color(0, 0, 0, 0.6))
+	c.draw_rect(Rect2(r.position, Vector2(r.size.x * clampf(v, 0, 1), r.size.y)), col)
+	c.draw_rect(r, FRAME, false, 1.0)
+
+func _panel(title: String, pos: Vector2, min_size: Vector2) -> PanelContainer:
+	var p := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = PANEL
+	sb.border_color = FRAME
+	sb.set_border_width_all(2)
+	sb.set_content_margin_all(8)
+	p.add_theme_stylebox_override("panel", sb)
+	p.position = pos
+	p.custom_minimum_size = min_size
+	add_child(p)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	p.add_child(box)
+	var t := _lbl(box, title, ACCENT, 14)
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	return p
+
+func _lbl(parent: Node, s: String, col := TEXT, size := 10) -> Label:
+	var l := Label.new()
+	l.text = s
+	l.add_theme_color_override("font_color", col)
+	l.add_theme_font_size_override("font_size", size)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD
+	parent.add_child(l)
+	return l
+
+func _btn(parent: Node, s: String, cb: Callable, min_size := Vector2.ZERO) -> Button:
+	var b := Button.new()
+	b.text = s
+	b.custom_minimum_size = min_size
+	b.clip_text = true
+	b.add_theme_font_size_override("font_size", 9)
+	var n := StyleBoxFlat.new()
+	n.bg_color = Color(0.08, 0.14, 0.30)
+	n.border_color = FRAME
+	n.set_border_width_all(1)
+	n.set_content_margin_all(2)
+	var h := n.duplicate()
+	h.bg_color = Color(0.18, 0.30, 0.55)
+	b.add_theme_stylebox_override("normal", n)
+	b.add_theme_stylebox_override("hover", h)
+	b.add_theme_stylebox_override("pressed", h)
+	b.add_theme_stylebox_override("focus", n)
+	b.add_theme_color_override("font_color", TEXT)
+	b.pressed.connect(cb)
+	parent.add_child(b)
+	return b
+
+# ---- inventory (UFO style: hands, belt, backpack) -----------------------------------------
+func _build_inventory() -> void:
+	inv_panel = _panel("VÝSTROJ", Vector2(110, 30), Vector2(420, 0))
+	var box: VBoxContainer = inv_panel.get_child(0)
+	var groups := [["RUCE (pravá, levá) a NA ZÁDECH", ["rh", "lh", "back"]], ["OPASEK (rychlý přístup, klávesy 1-4)", ["b0", "b1", "b2", "b3"]], ["BATOH (pomalý: stojíš a hrabeš se)", ["p0", "p1", "p2", "p3", "p4", "p5"]]]
+	var names := {"rh": "pravá ruka", "lh": "levá ruka", "back": "na zádech (jen dlouhá zbraň)"}
+	for g in groups:
+		_lbl(box, g[0], FRAME, 9)
+		var row := GridContainer.new()
+		row.columns = 6
+		row.add_theme_constant_override("h_separation", 3)
+		row.add_theme_constant_override("v_separation", 3)
+		box.add_child(row)
+		for s in g[1]:
+			var slot: String = s
+			inv_buttons[slot] = _btn(row, "", func(): _slot_clicked(slot), Vector2(64, 30))
+			inv_buttons[slot].tooltip_text = names.get(slot, "")
+	inv_info = _lbl(box, "", TEXT, 9)
+	_lbl(box, "Klikni na věc a pak na místo. Přendávání trvá - z batohu dlouho a stojíš na místě. Obouruční zbraň potřebuje volnou levou ruku. I / Tab zavře.", FRAME, 8)
+	inv_panel.visible = false
+
+func _open_inventory() -> void:
+	inventory_open = true
+	held_slot = ""
+	inv_panel.visible = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_refresh_inventory()
+
+func _close_inventory() -> void:
+	inventory_open = false
+	held_slot = ""
+	inv_panel.visible = false
+	if not paused and not mission().finished:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func _slot_clicked(slot: String) -> void:
+	var p := me()
+	if p == null: return
+	if held_slot == "":
+		if p.inv.has(slot):
+			held_slot = slot
+		return
+	if held_slot != slot and p.busy <= 0:
+		p.timed_move(held_slot, slot)
+	held_slot = ""
+
+func _refresh_inventory() -> void:
+	var p := me()
+	if p == null: return
+	for s in inv_buttons:
+		var b: Button = inv_buttons[s]
+		var it: Dictionary = p.item_in(s)
+		var t: String = "" if it.is_empty() else Game.ITEMS[it["id"]]["short"]
+		if not it.is_empty():
+			if it.has("loaded"): t += "\n%d nábojů" % int(it["loaded"])
+			elif it.has("uses"): t += "\n%dx" % int(it["uses"])
+		b.text = t
+		b.modulate = Color(1.6, 1.4, 0.6) if s == held_slot else Color(1, 1, 1)
+	var w: int = p.carried_weight()
+	var cap := int(p.merc.get("strength", 30))
+	inv_info.text = "Váha %d / síla %d%s" % [w, cap, "   PŘETÍŽEN - pomalejší pohyb" if w > cap else ""]
+	if held_slot != "":
+		inv_info.text += "   V ruce: " + Game.ITEMS[p.inv[held_slot]["id"]]["name"]
+	inv_info.add_theme_color_override("font_color", RED if w > cap else TEXT)
+
+# ---- pause -----------------------------------------------------------------------------------
+func _build_pause() -> void:
+	pause_panel = _panel("PAUZA", Vector2(150, 6), Vector2(340, 0))
+	var outer: VBoxContainer = pause_panel.get_child(0)
+	_btn(outer, "Pokračovat", _resume)
+	# the settings scroll if they do not fit
+	var sc := ScrollContainer.new()
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.custom_minimum_size = Vector2(330, 250)
+	outer.add_child(sc)
+	var box := VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(box)
+	_lbl(box, "Hra běží dál - vetřelci nečekají.", FRAME, 9)
+	settings_ui(box)
+	_btn(outer, "Opustit misi", func(): Net.after_mission())
+	pause_panel.visible = false
+
+## Mouse sensitivity, invert, field of view - shared by the pause menu and main menu.
+static func settings_ui(box: Control) -> void:
+	var mk := func(text: String, mn: float, mx: float, step: float, val: float, cb: Callable) -> void:
+		var l := Label.new()
+		l.add_theme_font_size_override("font_size", 9)
+		l.add_theme_color_override("font_color", Color(0.80, 0.90, 1.0))
+		box.add_child(l)
+		var sl := HSlider.new()
+		sl.min_value = mn; sl.max_value = mx; sl.step = step; sl.value = val
+		sl.custom_minimum_size = Vector2(180, 12)
+		sl.focus_mode = Control.FOCUS_NONE
+		box.add_child(sl)
+		var upd := func(v: float) -> void:
+			l.text = text % v
+			cb.call(v)
+		upd.call(val)
+		sl.value_changed.connect(func(v): upd.call(v); Game.save_settings())
+	mk.call("Citlivost myši: %.2f", 0.1, 4.0, 0.05, Game.mouse_sens, func(v): Game.mouse_sens = v)
+	mk.call("Zorné pole (FOV): %.0f", 60.0, 100.0, 1.0, Game.fov, func(v): Game.fov = v)
+	var inv := CheckBox.new()
+	inv.text = "Obrátit osu Y"
+	inv.button_pressed = Game.invert_y
+	inv.focus_mode = Control.FOCUS_NONE
+	inv.add_theme_font_size_override("font_size", 9)
+	inv.toggled.connect(func(on): Game.invert_y = on; Game.save_settings())
+	box.add_child(inv)
+	var retro := CheckBox.new()
+	retro.text = "Retro filtr (PS1 chvění, rastr, zrno)"
+	retro.button_pressed = Game.retro
+	retro.focus_mode = Control.FOCUS_NONE
+	retro.add_theme_font_size_override("font_size", 9)
+	retro.toggled.connect(func(on):
+		Game.retro = on
+		Game.apply_retro()
+		Game.save_settings()
+		var m: Node = box.get_tree().current_scene
+		if m and m.has_method("set_retro"):
+			m.set_retro(on))
+	box.add_child(retro)
+	var vol := CheckBox.new()
+	vol.text = "Objemová mlha (náročnější, od příští mise)"
+	vol.button_pressed = Game.volumetric
+	vol.focus_mode = Control.FOCUS_NONE
+	vol.add_theme_font_size_override("font_size", 9)
+	vol.toggled.connect(func(on): Game.volumetric = on; Game.save_settings())
+	box.add_child(vol)
+	var gr := CheckBox.new()
+	gr.text = "Tráva ve větru (od příští mise)"
+	gr.button_pressed = Game.grass
+	gr.focus_mode = Control.FOCUS_NONE
+	gr.add_theme_font_size_override("font_size", 9)
+	gr.toggled.connect(func(on): Game.grass = on; Game.save_settings())
+	box.add_child(gr)
+	var fs := CheckBox.new()
+	fs.text = "Celá obrazovka"
+	fs.button_pressed = Game.fullscreen
+	fs.focus_mode = Control.FOCUS_NONE
+	fs.add_theme_font_size_override("font_size", 9)
+	fs.toggled.connect(func(on): Game.fullscreen = on; Game.apply_video(); Game.save_settings())
+	box.add_child(fs)
+	var vm := OptionButton.new()
+	vm.focus_mode = Control.FOCUS_NONE
+	vm.add_theme_font_size_override("font_size", 9)
+	var modes := ["ptt", "open", "off"]
+	for i in modes.size():
+		vm.add_item(["Mikrofon: při stisku (Caps Lock / N)", "Mikrofon: stále zapnutý (podle hlasitosti)", "Mikrofon: vypnutý"][i])
+		if Game.voice_mode == modes[i]:
+			vm.select(i)
+	vm.item_selected.connect(func(i): Game.voice_mode = modes[i]; Game.save_settings())
+	box.add_child(vm)
+	var mim := CheckBox.new()
+	mim.text = "Vetřelci smí napodobit můj hlas (jen během mise, nikam se neukládá)"
+	mim.button_pressed = Game.mimic_ok
+	mim.focus_mode = Control.FOCUS_NONE
+	mim.add_theme_font_size_override("font_size", 9)
+	mim.toggled.connect(func(on): Game.mimic_ok = on; Game.save_settings())
+	box.add_child(mim)
+	var rs := OptionButton.new()
+	rs.focus_mode = Control.FOCUS_NONE
+	rs.add_theme_font_size_override("font_size", 9)
+	var scales := [1.0, 0.75, 0.5]
+	for i in scales.size():
+		rs.add_item(["Rozlišení 3D: plné (ostré)", "Rozlišení 3D: 75 % (rychlejší)", "Rozlišení 3D: 50 % (slabý počítač)"][i])
+		if absf(Game.render_scale - scales[i]) < 0.01:
+			rs.select(i)
+	rs.item_selected.connect(func(i): Game.render_scale = scales[i]; Game.apply_video(); Game.save_settings())
+	box.add_child(rs)
+
+func _pause() -> void:
+	paused = true
+	inventory_open = true   # blocks player input the same way
+	pause_panel.visible = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+func _resume() -> void:
+	paused = false
+	inventory_open = false
+	pause_panel.visible = false
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
