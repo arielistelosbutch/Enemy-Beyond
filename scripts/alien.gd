@@ -189,11 +189,7 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	_eyeshine(delta)
 	if dead:
-		if anim and anim.is_playing():
-			anim.pause()
-		var hov := float(R.get("hover", 0.0))
-		body.rotation.x = lerp(body.rotation.x, -1.5 if hov == 0.0 else -0.4, delta * 5.0)
-		body.position.y = lerp(body.position.y, 0.15 - hov * 0.85, delta * (5.0 if hov == 0.0 else 3.0))
+		_death_anim(delta)
 		return
 	if husk:
 		# fallen, twitching on the ground
@@ -209,7 +205,7 @@ func _physics_process(delta: float) -> void:
 	_animate(delta)
 	if not multiplayer.is_server():
 		return
-	if mission and not mission.go:
+	if mission and not mission.started():
 		return      # the team is still reading the briefing
 	_think(delta)
 	if not is_on_floor():
@@ -259,6 +255,84 @@ func _eyeshine(delta: float) -> void:
 
 # ---- rigid creatures: the game moves their pieces ----------------------------------
 var _parts := {}
+# ---- dying: the legs give way, the body tips over and comes to rest ON the ground ----------
+var _death_t := -1.0
+var _fall := Vector3.ZERO        # rotation it falls to
+var _rest_y := 0.0               # body height that keeps it lying on top of the ground
+var _skel: Skeleton3D
+var _limp := {}                  # bone index -> target extra rotation
+
+func _death_setup() -> void:
+	_death_t = 0.0
+	if anim:
+		anim.pause()
+	var hov := float(R.get("hover", 0.0))
+	# where its parts are, in body space (to lie on the ground, not in it)
+	var inv := body.global_transform.affine_inverse()
+	var bb := AABB()
+	var first := true
+	for mi in body.find_children("*", "MeshInstance3D", true, false):
+		if not mi.visible or mi == eye_glint:
+			continue
+		var a: AABB = (inv * mi.global_transform) * mi.get_aabb()
+		bb = a if first else bb.merge(a)
+		first = false
+	if first:
+		bb = AABB(Vector3(-0.3, 0, -0.3), Vector3(0.6, float(R["h"]), 0.6))
+	var dir := absi(hash(String(name))) % 4
+	if hov > 0.0:
+		# floaters drop out of the air and land on their side
+		_fall = Vector3(0, 0, 0.35 if dir % 2 == 0 else -0.35)
+		_rest_y = -bb.position.y + 0.02 - 0.05
+	else:
+		match dir:
+			0: _fall = Vector3(PI / 2, 0, 0); _rest_y = bb.end.z           # on its back
+			1: _fall = Vector3(-PI / 2, 0, 0); _rest_y = -bb.position.z    # face down
+			2: _fall = Vector3(0, 0, PI / 2); _rest_y = -bb.position.x     # on the side
+			_: _fall = Vector3(0, 0, -PI / 2); _rest_y = bb.end.x
+		_rest_y = maxf(_rest_y * 0.92, 0.06)
+	# limbs go slack (works for the shared bone names of the rigs)
+	_skel = body.find_child("Skeleton3D", true, false)
+	if _skel:
+		var r := RandomNumberGenerator.new()
+		r.seed = hash(String(name))
+		var want := {"thigh.L": Vector3(0.5, 0, 0.1), "thigh.R": Vector3(0.3, 0, -0.15), "shin.L": Vector3(-0.9, 0, 0), "shin.R": Vector3(-0.5, 0, 0),
+			"spine": Vector3(-0.35, 0, 0.1), "neck": Vector3(-0.3, 0, 0), "head": Vector3(-0.4, 0.3, 0.2),
+			"upperarm.L": Vector3(0.2, 0, 1.0), "upperarm.R": Vector3(-0.3, 0, -1.1), "forearm.L": Vector3(0.6, 0, 0), "forearm.R": Vector3(0.3, 0, 0),
+			"tail": Vector3(0, 0, 0.5), "jaw": Vector3(0.5, 0, 0)}
+		for bn in want:
+			var i := _skel.find_bone(bn)
+			if i >= 0:
+				var v: Vector3 = want[bn] * r.randf_range(0.7, 1.2)
+				_limp[i] = [_skel.get_bone_pose_rotation(i), _skel.get_bone_pose_rotation(i) * Quaternion.from_euler(v)]
+
+func _death_anim(delta: float) -> void:
+	if _death_t < 0.0:
+		_death_setup()
+	_death_t += delta
+	var hov := float(R.get("hover", 0.0))
+	var t := _death_t
+	if hov > 0.0:
+		# drops like a stone, bounces once
+		var k := clampf(t / 0.55, 0.0, 1.0)
+		body.position.y = lerpf(0.0, _rest_y - hov, k * k) + (sin(clampf((t - 0.55) / 0.3, 0.0, 1.0) * PI) * 0.12 if t > 0.55 else 0.0)
+		body.rotation.z = lerpf(0.0, _fall.z, clampf(t / 0.8, 0.0, 1.0))
+		return
+	# 1) the knees go (0 - 0.3 s), 2) it topples, faster and faster (0.3 - 0.95 s),
+	# 3) a small bounce as it hits the ground, then still
+	var buckle := clampf(t / 0.3, 0.0, 1.0)
+	var f := clampf((t - 0.25) / 0.7, 0.0, 1.0)
+	var fall := f * f                         # gravity: slow start, hard landing
+	var bounce := 0.0
+	if t > 0.95 and t < 1.25:
+		bounce = sin((t - 0.95) / 0.3 * PI) * 0.06
+	body.rotation = _fall * fall + Vector3(_fall.x * 0.08 + bounce, 0, _fall.z * 0.08) * buckle * (1.0 - fall)
+	body.position.y = lerpf(-float(R["h"]) * 0.12 * buckle, _rest_y, fall) + bounce * 0.5
+	if _skel:
+		var lk := clampf(t / 0.9, 0.0, 1.0)
+		for i in _limp:
+			_skel.set_bone_pose_rotation(i, (_limp[i][0] as Quaternion).slerp(_limp[i][1], lk))
+
 func _part(n: String) -> Node3D:
 	if not _parts.has(n):
 		_parts[n] = body.find_child(n, true, false)
@@ -371,6 +445,10 @@ func taken(dmg: float) -> float:
 func damage(dmg: float, from: Vector3, by: Node) -> void:
 	if dead:
 		return
+	# from the dark, unseen: an ambush hurts twice as much
+	if state != S.COMBAT and state != S.DRAG and by and by.has_method("is_player") and float(sus.get(String(by.name), 0.0)) < 1.0:
+		dmg *= 2.0
+		_ambush_note.rpc_id(by.get_multiplayer_authority(), String(by.name))
 	hp -= taken(dmg)
 	alert = true
 	if dragging:
@@ -427,6 +505,12 @@ func _credit_capture(player_name: String) -> void:
 		mission.hud.message("Vetřelec omráčen - zajat živý.", 2.5)
 
 @rpc("authority", "call_local", "reliable")
+func _ambush_note(player_name: String) -> void:
+	var p: Node = mission.actors.get_node_or_null(player_name)
+	if p and p.is_multiplayer_authority():
+		mission.hud.message("Útok ze zálohy - dvojnásobné zranění.", 2.0)
+
+@rpc("authority", "call_local", "reliable")
 func _die() -> void:
 	dead = true
 	lurking = false
@@ -448,13 +532,59 @@ func _go(p: Vector3) -> void:
 func _snap(p: Vector3) -> Vector3:
 	return NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, p)
 
+## Stealth: an alien that is not yet fighting does not spot you at once. While it can see
+## you, suspicion grows - fast when you are close, lit, standing or running; slowly when
+## you crouch or crawl in the dark and keep still. Half full: it turns and comes to look.
+## Full: it has you. Hidden again, it fades.
+var sus := {}          # player node name -> 0..1
+var _think_dt := 0.016
+
+func _sus_rate(p: Node) -> float:
+	var head_pos: Vector3 = p.global_position + Vector3(0, 1.0 if p.crouching else 1.5, 0)
+	var d := eye().distance_to(head_pos)
+	if d < 3.5:
+		return 99.0                                   # right in front of it
+	var vr: float = maxf(4.0, p.visibility_range())
+	var near := clampf(1.0 - d / vr, 0.0, 1.0)        # 1 = close, 0 = at the edge of sight
+	var spd := Vector2(p.velocity.x, p.velocity.z).length()
+	var move := 0.35 if spd < 0.4 else (1.0 if spd < 4.5 else 1.9)
+	var rate := (0.25 + near * 2.4) * move
+	if p.light_on:
+		rate *= 2.2
+	if Game.veteran():
+		rate *= 1.35
+	elif Game.easy():
+		rate *= 0.7
+	if alert:
+		rate *= 1.6                                  # already on edge
+	return rate
+
 func _find_target() -> Node:
 	var best: Node = null
 	var bd := 1e9
+	var aware := state == S.COMBAT or state == S.DRAG
 	for p in mission.players():
 		if p.dead or p.downed:
 			continue
-		if visible_to(p):
+		var seen_now := visible_to(p)
+		if not aware:
+			var k := String(p.name)
+			var v := float(sus.get(k, 0.0))
+			if seen_now:
+				v = minf(1.0, v + _sus_rate(p) * _think_dt)
+			else:
+				v = maxf(0.0, v - 0.12 * _think_dt)
+			sus[k] = v
+			if seen_now and v >= 0.5 and v < 1.0 and state != S.INVESTIGATE:
+				# something is there: go and look (but not shoot yet)
+				alert = true
+				last_seen = p.global_position
+				state = S.INVESTIGATE
+				lurking = false
+				_go(_snap(p.global_position + (global_position - p.global_position).normalized() * 3.0))
+			if v < 1.0:
+				continue
+		if seen_now:
 			var score := global_position.distance_to(p.global_position)
 			# a lone mercenary is the preferred prey
 			for o in mission.players():
@@ -487,6 +617,7 @@ func _husk_fx(down: bool) -> void:
 		mission.hud.message("Něco se tam zase zvedá...", 3.0)
 
 func _think(delta: float) -> void:
+	_think_dt = delta
 	if husk:
 		velocity.x = 0; velocity.z = 0
 		regen_t -= delta

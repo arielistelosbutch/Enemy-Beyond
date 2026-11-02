@@ -222,6 +222,7 @@ func _lobby_voice(bytes: PackedByteArray) -> void:
 		g.mix_rate = Voice.RATE
 		g.buffer_length = 0.5
 		ap.stream = g
+		ap.bus = "Voice"
 		add_child(ap)
 		ap.play()
 		_chan[from] = {"player": ap, "pb": ap.get_stream_playback(), "last": 0.0}

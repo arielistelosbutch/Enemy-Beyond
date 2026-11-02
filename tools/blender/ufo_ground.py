@@ -47,6 +47,19 @@ def band(m, r1, z1, r2, z2, segs, skip=(), name="band", thick=0.0):
     o.data.materials.append(m)
     return o
 
+def tri_plate(m, pts, name):
+    me = bpy.data.meshes.new(name)
+    o = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(o)
+    bm = bmesh.new()
+    v = [bm.verts.new(p) for p in pts]
+    bm.faces.new(v)
+    w = [bm.verts.new(p) for p in pts]
+    bm.faces.new(w[::-1])
+    bm.to_mesh(me); bm.free()
+    o.data.materials.append(m)
+    return o
+
 def disc(m, r, z, segs, name="disc"):
     return cyl(m, (0, 0, z), r, 0.04, verts=segs)
 
@@ -143,9 +156,10 @@ def hull(m, r, h, segs, vis, scale_rim=1.3):
     an upper hull rising back over the walls, a flat roof ring and a dome with a beacon."""
     n = segs * 2
     rim = r * scale_rim
-    zr = h * 0.5
+    # the rim sits above the doorway (an earlier, lower rim cut across the door at head height)
+    zr = h + 0.2
     door_gap = (0, n - 1)
-    pts = [(r + 0.05, 0.4), (rim, zr), (rim + 0.06, zr + 0.22), (r + 0.15, h + 0.45), (r * 0.55, h + 0.75), (r * 0.32, h + 1.35)]
+    pts = [(r + 0.05, 0.4), (rim, zr), (rim + 0.06, zr + 0.22), (r + 0.15, zr + 0.85), (r * 0.55, zr + 1.15), (r * 0.32, zr + 1.7)]
     vis.append(band(m["hull"], pts[0][0], pts[0][1], pts[1][0], pts[1][1], n, skip=door_gap, name="Underside"))
     vis.append(band(m["dark"], pts[1][0], pts[1][1], pts[2][0], pts[2][1], n, skip=door_gap, name="RimEdge"))
     vis.append(band(m["hull"], pts[2][0], pts[2][1], pts[3][0], pts[3][1], n, name="UpperHull"))
@@ -169,6 +183,14 @@ def hull(m, r, h, segs, vis, scale_rim=1.3):
             vis.append(beam(m["rib"], (ca * (pts[2][0] - 0.05), sa * (pts[2][0] - 0.05), pts[2][1] + 0.06), (ca * (pts[3][0] + 0.05), sa * (pts[3][0] + 0.05), pts[3][1] + 0.06), 0.14, 0.08))
             if i not in door_gap and (i + 1) % n not in door_gap and (i - 1) % n not in door_gap:
                 vis.append(beam(m["dark"], (ca * (r + 0.15), sa * (r + 0.15), 0.42), (ca * (rim - 0.05), sa * (rim - 0.05), zr - 0.03), 0.12, 0.06))
+    # the entry recess: side plates from the wall out to the rim, a canopy over the door
+    for i in (0, n - 1):
+        side = 1 if i == 0 else 0
+        a = TAU * (i + side) / n + math.pi / 2 - math.pi / n
+        ca, sa = math.cos(a), math.sin(a)
+        vis.append(tri_plate(m["dark"], [(ca * r, sa * r, 0.12), (ca * rim, sa * rim, zr), (ca * r, sa * r, zr)], "Cheek%d" % i))
+    a0 = math.pi / 2 - math.pi / n * 2; a1 = math.pi / 2 + math.pi / n * 2
+    vis.append(band(m["dark"], r, zr - 0.02, rim, zr - 0.02, n, skip=[k for k in range(n) if k not in door_gap], name="Canopy"))
     # landing legs (struts down from the underside) with pads
     for k in range(4):
         a = TAU * (k + 0.5) / 4 + math.pi / 2
@@ -180,10 +202,14 @@ def hull(m, r, h, segs, vis, scale_rim=1.3):
 def door(m, r, h, segs, vis, col):
     """Door frame, lintel over it, and a ramp down to the ground."""
     w = 2.0 * r * math.tan(math.pi / segs)
-    vis.append(box(m["rib"], (-w / 2 - 0.1, r, 0.12 + 1.2), (0.25, 0.5, 2.4)))
-    vis.append(box(m["rib"], (w / 2 + 0.1, r, 0.12 + 1.2), (0.25, 0.5, 2.4)))
-    vis.append(box(m["rib"], (0, r, 2.45), (w + 0.4, 0.4, 0.15)))
-    vis.append(box(m["glow"], (0, r + 0.21, 2.35), (w * 0.8, 0.03, 0.06)))
+    vis.append(box(m["rib"], (-w / 2 - 0.1, r, 0.12 + (h + 0.1) / 2), (0.25, 0.5, h + 0.1)))
+    vis.append(box(m["rib"], (w / 2 + 0.1, r, 0.12 + (h + 0.1) / 2), (0.25, 0.5, h + 0.1)))
+    vis.append(box(m["rib"], (0, r, h + 0.25), (w + 0.4, 0.4, 0.15)))
+    vis.append(box(m["glow"], (0, r + 0.21, h + 0.15), (w * 0.8, 0.03, 0.06)))
+    # the hatch, slid up into the hull; amber threshold lights
+    vis.append(box(m["hull"], (0, r - 0.05, h + 0.45), (w * 0.95, 0.08, 0.5)))
+    for sx in (-1, 1):
+        vis.append(box(m["amber"], (sx * w * 0.42, r + 0.05, 0.16), (0.12, 0.3, 0.04)))
     ramp_len = 2.4
     rp = box(m["hull"], (0, r + ramp_len / 2 - 0.1, 0.06), (w * 0.9, ramp_len, 0.1), rot=(-0.05, 0, 0))
     vis.append(rp)
@@ -198,7 +224,7 @@ def floor_and_ceiling(m, r, h, segs, vis, col):
     for k in range(segs):           # floor grooves
         a = seg_dir(k, segs)
         vis.append(box(m["dark"], (math.cos(a) * r * 0.5, math.sin(a) * r * 0.5, 0.125), (r * 0.95, 0.04, 0.01), rot=(0, 0, a)))
-    vis.append(cyl(m["dark"], (0, 0, 0.13), r * 0.35, 0.01, verts=segs))
+    vis.append(cyl(m["dark"], (0, 0, 0.145), r * 0.35, 0.01, verts=segs))
     c = cyl(m["dark"], (0, 0, 0.06), r, 0.12, verts=segs)
     c.name = "Floor-colonly"
     col.append(c)

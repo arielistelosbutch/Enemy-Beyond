@@ -28,6 +28,7 @@ func _ready() -> void:
 	hum.pitch_scale = 1.3 if race == "diskoll" else 0.7
 	hum.max_distance = 30.0
 	hum.unit_size = 3.0
+	hum.bus = "SFX"
 	add_child(hum)
 	hum.play()
 	hum.finished.connect(func(): if not dead: hum.play())

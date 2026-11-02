@@ -451,8 +451,8 @@ func generate_mission() -> Dictionary:
 	# map size: terror = the whole town (huge), a big landed ship = large
 	var size := "medium"
 	match t:
-		"terror": size = "huge"
-		"landed": size = "large" if rng.randf() < 0.5 else "medium"
+		"terror": size = "colossal" if float(data["day"]) > 30 and rng.randf() < 0.6 else "huge"
+		"landed": size = "colossal" if float(data["day"]) > 45 and rng.randf() < 0.3 else ("large" if rng.randf() < 0.5 else "medium")
 		"crash": size = "small" if rng.randf() < 0.4 else "medium"
 		"abduction": size = "small" if rng.randf() < 0.5 else "medium"
 	var terr := terrain_at(lat, lon)
@@ -517,7 +517,39 @@ func mission_params(m: Dictionary) -> Dictionary:
 	return p
 
 ## After the team comes back.
-func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs: int, civ_saved := 0, civ_dead := 0, races := [], loot := {}) -> String:
+## True while the replacement Kondor is still on its way (after a lost team).
+func kondor_ready() -> bool:
+	return float(data["day"]) >= float(data.get("kondor_ready", 0.0))
+
+func kondor_hours() -> int:
+	return maxi(1, ceili((float(data.get("kondor_ready", 0.0)) - float(data["day"])) * 24.0))
+
+## The whole team fell: the Kondor stays out there with everything in its hold.
+## What the team carried beyond the free base allotment is gone from the armory;
+## a replacement Kondor comes to the hangar a day later, so the war goes on.
+func _kondor_lost(kits: Dictionary) -> String:
+	var carried := {}
+	for peer in kits:
+		for it in kits[peer]:
+			carried[it] = int(carried.get(it, 0)) + 1
+	var base: Dictionary = Game.STASH_VETERAN if Game.difficulty == "veteran" else Game.STASH
+	var crew := maxi(1, kits.size())
+	var lost := []
+	for it in carried:
+		var have := int(data["armory"].get(it, 0))
+		var gone := mini(have, maxi(0, int(carried[it]) - int(base.get(it, 0)) * crew))
+		if gone > 0:
+			data["armory"][it] = have - gone
+			if int(data["armory"][it]) <= 0:
+				data["armory"].erase(it)
+			lost.append("%s %dx" % [Game.ITEMS[it]["short"] if Game.ITEMS.has(it) else it, gone])
+	data["kondor_ready"] = float(data["day"]) + 1.0
+	var txt := " Kondor se nevrátil - jeho náklad je ztracen"
+	txt += (": " + ", ".join(lost) + ".") if not lost.is_empty() else "."
+	txt += " Náhradní Kondor dorazí do hangáru za 24 hodin."
+	return txt
+
+func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs: int, civ_saved := 0, civ_dead := 0, races := [], loot := {}, wiped := false, kits := {}) -> String:
 	# what the team brought home: research needs it, Moskovium pays for alien tech
 	var found: Dictionary = data.get("found", {})
 	var got := []
@@ -567,6 +599,8 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 		txt += " Civilisté: zachráněno %d, mrtvých %d." % [civ_saved, civ_dead]
 	if not got.is_empty():
 		txt += " Kořist: " + ", ".join(got) + "."
+	if wiped and not success:
+		txt += _kondor_lost(kits)
 	_log(txt)
 	save()
 	changed.emit()

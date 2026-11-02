@@ -134,6 +134,7 @@ func _ready() -> void:
 	st.loop_end = st.data.size() / 2
 	music.stream = st
 	music.volume_db = -6
+	music.bus = "Wind"
 	add_child(music)
 	music.play()
 	_say("KONTAKT: %s. Přivést k zemi poškozené = posádka a kořist. Rozstřílet = nic." % k["name"], 6.0)

@@ -725,6 +725,14 @@ func _zoo(p: Node) -> void:
 	m().hud.inventory_open = false
 	p.hp = 999.0
 	var al: Array = m().aliens()
+	if step == 0 and t > 1.5 and not has_meta("zoo_spawned"):
+		set_meta("zoo_spawned", true)
+		for a in al:
+			a.queue_free()
+		for i in ZOO.size():
+			m().spawn_alien(ZOO[i], m().map["ufo"] + Vector3(i * 2.0 - ZOO.size(), 0.3, 20))
+		return
+	al = al.filter(func(a): return is_instance_valid(a) and not a.is_queued_for_deletion())
 	if step == 0 and t > 2.5 and al.size() >= ZOO.size():
 		step = 1
 		var base: Vector3 = m().map["ufo"] + Vector3(0, 0, 13)
@@ -744,6 +752,43 @@ func _zoo(p: Node) -> void:
 		m().env.fog_density = 0.002
 		p.global_position = base + Vector3(0, 0, 9)
 		_aim_at(p, base + Vector3(0, 1.0, 0))
+	if step == 1 and t > 4.5 and Game.cmd_arg("die", "") != "":
+		# death test: everyone falls at once; pictures during and after, from the side
+		step = 100
+		# a clean stage up in the sky: a floor, a light, nothing else in the way
+		var base2 := Vector3(0, 80, 0)
+		var fl := MeshInstance3D.new()
+		var fm := BoxMesh.new()
+		fm.size = Vector3(40, 0.2, 20)
+		fl.mesh = fm
+		fl.material_override = Game.mat("grass", 0.5)
+		m().add_child(fl)
+		fl.global_position = base2 + Vector3(0, -0.1, 0)
+		var sl := OmniLight3D.new()
+		sl.light_energy = 4.0
+		sl.omni_range = 30.0
+		m().add_child(sl)
+		sl.global_position = base2 + Vector3(0, 6, 6)
+		p.set_physics_process(false)
+		for i in al.size():
+			al[i].global_position = base2 + Vector3((i - al.size() / 2.0 + 0.5) * 2.4, 0, 0)
+		p.global_position = base2 + Vector3(0, 2.5, 9.0)
+		_aim_at(p, base2 + Vector3(0, 0.3, 0))
+		await get_tree().create_timer(0.6).timeout
+		_snap("60_alive")
+		for a in al:
+			a.dead = true
+			a.collision_layer = 0
+			a.set_physics_process(true)
+		await get_tree().create_timer(0.35).timeout
+		_snap("61_falling")
+		await get_tree().create_timer(1.5).timeout
+		_snap("62_dead")
+		p.global_position = base2 + Vector3(-al.size() * 1.1 - 3.0, 1.0, 1.5)
+		_aim_at(p, base2 + Vector3(0, 0.2, 0))
+		await get_tree().create_timer(0.6).timeout
+		_snap("63_dead_front")
+		get_tree().quit()
 	if step == 1 and t > 4.5:
 		_snap("50_zoo")
 		step = 2

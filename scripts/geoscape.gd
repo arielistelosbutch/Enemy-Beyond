@@ -393,6 +393,8 @@ func _update_text() -> void:
 	if r["current"] != "":
 		var rr: Dictionary = Campaign.RESEARCH[r["current"]]
 		rs = "%s %d %%" % [rr["name"], int(float(r["progress"]) / float(rr["days"]) * 100)]
+	if not Campaign.kondor_ready():
+		rs += "   Kondor za %d h" % Campaign.kondor_hours()
 	var co := ""
 	if Net.is_online():
 		co = "\nCo-op: %d hráčů, tvoje peníze %d kr" % [Net.roster.size(), Net.my_money()] if Campaign.viewer else "\nCo-op: %d hráčů připojeno" % Net.roster.size()
@@ -454,6 +456,9 @@ func _launch() -> void:
 	var m := _selected_mission()
 	if m.is_empty():
 		_alert("Nejdřív vyber hlášení na glóbu.")
+		return
+	if not Campaign.kondor_ready():
+		_alert("Kondor je ztracen\nNáhradní Kondor dorazí do hangáru za %d h. Nech čas běžet." % Campaign.kondor_hours())
 		return
 	Campaign.save()
 	if not Net.is_online():

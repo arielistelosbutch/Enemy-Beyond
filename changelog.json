@@ -1,4 +1,15 @@
 {
+ "0.22": [
+  "Nastavení zvuku: celková hlasitost, hudba, zbraně a vetřelci, vítr, prostředí (déšť, zvuky mapy) a hlasy spoluhráčů - každé zvlášť, hned nahoře v Nastavení.",
+  "Příprava před misí: po briefingu 10 sekund v Kondoru se zavřenou rampou (zkontroluj výstroj, domluvte se), pak rampa spadne a noc začne. Vetřelci čekají taky.",
+  "Plížení má smysl: vetřelec, který ještě nebojuje, tě nevidí hned - podezření roste podle vzdálenosti, postoje, pohybu a svítilny. Oko vlevo dole ukazuje, jak jsi vidět a jestli tě hledají. Útok ze zálohy dává dvojnásobné zranění.",
+  "Lékárnička: když ji máš v ruce a pušku na zádech, Q lékárničku uklidí (tam, odkud byla, jinak na opasek nebo do batohu) a vezme pušku.",
+  "Kolosální mapy (13 x 13 bloků) pro nejtěžší teror a velké lodě v pozdní kampani; dají se vybrat i v Rychlé misi.",
+  "Když padne celý tým, Kondor se nevrátí a jeho náklad je ztracen (co tým nesl navíc oproti základní výbavě). Náhradní Kondor dorazí do hangáru za 24 hodin.",
+  "UFO: vchod je teď celý otevřený - lem talíře je nad dveřmi, rampa vede rovnou dovnitř. Havarované UFO už se nezaboří do země (podlaha a vchod nekoušou terén), trosky neblokují rampu.",
+  "Smrt vetřelců: podlomí se jim kolena, spadnou na záda, na břicho nebo na bok a zůstanou ležet NA zemi; létající spadnou a odrazí se.",
+  "Opraveno blikání podlahy (silniční čára, krev a spálenina ležely v jedné rovině s povrchem) a překrývání opasku přes ikonu postoje v HUD."
+ ],
  "0.21": [
   "Nová UFO na zemi: opravdové talíře (spodek, lem se světly, kopule, nohy, rampa) a dá se do nich vejít. Průzkumník má jednu místnost, Nájezdník vstupní halu a navigaci, Sklízeč jádro, kruh místností, motory a nádrž s... něčím.",
   "Uvnitř: zdroj energie z Moskovia, konzole, sedadla, fialová světla. Ve havarovaném UFO světla blikají.",

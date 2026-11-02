@@ -95,6 +95,10 @@ func _buses() -> void:
 		var lp := AudioEffectLowPassFilter.new()
 		lp.cutoff_hz = 3200.0
 		AudioServer.add_bus_effect(l, lp)
+	# radio goes into the teammates' slider, the alien mimicry into the effects one
+	AudioServer.set_bus_send(AudioServer.get_bus_index("Radio"), "Voice")
+	AudioServer.set_bus_send(AudioServer.get_bus_index("Eerie"), "SFX")
+	AudioServer.set_bus_send(AudioServer.get_bus_index("Lure"), "SFX")
 	capture = AudioServer.get_bus_effect(AudioServer.get_bus_index("Mic"), 0) as AudioEffectCapture
 
 # ---- capture and send --------------------------------------------------------------------------
@@ -197,6 +201,7 @@ func _channel(peer: int, p: Node) -> Dictionary:
 	near.unit_size = 3.0
 	near.max_distance = 30.0
 	near.volume_db = 2.0
+	near.bus = "Voice"
 	p.add_child(near)
 	near.position = Vector3(0, 1.6, 0)
 	near.play()

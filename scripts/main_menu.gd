@@ -26,6 +26,7 @@ func _ready() -> void:
 	st.loop_end = st.data.size() / 2
 	_music.stream = st
 	_music.volume_db = -8
+	_music.bus = "Music"
 	add_child(_music)
 	_music.play()
 	Net.roster_changed.connect(_refresh_lobby)
@@ -804,7 +805,7 @@ func _show_lobby() -> void:
 		_button("ZAČÍT MISI: " + QUICK[quick_pick][0], func(): Net.start_mission(quick_params(quick_pick)))
 		_button("Změnit typ mise", func(): quick_pick = (quick_pick + 1) % QUICK.size(); _show_lobby())
 		_button("Palba do vlastních: " + ("ZAPNUTÁ" if Game.friendly_fire else "vypnutá"), func(): Game.friendly_fire = not Game.friendly_fire; Game.save_settings(); _show_lobby())
-		var sizes := ["", "small", "medium", "large", "huge"]
+		var sizes := ["", "small", "medium", "large", "huge", "colossal"]
 		_button("Velikost mapy: " + ("podle mise" if quick_size == "" else MapGen.SIZE_NAMES[quick_size]), func():
 			quick_size = sizes[(sizes.find(quick_size) + 1) % sizes.size()]
 			_show_lobby())

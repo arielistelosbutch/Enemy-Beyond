@@ -353,6 +353,7 @@ func _draw_hud() -> void:
 	if p.spin > 0.05 and rid == "minigun":
 		c.draw_rect(Rect2(mid.x - 20, mid.y + 14, 40 * p.spin, 3), Color(1, 0.6, 0.2))
 	_stance_icon(c, Vector2(132, sz.y - 36), p)
+	_eye_icon(c, Vector2(132, sz.y - 86), p)
 	if not p.light_on:
 		_text(c, right + Vector2(0, -12), "Svítilna vypnutá (F)", FRAME, 9)
 	# busy (reloading, healing...)
@@ -416,7 +417,7 @@ func _belt_bar(c: Control, p: Node, sz: Vector2) -> void:
 				k += 1
 		return k
 	var extra := "   G %d  X %d  T %d  H %d" % [n.call("grenade"), n.call("smoke_grenade"), n.call("flare"), n.call("medkit")]
-	_text(c, Vector2(150, sz.y - 9), "  ".join(parts) + extra + "   (I = výstroj)", FRAME, 7)
+	_text(c, Vector2(222, sz.y - 6), "  ".join(parts) + extra + "   (I = výstroj)", FRAME, 7)
 
 func _hand_text(c: Control, p: Node, slot: String, at: Vector2) -> void:
 	var it: Dictionary = p.item_in(slot)
@@ -523,6 +524,39 @@ func _text(c: Control, pos: Vector2, s: String, col: Color, size := 10) -> void:
 	c.draw_string(f, pos, s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
 
 ## A small figure next to the bars: standing / crouched / prone / sprinting (or out of breath).
+## Stealth eye: how open it is = how far you can be seen (stance, flashlight);
+## its colour = how close the aliens are to spotting you.
+func _eye_icon(c: Control, o: Vector2, p: Node) -> void:
+	var box := Rect2(o, Vector2(34, 28))
+	c.draw_rect(box, Color(0, 0, 0, 0.45))
+	c.draw_rect(box, FRAME, false, 1.0)
+	var w: float = p.watched
+	var col := Color(0.45, 0.8, 0.5)
+	var word := "NEVIDÍ TĚ"
+	if w >= 1.0:
+		col = RED
+		word = "VIDÍ TĚ!"
+	elif w >= 0.5:
+		col = Color(1.0, 0.55, 0.15)
+		word = "HLEDAJÍ TĚ"
+	elif w > 0.05:
+		col = ACCENT
+		word = "NĚCO TUŠÍ"
+	var open := clampf(p.visibility_range() / 40.0, 0.12, 1.0)
+	var ctr := o + Vector2(17, 14)
+	var pts := PackedVector2Array()
+	for i in 17:
+		var a := PI * i / 16.0
+		pts.append(ctr + Vector2(-cos(a) * 13.0, -sin(a) * 9.0 * open))
+	for i in 17:
+		var a := PI * i / 16.0
+		pts.append(ctr + Vector2(cos(a) * 13.0, sin(a) * 9.0 * open))
+	c.draw_polyline(pts, col, 1.4)
+	c.draw_circle(ctr, 3.5 * maxf(open, 0.4), col)
+	_text(c, o + Vector2(38, 12), word, col, 8)
+	c.draw_rect(Rect2(o.x + 38, o.y + 17, 50, 3), Color(0, 0, 0, 0.6))
+	c.draw_rect(Rect2(o.x + 38, o.y + 17, 50 * clampf(w, 0.0, 1.0), 3), col)
+
 func _stance_icon(c: Control, o: Vector2, p: Node) -> void:
 	var box := Rect2(o, Vector2(34, 34))
 	c.draw_rect(box, Color(0, 0, 0, 0.45))
@@ -796,6 +830,39 @@ static func settings_ui(box: Control) -> void:
 		sl.value_changed.connect(func(v): upd.call(v); Game.save_settings())
 	mk.call("Citlivost myši: %.2f", 0.1, 4.0, 0.05, Game.mouse_sens, func(v): Game.mouse_sens = v)
 	mk.call("Zorné pole (FOV): %.0f", 60.0, 100.0, 1.0, Game.fov, func(v): Game.fov = v)
+	# sound: one slider per bus (music, effects, wind, ambience, teammates)
+	var sh := Label.new()
+	sh.add_theme_font_size_override("font_size", 10)
+	sh.add_theme_color_override("font_color", Color(1.0, 0.85, 0.45))
+	sh.text = "ZVUK"
+	box.add_child(sh)
+	for b in Game.BUS_NAMES:
+		var bl := Label.new()
+		bl.add_theme_font_size_override("font_size", 9)
+		var bname: String = Game.BUS_NAMES[b]
+		bl.text = "%s: %d %%" % [bname, int(Game.get_volume(b) * 100)]
+		box.add_child(bl)
+		var bs := HSlider.new()
+		bs.min_value = 0.0
+		bs.max_value = 1.0
+		bs.step = 0.05
+		bs.value = Game.get_volume(b)
+		bs.focus_mode = Control.FOCUS_NONE
+		bs.custom_minimum_size = Vector2(200, 12)
+		bs.value_changed.connect(func(v): Game.set_volume(b, v); bl.text = "%s: %d %%" % [bname, int(v * 100)]; Game.save_settings())
+		box.add_child(bs)
+	var mhint := Label.new()
+	mhint.add_theme_font_size_override("font_size", 8)
+	mhint.add_theme_color_override("font_color", Color(0.6, 0.7, 0.8))
+	mhint.text = "Hudba se bere ze složky hudba vedle hry."
+	box.add_child(mhint)
+	var tm := CheckBox.new()
+	tm.text = "Hudba i během mise (jinak jen vítr a ticho)"
+	tm.button_pressed = Game.tactical_music
+	tm.focus_mode = Control.FOCUS_NONE
+	tm.add_theme_font_size_override("font_size", 9)
+	tm.toggled.connect(func(on): Game.tactical_music = on; Game.save_settings())
+	box.add_child(tm)
 	var inv := CheckBox.new()
 	inv.text = "Obrátit osu Y"
 	inv.button_pressed = Game.invert_y
@@ -861,26 +928,6 @@ static func settings_ui(box: Control) -> void:
 	ff.add_theme_font_size_override("font_size", 9)
 	ff.toggled.connect(func(on): Game.friendly_fire = on; Game.save_settings())
 	box.add_child(ff)
-	var ml := Label.new()
-	ml.add_theme_font_size_override("font_size", 9)
-	ml.text = "Hudba: %d %% (soubory ve složce hudba vedle hry)" % int(Game.music_volume * 100)
-	box.add_child(ml)
-	var ms := HSlider.new()
-	ms.min_value = 0.0
-	ms.max_value = 1.0
-	ms.step = 0.05
-	ms.value = Game.music_volume
-	ms.focus_mode = Control.FOCUS_NONE
-	ms.custom_minimum_size = Vector2(200, 12)
-	ms.value_changed.connect(func(v): Game.set_music_volume(v); ml.text = "Hudba: %d %% (soubory ve složce hudba vedle hry)" % int(v * 100); Game.save_settings())
-	box.add_child(ms)
-	var tm := CheckBox.new()
-	tm.text = "Hudba i během mise (jinak jen vítr a ticho)"
-	tm.button_pressed = Game.tactical_music
-	tm.focus_mode = Control.FOCUS_NONE
-	tm.add_theme_font_size_override("font_size", 9)
-	tm.toggled.connect(func(on): Game.tactical_music = on; Game.save_settings())
-	box.add_child(tm)
 	# own microphone: loudness, live level, test (you hear yourself half a second later)
 	var gl := Label.new()
 	gl.add_theme_font_size_override("font_size", 9)

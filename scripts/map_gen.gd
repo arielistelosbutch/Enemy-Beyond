@@ -5,8 +5,8 @@ extends RefCounted
 
 const BLOCK := 12.0
 var N := 6                 # blocks per side: malá 5, střední 6, velká 8, obrovská 10
-const SIZES := {"small": 5, "medium": 6, "large": 8, "huge": 10}
-const SIZE_NAMES := {"small": "malá", "medium": "střední", "large": "velká", "huge": "obrovská"}
+const SIZES := {"small": 5, "medium": 6, "large": 8, "huge": 10, "colossal": 13}
+const SIZE_NAMES := {"small": "malá", "medium": "střední", "large": "velká", "huge": "obrovská", "colossal": "kolosální"}
 var terrain := "temperate"   # temperate / snow (loud steps, snowfall) / desert
 
 var rng := RandomNumberGenerator.new()
@@ -35,7 +35,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	if not ufo_kind in ["scout", "raider", "harvester"]:
 		match mtype:
 			"crash": ufo_kind = "scout" if rng.randf() < 0.6 else "raider"
-			"landed": ufo_kind = "harvester" if params.get("size", "") in ["large", "huge"] else "raider"
+			"landed": ufo_kind = "harvester" if params.get("size", "") in ["large", "huge", "colossal"] else "raider"
 			_: ufo_kind = "raider"
 	if ufo_kind == "harvester" and N < 8:
 		N = 8          # a big ship needs room around it
@@ -409,7 +409,7 @@ func _forest(o: Vector3) -> void:
 func _street(o: Vector3) -> void:
 	_ground(o, "dirt")
 	box(o + Vector3(BLOCK / 2, 0.01, BLOCK / 2), Vector3(5.0, 0.04, BLOCK), Game.color_mat(Color(0.1, 0.1, 0.11)), false)
-	box(o + Vector3(BLOCK / 2, 0.02, BLOCK / 2), Vector3(0.15, 0.01, BLOCK), Game.color_mat(Color(0.6, 0.6, 0.5)), false)
+	box(o + Vector3(BLOCK / 2, 0.04, BLOCK / 2), Vector3(0.15, 0.01, BLOCK), Game.color_mat(Color(0.6, 0.6, 0.5)), false)
 	for sx in [-1, 1]:
 		box(o + Vector3(BLOCK / 2 + sx * 3.4, 0.08, BLOCK / 2), Vector3(1.6, 0.16, BLOCK), Game.mat("plaster", 1.0), false)
 	for z in [2.5, 9.5]:
@@ -653,6 +653,7 @@ func _skyranger(o: Vector3) -> void:
 	root.add_child(lamp)
 	lamp.position = c + Vector3(0, 2.4, 1.0)
 	info["evac"] = c + Vector3(0, 0, 1.0)
+	info["door"] = c + Vector3(0, 0.15, 4.0)      # hinge of the rear ramp (closed until the prep is over)
 	for i in 4:
 		info["player_spawns"].append(c + Vector3(-0.8 + (i % 2) * 1.6, 0.3, 1.5 + (i / 2) * 1.6))
 
@@ -661,8 +662,12 @@ func _ufo(center: Vector3) -> void:
 	var crashed := mtype == "crash"
 	if crashed:
 		# scorched crash furrow
-		box(center + Vector3(0, 0.02, 7), Vector3(5, 0.04, 14), Game.mat("scorch"), false)
-		cyl(center + Vector3(0, 0.02, 0), 8.5, 8.5, 0.05, Game.mat("scorch"), false, 12)
+		box(center + Vector3(0, 0.03, 7), Vector3(5, 0.04, 14), Game.mat("scorch"), false)
+		cyl(center + Vector3(0, 0.01, 0), 8.5, 8.5, 0.02, Game.mat("scorch"), false, 12)
+		# plates torn off on the way down, stuck in the furrow
+		for k in 4:
+			var pz := rng.randf_range(10.0, 18.0)
+			box(center + Vector3(rng.randf_range(-2.0, 2.0), 0.3, pz), Vector3(rng.randf_range(0.8, 1.6), 0.08, rng.randf_range(1.0, 2.0)), Game.mat("ufo_hull", 0.5), true, rng.randf() * PI).rotation.x = rng.randf_range(0.4, 0.9)
 	else:
 		# landed: pressed ground under a violet landing light
 		cyl(center + Vector3(0, 0.02, 0), 6.5, 6.5, 0.04, Game.mat("hay", 0.8), false, 16)
@@ -679,8 +684,10 @@ func _ufo(center: Vector3) -> void:
 	var u: Node3D = Game.model("ufo_g_" + kind)
 	root.add_child(u)
 	var yaw := rng.randf_range(-0.5, 0.5)
-	u.position = center + (Vector3(0, -0.28, 0) if crashed else Vector3.ZERO)
-	u.rotation = Vector3(rng.randf_range(-0.05, 0.05) if crashed else 0.0, yaw, rng.randf_range(0.05, 0.09) * (1 if rng.randf() < 0.5 else -1) if crashed else 0.0)
+	# the ship stands level (a tilted floor sank into the ground and the doorway with it);
+	# the crash shows in the furrow, the scorch, torn plates and the flickering lights
+	u.position = center
+	u.rotation = Vector3(0.0, yaw, 0.0)
 	var r: float = {"scout": 5.0, "raider": 7.0, "harvester": 10.0}[kind]
 	var xf: Transform3D = u.transform
 	for c in u.get_children():
@@ -710,8 +717,11 @@ func _ufo(center: Vector3) -> void:
 	var door := xf * Vector3(0, 0, -(r + 2.6))
 	# crashed: torn hull plates around; landed: their cargo pods stacked outside
 	var hull := Game.mat("ufo_hull", 0.5) if crashed else Game.mat("ufo_wall", 0.5, Color(0.12, 0.05, 0.2))
+	var door_a := atan2(door.x - center.x, door.z - center.z)
 	for i in 6:
 		var a2 := rng.randf() * TAU
+		if absf(wrapf(a2 - door_a, -PI, PI)) < 0.6:
+			a2 += PI * 0.5            # keep the way to the ramp clear
 		var dist := rng.randf_range(r + 2.5, r + 6.0)
 		var p2 := center + Vector3(sin(a2) * dist, 0.4, cos(a2) * dist)
 		box(p2, Vector3(rng.randf_range(1.0, 2.2), 0.8, rng.randf_range(0.4, 1.0)), hull, true, rng.randf() * PI)
@@ -807,7 +817,7 @@ func _blood_trail() -> void:
 	for i in steps:
 		var p := a + dir.normalized() * (0.7 * i) + side * sin(i * 0.7) * 0.25
 		var sz := rng.randf_range(0.25, 0.5) * (1.0 - float(i) / steps * 0.6)
-		box(p + Vector3(0, 0.02, 0), Vector3(sz, 0.02, sz * 1.6), m, false, atan2(dir.x, dir.z) + rng.randf_range(-0.3, 0.3))
+		box(p + Vector3(0, 0.045, 0), Vector3(sz, 0.01, sz * 1.6), m, false, atan2(dir.x, dir.z) + rng.randf_range(-0.3, 0.3))
 
 func _borders() -> void:
 	var s := BLOCK * N

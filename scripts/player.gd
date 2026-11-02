@@ -149,6 +149,10 @@ func _ready() -> void:
 	mission = get_tree().current_scene
 	if is_multiplayer_authority():
 		inv = Game.default_loadout()
+		var ids := []
+		for sl in inv:
+			ids.append(inv[sl]["id"])
+		(func(): mission.report_kit.rpc_id(1, ids)).call_deferred()
 		cam = Camera3D.new()
 		cam.fov = Game.fov
 		cam.near = 0.05
@@ -563,6 +567,56 @@ func timed_move(a: String, b: String) -> bool:
 		Game.play_ui(self, "reload", -16))
 	return true
 
+## Where an item taken out by a shortcut came from (so Q can put it back there).
+var _came_from := {}
+
+## Q with a long gun on the back and something in the hands: the hand items go back
+## (where they came from, else the belt, else the backpack), then the gun comes off the shoulder.
+func _stow_hands_take_back() -> void:
+	var plan := {}      # hand -> slot
+	var taken := []
+	for hand in ["lh", "rh"]:
+		if not inv.has(hand):
+			continue
+		var id: String = inv[hand]["id"]
+		var to := ""
+		var pref: String = _came_from.get(id, "")
+		if pref != "" and not inv.has(pref) and not pref in taken:
+			to = pref
+		else:
+			for sl in ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
+				if not inv.has(sl) and not sl in taken:
+					to = sl
+					break
+		if to == "":
+			mission.hud.message("Není kam uklidit %s - opasek i batoh jsou plné." % Game.ITEMS[id]["short"], 2.0)
+			return
+		plan[hand] = to
+		taken.append(to)
+	var t := 0.8
+	var dig := false
+	for hand in plan:
+		t += Game.fetch_time(inv[hand]["id"], plan[hand])
+		dig = dig or String(plan[hand]).begins_with("p")
+	t *= 0.65 if Game.has_talent(merc, "rychle_ruce") else 1.0
+	var gun: Dictionary = inv["back"]
+	var snap := inv.duplicate()
+	busy_stand = dig
+	_start_busy(t, "Uklízím a beru ze zad: " + Game.ITEMS[gun["id"]]["short"], func():
+		busy_stand = false
+		if inv.get("back") != gun:
+			return
+		for hand in plan:
+			if inv.get(hand) != snap.get(hand) or inv.has(plan[hand]):
+				return
+		for hand in plan:
+			inv[plan[hand]] = inv[hand]
+			inv.erase(hand)
+		inv["rh"] = gun
+		inv.erase("back")
+		_update_held()
+		Game.play_ui(self, "reload", -16))
+
 ## Keys 1-4: belt slot <-> hand. A one-handed item goes to the left hand when
 ## the right is busy; a long gun in the hands goes on the back first.
 func _belt_key(i: int) -> void:
@@ -844,7 +898,7 @@ func _actions(delta: float) -> void:
 			timed_move("rh", "back")
 		elif inv.has("back"):
 			if inv.has("lh") or (inv.has("rh") and not two):
-				mission.hud.message("Na dlouhou zbraň potřebuješ obě ruce volné.", 1.5)
+				_stow_hands_take_back()
 			else:
 				timed_move("back", "rh")
 	for i in 4:
@@ -1085,7 +1139,7 @@ func _hit_alien(alien_name: String, dmg: float, kind := "bullet") -> void:
 func _shot_fx(from: Vector3, to: Vector3, snd: String) -> void:
 	if snd != "":
 		Game.play_at(mission, snd, from, -2)
-	if multiplayer.is_server() and mission and mission.go:
+	if multiplayer.is_server() and mission and mission.started():
 		var dir := to - from
 		var L := dir.length()
 		if L > 0.5:
@@ -1566,7 +1620,8 @@ func _medkit() -> void:
 		if to == "":
 			mission.hud.message("Na lékárničku potřebuješ volnou ruku (Q dá pušku na záda).", 2.0)
 			return
-		mission.hud.message("Beru lékárničku do ruky - pak H ošetří.", 2.0)
+		mission.hud.message("Beru lékárničku do ruky - H ošetří, Q ji uklidí a vezme zbraň ze zad.", 2.5)
+		_came_from["medkit"] = from
 		timed_move(from, to)
 		return
 	if heal_target() != null:
@@ -1854,6 +1909,13 @@ func _pick_up() -> void:
 	mission.hud.message("Sebral jsi: %s" % Game.ITEMS[item["id"]]["name"], 1.5)
 
 ## How far an alien can spot this mercenary (light gives you away).
+## 0 = nobody has noticed me, 1 = they have me (sent by the host, shown as the eye).
+var watched := 0.0
+@rpc("any_peer", "call_local", "unreliable")
+func set_watched(v: float) -> void:
+	if multiplayer.get_remote_sender_id() in [0, 1]:
+		watched = v
+
 func visibility_range() -> float:
 	if downed:
 		return 6.0

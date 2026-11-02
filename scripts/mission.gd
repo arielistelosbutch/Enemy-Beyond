@@ -93,6 +93,72 @@ func _ready_state() -> void:
 			n += 1
 	_ready_sync.rpc(n, need.size(), n >= need.size())
 
+## After the briefing: a few seconds inside the Kondor with the ramp closed (check the gear),
+## then the ramp drops and the night begins. The aliens wait for the ramp too.
+const PREP_TIME := 10.0
+var prep_left := PREP_TIME
+var _door: Node3D
+
+func started() -> bool:
+	return go and prep_left <= 0.0
+
+func _build_door() -> void:
+	if not map.has("door"):
+		prep_left = 0.0
+		return
+	_door = Node3D.new()
+	_door.name = "KondorDoor"
+	add_child(_door)
+	_door.global_position = map["door"]
+	var body := StaticBody3D.new()
+	_door.add_child(body)
+	var cs := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = Vector3(3.2, 2.8, 0.14)
+	cs.shape = bs
+	cs.position = Vector3(0, 1.4, 0)
+	body.add_child(cs)
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(3.0, 2.7, 0.12)
+	mi.mesh = bm
+	mi.material_override = Game.mat("skyranger", 0.5)
+	mi.position = Vector3(0, 1.35, 0)
+	_door.add_child(mi)
+	# a red lamp above the ramp: red while closed, green when open
+	var lamp := OmniLight3D.new()
+	lamp.name = "Lamp"
+	lamp.light_color = Color(1.0, 0.15, 0.1)
+	lamp.light_energy = 1.4
+	lamp.omni_range = 4.0
+	add_child(lamp)
+	lamp.global_position = map["door"] + Vector3(0, 2.5, -0.6)
+	if Game.autotest() != "" and Game.cmd_arg("prep", "") == "":
+		prep_left = 0.0
+
+func _prep_tick(delta: float) -> void:
+	if not go or prep_left <= 0.0 and _door == null:
+		return
+	if prep_left > 0.0:
+		var before := ceili(prep_left)
+		prep_left -= delta
+		if ceili(prep_left) != before and hud:
+			if prep_left > 0.0:
+				hud.message("PŘÍPRAVA: rampa se otevře za %d s - zkontroluj výstroj (I), domluvte se." % ceili(prep_left), 1.2)
+			else:
+				hud.message("Rampa dole. Hodně štěstí.", 2.0)
+				Game.play_ui(self, "creak", -4)
+		return
+	if _door:
+		# the ramp falls outwards and becomes the walkway
+		_door.rotation.x = minf(_door.rotation.x + delta * 1.6, PI / 2 + 0.18)
+		var lamp: OmniLight3D = get_node_or_null("Lamp")
+		if lamp:
+			lamp.light_color = Color(0.2, 1.0, 0.3)
+		if _door.rotation.x >= PI / 2 + 0.17:
+			_door.queue_free()
+			_door = null
+
 @rpc("authority", "call_local", "reliable")
 func _ready_sync(n: int, total: int, all: bool) -> void:
 	if hud:
@@ -139,6 +205,7 @@ func _ready() -> void:
 	st.loop_end = st.data.size() / 2
 	music.stream = st
 	music.volume_db = -12
+	music.bus = "Wind"
 	add_child(music)
 	music.play()
 	if weather == "storm" or weather == "rain":
@@ -172,6 +239,7 @@ func _ready() -> void:
 		_build_rain()
 		if weather == "rain":
 			rain.amount = 380
+	_build_door()
 	hud.briefing(_briefing_text() + "\nPočasí: " + WEATHER_NAMES[weather] + ".")
 	multiplayer.peer_disconnected.connect(_on_peer_left)
 	Net.note.connect(_on_note)
@@ -194,6 +262,7 @@ func _loop_player(ap: Node, sname: String, db: float) -> void:
 	st.loop_end = st.data.size() / 2
 	ap.stream = st
 	ap.volume_db = db
+	ap.bus = "Ambient"
 	if not ap.is_inside_tree():
 		add_child(ap)
 	ap.play()
@@ -367,7 +436,7 @@ func _maybe_spawn() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = Net.mission_seed + 99
 	var spawns: Array = map["alien_spawns"].duplicate()
-	var count := 2 + Net.roster.size() + int(Net.mission_params.get("extra_aliens", 0)) + (1 if Game.veteran() else (-1 if Game.easy() else 0)) + int({"large": 1, "huge": 2}.get(Net.mission_params.get("size", ""), 0))
+	var count := 2 + Net.roster.size() + int(Net.mission_params.get("extra_aliens", 0)) + (1 if Game.veteran() else (-1 if Game.easy() else 0)) + int({"large": 1, "huge": 2, "colossal": 4}.get(Net.mission_params.get("size", ""), 0))
 	var crew := _crew(count, rng)
 	for k in crew.size():
 		var p: Vector3 = spawns[k % spawns.size()] + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
@@ -638,7 +707,8 @@ func _noise(pos: Vector3, radius: float) -> void:
 
 # ---- the end ------------------------------------------------------------------------
 func _process(delta: float) -> void:
-	if go:
+	_prep_tick(delta)
+	if started():
 		t += delta
 	for l in map.get("lights", []):
 		if is_instance_valid(l):
@@ -648,6 +718,7 @@ func _process(delta: float) -> void:
 	_storm_fx(delta)
 	_hallucinate(delta)
 	if multiplayer.is_server() and _spawned and not finished:
+		_watch_tick(delta)
 		_judge()
 		_director(delta)
 		_risen()
@@ -1224,7 +1295,7 @@ func _end(success: bool, why: String) -> void:
 			tc += p.captures
 			if p.dead or (p.downed and p.global_position.distance_to(map["evac"]) >= 3.5):
 				lost += 1
-		camp = Campaign.mission_done(int(Net.mission_params.get("id", -1)), success, tk, tc, lost, civ_saved, civ_dead, crew_names, _loot(success))
+		camp = Campaign.mission_done(int(Net.mission_params.get("id", -1)), success, tk, tc, lost, civ_saved, civ_dead, crew_names, _loot(success), lost >= players().size(), kits)
 		Net.last_result = camp
 	hud.show_result(("MISE SPLNĚNA" if success else "MISE NEÚSPĚŠNÁ"), why + "\n\n" + "\n".join(lines) + "\n\nTvůj žoldák: " + fate + xp_text + ("\n\n" + camp if camp != "" else ""))
 	get_tree().create_timer(8.0 if Game.autotest() != "campaign" else 2.0).timeout.connect(func(): _leave(""))
@@ -1237,6 +1308,34 @@ func _leave(why: String) -> void:
 		Net.back_to_menu()
 		return
 	Net.after_mission()
+
+## Host: how close each mercenary is to being spotted (the eye on his HUD).
+var _watch_t := 0.0
+func _watch_tick(delta: float) -> void:
+	_watch_t -= delta
+	if _watch_t > 0:
+		return
+	_watch_t = 0.2
+	for p in players():
+		var v := 0.0
+		for a in aliens():
+			if a.dead:
+				continue
+			if a.state == a.S.COMBAT and is_instance_valid(a.target) and a.target == p:
+				v = 1.0
+				break
+			v = maxf(v, float(a.sus.get(String(p.name), 0.0)))
+		var who := p.get_multiplayer_authority()
+		if who == multiplayer.get_unique_id() or who in multiplayer.get_peers():
+			p.set_watched.rpc_id(who, v)
+
+## Host: what each mercenary took on board (lost with the Kondor if the whole team falls).
+var kits := {}
+@rpc("any_peer", "call_local", "reliable")
+func report_kit(ids: Array) -> void:
+	if multiplayer.is_server():
+		var id := multiplayer.get_remote_sender_id()
+		kits[id if id != 0 else 1] = ids
 
 ## A short line for everybody (the Brain calling its guards...).
 @rpc("authority", "call_local", "reliable")

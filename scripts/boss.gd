@@ -61,7 +61,7 @@ func _physics_process(delta: float) -> void:
 			body.position.y = lerp(body.position.y, -0.6, delta * 2.0)
 			body.rotation.z = lerp(body.rotation.z, 0.5, delta * 2.0)
 		return
-	if not multiplayer.is_server() or (mission and not mission.go):
+	if not multiplayer.is_server() or (mission and not mission.started()):
 		return
 	if race == "mozek":
 		_brain_think(delta)

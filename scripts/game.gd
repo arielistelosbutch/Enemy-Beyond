@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.21 prototyp"
-const VERSION_NUM := "0.21"
+const VERSION := "0.22 prototyp"
+const VERSION_NUM := "0.22"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -128,7 +128,9 @@ var test_phase := 0
 var open_screen := ""      # main menu screen to open (from the globe)
 
 func _ready() -> void:
+	_make_buses()
 	load_settings()
+	apply_volumes()
 	if cmd_arg("grass", "") != "":
 		grass = cmd_arg("grass", "1") == "1"
 	if cmd_arg("retro", "") != "":
@@ -421,6 +423,8 @@ func load_settings() -> void:
 		mic_device = cf.get_value("voice", "device", "")
 		friendly_fire = cf.get_value("game", "friendly_fire", true)
 		music_volume = cf.get_value("game", "music_volume", 0.7)
+		for b in volumes:
+			volumes[b] = cf.get_value("audio", b, volumes[b])
 		tactical_music = cf.get_value("game", "tactical_music", false)
 		voice_volumes = cf.get_value("voice", "volumes", {})
 	apply_video()
@@ -445,6 +449,8 @@ func save_settings() -> void:
 	cf.set_value("voice", "device", mic_device)
 	cf.set_value("game", "friendly_fire", friendly_fire)
 	cf.set_value("game", "music_volume", music_volume)
+	for b in volumes:
+		cf.set_value("audio", b, volumes[b])
 	cf.set_value("game", "tactical_music", tactical_music)
 	cf.set_value("voice", "volumes", voice_volumes)
 	cf.save("user://settings.cfg")
@@ -656,6 +662,7 @@ func play_at(world: Node, sname: String, pos: Vector3, volume_db := 0.0) -> void
 		p.volume_db += world.alien_db()      # rain covers them
 	p.unit_size = 6.0
 	p.max_distance = 80.0
+	p.bus = "SFX"
 	world.add_child(p)
 	p.global_position = pos
 	p.play()
@@ -665,6 +672,7 @@ func play_ui(world: Node, sname: String, volume_db := 0.0) -> void:
 	var p := AudioStreamPlayer.new()
 	p.stream = sound(sname)
 	p.volume_db = volume_db
+	p.bus = "SFX"
 	world.add_child(p)
 	p.play()
 	p.finished.connect(p.queue_free)
@@ -874,10 +882,41 @@ func play_music(role: String, loop := true) -> void:
 	if "loop" in st:
 		st.loop = loop
 	_music.stream = st
-	_music.volume_db = linear_to_db(maxf(0.001, music_volume))
+	_music.volume_db = 0.0
+	_music.bus = "Music"
 	_music.play()
 
 func set_music_volume(v: float) -> void:
 	music_volume = v
-	if _music:
-		_music.volume_db = linear_to_db(maxf(0.001, v))
+	apply_volumes()
+
+## Sound buses: every sound goes to one of these, each with its own slider.
+const BUSES := ["Music", "SFX", "Wind", "Ambient", "Voice"]
+const BUS_NAMES := {"Master": "Celková hlasitost", "Music": "Hudba", "SFX": "Zbraně, kroky a vetřelci",
+	"Wind": "Vítr", "Ambient": "Prostředí (déšť, zvuky mapy)", "Voice": "Hlasy spoluhráčů"}
+var volumes := {"Master": 1.0, "SFX": 1.0, "Wind": 1.0, "Ambient": 1.0, "Voice": 1.0}
+
+func _make_buses() -> void:
+	for b in BUSES:
+		if AudioServer.get_bus_index(b) < 0:
+			AudioServer.add_bus()
+			AudioServer.set_bus_name(AudioServer.bus_count - 1, b)
+			AudioServer.set_bus_send(AudioServer.bus_count - 1, "Master")
+
+func get_volume(b: String) -> float:
+	return music_volume if b == "Music" else float(volumes.get(b, 1.0))
+
+func set_volume(b: String, v: float) -> void:
+	if b == "Music":
+		music_volume = v
+	else:
+		volumes[b] = v
+	apply_volumes()
+
+func apply_volumes() -> void:
+	for b in BUS_NAMES:
+		var i := AudioServer.get_bus_index(b)
+		if i >= 0:
+			var v := get_volume(b)
+			AudioServer.set_bus_volume_db(i, linear_to_db(maxf(0.0001, v)))
+			AudioServer.set_bus_mute(i, v <= 0.001)
