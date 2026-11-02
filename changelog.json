@@ -1,4 +1,7 @@
 {
+ "0.22.1": [
+  "Oprava: mise se v 0.22 nespustila (chyba ve skriptu mise)."
+ ],
  "0.22": [
   "Nastavení zvuku: celková hlasitost, hudba, zbraně a vetřelci, vítr, prostředí (déšť, zvuky mapy) a hlasy spoluhráčů - každé zvlášť, hned nahoře v Nastavení.",
   "Příprava před misí: po briefingu 10 sekund v Kondoru se zavřenou rampou (zkontroluj výstroj, domluvte se), pak rampa spadne a noc začne. Vetřelci čekají taky.",

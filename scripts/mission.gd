@@ -1325,7 +1325,7 @@ func _watch_tick(delta: float) -> void:
 				v = 1.0
 				break
 			v = maxf(v, float(a.sus.get(String(p.name), 0.0)))
-		var who := p.get_multiplayer_authority()
+		var who: int = p.get_multiplayer_authority()
 		if who == multiplayer.get_unique_id() or who in multiplayer.get_peers():
 			p.set_watched.rpc_id(who, v)
 
