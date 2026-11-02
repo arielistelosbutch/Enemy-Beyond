@@ -84,8 +84,12 @@ func _voice_ui(delta: float) -> void:
 		_talk_lbl.add_theme_color_override("font_color", Color(1.0, 0.75, 0.3) if v.on_radio else Color(0.9, 0.9, 0.9))
 	else:
 		_talk_lbl.text = ""
-	_radio_t -= delta
-	_radio_lbl.visible = _radio_t > 0
+	if v and not v.speakers.is_empty() and _radio_t <= 0:
+		_radio_lbl.text = "Mluví: " + ", ".join(v.speakers.keys())
+		_radio_lbl.visible = true
+	else:
+		_radio_t -= delta
+		_radio_lbl.visible = _radio_t > 0
 
 ## Somebody's voice came over the radio.
 func radio_from(who: String) -> void:
@@ -339,6 +343,7 @@ func _draw_hud() -> void:
 	var rid: String = p.item_in("rh").get("id", "")
 	if not Game.two_handed(rid):
 		_hand_text(c, p, "lh", Vector2(sz.x - 330, sz.y - 30))
+	_belt_bar(c, p, sz)
 	if p.item_in("back").size() > 0:
 		_text(c, right + Vector2(0, -24), "Na zádech: " + Game.ITEMS[p.inv["back"]["id"]]["short"] + " (Q)", FRAME, 8)
 	if p.spin > 0.05 and rid == "minigun":
@@ -392,6 +397,23 @@ func _breath(delta: float, p: Node) -> void:
 	_breath_t = lerpf(1.6, 3.2, p.hp / (p.max_hp * 0.5))
 	Game.play_ui(mission(), "breath", -10)
 
+## The belt at a glance: what 1-4 call up, and how many throwables are at hand.
+func _belt_bar(c: Control, p: Node, sz: Vector2) -> void:
+	if inventory_open or p.downed:
+		return
+	var parts := []
+	for i in 4:
+		var it: Dictionary = p.item_in("b%d" % i)
+		parts.append("%d %s" % [i + 1, "-" if it.is_empty() else Game.ITEMS[it["id"]]["short"]])
+	var n := func(id: String) -> int:
+		var k := 0
+		for s in p.inv:
+			if p.inv[s]["id"] == id:
+				k += 1
+		return k
+	var extra := "   G %d  X %d  T %d  H %d" % [n.call("grenade"), n.call("smoke_grenade"), n.call("flare"), n.call("medkit")]
+	_text(c, Vector2(150, sz.y - 9), "  ".join(parts) + extra + "   (I = výstroj)", FRAME, 7)
+
 func _hand_text(c: Control, p: Node, slot: String, at: Vector2) -> void:
 	var it: Dictionary = p.item_in(slot)
 	var label := "P: " if slot == "rh" else "L: "
@@ -405,7 +427,10 @@ func _hand_text(c: Control, p: Node, slot: String, at: Vector2) -> void:
 		for s in p.inv:
 			if p.inv[s]["id"] == rule["ammo"]:
 				spare += int(p.inv[s].get("left", Game.ITEMS[rule["ammo"]]["rounds"]))
-		_text(c, at + Vector2(0, 12), "%d / %d   náhradní %d" % [int(it.get("loaded", 0)), Game.mag_size(it["id"]), spare], ACCENT, 10)
+		if rule.get("laser", false):
+			_text(c, at + Vector2(0, 12), "%d / %d   dobíjí se samo" % [int(it.get("loaded", 0)), Game.mag_size(it["id"])], ACCENT, 10)
+		else:
+			_text(c, at + Vector2(0, 12), "%d / %d   náhradní %d" % [int(it.get("loaded", 0)), Game.mag_size(it["id"]), spare], ACCENT, 10)
 	elif it.has("uses"):
 		_text(c, at + Vector2(0, 12), "%dx" % int(it["uses"]), ACCENT, 10)
 
@@ -606,25 +631,78 @@ func _btn(parent: Node, s: String, cb: Callable, min_size := Vector2.ZERO) -> Bu
 	return b
 
 # ---- inventory (UFO style: hands, belt, backpack) -----------------------------------------
+var inv_keys: Label
+const SLOT_KEY := {"rh": "LTM", "lh": "PTM", "back": "Q", "b0": "1", "b1": "2", "b2": "3", "b3": "4"}
 func _build_inventory() -> void:
-	inv_panel = _panel("VÝSTROJ", Vector2(110, 30), Vector2(420, 0))
+	inv_panel = _panel("VÝSTROJ", Vector2(14, 8), Vector2(612, 0))
 	var box: VBoxContainer = inv_panel.get_child(0)
-	var groups := [["RUCE (pravá, levá) a NA ZÁDECH", ["rh", "lh", "back"]], ["OPASEK (rychlý přístup, klávesy 1-4)", ["b0", "b1", "b2", "b3"]], ["BATOH (pomalý: stojíš a hrabeš se)", ["p0", "p1", "p2", "p3", "p4", "p5"]]]
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 10)
+	box.add_child(cols)
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 3)
+	cols.add_child(left)
+	var groups := [["RUCE A ZÁDA  (levé tlačítko myši = pravá ruka, pravé = levá ruka / mířit, Q = zbraň na záda)", ["rh", "lh", "back"]],
+		["OPASEK - rychlý: klávesy 1 2 3 4 (zbraň do ruky, náboje nabijí)", ["b0", "b1", "b2", "b3"]],
+		["BATOH - pomalý: stojíš a hrabeš se (granáty, světlice... i odtud fungují svou klávesou)", ["p0", "p1", "p2", "p3", "p4", "p5"]]]
 	var names := {"rh": "pravá ruka", "lh": "levá ruka", "back": "na zádech (jen dlouhá zbraň)"}
 	for g in groups:
-		_lbl(box, g[0], FRAME, 9)
+		var gl := _lbl(left, g[0], FRAME, 8)
+		gl.custom_minimum_size = Vector2(360, 0)
 		var row := GridContainer.new()
-		row.columns = 6
+		row.columns = 4 if g[1].size() == 4 else 3
 		row.add_theme_constant_override("h_separation", 3)
 		row.add_theme_constant_override("v_separation", 3)
-		box.add_child(row)
-		for s in g[1]:
-			var slot: String = s
-			inv_buttons[slot] = _btn(row, "", func(): _slot_clicked(slot), Vector2(64, 30))
+		left.add_child(row)
+		for sl in g[1]:
+			var slot: String = sl
+			inv_buttons[slot] = _btn(row, "", func(): _slot_clicked(slot), Vector2(86 if g[1].size() == 4 else 116, 32))
 			inv_buttons[slot].tooltip_text = names.get(slot, "")
-	inv_info = _lbl(box, "", TEXT, 9)
-	_lbl(box, "Klikni na věc a pak na místo. Přendávání trvá - z batohu dlouho a stojíš na místě. Obouruční zbraň potřebuje volnou levou ruku. I / Tab zavře.", FRAME, 8)
+	inv_info = _lbl(left, "", TEXT, 9)
+	var hint := _lbl(left, "Klikni na věc a pak na místo, kam ji dát. Z batohu to trvá a stojíš. Obouruční zbraň potřebuje volnou levou ruku. I / Tab zavře.", FRAME, 8)
+	hint.custom_minimum_size = Vector2(360, 0)
+	# right: every key and what it does with what you carry right now
+	var right := VBoxContainer.new()
+	cols.add_child(right)
+	_lbl(right, "KLÁVESY", ACCENT, 10)
+	inv_keys = _lbl(right, "", TEXT, 8)
+	inv_keys.custom_minimum_size = Vector2(220, 0)
 	inv_panel.visible = false
+
+## The key list: what each key does with the current gear (and where the thing is).
+func _keys_text(p: Node) -> String:
+	var where := func(id: String) -> String:
+		var sl: String = p.find_item(func(it): return it["id"] == id)
+		if sl == "":
+			return "nemáš"
+		var n := 0
+		for s2 in p.inv:
+			if p.inv[s2]["id"] == id:
+				n += 1
+		return ("%dx, " % n if n > 1 else "") + ("v ruce" if sl in ["rh", "lh"] else ("opasek" if sl.begins_with("b") else "batoh - pomalu"))
+	var hand := func(sl: String) -> String:
+		var it: Dictionary = p.item_in(sl)
+		return "-" if it.is_empty() else Game.ITEMS[it["id"]]["short"]
+	var melee: String = p.find_item(func(it): return Game.ITEMS[it["id"]]["type"] == "melee")
+	var lines := [
+		"LTM  použít pravou ruku: %s" % hand.call("rh"),
+		"PTM  mířit / levá ruka: %s" % hand.call("lh"),
+		"R    nabít zbraň",
+		"Q    dlouhá zbraň na záda / ze zad (%s)" % hand.call("back"),
+		"1-4  věc z opasku do ruky / nabít",
+		"G    granát (%s)" % where.call("grenade"),
+		"X    kouřový granát (%s)" % where.call("smoke_grenade"),
+		"B    mina (%s)" % where.call("mine"),
+		"T    světlice (%s)" % where.call("flare"),
+		"H    lékárnička - sebe (%s)" % where.call("medkit"),
+		"E    ošetřit / vzít / civilista / Kondor",
+		"V    rána zblízka (%s)" % ("nemáš nůž ani obušek" if melee == "" else Game.ITEMS[p.inv[melee]["id"]]["short"]),
+		"F    svítilna na helmě",
+		"N / Caps Lock   mluvit (nahlas, kdo je blízko)",
+		"K    mluvit do vysílačky (%s)" % ("helma" if Game.has_research("vysilacky") else where.call("radio")),
+		"C  přikrčit   Z/Y  lehnout   Shift  sprint",
+	]
+	return "\n".join(lines)
 
 func _open_inventory() -> void:
 	inventory_open = true
@@ -657,10 +735,12 @@ func _refresh_inventory() -> void:
 	for s in inv_buttons:
 		var b: Button = inv_buttons[s]
 		var it: Dictionary = p.item_in(s)
-		var t: String = "" if it.is_empty() else Game.ITEMS[it["id"]]["short"]
+		var key: String = SLOT_KEY.get(s, "")
+		var t: String = ("[%s] " % key if key != "" else "") + ("(prázdné)" if it.is_empty() else Game.ITEMS[it["id"]]["short"])
 		if not it.is_empty():
-			if it.has("loaded"): t += "\n%d nábojů" % int(it["loaded"])
+			if it.has("loaded"): t += "\n%d / %d" % [int(it["loaded"]), Game.mag_size(it["id"])]
 			elif it.has("uses"): t += "\n%dx" % int(it["uses"])
+			elif Game.ITEMS[it["id"]]["type"] == "ammo": t += "\nnáboje"
 		b.text = t
 		b.modulate = Color(1.6, 1.4, 0.6) if s == held_slot else Color(1, 1, 1)
 	var w: int = p.carried_weight()
@@ -669,6 +749,8 @@ func _refresh_inventory() -> void:
 	if held_slot != "":
 		inv_info.text += "   V ruce: " + Game.ITEMS[p.inv[held_slot]["id"]]["name"]
 	inv_info.add_theme_color_override("font_color", RED if w > cap else TEXT)
+	if inv_keys:
+		inv_keys.text = _keys_text(p)
 
 # ---- pause -----------------------------------------------------------------------------------
 func _build_pause() -> void:
@@ -765,6 +847,13 @@ static func settings_ui(box: Control) -> void:
 	mim.add_theme_font_size_override("font_size", 9)
 	mim.toggled.connect(func(on): Game.mimic_ok = on; Game.save_settings())
 	box.add_child(mim)
+	var ff := CheckBox.new()
+	ff.text = "Palba do vlastních (platí, když hostuješ)"
+	ff.button_pressed = Game.friendly_fire
+	ff.focus_mode = Control.FOCUS_NONE
+	ff.add_theme_font_size_override("font_size", 9)
+	ff.toggled.connect(func(on): Game.friendly_fire = on; Game.save_settings())
+	box.add_child(ff)
 	var ml := Label.new()
 	ml.add_theme_font_size_override("font_size", 9)
 	ml.text = "Hudba: %d %% (soubory ve složce hudba vedle hry)" % int(Game.music_volume * 100)

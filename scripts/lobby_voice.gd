@@ -16,6 +16,8 @@ var testing := false       # microphone test: hear yourself
 var _echo: AudioStreamPlayer
 var _echo_pb: AudioStreamGeneratorPlayback
 var talking := false
+var _mission_feed := PackedFloat32Array()   # what the mission's Voice takes each frame
+var _agc := 1.0                              # automatic gain: quiet mics get louder, loud ones calmer
 
 func _ready() -> void:
 	name = "LobbyVoice"
@@ -24,10 +26,21 @@ func _in_mission() -> bool:
 	var sc := get_tree().current_scene
 	return sc != null and sc.name == "Mission"
 
+## One reader of the microphone for the whole game (menu test, lobby, globe and the mission).
 func _want_mic() -> bool:
-	if Game.voice_mode == "off" or DisplayServer.get_name() == "headless" or Game.autotest() != "":
-		return testing and DisplayServer.get_name() != "headless"
-	return testing or (Net.is_online() and not _in_mission())
+	if DisplayServer.get_name() == "headless":
+		return false
+	if testing:
+		return true
+	if Game.voice_mode == "off" or Game.autotest() != "":
+		return false
+	return Net.is_online() or _in_mission()
+
+## The mission's Voice: everything heard since the last call (already resampled and levelled).
+func take_for_mission() -> PackedFloat32Array:
+	var out := _mission_feed
+	_mission_feed = PackedFloat32Array()
+	return out
 
 func _process(delta: float) -> void:
 	var want := _want_mic()
@@ -55,6 +68,7 @@ func _process(delta: float) -> void:
 				fresh.append(_rs_sum / _rs_n)
 				_rs_sum = 0.0
 				_rs_n = 0
+	fresh = _level(fresh)
 	var e := 0.0
 	for v in fresh:
 		e += v * v
@@ -62,7 +76,12 @@ func _process(delta: float) -> void:
 		Game.mic_level = lerpf(Game.mic_level, sqrt(e / fresh.size()), 0.5)
 	if testing:
 		_play_echo(fresh)
-	if not Net.is_online() or _in_mission():
+	if _in_mission():
+		_mission_feed.append_array(fresh)
+		if _mission_feed.size() > Voice.RATE:      # nobody took it (no Voice node): keep a second at most
+			_mission_feed = _mission_feed.slice(_mission_feed.size() - Voice.RATE)
+		return
+	if not Net.is_online():
 		return
 	var send := Input.is_action_pressed("talk")
 	if Game.voice_mode == "open":
@@ -81,13 +100,37 @@ func _process(delta: float) -> void:
 		_acc = _acc.slice(chunk)
 		_lobby_voice.rpc(Voice.encode(part))
 
+## Automatic level: speech brought to a steady loudness (target RMS ~0.12), hiss below
+## the gate is not pumped up, a soft limiter keeps shouts from clipping.
+func _level(smp: PackedFloat32Array) -> PackedFloat32Array:
+	if smp.is_empty():
+		return smp
+	var e := 0.0
+	for v in smp:
+		e += v * v
+	var rms := sqrt(e / smp.size())
+	if rms > 0.012:
+		var want := clampf(0.12 / rms, 0.7, 8.0)
+		# fast down (a shout), slow up (a whisper)
+		_agc = lerpf(_agc, want, 0.5 if want < _agc else 0.08)
+	else:
+		_agc = lerpf(_agc, 1.0, 0.05)     # silence / room hiss: do not pump it up
+	var out := PackedFloat32Array()
+	out.resize(smp.size())
+	for i in smp.size():
+		var x := smp[i] * _agc
+		out[i] = x / (1.0 + absf(x) * 0.6)       # soft limiter
+	return out
+
 func _open() -> void:
 	if AudioServer.get_bus_index("Mic") < 0:
 		AudioServer.add_bus()
 		var i := AudioServer.bus_count - 1
 		AudioServer.set_bus_name(i, "Mic")
 		AudioServer.set_bus_mute(i, true)
-		AudioServer.add_bus_effect(i, AudioEffectCapture.new())
+		var cap := AudioEffectCapture.new()
+		cap.buffer_length = 0.6      # a slow frame (map loading) must not lose speech
+		AudioServer.add_bus_effect(i, cap)
 	capture = AudioServer.get_bus_effect(AudioServer.get_bus_index("Mic"), 0) as AudioEffectCapture
 	mic = AudioStreamPlayer.new()
 	mic.stream = AudioStreamMicrophone.new()
@@ -140,6 +183,13 @@ func _lobby_voice(bytes: PackedByteArray) -> void:
 		_chan[from] = {"player": ap, "pb": ap.get_stream_playback(), "last": 0.0}
 	var ch: Dictionary = _chan[from]
 	(ch["player"] as AudioStreamPlayer).volume_db = linear_to_db(maxf(0.001, Game.peer_volume(Net.roster.get(from, {}).get("name", ""))))
+	if Time.get_ticks_msec() - int(ch["last"]) > 250:
+		# a new sentence: a short cushion against late packets
+		var pad := PackedVector2Array()
+		pad.resize(int(Voice.RATE * 0.1))
+		var pb0: AudioStreamGeneratorPlayback = ch["pb"]
+		if pb0.can_push_buffer(pad.size()):
+			pb0.push_buffer(pad)
 	ch["last"] = Time.get_ticks_msec()
 	var smp := Voice.decode(bytes)
 	var fr := PackedVector2Array()

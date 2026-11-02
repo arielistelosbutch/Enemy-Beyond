@@ -171,6 +171,7 @@ func _ready() -> void:
 			rain.amount = 380
 	hud.briefing(_briefing_text() + "\nPočasí: " + WEATHER_NAMES[weather] + ".")
 	multiplayer.peer_disconnected.connect(_on_peer_left)
+	Net.note.connect(_on_note)
 	multiplayer.server_disconnected.connect(func(): _leave("Spojení s hostitelem bylo ztraceno."))
 	if Game.autotest() != "":
 		var at := Node.new()
@@ -349,7 +350,7 @@ func _maybe_spawn() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = Net.mission_seed + 99
 	var spawns: Array = map["alien_spawns"].duplicate()
-	var count := 2 + Net.roster.size() + int(Net.mission_params.get("extra_aliens", 0)) + (1 if Game.veteran() else 0) + int({"large": 1, "huge": 2}.get(Net.mission_params.get("size", ""), 0))
+	var count := 2 + Net.roster.size() + int(Net.mission_params.get("extra_aliens", 0)) + (1 if Game.veteran() else (-1 if Game.easy() else 0)) + int({"large": 1, "huge": 2}.get(Net.mission_params.get("size", ""), 0))
 	var crew := _crew(count, rng)
 	for k in crew.size():
 		var p: Vector3 = spawns[k % spawns.size()] + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
@@ -1114,7 +1115,6 @@ func _judge() -> void:
 		var won := alive_aliens() == 0
 		_end.rpc(won, "Posádka UFO zneškodněna." if won else "Tým se stáhl z mise.")
 
-@rpc("authority", "call_local", "reliable")
 ## Won missions: everything the aliens dropped is picked up on the way out (no carrying needed).
 func _loot(success: bool) -> Dictionary:
 	var out := {}
@@ -1133,6 +1133,7 @@ func _loot(success: bool) -> Dictionary:
 	out["slitiny"] = r.randi_range(al[0], al[1])
 	return out
 
+@rpc("authority", "call_local", "reliable")
 func _end(success: bool, why: String) -> void:
 	if finished:
 		return
@@ -1205,6 +1206,10 @@ func _leave(why: String) -> void:
 		Net.back_to_menu()
 		return
 	Net.after_mission()
+
+func _on_note(t: String) -> void:
+	if hud:
+		hud.message(t, 3.0)
 
 func _on_peer_left(id: int) -> void:
 	if multiplayer.is_server() and not go:

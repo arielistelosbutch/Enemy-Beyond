@@ -323,13 +323,45 @@ func generate_flight() -> Dictionary:
 		"until": float(data["day"]) + rng.randf_range(0.25, 0.5) * (1.0 + 0.3 * count("radar"))}
 
 func sokol_ready() -> bool:
-	return float(data.get("sokol_ready", 0.0)) <= float(data["day"])
+	return jets_ready() > 0
+
+## Interceptors: the base starts with one Sokol, more can be bought (one per pilot in co-op).
+const JET_PRICE := 1500
+const MAX_JETS := 4
+func jets() -> int:
+	return int(data.get("jets", 1))
+
+func jets_ready() -> int:
+	var busy := 0
+	for d in data.get("jet_repair", []):
+		if float(d) > float(data["day"]):
+			busy += 1
+	if float(data.get("sokol_ready", 0.0)) > float(data["day"]):
+		busy += 1        # older saves
+	return maxi(0, jets() - busy)
+
+func buy_jet() -> bool:
+	if jets() >= MAX_JETS or int(data["credits"]) < JET_PRICE:
+		return false
+	data["credits"] = int(data["credits"]) - JET_PRICE
+	data["jets"] = jets() + 1
+	_log("Do hangáru přibyla stíhačka Sokol (%d celkem)." % jets())
+	save()
+	changed.emit()
+	return true
+
+func _repair_jet(days: float) -> void:
+	var r: Array = data.get("jet_repair", [])
+	var now := float(data["day"])
+	r = r.filter(func(d): return float(d) > now)
+	r.append(now + days)
+	data["jet_repair"] = r
 
 func intercept_params(f: Dictionary) -> Dictionary:
 	return {"intercept": true, "id": f["id"], "ufo": f["kind"], "lat": f["lat"], "lon": f["lon"]}
 
 ## After the air fight. Returns the text for the globe.
-func intercept_done(id: int, outcome: String, kind: String, jet_hp: float) -> String:
+func intercept_done(id: int, outcome: String, kind: String, jet_hp: float, lost := -1, damaged := 0) -> String:
 	var f := {}
 	for ff in data["flights"]:
 		if int(ff["id"]) == id:
@@ -365,14 +397,22 @@ func intercept_done(id: int, outcome: String, kind: String, jet_hp: float) -> St
 			data["trust"] = clampi(int(data["trust"]) + 2, 0, 100)
 			txt = "%s rozprášen ve vzduchu. Odměna 150 kr, žádná kořist." % UFO_NAMES[kind]
 		"shot_down":
-			data["sokol_ready"] = float(data["day"]) + 5.0
 			data["trust"] = clampi(int(data["trust"]) - 2, 0, 100)
-			txt = "Sokol sestřelen, pilot se katapultoval. Nová stíhačka bude za 5 dní."
+			txt = "Sokoly sestřeleny, piloti se katapultovali."
 		"escaped", "fuel":
 			txt = "UFO uniklo."
-	if jet_hp < 60 and outcome != "shot_down":
-		data["sokol_ready"] = float(data["day"]) + 1.5
-		txt += " Sokol je poškozený, oprava 1,5 dne."
+	# lost / damaged jets go to the workshop
+	if lost < 0:
+		lost = 1 if outcome == "shot_down" else 0
+		damaged = 1 if jet_hp < 60 and outcome != "shot_down" else 0
+	for i in lost:
+		_repair_jet(5.0)
+	for i in damaged:
+		_repair_jet(1.5)
+	if lost > 0:
+		txt += " Ztraceno stíhaček: %d (nová za 5 dní)." % lost
+	if damaged > 0:
+		txt += " Poškozeno: %d (oprava 1,5 dne)." % damaged
 	_log(txt)
 	save()
 	changed.emit()

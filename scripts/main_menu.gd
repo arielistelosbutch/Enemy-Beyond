@@ -41,6 +41,7 @@ func _ready() -> void:
 		if scr == "loadout": _show_loadout()
 		elif scr == "merc": _show_merc()
 		elif scr == "money": _show_money()
+		elif scr == "mods": _show_mods()
 	elif Net.is_online() and not multiplayer.is_server():
 		_show_lobby()
 	elif Game.autotest() == "" and Game.seen_version != Game.VERSION_NUM and Game.changelog().has(Game.VERSION_NUM):
@@ -194,12 +195,14 @@ func _show_main(msg := "") -> void:
 		preload("res://scripts/hud.gd").settings_ui(_box)
 		_label("Totéž najdeš ve hře v pauze (Esc).", FRAME, 8)
 		_button("Zpět", _show_main))
-	_button("Obtížnost: " + ("VETERÁN" if Game.difficulty == "veteran" else "normální"), func():
-		Game.difficulty = "normal" if Game.difficulty == "veteran" else "veteran"
+	_button("Obtížnost: " + Game.DIFF_NAMES.get(Game.difficulty, "normální"), func():
+		Game.next_difficulty()
 		Game.save_settings()
 		_show_main())
 	if Game.difficulty == "veteran":
 		_label("Veterán: plazma zabíjí na 1-2 zásahy, panika, palba do vlastních, zranění se hojí v reálném čase, jen jeden náhradní zásobník.", Color(1, 0.55, 0.4), 8)
+	elif Game.difficulty == "easy":
+		_label("Snadná: slabší, pomalejší a méně přesní vetřelci, o jednoho méně, zranění bolí méně.", Color(0.6, 1.0, 0.6), 8)
 	_button("Ukončit", func(): get_tree().quit())
 	if msg != "":
 		_label(msg, Color(1, 0.5, 0.4), 10)
@@ -260,7 +263,11 @@ func _show_mods() -> void:
 			b.tooltip_text = Game.MODS[mid]["desc"]
 			b.disabled = has
 	_label("Svítilna: delší světlo. Laser: přesnost od boku. Optika: přiblížení. Tlumič: tišší výstřel. Zásobník: +50 % ran. Rukojeť: menší ráz.", FRAME, 8)
-	_button("Zpět", _show_merc)
+	_button("Zpět", func():
+		if _back_target != "":
+			_back()
+		else:
+			_show_merc())
 
 # ---- creating a mercenary: name, looks, stats by points or by dice ---------------------------
 var _scroll: ScrollContainer
@@ -645,7 +652,7 @@ func _refresh_preview() -> void:
 var _lobby_t := 0.0
 func _process(delta: float) -> void:
 	_lobby_t += delta
-	if _lobby_t > 0.3 and Net.is_online() and _status and is_instance_valid(_status) and _status.text.begins_with("Hráči"):
+	if _lobby_t > 0.15 and Net.is_online() and _status and is_instance_valid(_status) and _status.text.begins_with("Hráči"):
 		_lobby_t = 0.0
 		_refresh_lobby()
 	# keep the menu panel on screen: as tall as its content, at most what fits
@@ -752,6 +759,7 @@ func _show_loadout() -> void:
 	var bottom := HBoxContainer.new()
 	_box.add_child(bottom)
 	_button("Výchozí výstroj", func(): Game.loadout = {}; Game.save_settings(); _show_loadout()).reparent(bottom)
+	_button("Úpravy zbraní", _show_mods).reparent(bottom)
 	_button("Zpět", _back).reparent(bottom)
 	for c in bottom.get_children():
 		c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -785,9 +793,10 @@ func _show_lobby() -> void:
 	_status = _label("")
 	if multiplayer.is_server():
 		_label("Kamarádi se připojí na tvou IP adresu, port %d (TCP/UDP). Po internetu přes Radmin VPN / ZeroTier." % Net.PORT, FRAME, 9)
-		_label("Obtížnost mise: " + ("VETERÁN" if Game.difficulty == "veteran" else "normální") + " (mění se v hlavním menu)", ACCENT, 9)
+		_label("Obtížnost mise: " + Game.DIFF_NAMES.get(Game.difficulty, "normální") + " (mění se v hlavním menu)", ACCENT, 9)
 		_button("ZAČÍT MISI: " + QUICK[quick_pick][0], func(): Net.start_mission(quick_params(quick_pick)))
 		_button("Změnit typ mise", func(): quick_pick = (quick_pick + 1) % QUICK.size(); _show_lobby())
+		_button("Palba do vlastních: " + ("ZAPNUTÁ" if Game.friendly_fire else "vypnutá"), func(): Game.friendly_fire = not Game.friendly_fire; Game.save_settings(); _show_lobby())
 		var sizes := ["", "small", "medium", "large", "huge"]
 		_button("Velikost mapy: " + ("podle mise" if quick_size == "" else MapGen.SIZE_NAMES[quick_size]), func():
 			quick_size = sizes[(sizes.find(quick_size) + 1) % sizes.size()]
@@ -798,6 +807,7 @@ func _show_lobby() -> void:
 			_button("Základna a glóbus hostitele", func(): _back_target = "lobby"; get_tree().change_scene_to_file("res://scenes/Geoscape.tscn"))
 	_button("Výstroj na misi", func(): _back_target = "lobby"; _show_loadout())
 	_button("Můj žoldák (talenty, vzhled)", func(): _back_target = "lobby"; _show_merc())
+	_button("Úpravy zbraní za peníze (svítilna, laser, tlumič...)", func(): _back_target = "lobby"; _show_mods())
 	_button("Poslat peníze spoluhráči", func(): _back_target = "lobby"; _show_money())
 	_button("Hlas a mikrofon (hlasitost spoluhráčů, test)", func():
 		_back_target = "lobby"
@@ -816,9 +826,12 @@ func _refresh_lobby() -> void:
 		if Net.wallets.has(id):
 			money = "  -  %d kr%s" % [int(Net.wallets[id]), " (pokladna základny)" if id == 1 and (Campaign.active or Campaign.viewer) else ""]
 		var lv: Node = Net.get_node_or_null("LobbyVoice")
-		var talk := "  (mluví)" if lv and lv.speaking(id) else ""
+		var talk := "   <<< MLUVÍ" if lv and lv.speaking(id) else ""
 		lines.append("%s %s%s%s" % ["*" if id == 1 else "-", Net.roster[id]["name"], money, talk])
-	_status.text = "Hráči (%d/%d):\n%s" % [Net.roster.size(), Net.MAX_PLAYERS, "\n".join(lines)] + ("\n" + _last_note if _last_note != "" else "")
+	var bars := int(clampf(Game.mic_level * 60.0, 0.0, 12.0))
+	var mic := "Mikrofon vypnutý (Nastavení)" if Game.voice_mode == "off" else "Tvůj mikrofon: [%s%s] %s" % ["|".repeat(bars), " ".repeat(12 - bars),
+		"VYSÍLÁŠ" if Net.get_node("LobbyVoice").talking else ("drž N / Caps Lock" if Game.voice_mode == "ptt" else "ticho")]
+	_status.text = "Hráči (%d/%d):\n%s\n%s" % [Net.roster.size(), Net.MAX_PLAYERS, "\n".join(lines), mic] + ("\n" + _last_note if _last_note != "" else "")
 
 ## Money between teammates (host included): agree who buys what and help each other out.
 var _gift_to := 0
@@ -926,7 +939,7 @@ func _autotest() -> void:
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
 				"hour": 14.0 if Game.cmd_arg("day", "0") == "1" else 23.0, "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "terrain": Game.cmd_arg("terrain", "temperate"), "size": Game.cmd_arg("size", "medium")})
-		"solo", "shot", "ai", "panic", "arsenal":
+		"solo", "shot", "ai", "panic", "arsenal", "evac":
 			if Game.autotest() == "shot":
 				await get_tree().create_timer(1.5).timeout
 				get_viewport().get_texture().get_image().save_png("user://00_menu.png")
@@ -942,6 +955,16 @@ func _autotest() -> void:
 				get_viewport().get_texture().get_image().save_png("user://00_settings.png")
 			Net.play_solo()
 			Net.start_mission()
+		"airhost":
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			while Net.roster.size() < 2:
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(0.5).timeout
+			Net.start_intercept({"intercept": true, "id": -1, "ufo": Game.cmd_arg("ufo", "harvester"), "pilots": Net.roster.keys()})
+		"airclient":
+			Game.merc["name"] = "Wingman"
+			await get_tree().create_timer(1.0).timeout
+			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
 		"checkall":
 			for f in DirAccess.get_files_at("res://scripts"):
 				if f.ends_with(".gd"):

@@ -63,6 +63,15 @@ var msg_t := 0.0
 var bolts := []                # [{node, vel, life}]
 var tracers := []
 var rockets := []
+# ---- co-op: one Sokol per pilot; the host flies the UFO, every pilot his own jet ----------
+var net := false
+var pilots: Array = [1]
+var me_pilot := true
+var down := false               # my jet is gone
+var others := {}                # peer -> {node, pos, prev, vel, down}
+var _sync_t := 0.0
+var _ufo_goal := Vector3.ZERO
+var _shots := 0
 
 func _ready() -> void:
 	Game.play_music("interception")
@@ -73,9 +82,23 @@ func _ready() -> void:
 	ufo_hp = k["hp"]
 	ufo_max = k["hp"]
 	_world()
-	jet = Game.model("sokol")
-	add_child(jet)
-	jet.position = Vector3(0, 900, 0)
+	net = Net.is_online() and params.has("pilots")
+	if net:
+		pilots = params["pilots"]
+		me_pilot = Net.my_id() in pilots
+	for i in pilots.size():
+		var pid: int = pilots[i]
+		var node := Game.model("sokol")
+		add_child(node)
+		node.position = Vector3((i - (pilots.size() - 1) / 2.0) * 40.0, 900 + i * 6.0, i * 15.0)
+		if pid == Net.my_id() or not net:
+			jet = node
+		else:
+			others[pid] = {"node": node, "pos": node.position, "prev": node.position, "vel": Vector3.ZERO, "down": false, "name": Net.roster.get(pid, {}).get("name", "Sokol")}
+	if jet == null:
+		# not flying (more players than jets): ride along on the host's wing
+		jet = others[pilots[0]]["node"]
+		down = true
 	ufo = Game.model("ufo_" + kind)
 	add_child(ufo)
 	ufo.scale = Vector3.ONE * float(k["scale"])
@@ -205,15 +228,22 @@ func _physics_process(delta: float) -> void:
 		_debris(delta)
 		_camera(delta)
 		hud.queue_redraw()
-		if end_t > 4.0 and Game.autotest() != "air":
+		if end_t > 4.0 and not Game.autotest() in ["air", "airhost", "airclient"]:
 			_finish()
 		return
-	_fly(delta)
-	_weapons(delta)
-	_ufo_ai(delta)
+	if me_pilot and not down:
+		_fly(delta)
+		_weapons(delta)
+	if net:
+		_net_sync(delta)
+	if multiplayer.is_server() or not net:
+		_ufo_ai(delta)
+	else:
+		ufo.global_position = ufo.global_position.lerp(_ufo_goal, clampf(delta * 10.0, 0, 1))
 	_projectiles(delta)
 	_camera(delta)
-	_judge()
+	if multiplayer.is_server() or not net:
+		_judge()
 	hud.queue_redraw()
 
 # ---- the interceptor: mouse moves a virtual stick, the jet follows ------------------------
@@ -260,6 +290,11 @@ func _break(side: float) -> void:
 	Game.play_ui(self, "lunge", -8)
 
 func _camera(delta: float) -> void:
+	if down and net:
+		for pid in others:
+			if not others[pid]["down"]:
+				jet = others[pid]["node"]
+				break
 	var b := jet.global_transform.basis
 	var want := jet.global_position + b.z * 22.0 + b.y * 6.0
 	if outcome == "shot_down":
@@ -289,6 +324,9 @@ func _weapons(delta: float) -> void:
 		var spread := Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.012
 		var d := (fwd + spread).normalized()
 		_tracer(jet.global_position + fwd * 5.0 + jet.global_transform.basis.y * -0.3, d)
+		_shots += 1
+		if net and _shots % 3 == 0:
+			_fx_tracer.rpc(jet.global_position + fwd * 5.0, d)
 		if ammo % 3 == 0:
 			Game.play_ui(self, "minigun", -12)
 	if (Input.is_action_just_pressed("aim") or Input.is_action_just_pressed("reload")) and missile_cd <= 0:
@@ -301,7 +339,7 @@ func _weapons(delta: float) -> void:
 			missile_cd = 1.0
 			_fire_missile()
 
-func _tracer(from: Vector3, dir: Vector3) -> void:
+func _tracer(from: Vector3, dir: Vector3, fake := false) -> void:
 	var n := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = Vector3(0.15, 0.15, 6.0)
@@ -310,21 +348,28 @@ func _tracer(from: Vector3, dir: Vector3) -> void:
 	add_child(n)
 	n.global_position = from
 	n.look_at(from + dir, Vector3.UP)
-	tracers.append({"node": n, "vel": dir * 900.0 + -jet.global_transform.basis.z * speed, "life": 1.2})
+	tracers.append({"node": n, "vel": dir * 900.0 + (dir * 120.0 if fake else -jet.global_transform.basis.z * speed), "life": 1.2, "fake": fake})
 
 func _fire_missile() -> void:
 	Game.play_ui(self, "launch", -2)
+	var side := 2.0 if missiles % 2 == 0 else -2.0
+	var from := jet.global_position + jet.global_transform.basis.x * side - jet.global_transform.basis.y * 0.4
+	var vel := -jet.global_transform.basis.z * (speed + 40.0)
+	_missile_node(from, vel, false)
+	if net:
+		_fx_missile.rpc(from, vel)
+
+func _missile_node(from: Vector3, vel: Vector3, fake: bool) -> void:
 	var n := Game.model("rocket")
 	add_child(n)
 	n.scale = Vector3.ONE * 4.0
-	var side := 2.0 if missiles % 2 == 0 else -2.0
-	n.global_position = jet.global_position + jet.global_transform.basis.x * side - jet.global_transform.basis.y * 0.4
+	n.global_position = from
 	var l := OmniLight3D.new()
 	l.light_color = Color(1, 0.6, 0.3)
 	l.light_energy = 4.0
 	l.omni_range = 20.0
 	n.add_child(l)
-	rockets.append({"node": n, "vel": -jet.global_transform.basis.z * (speed + 40.0), "life": 8.0})
+	rockets.append({"node": n, "vel": vel, "life": 8.0, "fake": fake})
 
 func _projectiles(delta: float) -> void:
 	for tr in tracers.duplicate():
@@ -333,7 +378,8 @@ func _projectiles(delta: float) -> void:
 		tr["life"] -= delta
 		if _seg_hits(n.global_position, nxt, ufo.global_position, _ufo_radius()):
 			# cannon shells barely scratch the armour of the big ones
-			_damage_ufo(CANNON_DMG * float(UFO_KINDS[kind]["armor"]), n.global_position)
+			if not tr.get("fake", false):
+				_damage_ufo(CANNON_DMG * float(UFO_KINDS[kind]["armor"]), n.global_position)
 			tr["life"] = 0
 		n.global_position = nxt
 		if tr["life"] <= 0:
@@ -350,7 +396,8 @@ func _projectiles(delta: float) -> void:
 		n.look_at(nxt + v, Vector3.UP)
 		rk["life"] -= delta
 		if _seg_hits(n.global_position, nxt, ufo.global_position, _ufo_radius() + 3.0):
-			_damage_ufo(MISSILE_DMG, n.global_position)
+			if not rk.get("fake", false):
+				_damage_ufo(MISSILE_DMG, n.global_position)
 			_flash(n.global_position, 20.0)
 			Game.play_ui(self, "explosion", -2)
 			rk["life"] = 0
@@ -362,8 +409,14 @@ func _projectiles(delta: float) -> void:
 		var n: Node3D = bo["node"]
 		var nxt: Vector3 = n.global_position + bo["vel"] * delta
 		bo["life"] -= delta
-		if _seg_hits(n.global_position, nxt, jet.global_position, 4.0):
+		if me_pilot and not down and _seg_hits(n.global_position, nxt, jet.global_position, 4.0):
 			jet_hp -= 9.0
+			if jet_hp <= 0 and net:
+				down = true
+				jet.visible = false
+				_flash(jet.global_position, 12.0)
+				_say("SOKOL SESTŘELEN. Pilot se katapultoval - díváš se z křídla ostatních.", 5.0)
+				_jet_down.rpc(Net.my_id())
 			_say("ZÁSAH! Trup %d %%" % int(max(jet_hp, 0)), 1.5)
 			_flash(n.global_position, 8.0)
 			Game.play_ui(self, "hit", 0)
@@ -404,8 +457,11 @@ func _flash(p: Vector3, size: float) -> void:
 	tw.tween_callback(func(): l.queue_free(); ball.queue_free())
 
 func _damage_ufo(d: float, at: Vector3) -> void:
-	ufo_hp -= d
-	recent.append([t, d])
+	if net:
+		_hit_ufo.rpc_id(1, d)
+	else:
+		ufo_hp -= d
+		recent.append([t, d])
 	if randf() < 0.3:
 		_flash(at, 2.0)
 
@@ -415,7 +471,9 @@ func _ufo_ai(delta: float) -> void:
 	if not fleeing and ufo_hp < ufo_max * 0.5:
 		fleeing = true
 		_say("UFO je poškozené a zrychluje - utíká!", 2.5)
-	var away := (ufo.global_position - jet.global_position)
+	var tg := _target()
+	var tpos: Vector3 = tg["pos"]
+	var away := (ufo.global_position - tpos)
 	away.y = 0
 	var want := ufo_dir
 	weave += delta
@@ -433,8 +491,8 @@ func _ufo_ai(delta: float) -> void:
 	for rk in rockets:
 		if (rk["node"] as Node3D).global_position.distance_to(ufo.global_position) < 160.0:
 			threat = true
-	var to_ufo := (ufo.global_position - jet.global_position)
-	var aimed := (-jet.global_transform.basis.z).dot(to_ufo.normalized()) > 0.985 and to_ufo.length() < 500.0
+	var to_ufo := (ufo.global_position - tpos)
+	var aimed: bool = (tg["fwd"] as Vector3).dot(to_ufo.normalized()) > 0.985 and to_ufo.length() < 500.0
 	if ufo_jink_cd <= 0.0 and (threat or (aimed and randf() < delta * 3.0)):
 		ufo_jink_cd = randf_range(0.9, 2.0) * (1.6 if kind == "harvester" else 1.0)
 		var perp := ufo_dir.cross(Vector3.UP).normalized() * (1.0 if randf() < 0.5 else -1.0)
@@ -455,16 +513,103 @@ func _ufo_ai(delta: float) -> void:
 		_puff(ufo.global_position)
 	if k["guns"] > 0:
 		ufo_fire_cd -= delta
-		var d := jet.global_position.distance_to(ufo.global_position)
-		if ufo_fire_cd <= 0 and d < 700:
+		var d := tpos.distance_to(ufo.global_position)
+		if ufo_fire_cd <= 0 and d < 700 and tg["alive"]:
 			ufo_fire_cd = randf_range(1.4, 2.2) / sqrt(float(k["guns"])) * (1.6 if kind == "scout" else 1.0)
 			# precise lead on the jet's real motion - a break with A/D is how you make it miss
-			var jv := -jet.global_transform.basis.z * speed + slide
-			var lead := jet.global_position + jv * (d / 300.0)
+			var jv: Vector3 = tg["vel"]
+			var lead := tpos + jv * (d / 300.0)
 			var dir := (lead - ufo.global_position).normalized()
 			dir = (dir + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.012).normalized()
-			_bolt(ufo.global_position + dir * (_ufo_radius() + 2), dir)
+			if net:
+				_bolt.rpc(ufo.global_position + dir * (_ufo_radius() + 2), dir)
+			else:
+				_bolt(ufo.global_position + dir * (_ufo_radius() + 2), dir)
 
+## The jet the UFO cares about: the nearest one still flying.
+func _target() -> Dictionary:
+	var best := {"pos": jet.global_position, "vel": -jet.global_transform.basis.z * speed + slide, "fwd": -jet.global_transform.basis.z, "alive": not down and me_pilot}
+	var bd := 1e9 if down or not me_pilot else jet.global_position.distance_to(ufo.global_position)
+	for pid in others:
+		var o: Dictionary = others[pid]
+		if o["down"]:
+			continue
+		var n: Node3D = o["node"]
+		var dd := n.global_position.distance_to(ufo.global_position)
+		if dd < bd:
+			bd = dd
+			best = {"pos": n.global_position, "vel": o["vel"], "fwd": -n.global_transform.basis.z, "alive": true}
+	return best
+
+# ---- network ---------------------------------------------------------------------------------
+func _net_sync(delta: float) -> void:
+	_sync_t -= delta
+	if _sync_t <= 0.0:
+		_sync_t = 0.033
+		if me_pilot and not down:
+			_jet_state.rpc(jet.global_position, jet.global_transform.basis.get_rotation_quaternion(), -jet.global_transform.basis.z * speed + slide)
+		if multiplayer.is_server():
+			_ufo_state.rpc(ufo.global_position, ufo.rotation.y, ufo_hp, fleeing)
+	# others' jets glide toward their last known place (plus where they were heading)
+	for pid in others:
+		var o: Dictionary = others[pid]
+		var n: Node3D = o["node"]
+		if not o["down"]:
+			o["pos"] = (o["pos"] as Vector3) + (o["vel"] as Vector3) * delta
+			n.global_position = n.global_position.lerp(o["pos"], clampf(delta * 12.0, 0, 1))
+
+@rpc("any_peer", "unreliable_ordered")
+func _jet_state(pos: Vector3, rot: Quaternion, vel: Vector3) -> void:
+	var pid := multiplayer.get_remote_sender_id()
+	if not others.has(pid):
+		return
+	var o: Dictionary = others[pid]
+	o["pos"] = pos
+	o["vel"] = vel
+	(o["node"] as Node3D).global_transform.basis = Basis(rot)
+
+@rpc("authority", "unreliable_ordered")
+func _ufo_state(pos: Vector3, rot_y: float, hp: float, flee: bool) -> void:
+	_ufo_goal = pos
+	ufo.rotation.y = rot_y
+	if hp < ufo_hp and hp < ufo_max * 0.5 and randf() < 0.3:
+		_puff(ufo.global_position)
+	ufo_hp = hp
+	fleeing = flee
+
+## A pilot's hit on the UFO counts on the host.
+@rpc("any_peer", "call_local", "reliable")
+func _hit_ufo(d: float) -> void:
+	if not multiplayer.is_server() or outcome != "":
+		return
+	ufo_hp -= d
+	recent.append([t, d])
+
+## Somebody's Sokol went down.
+@rpc("any_peer", "call_local", "reliable")
+func _jet_down(pid: int) -> void:
+	if others.has(pid):
+		others[pid]["down"] = true
+		var n: Node3D = others[pid]["node"]
+		_flash(n.global_position, 12.0)
+		n.visible = false
+		_say("%s sestřelen! Pilot se katapultoval." % others[pid]["name"], 3.0)
+
+## The others' guns: only a picture, the damage was counted by the shooter.
+@rpc("any_peer", "unreliable")
+func _fx_tracer(from: Vector3, dir: Vector3) -> void:
+	_tracer(from, dir, true)
+
+@rpc("any_peer", "reliable")
+func _fx_missile(from: Vector3, vel: Vector3) -> void:
+	_missile_node(from, vel, true)
+
+@rpc("authority", "call_local", "reliable")
+func _end_all(o: String) -> void:
+	if outcome == "":
+		_end(o)
+
+@rpc("authority", "call_local", "reliable")
 func _bolt(from: Vector3, dir: Vector3) -> void:
 	var n := MeshInstance3D.new()
 	var sm := SphereMesh.new()
@@ -512,14 +657,26 @@ func _judge() -> void:
 			_end("destroyed")
 		else:
 			_end("crashed")
-	elif jet_hp <= 0:
+	elif (not net and jet_hp <= 0) or (net and _all_down()):
 		_end("shot_down")
-	elif fleeing and jet.global_position.distance_to(ufo.global_position) > 1500:
+	elif fleeing and (_target()["pos"] as Vector3).distance_to(ufo.global_position) > 1500:
 		_end("escaped")
 	elif t > TIME_LIMIT:
 		_end("fuel")
 
+func _all_down() -> bool:
+	if me_pilot and not down:
+		return false
+	for pid in others:
+		if not others[pid]["down"]:
+			return false
+	return true
+
 func _end(o: String) -> void:
+	if net and multiplayer.is_server() and outcome == "":
+		outcome = o
+		_end_all.rpc(o)
+		outcome = ""
 	outcome = o
 	Game.play_ui(self, "explosion", 2)
 	match o:
@@ -530,8 +687,9 @@ func _end(o: String) -> void:
 		"crashed":
 			_say("UFO PADÁ! Zřítilo se pod mraky. Pozemní tým může vyrazit.", 6.0)
 		"shot_down":
-			_flash(jet.global_position, 12.0)
-			jet.visible = false
+			if not net:
+				_flash(jet.global_position, 12.0)
+				jet.visible = false
 			_say("SOKOL SESTŘELEN. Pilot se katapultoval.", 6.0)
 		"escaped":
 			_say("UFO UNIKLO.", 5.0)
@@ -546,11 +704,27 @@ func _debris(delta: float) -> void:
 		if randf() < delta * 15:
 			_puff(ufo.global_position)
 
+var _finished := false
 func _finish() -> void:
-	var dmg_frac := clampf(1.0 - ufo_hp / ufo_max, 0, 1)
-	Net.last_result = Campaign.intercept_done(int(params.get("id", -1)), outcome, kind, jet_hp)
+	if _finished:
+		return
+	_finished = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	Net.mission_params = {}
+	if net and not multiplayer.is_server():
+		# a co-op pilot: back to the lobby (or the host's globe view)
+		get_tree().change_scene_to_file("res://scenes/Main.tscn")
+		return
+	var lost := 0
+	if net:
+		for pid in others:
+			if others[pid]["down"]:
+				lost += 1
+		if down and me_pilot:
+			lost += 1
+		Net.last_result = Campaign.intercept_done(int(params.get("id", -1)), outcome, kind, jet_hp, lost, 1 if (jet_hp < 60 and not down) else 0)
+	else:
+		Net.last_result = Campaign.intercept_done(int(params.get("id", -1)), outcome, kind, jet_hp)
 	get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
 
 # ---- HUD ----------------------------------------------------------------------------------------
@@ -584,6 +758,15 @@ func _draw_hud() -> void:
 		var lp: Vector3 = cam.global_transform.basis.inverse() * (ufo.global_position - cam.global_position)
 		var d2 := Vector2(lp.x, -lp.y).normalized()
 		c.draw_circle(mid + d2 * 120.0, 4.0, Color(1, 0.6, 0.3))
+	# wingmen
+	for pid in others:
+		var on: Node3D = others[pid]["node"]
+		if not others[pid]["down"] and on != jet and not cam.is_position_behind(on.global_position):
+			var op := cam.unproject_position(on.global_position)
+			c.draw_arc(op, 5, 0, TAU, 10, Color(0.5, 0.8, 1.0), 1.0)
+			txt.call(op + Vector2(7, 3), String(others[pid]["name"]), Color(0.5, 0.8, 1.0), 7)
+	if down and net:
+		txt.call(Vector2(mid.x - 120, sz.y - 70), "Tvůj Sokol je dole - sleduješ spoluhráče.", Color(1, 0.6, 0.4), 9)
 	# bars
 	txt.call(Vector2(10, sz.y - 46), "RYCHLOST %d km/h   PLYN %d %%" % [int(speed * 3.6), int(throttle * 100)])
 	txt.call(Vector2(10, sz.y - 34), "VÝŠKA %d m   TRUP %d %%" % [int(jet.global_position.y), int(max(jet_hp, 0))], green if jet_hp > 40 else Color(1, 0.4, 0.3))
@@ -600,7 +783,11 @@ func _draw_hud() -> void:
 
 # ---- test ------------------------------------------------------------------------------------------
 func _process(_d: float) -> void:
-	if Game.autotest() != "air" and Game.autotest() != "campair":
+	if not Game.autotest() in ["air", "campair", "airhost", "airclient"]:
+		return
+	if down:
+		if outcome != "" and end_t > 2.0 and Game.autotest() != "campair":
+			get_tree().quit()
 		return
 	# a crude autopilot: steer at the UFO, cannon when lined up, missiles when locked
 	var to := ufo.global_position - jet.global_position
@@ -620,5 +807,6 @@ func _process(_d: float) -> void:
 		get_viewport().get_texture().get_image().save_png("user://40_air_%d.png" % int(t))
 	if outcome != "" and end_t > 1.0 and end_t < 1.05:
 		get_viewport().get_texture().get_image().save_png("user://41_air_end.png")
-	if Game.autotest() == "air" and ((outcome != "" and end_t > 2.0) or t > 100):
+	if Game.autotest() in ["air", "airhost", "airclient"] and ((outcome != "" and end_t > 2.0) or t > 100):
+		print("[AIR-%s] end outcome=%s ufo_hp=%.0f me_hp=%.0f others=%s" % [Game.autotest(), outcome, ufo_hp, jet_hp, others.keys()])
 		get_tree().quit()

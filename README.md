@@ -1,6 +1,6 @@
-# Enemy Beyond — prototyp 0.14
+# Enemy Beyond — prototyp 0.15
 
-**Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.14-windows.zip](hratelny-test/EnemyBeyond-0.14-windows.zip)
+**Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.15-windows.zip](hratelny-test/EnemyBeyond-0.15-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
 Windows může napoprvé ukázat varování SmartScreen (soubor není podepsaný): „Další informace“ → „Přesto spustit“.
 Co-op: jeden hráč dá „Hostovat hru“, ostatní „Připojit ke hře“ s jeho IP (UDP port 7777; přes internet Radmin VPN / ZeroTier).
@@ -39,6 +39,11 @@ minigun (musí se roztočit, velmi těžký), raketomet, bojový nůž (zezadu s
 zprava šikmo a zleva šikmo; omráčený vetřelec je zajat živý = víc zkušeností, později víc peněz), granát, kouřový granát
 (vetřelci přes kouř nevidí), nášlapná mina, světlice, lékárnička, detektor pohybu.
 Obouruční zbraně zaberou obě ruce. Přendávání věcí trvá podle váhy a místa (opasek rychle, batoh pomalu).
+
+## Novinky 0.15
+- Oprava ukončení mise (E u Kondoru), vysílačka na K, lepší mikrofon, kdo mluví v lobby.
+- Přehlednější výstroj s klávesami, palba do vlastních, obtížnost snadná / normální / hardcore.
+- Co-op stíhačky (každý hráč svůj Sokol, pokud jich základna má dost).
 
 ## Novinky 0.14
 - Stíhačky arkádově (A/D ostrý úhyb), přesnější UFO, které uhýbá raketám.

@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.14 prototyp"
-const VERSION_NUM := "0.14"
+const VERSION := "0.15 prototyp"
+const VERSION_NUM := "0.15"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -149,7 +149,7 @@ func _setup_input() -> void:
 		"grenade": [KEY_G], "flare": [KEY_T], "swap": [KEY_Q], "inventory": [KEY_I, KEY_TAB],
 		"pause": [KEY_ESCAPE], "prone": [KEY_Z, KEY_Y], "melee": [KEY_V], "smoke": [KEY_X], "mine": [KEY_B],
 		"belt1": [KEY_1], "belt2": [KEY_2], "belt3": [KEY_3], "belt4": [KEY_4],
-		"talk": [KEY_CAPSLOCK, KEY_N],
+		"talk": [KEY_CAPSLOCK, KEY_N], "radio_talk": [KEY_K],
 	}
 	for action in keys:
 		if not InputMap.has_action(action):
@@ -392,6 +392,14 @@ const HEAL_MINUTES_PER_HP := 10.0   # veteran: wounds heal in real time, like X-
 func veteran() -> bool:
 	return Net.mission_difficulty == "veteran"
 
+## Easy: weaker, slower, less accurate aliens and one fewer of them; your wounds hurt less.
+func easy() -> bool:
+	return Net.mission_difficulty == "easy"
+
+const DIFF_NAMES := {"easy": "snadná", "normal": "normální", "veteran": "HARDCORE (veterán)"}
+func next_difficulty() -> void:
+	difficulty = {"easy": "normal", "normal": "veteran", "veteran": "easy"}[difficulty] if difficulty in ["easy", "normal", "veteran"] else "normal"
+
 func load_settings() -> void:
 	var cf := ConfigFile.new()
 	if cf.load("user://settings.cfg") == OK:
@@ -410,6 +418,7 @@ func load_settings() -> void:
 		mic_gate = cf.get_value("voice", "gate", 0.03)
 		mimic_ok = cf.get_value("voice", "mimic", true)
 		mic_gain = cf.get_value("voice", "gain", 1.0)
+		friendly_fire = cf.get_value("game", "friendly_fire", true)
 		music_volume = cf.get_value("game", "music_volume", 0.7)
 		tactical_music = cf.get_value("game", "tactical_music", false)
 		voice_volumes = cf.get_value("voice", "volumes", {})
@@ -432,6 +441,7 @@ func save_settings() -> void:
 	cf.set_value("voice", "gate", mic_gate)
 	cf.set_value("voice", "mimic", mimic_ok)
 	cf.set_value("voice", "gain", mic_gain)
+	cf.set_value("game", "friendly_fire", friendly_fire)
 	cf.set_value("game", "music_volume", music_volume)
 	cf.set_value("game", "tactical_music", tactical_music)
 	cf.set_value("voice", "volumes", voice_volumes)
@@ -536,6 +546,7 @@ var fullscreen := false
 var seen_version := ""     # the newest version whose "what's new" the player has seen
 var voice_mode := "ptt"    # "off", "ptt" (hold Caps Lock / N), "open" (voice activation)
 var mic_gate := 0.03       # voice activation threshold (open mic)
+var friendly_fire := true   # host's choice: bullets hit teammates too
 var mic_gain := 1.0        # own microphone loudness (x0.5 .. x4)
 var mic_level := 0.0       # live level for the meter (set by whoever reads the mic)
 var voice_volumes := {}    # teammate name -> 0..2 (how loud I hear them)

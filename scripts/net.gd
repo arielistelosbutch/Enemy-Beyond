@@ -76,6 +76,8 @@ func _on_peer_connected(_id: int) -> void:
 	pass
 
 func _on_peer_disconnected(id: int) -> void:
+	if multiplayer.is_server() and roster.has(id):
+		_note.rpc("%s odešel ze hry." % roster[id]["name"])
 	if roster.erase(id):
 		roster_changed.emit()
 		if multiplayer.is_server():
@@ -90,7 +92,10 @@ func _register(merc: Dictionary) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := multiplayer.get_remote_sender_id()
+	var fresh := not roster.has(id)
 	roster[id] = {"name": str(merc.get("name", "Žoldák")), "merc": merc}
+	if fresh:
+		_note.rpc("%s se připojil ke hře (%d/%d)." % [roster[id]["name"], roster.size(), MAX_PLAYERS])
 	wallets[id] = int(merc.get("money", 0))
 	_set_roster.rpc(roster)
 	roster_changed.emit()
@@ -111,15 +116,27 @@ func start_mission(params := {}) -> void:
 	var s := Game.seed_override if Game.seed_override >= 0 else randi() % 1000000
 	if params.has("seed") and Game.seed_override < 0:
 		s = int(params["seed"])
-	_start.rpc(s, Game.difficulty, params)
+	_start.rpc(s, Game.difficulty, params, Game.friendly_fire)
 
+var friendly_fire := true
 @rpc("authority", "call_local", "reliable")
-func _start(s: int, diff := "normal", params := {}) -> void:
+func _start(s: int, diff := "normal", params := {}, ff := true) -> void:
+	friendly_fire = ff
 	mission_seed = s
 	mission_difficulty = diff
 	mission_params = params
 	mission_started.emit()
 	get_tree().change_scene_to_file("res://scenes/Mission.tscn")
+
+## Host: everybody into the air fight (pilots fly, the rest watch from the host's wing).
+func start_intercept(params: Dictionary) -> void:
+	if multiplayer.is_server():
+		_start_intercept.rpc(params)
+
+@rpc("authority", "call_local", "reliable")
+func _start_intercept(params: Dictionary) -> void:
+	mission_params = params
+	get_tree().change_scene_to_file("res://scenes/Intercept.tscn")
 
 func back_to_menu() -> void:
 	get_tree().change_scene_to_file("res://scenes/Main.tscn")

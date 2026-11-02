@@ -719,11 +719,17 @@ func _physics_process(delta: float) -> void:
 	gear = _gear_mask()
 	_viewmodel_motion(delta, Vector2(velocity.x, velocity.z).length())
 	# evac: hold E for two seconds (no accidental take-offs)
-	if global_position.distance_to(mission.map["evac"]) < 3.5 and Input.is_action_pressed("use") and not inv_open:
+	# once you have held E for 2 s you stay "on board" until you step out (others can take their time)
+	var at_ship: bool = global_position.distance_to(mission.map["evac"]) < 3.5
+	if at_ship and Input.is_action_pressed("use") and not inv_open:
 		evac_hold += delta
-	else:
+	elif not wants_evac:
 		evac_hold = 0.0
-	wants_evac = evac_hold >= 2.0
+	if not at_ship:
+		evac_hold = 0.0
+		wants_evac = false
+	elif evac_hold >= 2.0:
+		wants_evac = true
 
 ## Laser sight: a red dot where the gun points (only while the gun is up, not sprinting).
 var _dot: MeshInstance3D
@@ -925,8 +931,8 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 		var r1 := sqrt(randf()) * cone
 		var dir := aim_dir.rotated(basis_.x, sin(a1) * r1).rotated(basis_.y, cos(a1) * r1).normalized() if pellets > 1 \
 			else aim_dir.rotated(basis_.x, randf_range(-spread, spread)).rotated(basis_.y, randf_range(-spread, spread)).normalized()
-		# veteran: friendly fire - your bullets do not know who is who
-		var q := PhysicsRayQueryParameters3D.create(from, from + dir * 120.0, (1 | 4 | 2 | 8) if Game.veteran() else (1 | 4))
+		# friendly fire (host's setting): your bullets do not know who is who
+		var q := PhysicsRayQueryParameters3D.create(from, from + dir * 120.0, (1 | 4 | 2 | 8) if (Net.friendly_fire or Game.veteran()) else (1 | 4))
 		q.exclude = [get_rid()]
 		var hit := get_world_3d().direct_space_state.intersect_ray(q)
 		var to := from + dir * 120.0
@@ -939,6 +945,8 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 				_hit_alien.rpc_id(1, c.name, dmg, "plasma" if wp["id"] == "plasma_rifle" else ("laser" if Game.ITEMS[wp["id"]].get("laser", false) else "bullet"))
 			elif c and c.has_method("is_player") and not c.dead:
 				c.hurt.rpc_id(c.get_multiplayer_authority(), rule["damage"] * randf_range(0.5, 1.0), global_position)
+				c.shot_by.rpc_id(c.get_multiplayer_authority(), display_name)
+				mission.hud.message("Zasáhl jsi spoluhráče %s!" % c.display_name, 2.0)
 			elif c and c.has_method("is_civilian") and not c.dead:
 				mission.shoot_civ.rpc_id(1, c.name)
 			if rule.has("splash"):
@@ -1246,9 +1254,15 @@ func _explosion_fx(p: Vector3) -> void:
 
 # ---- wounds ---------------------------------------------------------------------------------
 @rpc("any_peer", "call_local", "reliable")
+func shot_by(who: String) -> void:
+	mission.hud.message("Trefil tě %s!" % who, 2.5)
+
+@rpc("any_peer", "call_local", "reliable")
 func hurt(dmg: float, from: Vector3) -> void:
 	if not is_multiplayer_authority() or dead:
 		return
+	if Game.easy():
+		dmg *= 0.7
 	if downed:
 		bleed_left -= dmg * 0.5
 		return
@@ -1425,7 +1439,10 @@ func radio_tx() -> bool:
 		return false
 	if Game.has_research("vysilacky"):
 		return true
-	return item_in("rh").get("id", "") == "radio" or item_in("lh").get("id", "") == "radio"
+	for s in ["rh", "lh", "b0", "b1", "b2", "b3"]:
+		if item_in(s).get("id", "") == "radio":
+			return true      # in a hand or clipped on the belt; from the backpack it cannot be reached
+	return false
 
 ## E next to a frightened civilian: "come with me" - he follows you to the Kondor.
 func _use_civilian() -> bool:

@@ -47,6 +47,13 @@ func _ready() -> void:
 	_build_globe()
 	_build_side()
 	Game.play_music("game_over" if Campaign.data.get("lost", false) else "geoscape")
+	_toast = Label.new()
+	_toast.position = Vector2(8, 334)
+	_toast.size = Vector2(415, 16)
+	_toast.add_theme_font_size_override("font_size", 9)
+	_toast.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	add_child(_toast)
+	Net.note.connect(_on_note)
 	Campaign.mission_found.connect(func(m): _alert("RADAR: %s\n%s\n%s" % [Campaign.MTYPES[m["type"]]["name"], m["place"], Campaign.MTYPES[m["type"]]["text"]]); selected = int(m["id"]); _focus(m))
 	Campaign.flight_found.connect(func(f): _alert("RADAR: UFO V LETU\n%s nad oblastí %s.\nVyber ho na glóbu a vyšli stíhačku Sokol, než zmizí." % [Campaign.UFO_NAMES[f["kind"]], Campaign.nearest_place(float(f["lat"]), float(f["lon"]))]); selected = int(f["id"]); _focus(f))
 	Campaign.research_done.connect(func(id): _alert("VÝZKUM DOKONČEN\n%s\n%s" % [Campaign.RESEARCH[id]["name"], Campaign.RESEARCH[id]["desc"]]))
@@ -156,8 +163,17 @@ func _focus(m: Dictionary) -> void:
 	yaw = -deg_to_rad(float(m["lon"]))
 	tilt = deg_to_rad(clamp(float(m["lat"]), -60, 60))
 
+func _on_note(t: String) -> void:
+	_toast.text = t
+	_toast_t = 6.0
+
+var _toast: Label
+var _toast_t := 0.0
 func _process(delta: float) -> void:
 	t += delta
+	_toast_t -= delta
+	if _toast and _toast_t <= 0:
+		_toast.text = ""
 	# render the globe at the real window resolution (sharp), not at the 640x360 layout size
 	var sc := get_viewport().get_final_transform().get_scale()
 	var want := Vector2i(maxi(64, int(view.size.x * sc.x)), maxi(64, int(view.size.y * sc.y)))
@@ -345,9 +361,10 @@ func _build_side() -> void:
 		var k := i
 		_btn(row, SPEED_NAMES[i], func(): speed = k, 8).custom_minimum_size = Vector2(44, 14)
 	info_lbl = _lbl(side, "", TEXT, 8)
-	info_lbl.custom_minimum_size = Vector2(196, 130)
+	info_lbl.custom_minimum_size = Vector2(196, 112)
 	var entries := [["Základna", _show_base], ["Výzkum", _show_research], ["Zbrojnice", _show_armory],
 			["Výstroj", func(): _menu_screen("loadout")], ["Žoldák", func(): _menu_screen("merc")],
+			["Úpravy zbraní", func(): _menu_screen("mods")],
 			["Hlášení", _show_log], ["Archiv vetřelců", _show_archive]]
 	if Campaign.viewer:
 		# a co-op client: the host's globe, read-only; buying with own money
@@ -355,7 +372,9 @@ func _build_side() -> void:
 		entries += [["Peníze v týmu", func(): _menu_screen("money")], ["Zpět do lobby", func(): get_tree().change_scene_to_file("res://scenes/Main.tscn")]]
 	else:
 		_btn(side, "VYSLAT (tým / stíhačku)", _launch, 10)
-		entries += [["Hostovat co-op", _host], ["Peníze v týmu", func(): _menu_screen("money")], ["Uložit a menu", _quit]]
+		entries += [["Co-op / peníze týmu", func():
+			if Net.is_online(): _menu_screen("money")
+			else: _host()], ["Uložit a menu", _quit]]
 	var grid := GridContainer.new()
 	grid.columns = 2
 	side.add_child(grid)
@@ -378,7 +397,7 @@ func _update_text() -> void:
 		var left2: float = (float(fl["until"]) - float(d["day"])) * 24.0
 		info_lbl.text = "UFO V LETU\n%s\nNad oblastí: %s\nZmizí z radaru asi za %d min\n\nSokol: %s\n\nPoškozené UFO spadne (mise s posádkou a kořistí). Rozstřílené na kusy nedá nic. Velká UFO střílí zpět." % [
 			Campaign.UFO_NAMES[fl["kind"]], Campaign.nearest_place(float(fl["lat"]), float(fl["lon"])), int(left2 * 60),
-			"připraven" if Campaign.sokol_ready() else "v opravě"]
+			"připraveno %d z %d" % [Campaign.jets_ready(), Campaign.jets()]]
 		return
 	var m := _selected_mission()
 	if m.is_empty():
@@ -414,8 +433,18 @@ func _launch() -> void:
 			_alert("Sokol je v opravě\nStíhačka zatím nemůže vzlétnout.")
 			return
 		Campaign.save()
-		Net.mission_params = Campaign.intercept_params(fl)
-		get_tree().change_scene_to_file("res://scenes/Intercept.tscn")
+		var ip := Campaign.intercept_params(fl)
+		if Net.is_online():
+			# co-op: one Sokol per player while there are jets ready (the host flies first)
+			var pilots := [1]
+			for id in Net.roster:
+				if id != 1 and pilots.size() < Campaign.jets_ready():
+					pilots.append(id)
+			ip["pilots"] = pilots
+			Net.start_intercept(ip)
+		else:
+			Net.mission_params = ip
+			get_tree().change_scene_to_file("res://scenes/Intercept.tscn")
 		return
 	var m := _selected_mission()
 	if m.is_empty():
@@ -563,7 +592,11 @@ func _show_armory() -> void:
 
 func _show_base() -> void:
 	var box := _overlay("ZÁKLADNA", 470)
-	_lbl(box, "Klikni na volné místo a postav zařízení. Kredity: %d" % int(Campaign.data["credits"]), FRAME, 8)
+	_lbl(box, "Klikni na volné místo a postav zařízení. Kredity: %d. Stíhačky Sokol: %d (připraveno %d)." % [int(Campaign.data["credits"]), Campaign.jets(), Campaign.jets_ready()], FRAME, 8)
+	if not Campaign.viewer and Campaign.jets() < Campaign.MAX_JETS:
+		_btn(box, "Koupit další stíhačku Sokol - %d kr (v co-op poletí víc hráčů)" % Campaign.JET_PRICE, func():
+			if Campaign.buy_jet(): _show_base()
+			else: _alert("Nelze koupit\nNedostatek kreditů."), 8)
 	var grid := GridContainer.new()
 	grid.columns = Campaign.GRID_W
 	grid.add_theme_constant_override("h_separation", 3)

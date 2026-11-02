@@ -41,6 +41,15 @@ func _process(delta: float) -> void:
 		out("client speaks")
 	match mode:
 		"solo", "campaign": _solo(p)
+		"evac":
+			if p and m().go and step == 0:
+				step = 1
+				p.global_position = m().map["evac"] + Vector3(0, 0.3, 0)
+				Input.action_press("use")
+				out("at the Kondor, holding E")
+			if step == 1 and m().finished:
+				out("RESULT evac finished ok")
+				get_tree().quit()
 		"shot": _shot(p)
 		"ai": _ai(p)
 		"arsenal": _arsenal(p)
@@ -72,7 +81,15 @@ func _process(delta: float) -> void:
 				out("picked up -> rh=%s pickups=%d" % [p.item_in("rh").get("id", "-"), m().pickups.size()])
 			if t > 33: get_tree().quit()
 		"host", "client":
-			if mode == "client":
+			if mode == "client" and p and m().go and step < 10 and t > 12.0:
+				step = 10
+				Input.action_press("radio_talk")
+				var smp := PackedFloat32Array()
+				for i in 24000:
+					smp.append(sin(i * 0.12) * 0.05 * (1.0 + sin(i * 0.001)))
+				m().voice.test_speak(smp)
+				out("client speaks on the radio (radio_tx %s)" % p.radio_tx())
+			if mode == "client" and step != 10:
 				_solo(p)
 			if t > 25.0:
 				out("RESULT players=%d aliens=%d" % [m().players().size(), m().aliens().size()])

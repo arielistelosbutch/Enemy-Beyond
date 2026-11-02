@@ -12,7 +12,7 @@ extends Node
 ##    voice may come over the radio.
 ## Audio goes over the network as 11 kHz mono mu-law (about 11 kB/s per talker).
 
-const RATE := 11025
+const RATE := 16000
 const CHUNK := 0.06              # seconds of audio per packet
 const MAX_SNIPPETS := 6
 
@@ -30,6 +30,7 @@ var _noise_t := 0.0
 var _rms := 0.0
 var _chan := {}                  # peer -> {near, radio, pb_near, pb_radio, last}
 var _test_feed := PackedFloat32Array()   # autotest: fake microphone input at RATE
+var speakers := {}               # name -> seconds since heard (for the HUD)
 
 # ---- host: mimicry -----------------------------------------------------------------------
 var snippets := {}               # peer -> Array[PackedByteArray]
@@ -43,12 +44,9 @@ func _ready() -> void:
 	mission = get_parent()
 	_buses()
 	mimic_t = randf_range(70.0, 110.0)
-	if Game.voice_mode != "off" and DisplayServer.get_name() != "headless" and Game.autotest() == "":
-		mic = AudioStreamPlayer.new()
-		mic.stream = AudioStreamMicrophone.new()
-		mic.bus = "Mic"
-		add_child(mic)
-		mic.play()
+	# the microphone itself belongs to Net/LobbyVoice (one reader for the whole game);
+	# here we only take what it heard
+	pass
 
 func _exit_tree() -> void:
 	# nothing anybody said survives the mission
@@ -62,7 +60,9 @@ func _buses() -> void:
 		var i := AudioServer.bus_count - 1
 		AudioServer.set_bus_name(i, "Mic")
 		AudioServer.set_bus_mute(i, true)
-		AudioServer.add_bus_effect(i, AudioEffectCapture.new())
+		var cap := AudioEffectCapture.new()
+		cap.buffer_length = 0.6
+		AudioServer.add_bus_effect(i, cap)
 	if AudioServer.get_bus_index("Radio") < 0:
 		AudioServer.add_bus()
 		var r := AudioServer.bus_count - 1
@@ -104,6 +104,10 @@ func _process(delta: float) -> void:
 		_dead_radio_tick()
 	for peer in _chan.keys():
 		_chan[peer]["last"] = float(_chan[peer]["last"]) + delta
+	for k in speakers.keys():
+		speakers[k] = float(speakers[k]) + delta
+		if speakers[k] > 0.4:
+			speakers.erase(k)
 
 ## Autotest: pretend somebody spoke into the microphone (mono floats at RATE).
 func test_speak(samples: PackedFloat32Array) -> void:
@@ -111,20 +115,9 @@ func test_speak(samples: PackedFloat32Array) -> void:
 
 func _capture(delta: float, me: Node) -> void:
 	var fresh := PackedFloat32Array()
-	if capture and mic and mic.playing:
-		var n := capture.get_frames_available()
-		if n > 0:
-			var buf := capture.get_buffer(n)
-			var ratio := AudioServer.get_mix_rate() / float(RATE)
-			for f in buf:
-				_rs_sum += (f.x + f.y) * 0.5 * Game.mic_gain
-				_rs_n += 1
-				_rs_pos += 1.0
-				if _rs_pos >= ratio:
-					_rs_pos -= ratio
-					fresh.append(_rs_sum / _rs_n)
-					_rs_sum = 0.0
-					_rs_n = 0
+	var lv: Node = Net.get_node_or_null("LobbyVoice")
+	if lv:
+		fresh = lv.take_for_mission()
 	if not _test_feed.is_empty():
 		var k := mini(_test_feed.size(), int(RATE * delta) + 1)
 		fresh.append_array(_test_feed.slice(0, k))
@@ -139,7 +132,7 @@ func _capture(delta: float, me: Node) -> void:
 	var alive: bool = me != null and not me.dead
 	var want := false
 	if alive and Game.voice_mode != "off":
-		var ptt: bool = Input.is_action_pressed("talk") or me.radio_button
+		var ptt: bool = Input.is_action_pressed("talk") or Input.is_action_pressed("radio_talk") or me.radio_button
 		if Game.voice_mode == "ptt":
 			want = ptt
 		else:
@@ -150,7 +143,8 @@ func _capture(delta: float, me: Node) -> void:
 	if not _test_feed.is_empty() or (fresh.size() > 0 and Game.autotest() == "voice"):
 		want = alive
 	talking = want
-	on_radio = want and alive and me.radio_tx() and (me.radio_button or Input.is_action_pressed("talk") or Game.voice_mode == "open" or Game.autotest() == "voice")
+	# the radio: hold K (or the hand button with the radio in it); a radio on the belt is enough
+	on_radio = want and alive and me.radio_tx() and (me.radio_button or Input.is_action_pressed("radio_talk") or Game.autotest() == "voice")
 	if not want:
 		_acc.clear()
 		return
@@ -215,26 +209,48 @@ func _play(peer: int, bytes: PackedByteArray, radio: bool) -> void:
 	frames.resize(smp.size())
 	for i in smp.size():
 		frames[i] = Vector2(smp[i], smp[i])
+	var fresh_start := float(ch["last"]) > 0.25
 	var pn: AudioStreamGeneratorPlayback = ch["pb_near"]
+	if pn and fresh_start:
+		# a new sentence: a little cushion so late packets do not crackle
+		var pad := PackedVector2Array()
+		pad.resize(int(RATE * 0.1))
+		if pn.can_push_buffer(pad.size()):
+			pn.push_buffer(pad)
 	if pn and pn.can_push_buffer(frames.size()):
 		pn.push_buffer(frames)
+	speakers[p.display_name] = 0.0
 	var me: Node = mission.local_player()
+	if Game.autotest() != "" and randf() < 0.05:
+		print("[VOICE-RX] from %s radio=%s me_has_radio=%s rms=%.3f" % [p.display_name, radio, me.has_radio() if me else false, _rms_of(smp)])
 	if radio and me and me != p and me.has_radio():
 		var bad := _interference(p, me)
 		var rf := PackedVector2Array()
 		rf.resize(smp.size())
-		var drop := randf() < bad * 0.5
+		# the voice stays clear; aliens close by add hiss and, when very close, short dropouts
+		var drop := bad > 0.6 and randf() < (bad - 0.6)
 		for i in smp.size():
-			var v := 0.0 if drop else smp[i]
-			v += randf_range(-1.0, 1.0) * (0.03 + bad * 0.25)
+			var v := 0.0 if drop else smp[i] * 1.4
+			v += randf_range(-1.0, 1.0) * (0.004 + bad * 0.05)
 			rf[i] = Vector2(v, v)
 		if float(ch["last"]) > 0.4:
 			Game.play_ui(mission, "radio", -16)
 			mission.hud.radio_from(p.display_name)
 		var pr: AudioStreamGeneratorPlayback = ch["pb_radio"]
+		if pr and fresh_start:
+			var pad2 := PackedVector2Array()
+			pad2.resize(int(RATE * 0.1))
+			if pr.can_push_buffer(pad2.size()):
+				pr.push_buffer(pad2)
 		if pr and pr.can_push_buffer(rf.size()):
 			pr.push_buffer(rf)
 	ch["last"] = 0.0
+
+static func _rms_of(smp: PackedFloat32Array) -> float:
+	var e := 0.0
+	for v in smp:
+		e += v * v
+	return sqrt(e / maxf(1.0, smp.size()))
 
 ## 0..1: how badly the aliens' presence garbles the radio between these two.
 func _interference(a: Node, b: Node) -> float:

@@ -1,4 +1,15 @@
 {
+ "0.15": [
+  "OPRAVA: mise šla zase ukončit - drž E u Kondoru 2 s, pak můžeš pustit a čekat na ostatní.",
+  "Vysílačka: drž K (stačí mít vysílačku na opasku). Hlas je čistý, šum jen když jsou vetřelci blízko.",
+  "Mikrofon: jeden pro celou hru, automatická hlasitost, kvalitnější zvuk (16 kHz), méně praskání.",
+  "V lobby je vidět, kdo mluví, a ukazatel tvého mikrofonu. Hlášení, když se někdo připojí nebo odejde.",
+  "Přehlednější výstroj (I / Tab): u každého místa klávesa, vpravo seznam všech kláves. Dole na obrazovce opasek 1-4.",
+  "Palba do vlastních (zapíná hostitel v lobby nebo v Nastavení).",
+  "Obtížnost: snadná / normální / hardcore (veterán).",
+  "Stíhačky v co-op: každý hráč vlastní Sokol, pokud jich je na základně dost (Základna -> koupit další).",
+  "Úpravy zbraní jsou i v lobby, ve výstroji a na glóbu."
+ ],
  "0.14": [
   "Stíhačky arkádově: A/D = ostrý úhyb s převalem, UFO střílí přesně a uhýbá raketám.",
   "Lobby: posílání peněz mezi hráči, nákup do základny hostitele, náhled glóbu a základny, talenty, výstroj.",

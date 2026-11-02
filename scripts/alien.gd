@@ -105,7 +105,7 @@ func setup(data: Dictionary) -> void:
 	position = data["pos"]
 	race = data.get("race", "grey")
 	R = RACES.get(race, RACES["grey"])
-	hp = float(R["hp"]) * (1.25 if Game.veteran() else 1.0)
+	hp = float(R["hp"]) * (1.25 if Game.veteran() else (0.75 if Game.easy() else 1.0))
 	walk_spd = float(R["walk"])
 	run_spd = float(R["run"])
 	rng.seed = int(data["id"]) * 7919 + 13
@@ -468,7 +468,7 @@ func _enter_combat(seen: Node) -> void:
 		state = S.COMBAT
 		phase = "shoot" if seen else "hide"
 		shots_left = rng.randi_range(R["shots"][0], R["shots"][1]) if R.has("shots") else 1
-		react = rng.randf_range(0.9, 1.6) * (0.65 if Game.veteran() else 1.0) * (0.7 if _rally_t > 0 else 1.0)   # the moment of surprise
+		react = rng.randf_range(0.9, 1.6) * (0.65 if Game.veteran() else (1.4 if Game.easy() else 1.0)) * (0.7 if _rally_t > 0 else 1.0)   # the moment of surprise
 		hide_t = rng.randf_range(2.0, 4.0)
 	alert = true
 	lurking = false
@@ -800,6 +800,7 @@ func _fire(p: Node) -> void:
 	var tgt: Vector3 = p.global_position + Vector3(0, 0.8 if p.crouching else 1.2, 0)
 	var miss := (0.8 + global_position.distance_to(tgt) * 0.055) * float(R.get("miss", 1.0))
 	if Game.veteran(): miss *= 0.8
+	elif Game.easy(): miss *= 1.4
 	if _rally_t > 0: miss *= 0.75
 	if p.crouching: miss *= 1.3
 	if Vector2(p.velocity.x, p.velocity.z).length() > 2.0: miss *= 1.5
