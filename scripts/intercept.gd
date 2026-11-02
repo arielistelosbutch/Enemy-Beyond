@@ -10,7 +10,7 @@ extends Node3D
 ## Below half structure it tries to flee; far enough away = escaped.
 
 const UFO_KINDS := {
-	"scout": {"name": "Průzkumník (malé UFO)", "hp": 70.0, "speed": 62.0, "turn": 1.6, "guns": 0, "aliens": 0, "armor": 1.0, "scale": 2.2},
+	"scout": {"name": "Průzkumník (malé UFO)", "hp": 70.0, "speed": 62.0, "turn": 1.6, "guns": 1, "aliens": 0, "armor": 1.0, "scale": 2.2},
 	"raider": {"name": "Nájezdník (střední UFO)", "hp": 170.0, "speed": 52.0, "turn": 1.0, "guns": 1, "aliens": 1, "armor": 0.6, "scale": 2.0},
 	"harvester": {"name": "Sklízeč (velké UFO)", "hp": 360.0, "speed": 42.0, "turn": 0.6, "guns": 3, "aliens": 3, "armor": 0.35, "scale": 1.8},
 }
@@ -35,6 +35,13 @@ var missiles := 4
 var cannon_cd := 0.0
 var missile_cd := 0.0
 var lock := 0.0
+# arcade dodge: tap A/D = sharp break to the side (sideslip + snap roll)
+var slide := Vector3.ZERO
+var break_cd := 0.0
+var snap_roll := 0.0
+# ufo dodge
+var ufo_jink := Vector3.ZERO
+var ufo_jink_cd := 1.5
 var _mouse := Vector2.ZERO
 var aim := Vector2.ZERO        # virtual stick, -1..1
 
@@ -58,6 +65,7 @@ var tracers := []
 var rockets := []
 
 func _ready() -> void:
+	Game.play_music("interception")
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	params = Net.mission_params
 	kind = params.get("ufo", "raider")
@@ -221,16 +229,35 @@ func _fly(delta: float) -> void:
 	var target_speed := 50.0 + throttle * 60.0 + (40.0 if boost else 0.0)
 	speed = lerp(speed, target_speed, delta * 0.8)
 	var roll_in := Input.get_axis("move_left", "move_right")
-	# pitch/yaw from the stick, roll from A/D and from turning
-	jet.rotate_object_local(Vector3.RIGHT, aim.y * 1.4 * delta)
-	jet.rotate_object_local(Vector3.UP, -aim.x * 0.9 * delta)
-	jet.rotate_object_local(Vector3.FORWARD, (roll_in * 2.2 + aim.x * 1.2) * delta)
+	# A/D tap: hard break - throw the jet sideways and snap-roll (cooldown 1 s)
+	break_cd -= delta
+	var side := 0.0
+	if Input.is_action_just_pressed("move_left"): side = -1.0
+	if Input.is_action_just_pressed("move_right"): side = 1.0
+	if side != 0.0:
+		_break(side)
+	slide = slide.lerp(Vector3.ZERO, clamp(delta * 2.2, 0, 1))
+	var sr: float = clamp(snap_roll, -delta * 9.0, delta * 9.0)
+	snap_roll -= sr
+	# pitch/yaw from the stick; held A/D = hard bank turn (arcade, much sharper than before)
+	jet.rotate_object_local(Vector3.RIGHT, aim.y * 1.8 * delta)
+	jet.rotate_object_local(Vector3.UP, (-aim.x * 1.2 - roll_in * 0.9) * delta)
+	jet.rotate_object_local(Vector3.FORWARD, (roll_in * 1.6 + aim.x * 1.2) * delta + sr)
 	# auto-level so it stays flyable with a mouse (also out of inverted flight)
 	var bx := jet.global_transform.basis
 	var roll := atan2(bx.x.y, bx.y.y)
-	jet.rotate_object_local(Vector3.FORWARD, roll * delta * 1.2 * (1.0 - abs(roll_in)))
-	jet.global_position += -jet.global_transform.basis.z * speed * delta
+	if absf(snap_roll) < 0.05:
+		jet.rotate_object_local(Vector3.FORWARD, roll * delta * 1.2 * (1.0 - abs(roll_in) * 0.7))
+	jet.global_position += (-jet.global_transform.basis.z * speed + slide) * delta
 	jet.global_position.y = clamp(jet.global_position.y, 620.0, 1800.0)
+
+func _break(side: float) -> void:
+	if break_cd > 0.0:
+		return
+	break_cd = 1.0
+	slide += jet.global_transform.basis.x * side * 70.0
+	snap_roll = -side * TAU * 0.5
+	Game.play_ui(self, "lunge", -8)
 
 func _camera(delta: float) -> void:
 	var b := jet.global_transform.basis
@@ -316,7 +343,8 @@ func _projectiles(delta: float) -> void:
 		var n: Node3D = rk["node"]
 		var to: Vector3 = (ufo.global_position - n.global_position)
 		var v: Vector3 = rk["vel"]
-		v = v.lerp(to.normalized() * 260.0, clamp(delta * 2.5, 0, 1))
+		if not rk.get("lost", false):
+			v = v.lerp(to.normalized() * 260.0, clamp(delta * 2.5, 0, 1))
 		rk["vel"] = v
 		var nxt: Vector3 = n.global_position + v * delta
 		n.look_at(nxt + v, Vector3.UP)
@@ -399,7 +427,26 @@ func _ufo_ai(delta: float) -> void:
 	want = want.rotated(Vector3.UP, sin(weave * 1.3) * 0.6 * k["turn"])
 	ufo_dir = ufo_dir.slerp(want.normalized(), clamp(delta * k["turn"], 0, 1)).normalized()
 	var spd: float = k["speed"] * (1.35 if fleeing else 1.0) * (0.6 + 0.4 * clamp(ufo_hp / ufo_max, 0, 1) if not fleeing else 1.0)
-	ufo_vel = ufo_dir * spd + Vector3(0, sin(weave * 2.1) * 6.0, 0)
+	# dodging: jinks sideways when a missile comes or when the jet sits on its tail and aims at it
+	ufo_jink_cd -= delta
+	var threat := false
+	for rk in rockets:
+		if (rk["node"] as Node3D).global_position.distance_to(ufo.global_position) < 160.0:
+			threat = true
+	var to_ufo := (ufo.global_position - jet.global_position)
+	var aimed := (-jet.global_transform.basis.z).dot(to_ufo.normalized()) > 0.985 and to_ufo.length() < 500.0
+	if ufo_jink_cd <= 0.0 and (threat or (aimed and randf() < delta * 3.0)):
+		ufo_jink_cd = randf_range(0.9, 2.0) * (1.6 if kind == "harvester" else 1.0)
+		var perp := ufo_dir.cross(Vector3.UP).normalized() * (1.0 if randf() < 0.5 else -1.0)
+		ufo_jink = (perp + Vector3(0, randf_range(-0.5, 0.5), 0)).normalized() * spd * (1.6 if kind == "scout" else 1.1)
+		# a sharp jink can shake off a missile (small, nimble UFOs much more often)
+		var shake: float = {"scout": 0.6, "raider": 0.35, "harvester": 0.15}[kind]
+		for rk in rockets:
+			if not rk.get("lost", false) and (rk["node"] as Node3D).global_position.distance_to(ufo.global_position) < 160.0 and randf() < shake:
+				rk["lost"] = true
+				_say("UFO uhnulo střele!", 1.5)
+	ufo_jink = ufo_jink.lerp(Vector3.ZERO, clamp(delta * 1.8, 0, 1))
+	ufo_vel = ufo_dir * spd + ufo_jink + Vector3(0, sin(weave * 2.1) * 6.0, 0)
 	ufo.global_position += ufo_vel * delta
 	ufo.global_position.y = clamp(ufo.global_position.y, 700, 1300)
 	ufo.rotate_y(delta * (2.0 if kind == "scout" else 0.6))
@@ -410,10 +457,12 @@ func _ufo_ai(delta: float) -> void:
 		ufo_fire_cd -= delta
 		var d := jet.global_position.distance_to(ufo.global_position)
 		if ufo_fire_cd <= 0 and d < 700:
-			ufo_fire_cd = randf_range(1.6, 2.6) / float(k["guns"])
-			var lead := jet.global_position + (-jet.global_transform.basis.z * speed) * (d / 300.0)
+			ufo_fire_cd = randf_range(1.4, 2.2) / sqrt(float(k["guns"])) * (1.6 if kind == "scout" else 1.0)
+			# precise lead on the jet's real motion - a break with A/D is how you make it miss
+			var jv := -jet.global_transform.basis.z * speed + slide
+			var lead := jet.global_position + jv * (d / 300.0)
 			var dir := (lead - ufo.global_position).normalized()
-			dir = (dir + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.06).normalized()
+			dir = (dir + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.012).normalized()
 			_bolt(ufo.global_position + dir * (_ufo_radius() + 2), dir)
 
 func _bolt(from: Vector3, dir: Vector3) -> void:
@@ -544,7 +593,7 @@ func _draw_hud() -> void:
 	c.draw_rect(Rect2(sz.x - 210, 24, 200, 6), Color(0, 0, 0, 0.5))
 	c.draw_rect(Rect2(sz.x - 210, 24, 200 * clamp(ufo_hp / ufo_max, 0, 1), 6), Color(1, 0.4, 0.3))
 	c.draw_line(Vector2(sz.x - 210, 22), Vector2(sz.x - 210, 32), Color(1, 1, 1, 0.5))
-	txt.call(Vector2(sz.x - 210, 44), "Myš řídí, A/D náklon, W/S plyn, Shift forsáž", Color(0.7, 0.8, 0.9), 7)
+	txt.call(Vector2(sz.x - 210, 44), "Myš řídí, A/D ostrý úhyb, W/S plyn, Shift forsáž", Color(0.7, 0.8, 0.9), 7)
 	txt.call(Vector2(sz.x - 210, 54), "L: kanón   P: raketa (po zaměření)", Color(0.7, 0.8, 0.9), 7)
 	if msg_t > 0:
 		txt.call(Vector2(mid.x - 220, 70), msg, Color(1, 0.85, 0.4), 10)
@@ -563,6 +612,10 @@ func _process(_d: float) -> void:
 	else: Input.action_release("fire")
 	if lock >= 1.0 and missiles > 2: Input.action_press("aim")
 	else: Input.action_release("aim")
+	for bo in bolts:
+		if (bo["node"] as Node3D).global_position.distance_to(jet.global_position) < 140.0 and break_cd <= 0.0:
+			_break(-1.0 if randf() < 0.5 else 1.0)
+			print("[AIR] uhyb t=%.1f hp=%d" % [t, jet_hp])
 	if int(t * 10) == 80 or int(t * 10) == 200:
 		get_viewport().get_texture().get_image().save_png("user://40_air_%d.png" % int(t))
 	if outcome != "" and end_t > 1.0 and end_t < 1.05:

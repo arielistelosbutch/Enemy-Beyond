@@ -145,31 +145,68 @@ func briefing(text: String) -> void:
 	_brief_bg.add_child(hint)
 	_brief_len = text.length()
 	_brief_t = 0.0
+	Game.play_music("terror_briefing" if Net.mission_params.get("type", "") == "terror" else "briefing", false)
 	inventory_open = true     # blocks the mercenary while the screen is black
+
+var _ready_lbl: Label
+var _ready_sent := false
+var _brief_fade := -1.0
 
 func _brief_tick(delta: float) -> void:
 	if _brief_t < 0:
 		return
 	_brief_t += delta
 	var typed := int(_brief_t * 40.0)
-	var hold := float(_brief_len) / 40.0 + 2.5
-	if (Input.is_action_just_pressed("jump") or Input.is_action_just_pressed("fire") or Input.is_key_pressed(KEY_ENTER)) and _brief_t < hold:
+	var hold := float(_brief_len) / 40.0 + 1.0
+	var key := Input.is_action_just_pressed("jump") or Input.is_action_just_pressed("fire") or Input.is_key_pressed(KEY_ENTER)
+	if key and _brief_t < hold:
 		_brief_t = hold
+		key = false
 	if typed <= _brief_len and _brief_lbl.visible_characters != typed:
 		_brief_lbl.visible_characters = typed
 		if typed % 3 == 0 and _brief_lbl.text.substr(typed - 1, 1) != " ":
 			Game.play_ui(mission(), "step", -30)
-	if _brief_t > hold:
-		var a := 1.0 - (_brief_t - hold) / 2.5
+	# everyone confirms they are ready; the night starts for all at once
+	if _brief_t >= hold and _brief_fade < 0:
+		_brief_lbl.visible_characters = -1
+		if _ready_lbl == null:
+			_ready_lbl = Label.new()
+			_ready_lbl.position = Vector2(60, 300)
+			_ready_lbl.size = Vector2(520, 30)
+			_ready_lbl.add_theme_font_size_override("font_size", 11)
+			_ready_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+			_brief_bg.add_child(_ready_lbl)
+			_ready_lbl.text = "Připraven? Mezerník / Enter / klik"
+		if (key or Game.autotest() != "") and not _ready_sent:
+			_ready_sent = true
+			_ready_lbl.text = "Připraven. Čekám na ostatní..."
+			mission().i_am_ready()
+	if _brief_fade >= 0:
+		_brief_fade += delta
+		var a := 1.0 - _brief_fade / 2.5
 		_brief_bg.color.a = a
 		_brief_lbl.modulate.a = a
+		if _ready_lbl:
+			_ready_lbl.modulate.a = a
 		if a <= 0:
 			_brief_bg.queue_free()
 			_brief_t = -1.0
 		if a < 0.6 and not paused and inv_panel and not inv_panel.visible:
 			inventory_open = false
 
+## Host's count of ready players (shown on the briefing screen).
+func ready_count(n: int, total: int) -> void:
+	if _ready_lbl and is_instance_valid(_ready_lbl) and total > 1:
+		_ready_lbl.text = ("Připraven. " if _ready_sent else "Připraven? Mezerník / Enter / klik   ") + "Připraveno %d/%d" % [n, total]
+
+## Everyone is ready: fade into the night.
+func brief_go() -> void:
+	if _brief_t >= 0 and _brief_fade < 0:
+		_brief_fade = 0.0
+	Game.play_music("tactical" if Game.tactical_music else "")
+
 func show_result(title: String, text: String) -> void:
+	Game.play_music("debriefing", false)
 	_close_inventory()
 	pause_panel.visible = false
 	result_panel = _panel(title, Vector2(110, 12), Vector2(420, 0))
@@ -245,13 +282,29 @@ func _draw_hud() -> void:
 			c.draw_rect(Rect2(mid.x - 60, mid.y + 16, 120 * (1.0 - p.healed_t / maxf(p.healed_total, 0.1)), 5), Color(0.4, 1.0, 0.4))
 	elif not inventory_open and not paused and (p.aiming or p.bracing or hit_t > 0 or (not Game.two_handed(p.item_in("rh").get("id", "")) and not p.weapon().is_empty() and not p.sprinting)):
 		# crosshair only when aiming down the sights: gap grows with the spread
-		var gap: float = 3.0 + p.current_spread() * 4.0
-		var col := Color(1, 1, 1, 0.8) if hit_t <= 0 else Color(1, 0.3, 0.2)
-		for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
-			c.draw_line(mid + d * gap, mid + d * (gap + 5), col, 1.0)
-		if hit_t > 0:
-			for d in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
-				c.draw_line(mid + d * 4, mid + d * 8, Color(1, 0.3, 0.2), 1.0)
+		if p.scoped():
+			# rifle scope: round view, black around, thin cross with mil dots, breathing sway shows
+			var r := sz.y * 0.46
+			c.draw_arc(mid, r + 400.0, 0, TAU, 72, Color(0, 0, 0), 800.0)
+			c.draw_arc(mid, r, 0, TAU, 72, Color(0.05, 0.05, 0.05), 6.0)
+			var cc := Color(0.02, 0.02, 0.02, 0.9)
+			c.draw_line(mid - Vector2(r, 0), mid - Vector2(6, 0), cc, 1.5)
+			c.draw_line(mid + Vector2(6, 0), mid + Vector2(r, 0), cc, 1.5)
+			c.draw_line(mid - Vector2(0, r), mid - Vector2(0, 6), cc, 1.5)
+			c.draw_line(mid + Vector2(0, 6), mid + Vector2(0, r), cc, 1.5)
+			for i in range(1, 5):
+				c.draw_circle(mid + Vector2(0, i * 14), 1.2, cc)
+				c.draw_circle(mid + Vector2(i * 14, 0), 1.2, cc)
+				c.draw_circle(mid - Vector2(i * 14, 0), 1.2, cc)
+			c.draw_circle(mid, 1.0, Color(0.9, 0.15, 0.1))
+		else:
+			var gap: float = 3.0 + p.current_spread() * 4.0
+			var col := Color(1, 1, 1, 0.8) if hit_t <= 0 else Color(1, 0.3, 0.2)
+			for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+				c.draw_line(mid + d * gap, mid + d * (gap + 5), col, 1.0)
+			if hit_t > 0:
+				for d in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+					c.draw_line(mid + d * 4, mid + d * 8, Color(1, 0.3, 0.2), 1.0)
 	# bars, bottom left (veteran: no numbers - you feel it: blood, breath, limping)
 	var base := Vector2(10, sz.y - 34)
 	if Game.veteran():
@@ -712,6 +765,81 @@ static func settings_ui(box: Control) -> void:
 	mim.add_theme_font_size_override("font_size", 9)
 	mim.toggled.connect(func(on): Game.mimic_ok = on; Game.save_settings())
 	box.add_child(mim)
+	var ml := Label.new()
+	ml.add_theme_font_size_override("font_size", 9)
+	ml.text = "Hudba: %d %% (soubory ve složce hudba vedle hry)" % int(Game.music_volume * 100)
+	box.add_child(ml)
+	var ms := HSlider.new()
+	ms.min_value = 0.0
+	ms.max_value = 1.0
+	ms.step = 0.05
+	ms.value = Game.music_volume
+	ms.focus_mode = Control.FOCUS_NONE
+	ms.custom_minimum_size = Vector2(200, 12)
+	ms.value_changed.connect(func(v): Game.set_music_volume(v); ml.text = "Hudba: %d %% (soubory ve složce hudba vedle hry)" % int(v * 100); Game.save_settings())
+	box.add_child(ms)
+	var tm := CheckBox.new()
+	tm.text = "Hudba i během mise (jinak jen vítr a ticho)"
+	tm.button_pressed = Game.tactical_music
+	tm.focus_mode = Control.FOCUS_NONE
+	tm.add_theme_font_size_override("font_size", 9)
+	tm.toggled.connect(func(on): Game.tactical_music = on; Game.save_settings())
+	box.add_child(tm)
+	# own microphone: loudness, live level, test (you hear yourself half a second later)
+	var gl := Label.new()
+	gl.add_theme_font_size_override("font_size", 9)
+	gl.text = "Síla mého mikrofonu: x%.1f" % Game.mic_gain
+	box.add_child(gl)
+	var gs := HSlider.new()
+	gs.min_value = 0.5
+	gs.max_value = 4.0
+	gs.step = 0.1
+	gs.value = Game.mic_gain
+	gs.focus_mode = Control.FOCUS_NONE
+	gs.custom_minimum_size = Vector2(200, 12)
+	gs.value_changed.connect(func(v): Game.mic_gain = v; gl.text = "Síla mého mikrofonu: x%.1f" % v; Game.save_settings())
+	box.add_child(gs)
+	var meter := ProgressBar.new()
+	meter.show_percentage = false
+	meter.max_value = 1.0
+	meter.custom_minimum_size = Vector2(200, 6)
+	meter.add_theme_stylebox_override("fill", _meter_fill())
+	box.add_child(meter)
+	var tick := Timer.new()
+	tick.wait_time = 0.05
+	tick.autostart = true
+	tick.timeout.connect(func(): meter.value = clampf(Game.mic_level * 6.0, 0.0, 1.0))
+	meter.add_child(tick)
+	var lv: Node = Net.get_node_or_null("LobbyVoice")
+	var tb := Button.new()
+	tb.add_theme_font_size_override("font_size", 9)
+	tb.focus_mode = Control.FOCUS_NONE
+	tb.toggle_mode = true
+	tb.text = "Test mikrofonu (uslyšíš se se zpožděním)"
+	tb.toggled.connect(func(on):
+		if lv:
+			if on: lv.testing = true
+			else: lv.stop_test())
+	tb.tree_exiting.connect(func(): if lv: lv.stop_test())
+	box.add_child(tb)
+	# how loud I hear each teammate
+	for id in Net.roster:
+		var nm: String = Net.roster[id]["name"]
+		if id == Net.my_id():
+			continue
+		var vl := Label.new()
+		vl.add_theme_font_size_override("font_size", 9)
+		vl.text = "Hlasitost: %s %d %%" % [nm, int(Game.peer_volume(nm) * 100)]
+		box.add_child(vl)
+		var vs := HSlider.new()
+		vs.min_value = 0.0
+		vs.max_value = 2.0
+		vs.step = 0.05
+		vs.value = Game.peer_volume(nm)
+		vs.focus_mode = Control.FOCUS_NONE
+		vs.custom_minimum_size = Vector2(200, 12)
+		vs.value_changed.connect(func(v): Game.voice_volumes[nm] = v; vl.text = "Hlasitost: %s %d %%" % [nm, int(v * 100)]; Game.save_settings())
+		box.add_child(vs)
 	var rs := OptionButton.new()
 	rs.focus_mode = Control.FOCUS_NONE
 	rs.add_theme_font_size_override("font_size", 9)
@@ -722,6 +850,11 @@ static func settings_ui(box: Control) -> void:
 			rs.select(i)
 	rs.item_selected.connect(func(i): Game.render_scale = scales[i]; Game.apply_video(); Game.save_settings())
 	box.add_child(rs)
+
+static func _meter_fill() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.3, 0.9, 0.4)
+	return sb
 
 func _pause() -> void:
 	paused = true

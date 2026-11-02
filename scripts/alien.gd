@@ -28,7 +28,7 @@ const RACES := {
 		"bolt": 1.0, "shots": [1, 2], "miss": 0.9, "glint": [Vector3(0, 1.26, -0.22), Color(0.8, 0.45, 1.0)], "hide": 1.3, "psi": 1},
 	"diskoll": {"name": "Diskoll", "hp": 110.0, "walk": 2.8, "run": 5.5, "armor": 0.6, "model": "diskoll", "h": 0.5, "r": 0.7, "eye": 1.5,
 		"bolt": 0.7, "shots": [4, 5], "miss": 0.55, "rate": 0.3, "hover": 1.45, "explode": [3.5, 40.0], "hide": 0.2,
-		"weak": {"plasma": 2.0, "explosion": 1.5}},
+		"weak": {"plasma": 2.0, "laser": 1.8, "explosion": 1.5}},
 	"levit": {"name": "Levit", "hp": 70.0, "walk": 2.4, "run": 5.2, "armor": 1.0, "model": "levit", "h": 0.8, "r": 0.35, "eye": 1.75,
 		"bolt": 1.0, "shots": [1, 3], "miss": 1.0, "hover": 1.1, "hide": 0.7},
 	"ohar": {"name": "Ohař", "hp": 160.0, "walk": 2.2, "run": 6.8, "armor": 0.8, "model": "ohar", "h": 1.1, "r": 0.5, "eye": 1.0,
@@ -205,6 +205,8 @@ func _physics_process(delta: float) -> void:
 	_animate(delta)
 	if not multiplayer.is_server():
 		return
+	if mission and not mission.go:
+		return      # the team is still reading the briefing
 	_think(delta)
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
@@ -460,11 +462,13 @@ func _find_target() -> Node:
 	return best
 
 func _enter_combat(seen: Node) -> void:
+	if state != S.COMBAT and seen and not R.get("dumb", false):
+		_call_squad(seen)
 	if state != S.COMBAT:
 		state = S.COMBAT
 		phase = "shoot" if seen else "hide"
 		shots_left = rng.randi_range(R["shots"][0], R["shots"][1]) if R.has("shots") else 1
-		react = rng.randf_range(0.9, 1.6)   # the moment of surprise
+		react = rng.randf_range(0.9, 1.6) * (0.65 if Game.veteran() else 1.0) * (0.7 if _rally_t > 0 else 1.0)   # the moment of surprise
 		hide_t = rng.randf_range(2.0, 4.0)
 	alert = true
 	lurking = false
@@ -554,7 +558,35 @@ func _think(delta: float) -> void:
 		S.COMBAT:
 			_combat(delta, seen)
 
+## Spotted someone: the others nearby close in from the sides (the officer's voice carries further).
+func _call_squad(seen: Node) -> void:
+	var reach := 35.0 if R.has("psi") else 22.0
+	for a in mission.aliens():
+		if a == self or a.dead or a.husk or a.state == S.COMBAT or a.state == S.DRAG:
+			continue
+		if a.global_position.distance_to(global_position) < reach and not a.R.get("dumb", false):
+			a.stalk(seen)
+	# an officer also lends its own: sharper eyes, faster hands for a while
+	if R.has("psi"):
+		for a in mission.aliens():
+			if not a.dead and a.global_position.distance_to(global_position) < 25.0:
+				a._rally_t = 15.0
+
+var _rally_t := 0.0
+## Bullets cracking past: anything standing in the open dives for cover.
+func suppressed(from: Vector3) -> void:
+	if dead or husk or R.get("dumb", false) or R.has("melee"):
+		return
+	alert = true
+	last_seen = from
+	if state != S.COMBAT:
+		_enter_combat(null)
+	if phase == "shoot" and react > -0.2 and rng.randf() < (0.75 if Game.veteran() else 0.55):
+		_relocate(from)
+		phase = "move"
+
 func _combat(delta: float, seen: Node) -> void:
+	_rally_t -= delta
 	react -= delta
 	shoot_cd -= delta
 	unseen_t += delta if seen == null else 0.0
@@ -591,8 +623,14 @@ func _combat(delta: float, seen: Node) -> void:
 			velocity.x = 0; velocity.z = 0
 			hide_t -= delta
 			if hide_t <= 0:
-				_flank()
-				phase = "flank"
+				# hurt ones keep their heads down longer; the rest come from the side
+				if hp < float(R["hp"]) * 0.4 and rng.randf() < 0.5:
+					hide_t = rng.randf_range(2.0, 4.0)
+					_relocate(last_seen)
+					phase = "move"
+				else:
+					_flank()
+					phase = "flank"
 		"flank":
 			lurking = false
 			_walk(walk_spd * 1.4, delta)
@@ -761,6 +799,8 @@ func _face(p: Vector3, delta: float) -> void:
 func _fire(p: Node) -> void:
 	var tgt: Vector3 = p.global_position + Vector3(0, 0.8 if p.crouching else 1.2, 0)
 	var miss := (0.8 + global_position.distance_to(tgt) * 0.055) * float(R.get("miss", 1.0))
+	if Game.veteran(): miss *= 0.8
+	if _rally_t > 0: miss *= 0.75
 	if p.crouching: miss *= 1.3
 	if Vector2(p.velocity.x, p.velocity.z).length() > 2.0: miss *= 1.5
 	tgt += Vector3(rng.randf_range(-miss, miss), rng.randf_range(-miss, miss) * 0.6, rng.randf_range(-miss, miss))
@@ -827,7 +867,7 @@ func _psi(delta: float) -> void:
 		# Mysloděj: lend strength to its own, tear at a mind, or take it over
 		var r := rng.randf()
 		var ally := _hurt_ally()
-		if ally and r < 0.35:
+		if ally and r < (0.5 if Game.veteran() else 0.4):
 			ally.psi_boost.rpc()
 			return
 		if r < 0.6:

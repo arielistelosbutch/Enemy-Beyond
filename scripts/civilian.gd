@@ -149,6 +149,8 @@ func _flee_from(p: Vector3) -> void:
 	_go(_snap(global_position + away.normalized().rotated(Vector3.UP, rng.randf_range(-0.7, 0.7)) * rng.randf_range(10.0, 16.0)))
 
 func _think(delta: float) -> void:
+	if mission and not mission.go:
+		return
 	var dz := _danger()
 	if dz and st != C.FOLLOW:
 		if st != C.FLEE or fear_t < 3.0:

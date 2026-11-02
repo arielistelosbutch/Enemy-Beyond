@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.13 prototyp"
-const VERSION_NUM := "0.13"
+const VERSION := "0.14 prototyp"
+const VERSION_NUM := "0.14"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -16,9 +16,15 @@ const ITEMS := {
 	"minigun": {"name": "Minigun", "short": "Minigun", "weight": 20, "type": "weapon", "two": true, "heavy": 0.6, "brace": true, "ammo": "minigun_belt", "damage": 15, "spread": 3.4, "rate": 0.05, "auto": true, "spinup": 0.9, "sound": "minigun", "noise": 75.0, "muzzle": 0.86, "reload": 4.0, "kick": 0.4},
 	"rocket_launcher": {"name": "Raketomet", "short": "Raketomet", "weight": 12, "type": "weapon", "two": true, "heavy": 0.85, "ammo": "rocket", "damage": 160, "splash": 4.5, "spread": 0.8, "rate": 1.0, "auto": false, "projectile": true, "sound": "launch", "noise": 80.0, "muzzle": 0.9, "reload": 3.0, "kick": 3.0},
 	"plasma_rifle": {"name": "Plazmová puška", "short": "Plazma", "weight": 6, "type": "weapon", "two": true, "ammo": "plasma_cell", "damage": 48, "spread": 0.9, "rate": 0.2, "auto": true, "sound": "plasma", "noise": 30.0, "muzzle": 0.8, "reload": 1.2, "kick": 0.6},
+	"sniper": {"name": "Odstřelovací puška", "short": "Odstřelovačka", "weight": 9, "type": "weapon", "two": true, "ammo": "sniper_clip", "damage": 120, "spread": 0.25, "hip": 5.0, "scope": true, "rate": 1.3, "auto": false, "sound": "magnum", "noise": 75.0, "muzzle": 1.07, "reload": 2.4, "kick": 3.5},
+	# lasers: no magazines - the cell recharges by itself after a short pause (cap = shots in the cell)
+	"laser_pistol": {"name": "Laserová pistole", "short": "Laser. pistole", "weight": 2, "type": "weapon", "ammo": "", "laser": true, "cap": 10, "recharge": 2.5, "damage": 34, "spread": 1.2, "rate": 0.3, "auto": false, "sound": "plasma", "noise": 25.0, "muzzle": 0.21, "kick": 0.3},
+	"laser_rifle": {"name": "Laserová puška", "short": "Laser. puška", "weight": 6, "type": "weapon", "two": true, "ammo": "", "laser": true, "cap": 24, "recharge": 4.0, "damage": 42, "spread": 0.8, "rate": 0.17, "auto": true, "sound": "plasma", "noise": 28.0, "muzzle": 0.6, "kick": 0.4},
+	"laser_cannon": {"name": "Laserový kanón", "short": "Laser. kanón", "weight": 13, "type": "weapon", "two": true, "heavy": 0.75, "brace": true, "ammo": "", "laser": true, "cap": 12, "recharge": 1.6, "damage": 90, "spread": 1.2, "rate": 0.55, "auto": true, "sound": "plasma", "noise": 40.0, "muzzle": 0.78, "kick": 1.5},
 	"stun_baton": {"name": "Omračovací obušek", "short": "Obušek", "weight": 2, "type": "melee", "blunt": true, "damage": 4, "stun": 30, "reach": 1.9, "rate": 0.8, "sound": "zap"},
 	"knife": {"name": "Bojový nůž", "short": "Nůž", "weight": 1, "type": "melee", "damage": 38, "backstab": 3.0, "reach": 1.7, "rate": 0.45, "sound": "swish"},
 	"rifle_clip": {"name": "Zásobník pušky", "short": "Zás. puška", "weight": 3, "type": "ammo", "rounds": 20},
+	"sniper_clip": {"name": "Zásobník odstřelovačky", "short": "Zás. odstř.", "weight": 1, "type": "ammo", "rounds": 5},
 	"pistol_clip": {"name": "Zásobník pistole", "short": "Zás. pistole", "weight": 1, "type": "ammo", "rounds": 12},
 	"shells": {"name": "Broky (krabička)", "short": "Broky", "weight": 1, "type": "ammo", "rounds": 8},
 	"magnum_rounds": {"name": "Náboje Magnum", "short": "Náb. Magnum", "weight": 1, "type": "ammo", "rounds": 6},
@@ -38,7 +44,65 @@ const ITEMS := {
 ## How many rounds the weapon itself holds.
 func mag_size(id: String) -> int:
 	var r: Dictionary = ITEMS[id]
-	return int(r.get("cap", ITEMS[r["ammo"]]["rounds"]))
+	var n: int = int(r["cap"]) if r.has("cap") else int(ITEMS[r["ammo"]]["rounds"])
+	if has_mod(id, "zasobnik"):
+		n = int(ceil(n * 1.5))
+	return n
+
+# ---- personal weapon upgrades (each mercenary his own, bought with his money) ---------------
+const MODS := {
+	"svitilna": {"name": "Zbraňová svítilna", "price": 120, "desc": "Silnější a delší kužel světla, když držíš zbraň."},
+	"laser": {"name": "Laserový zaměřovač", "price": 180, "desc": "Červená tečka: přesnější střelba od boku."},
+	"optika": {"name": "Optika 2x", "price": 220, "desc": "Při míření větší přiblížení a přesnost."},
+	"tlumic": {"name": "Tlumič", "price": 200, "desc": "Výstřel je mnohem tišší - vetřelci tě slyší méně."},
+	"zasobnik": {"name": "Prodloužený zásobník", "price": 160, "desc": "O polovinu víc ran v zásobníku."},
+	"rukojet": {"name": "Přední rukojeť", "price": 140, "desc": "Menší zpětný ráz, zbraň se tolik nerozhazuje."},
+}
+## Which upgrade fits which weapon (not everything on everything).
+const MOD_FITS := {
+	"pistol": ["svitilna", "laser", "tlumic", "zasobnik"],
+	"rifle": ["svitilna", "laser", "optika", "tlumic", "zasobnik", "rukojet"],
+	"sniper": ["tlumic", "zasobnik", "rukojet"],
+	"shotgun": ["svitilna", "laser", "rukojet"],
+	"magnum": ["svitilna", "laser"],
+	"autocannon": ["svitilna", "optika", "zasobnik", "rukojet"],
+	"minigun": ["svitilna", "rukojet"],
+	"plasma_rifle": ["svitilna", "laser", "optika", "rukojet"],
+	"laser_pistol": ["svitilna", "laser"],
+	"laser_rifle": ["svitilna", "optika", "rukojet"],
+	"laser_cannon": ["svitilna", "optika", "rukojet"],
+}
+func has_mod(weapon: String, mod: String, m: Dictionary = {}) -> bool:
+	var src: Dictionary = m if not m.is_empty() else merc
+	return mod in src.get("mods", {}).get(weapon, [])
+
+## Personal money: the host in a campaign pays from the base treasury, everyone else from his own purse.
+func purse() -> int:
+	return Net.my_money()
+
+func spend(amount: int) -> bool:
+	if purse() < amount:
+		return false
+	if multiplayer.is_server() and Campaign.active:
+		Campaign.data["credits"] = int(Campaign.data["credits"]) - amount
+		Campaign.save()
+	else:
+		merc["money"] = int(merc.get("money", 0)) - amount
+	save_merc()
+	Net.update_merc()
+	return true
+
+func buy_mod(weapon: String, mod: String) -> bool:
+	if has_mod(weapon, mod) or not mod in MOD_FITS.get(weapon, []) or not spend(int(MODS[mod]["price"])):
+		return false
+	var mods: Dictionary = merc.get("mods", {})
+	var l: Array = mods.get(weapon, [])
+	l.append(mod)
+	mods[weapon] = l
+	merc["mods"] = mods
+	save_merc()
+	Net.update_merc()
+	return true
 
 func two_handed(id: String) -> bool:
 	return ITEMS.get(id, {}).get("two", false)
@@ -345,6 +409,10 @@ func load_settings() -> void:
 		voice_mode = cf.get_value("voice", "mode", "ptt")
 		mic_gate = cf.get_value("voice", "gate", 0.03)
 		mimic_ok = cf.get_value("voice", "mimic", true)
+		mic_gain = cf.get_value("voice", "gain", 1.0)
+		music_volume = cf.get_value("game", "music_volume", 0.7)
+		tactical_music = cf.get_value("game", "tactical_music", false)
+		voice_volumes = cf.get_value("voice", "volumes", {})
 	apply_video()
 
 func save_settings() -> void:
@@ -363,6 +431,10 @@ func save_settings() -> void:
 	cf.set_value("voice", "mode", voice_mode)
 	cf.set_value("voice", "gate", mic_gate)
 	cf.set_value("voice", "mimic", mimic_ok)
+	cf.set_value("voice", "gain", mic_gain)
+	cf.set_value("game", "music_volume", music_volume)
+	cf.set_value("game", "tactical_music", tactical_music)
+	cf.set_value("voice", "volumes", voice_volumes)
 	cf.save("user://settings.cfg")
 
 ## Health still missing from earlier wounds (heals with real time).
@@ -377,21 +449,30 @@ func heal_minutes_left(m: Dictionary) -> int:
 	return int(ceil(injury_now(m) * HEAL_MINUTES_PER_HP))
 
 # ---- loadout: chosen in the menu from what the base can spare ------------------------
-const STASH := {"rifle": 1, "pistol": 1, "shotgun": 1, "magnum": 1, "autocannon": 1, "minigun": 1, "rocket_launcher": 1,
+const STASH := {"sniper": 1, "sniper_clip": 3, "rifle": 1, "pistol": 1, "shotgun": 1, "magnum": 1, "autocannon": 1, "minigun": 1, "rocket_launcher": 1,
 	"stun_baton": 1, "knife": 1, "rifle_clip": 4, "pistol_clip": 3, "shells": 3, "magnum_rounds": 3, "ac_clip": 3,
 	"minigun_belt": 2, "rocket": 3, "grenade": 3, "smoke_grenade": 2, "mine": 2, "flare": 4, "medkit": 1, "scanner": 1, "radio": 4}
-const STASH_VETERAN := {"rifle": 1, "pistol": 1, "shotgun": 1, "magnum": 1, "autocannon": 1, "minigun": 1, "rocket_launcher": 1,
+const STASH_VETERAN := {"sniper": 1, "sniper_clip": 2, "rifle": 1, "pistol": 1, "shotgun": 1, "magnum": 1, "autocannon": 1, "minigun": 1, "rocket_launcher": 1,
 	"stun_baton": 1, "knife": 1, "rifle_clip": 2, "pistol_clip": 2, "shells": 2, "magnum_rounds": 2, "ac_clip": 1,
 	"minigun_belt": 1, "rocket": 1, "grenade": 1, "smoke_grenade": 1, "mine": 1, "flare": 2, "medkit": 1, "scanner": 1, "radio": 4}
 const DEFAULT_LOADOUT := {"rh": "rifle", "back": "", "b0": "scanner", "b1": "rifle_clip", "b2": "rifle_clip", "b3": "radio",
 	"p0": "medkit", "p1": "pistol", "p2": "knife", "p3": "flare", "p4": "grenade", "p5": "smoke_grenade"}
+## Starting kits by soldier type (trimmed to what the base has).
+const KITS := {
+	"Střelec": {"rh": "rifle", "b0": "rifle_clip", "b1": "rifle_clip", "b2": "medkit", "b3": "radio", "p0": "rifle_clip", "p1": "pistol", "p2": "grenade", "p3": "flare", "p4": "scanner", "p5": "knife"},
+	"Odstřelovač": {"rh": "sniper", "b0": "sniper_clip", "b1": "sniper_clip", "b2": "pistol_clip", "b3": "radio", "p0": "sniper_clip", "p1": "pistol", "p2": "knife", "p3": "flare", "p4": "smoke_grenade", "p5": "medkit"},
+	"Útočník": {"rh": "shotgun", "b0": "shells", "b1": "shells", "b2": "grenade", "b3": "radio", "p0": "shells", "p1": "magnum", "p2": "magnum_rounds", "p3": "grenade", "p4": "knife", "p5": "flare"},
+	"Těžký": {"rh": "autocannon", "b0": "ac_clip", "b1": "ac_clip", "b2": "grenade", "b3": "radio", "p0": "ac_clip", "p1": "pistol", "p2": "pistol_clip", "p3": "flare"},
+	"Zdravotník": {"rh": "rifle", "b0": "rifle_clip", "b1": "medkit", "b2": "smoke_grenade", "b3": "radio", "p0": "rifle_clip", "p1": "medkit", "p2": "smoke_grenade", "p3": "flare", "p4": "pistol", "p5": "stun_baton"},
+	"Ženista": {"rh": "shotgun", "b0": "shells", "b1": "mine", "b2": "grenade", "b3": "radio", "p0": "shells", "p1": "mine", "p2": "grenade", "p3": "smoke_grenade", "p4": "scanner", "p5": "flare"},
+}
 var loadout := {}    # slot -> item id
 
 func stash_for(vet: bool) -> Dictionary:
 	if not Net.mission_params.is_empty() and Net.mission_params.has("stash"):
 		return Net.mission_params["stash"]
-	if Campaign.active:
-		return Campaign.stash()
+	if Campaign.active or Campaign.viewer:
+		return Campaign.stash()      # what the (host's) base has: nobody can take what it does not
 	return STASH_VETERAN if vet else STASH
 
 ## Research done in the running campaign mission (host's campaign).
@@ -455,6 +536,11 @@ var fullscreen := false
 var seen_version := ""     # the newest version whose "what's new" the player has seen
 var voice_mode := "ptt"    # "off", "ptt" (hold Caps Lock / N), "open" (voice activation)
 var mic_gate := 0.03       # voice activation threshold (open mic)
+var mic_gain := 1.0        # own microphone loudness (x0.5 .. x4)
+var mic_level := 0.0       # live level for the meter (set by whoever reads the mic)
+var voice_volumes := {}    # teammate name -> 0..2 (how loud I hear them)
+func peer_volume(player_name: String) -> float:
+	return float(voice_volumes.get(player_name, 1.0))
 var mimic_ok := true       # aliens may imitate my voice (snippets live only in RAM during a mission)
 
 ## Resolution / window settings. The UI is laid out at 640x360 but drawn at the
@@ -545,12 +631,15 @@ func sound(sname: String) -> AudioStream:
 	return _sounds[sname]
 
 ## Plays a positional sound once at @a pos (in @a world).
+const ALIEN_SOUNDS := ["skitter", "groan", "growl", "sniff", "alien", "swish", "lunge", "zap", "psi", "burst"]
 func play_at(world: Node, sname: String, pos: Vector3, volume_db := 0.0) -> void:
 	if world == null or not world.is_inside_tree():
 		return
 	var p := AudioStreamPlayer3D.new()
 	p.stream = sound(sname)
 	p.volume_db = volume_db
+	if sname in ALIEN_SOUNDS and world.has_method("alien_db"):
+		p.volume_db += world.alien_db()      # rain covers them
 	p.unit_size = 6.0
 	p.max_distance = 80.0
 	world.add_child(p)
@@ -718,3 +807,63 @@ func changelog() -> Dictionary:
 		return {}
 	var d = JSON.parse_string(FileAccess.get_file_as_string("res://changelog.json"))
 	return d if typeof(d) == TYPE_DICTIONARY else {}
+
+# ---- music: the player's own files in the folder "hudba" next to the game -------------------------
+## The game ships without music. Put your tracks (ogg / mp3 / wav) into "hudba" next to
+## EnemyBeyond.exe, named as below, and the game plays them in the right places.
+const MUSIC_FILES := {
+	"main_menu": "hlavni_menu", "geoscape": ["globus_1", "globus_2"], "interception": "stihacky",
+	"briefing": "briefing", "terror_briefing": "briefing_teror", "tactical": "mise", "debriefing": "debriefing",
+	"victory": "vitezstvi", "game_over": "konec_hry", "final_mission": "posledni_mise", "intro": ["intro_1", "intro_2", "intro_3"],
+}
+var music_volume := 0.7
+var tactical_music := false     # music during the mission itself (off by default: wind and silence)
+var _music: AudioStreamPlayer
+var _music_name := ""
+
+func music_dir() -> String:
+	if OS.has_feature("editor"):
+		return ProjectSettings.globalize_path("res://hudba")
+	return OS.get_executable_path().get_base_dir().path_join("hudba")
+
+func _music_stream(base: String) -> AudioStream:
+	for ext in ["ogg", "mp3", "wav"]:
+		var p := music_dir().path_join(base + "." + ext)
+		if not FileAccess.file_exists(p):
+			continue
+		match ext:
+			"ogg": return AudioStreamOggVorbis.load_from_file(p)
+			"mp3":
+				var m := AudioStreamMP3.new()
+				m.data = FileAccess.get_file_as_bytes(p)
+				return m
+			"wav": return AudioStreamWAV.load_from_file(p)
+	return null
+
+## Plays a track by its role (see MUSIC_FILES); "" stops. Missing files = silence.
+func play_music(role: String, loop := true) -> void:
+	if role == _music_name and _music and _music.playing:
+		return
+	_music_name = role
+	if _music == null:
+		_music = AudioStreamPlayer.new()
+		add_child(_music)
+	_music.stop()
+	if role == "" or autotest() != "":
+		return
+	var f = MUSIC_FILES.get(role, "")
+	if f is Array:
+		f = f[randi() % f.size()]
+	var st := _music_stream(String(f))
+	if st == null:
+		return
+	if "loop" in st:
+		st.loop = loop
+	_music.stream = st
+	_music.volume_db = linear_to_db(maxf(0.001, music_volume))
+	_music.play()
+
+func set_music_volume(v: float) -> void:
+	music_volume = v
+	if _music:
+		_music.volume_db = linear_to_db(maxf(0.001, v))

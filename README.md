@@ -1,6 +1,6 @@
-# Enemy Beyond — prototyp 0.13
+# Enemy Beyond — prototyp 0.14
 
-**Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.13-windows.zip](hratelny-test/EnemyBeyond-0.13-windows.zip)
+**Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.14-windows.zip](hratelny-test/EnemyBeyond-0.14-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
 Windows může napoprvé ukázat varování SmartScreen (soubor není podepsaný): „Další informace“ → „Přesto spustit“.
 Co-op: jeden hráč dá „Hostovat hru“, ostatní „Připojit ke hře“ s jeho IP (UDP port 7777; přes internet Radmin VPN / ZeroTier).
@@ -39,6 +39,14 @@ minigun (musí se roztočit, velmi těžký), raketomet, bojový nůž (zezadu s
 zprava šikmo a zleva šikmo; omráčený vetřelec je zajat živý = víc zkušeností, později víc peněz), granát, kouřový granát
 (vetřelci přes kouř nevidí), nášlapná mina, světlice, lékárnička, detektor pohybu.
 Obouruční zbraně zaberou obě ruce. Přendávání věcí trvá podle váhy a místa (opasek rychle, batoh pomalu).
+
+## Novinky 0.14
+- Stíhačky arkádově (A/D ostrý úhyb), přesnější UFO, které uhýbá raketám.
+- Lobby: peníze mezi hráči, nákup do základny hostitele, náhled glóbu, talenty, výstroj, hlas.
+- Připravenost po briefingu (všichni potvrdí), výsadek čelem ven z Kondoru.
+- Automatická kořist, Moskovium 115, laserové zbraně, odstřelovací puška, úpravy zbraní.
+- Velikosti map, sníh a poušť, chytřejší vetřelci, těžší Veterán.
+- Hudba: vlastní soubory do složky `hudba` vedle hry (návod v `hudba/CTI_ME.txt`).
 
 ## Aktualizace (od verze 0.13)
 Hra si po spuštění sama zkontroluje GitHub. Menší aktualizace stáhne (pár MB) a nabídne restart, po restartu ukáže okno Novinky. Pokud je potřeba nový .exe, menu napíše, ať stáhneš nový zip.

@@ -517,6 +517,10 @@ func _pose(p: Node) -> void:
 	m().add_child(l)
 	l.global_position = p.global_position + Vector3(2, 2.5, 1)
 	p.set_physics_process(false)
+	for a in m().aliens():
+		a.queue_free()
+	p.gun.visible = false
+	p.gun_l.visible = false
 	for e in [["stand", false, false, false], ["crouch", true, false, false], ["prone", false, true, false], ["downed", false, false, true]]:
 		p.crouching = e[1]
 		p.prone = e[2]
@@ -525,6 +529,15 @@ func _pose(p: Node) -> void:
 			p._animate_body(1.0 / 30.0)
 			await get_tree().process_frame
 		get_viewport().get_texture().get_image().save_png("user://pose_%s.png" % e[0])
+	p.downed = false
+	for id in Game.cmd_arg("items", "knife,radio").split(","):
+		p.inv["rh"] = {"id": id, "loaded": 5}
+		p.inv.erase("lh")
+		p._update_held()
+		for i in 20:
+			p._animate_body(1.0 / 30.0)
+			await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png("user://pose_item_%s.png" % id)
 	get_tree().quit()
 
 func _wshot(p: Node) -> void:
@@ -573,8 +586,8 @@ func _heal_test(p: Node) -> void:
 
 func _skip_brief() -> void:
 	var h: Node = m().hud
-	if h._brief_t >= 0 and h._brief_t < float(h._brief_len) / 40.0 + 2.5:
-		h._brief_t = float(h._brief_len) / 40.0 + 2.5
+	if h._brief_t >= 0 and h._brief_t < float(h._brief_len) / 40.0 + 1.0:
+		h._brief_t = float(h._brief_len) / 40.0 + 1.0
 
 func _zoo(p: Node) -> void:
 	if p == null: return

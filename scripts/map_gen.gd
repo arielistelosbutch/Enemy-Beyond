@@ -4,7 +4,10 @@ extends RefCounted
 ## Kondor (dropship). Same seed = same map on every machine.
 
 const BLOCK := 12.0
-const N := 6
+var N := 6                 # blocks per side: malá 5, střední 6, velká 8, obrovská 10
+const SIZES := {"small": 5, "medium": 6, "large": 8, "huge": 10}
+const SIZE_NAMES := {"small": "malá", "medium": "střední", "large": "velká", "huge": "obrovská"}
+var terrain := "temperate"   # temperate / snow (loud steps, snowfall) / desert
 
 var rng := RandomNumberGenerator.new()
 var root: Node3D
@@ -25,6 +28,10 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	rng.seed = map_seed
 	biome = params.get("biome", "farm")
 	mtype = params.get("type", "crash")
+	N = int(SIZES.get(params.get("size", "medium"), 6))
+	terrain = params.get("terrain", "temperate")
+	info["size"] = BLOCK * N
+	info["terrain"] = terrain
 	nav = NavigationRegion3D.new()
 	nav.name = "Nav"
 	var nm := NavigationMesh.new()
@@ -44,8 +51,8 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 		grid.append([])
 		for z in N:
 			grid[x].append("")
-	var ux := rng.randi_range(2, 3)
-	var uz := rng.randi_range(2, 3)
+	var ux := rng.randi_range(N / 2 - 1, N / 2)
+	var uz := rng.randi_range(N / 2 - 1, N / 2)
 	for dx in 2:
 		for dz in 2:
 			grid[ux + dx][uz + dz] = "ufo"
@@ -55,6 +62,8 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	var farm := ["house", "barn"]
 	if biome == "town":
 		farm = ["house", "house", "house", "house", "house", "house", "barn", "house", "house"]
+		for i in maxi(0, (N * N - 36) / 5):      # bigger towns: more houses
+			farm.append("house" if i % 6 != 5 else "barn")
 	elif biome == "forest":
 		farm = ["house"] if rng.randf() < 0.6 else []
 	for f in farm:
@@ -156,6 +165,10 @@ func cyl(pos: Vector3, r_top: float, r_bot: float, h: float, material: Material,
 	return mi
 
 func _ground(o: Vector3, tex: String) -> void:
+	if terrain == "snow" and tex in ["grass", "dirt", "hay"]:
+		tex = "snow"
+	elif terrain == "desert" and tex in ["grass", "dirt"]:
+		tex = "sand"
 	box(o + Vector3(BLOCK / 2, -0.25, BLOCK / 2), Vector3(BLOCK, 0.5, BLOCK), Game.mat(tex, 0.5))
 
 # ---- grass: thousands of small blades that sway in the wind ----------------------------------
@@ -203,8 +216,11 @@ static func _grass_mat(kind: String) -> ShaderMaterial:
 
 ## Scatters blades over a block. `keep` filters positions (e.g. not on the road).
 func _grass(o: Vector3, count: int, kind := "grass", min_h := 0.6, max_h := 1.3, keep := Callable()) -> void:
-	if not Game.grass:
+	if not Game.grass or terrain == "snow":
 		return
+	if terrain == "desert":
+		count = count / 5
+		kind = "dry"
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_custom_data = true
@@ -240,6 +256,9 @@ func _jit(o: Vector3, margin := 1.5) -> Vector3:
 
 # ---- blocks ------------------------------------------------------------------------
 func _field(o: Vector3) -> void:
+	if terrain != "temperate":
+		_pasture(o)      # no wheat under snow or in the desert
+		return
 	_ground(o, "dirt")
 	# a burnt crop circle: perfect geometry in the middle of a field
 	var circle := not _circle_done and rng.randf() < 0.45

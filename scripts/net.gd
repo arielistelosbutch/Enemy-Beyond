@@ -21,6 +21,15 @@ func _ready() -> void:
 	multiplayer.connected_to_server.connect(_on_connected)
 	multiplayer.connection_failed.connect(func(): connection_failed.emit("Nepodařilo se připojit."))
 	multiplayer.server_disconnected.connect(_on_server_gone)
+	add_child(preload("res://scripts/lobby_voice.gd").new())
+	var tm := Timer.new()
+	tm.wait_time = 2.0
+	tm.autostart = true
+	tm.timeout.connect(func():
+		var sc := get_tree().current_scene
+		if multiplayer.is_server() and is_online() and Campaign.active and sc and sc.name != "Mission":
+			broadcast_team())
+	add_child(tm)
 
 func is_online() -> bool:
 	return not (multiplayer.multiplayer_peer is OfflineMultiplayerPeer)
@@ -54,6 +63,10 @@ func close() -> void:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	roster = {}
+	wallets = {}
+	if Campaign.viewer:
+		Campaign.viewer = false
+		Campaign.data = {}
 
 func _on_connected() -> void:
 	_register.rpc_id(1, Game.merc)
@@ -78,8 +91,10 @@ func _register(merc: Dictionary) -> void:
 		return
 	var id := multiplayer.get_remote_sender_id()
 	roster[id] = {"name": str(merc.get("name", "Žoldák")), "merc": merc}
+	wallets[id] = int(merc.get("money", 0))
 	_set_roster.rpc(roster)
 	roster_changed.emit()
+	broadcast_team()
 
 @rpc("authority", "call_local", "reliable")
 func _set_roster(r: Dictionary) -> void:
@@ -123,3 +138,108 @@ func after_mission() -> void:
 	else:
 		close()
 		get_tree().change_scene_to_file("res://scenes/Main.tscn")
+
+# ---- team economy: personal money, gifts, buying for the host's base -----------------------
+## Peer id -> money. The host's purse is the campaign treasury (or his own money in quick games).
+var wallets := {}
+signal wallets_changed
+signal base_changed
+
+func my_id() -> int:
+	return multiplayer.get_unique_id() if is_online() else 1
+
+func my_money() -> int:
+	if multiplayer.is_server():
+		return _host_purse()
+	return int(Game.merc.get("money", 0))
+
+func _host_purse() -> int:
+	return int(Campaign.data.get("credits", 0)) if Campaign.active else int(Game.merc.get("money", 0))
+
+func _add_money(id: int, amount: int) -> void:
+	if id == 1:
+		if Campaign.active:
+			Campaign.data["credits"] = int(Campaign.data["credits"]) + amount
+			Campaign.save()
+			Campaign.changed.emit()
+		else:
+			Game.merc["money"] = int(Game.merc.get("money", 0)) + amount
+			Game.save_merc()
+	wallets[id] = int(wallets.get(id, 0)) + amount
+
+## Host: refresh everybody's view of the purses (and of the base, if a campaign runs).
+func broadcast_team() -> void:
+	if not multiplayer.is_server() or not is_online():
+		return
+	wallets[1] = _host_purse()
+	_wallets.rpc(wallets)
+	if Campaign.active:
+		_base_snapshot.rpc(Campaign.data)
+
+@rpc("authority", "call_local", "reliable")
+func _wallets(w: Dictionary) -> void:
+	wallets = w
+	var me := my_id()
+	if not multiplayer.is_server() and wallets.has(me):
+		Game.merc["money"] = int(wallets[me])
+		Game.save_merc()
+	wallets_changed.emit()
+
+## Clients: a read-only copy of the host's campaign (globe, base, research, armory).
+@rpc("authority", "reliable")
+func _base_snapshot(d: Dictionary) -> void:
+	Campaign.data = d
+	Campaign.viewer = true
+	base_changed.emit()
+
+func give_money(to: int, amount: int) -> void:
+	_req_give.rpc_id(1, to, amount)
+
+@rpc("any_peer", "call_local", "reliable")
+func _req_give(to: int, amount: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var from := multiplayer.get_remote_sender_id()
+	if from == 0:
+		from = 1
+	wallets[1] = _host_purse()
+	if amount <= 0 or to == from or not roster.has(to) or int(wallets.get(from, 0)) < amount:
+		return
+	_add_money(from, -amount)
+	_add_money(to, amount)
+	_note.rpc("%s poslal %d kr hráči %s." % [roster.get(from, {}).get("name", "?"), amount, roster.get(to, {}).get("name", "?")])
+	broadcast_team()
+
+## A client buys for the host's base with his own money (only what the base can buy).
+func buy_for_base(item: String) -> void:
+	_req_buy.rpc_id(1, item)
+
+@rpc("any_peer", "call_local", "reliable")
+func _req_buy(item: String) -> void:
+	if not multiplayer.is_server() or not Campaign.active or not Campaign.SHOP.has(item):
+		return
+	var from := multiplayer.get_remote_sender_id()
+	if from == 0 or from == 1:
+		Campaign.buy(item)
+		broadcast_team()
+		return
+	var price := Campaign.price(item)
+	if not Campaign.unlocked(item) or int(wallets.get(from, 0)) < price or Campaign.moskovium() < int(Campaign.SHOP_MK.get(item, 0)):
+		return
+	_add_money(from, -price)
+	Campaign.data["moskovium"] = Campaign.moskovium() - int(Campaign.SHOP_MK.get(item, 0))
+	Campaign.data["armory"][item] = int(Campaign.data["armory"].get(item, 0)) + 1
+	Campaign.save()
+	Campaign.changed.emit()
+	_note.rpc("%s koupil pro základnu: %s." % [roster.get(from, {}).get("name", "?"), Game.ITEMS[item]["name"]])
+	broadcast_team()
+
+signal note(text: String)
+@rpc("authority", "call_local", "reliable")
+func _note(t: String) -> void:
+	note.emit(t)
+
+## A client changed his mercenary (talent, looks): tell the host.
+func update_merc() -> void:
+	if is_online() and not multiplayer.is_server():
+		_register.rpc_id(1, Game.merc)

@@ -1,0 +1,95 @@
+ENEMY BEYOND - HUDBA
+====================
+
+Hra se dodává bez hudby. Skladby vlož do této složky "hudba" (vedle EnemyBeyond.exe)
+jako .ogg, .mp3 nebo .wav s těmito názvy. Co chybí, tam je ticho.
+Hlasitost: Nastavení -> Hudba. Hudba během mise je ve výchozím stavu vypnutá (jen vítr a ticho),
+zapíná se v Nastavení.
+
+Remastery původních skladeb jsou odvozená díla: nech je jen u sebe ve složce hudba
+(a případně je pošli kamarádům zvlášť), do veřejného repozitáře na GitHub je nedávej.
+
+soubor              kde hraje                          předloha v původním UFO
+------------------  ---------------------------------  ------------------------
+hlavni_menu         hlavní menu, lobby                 Main Menu
+globus_1, globus_2  glóbus / velín (střídají se)       Geoscape 1, Geoscape 2
+stihacky            souboj stíhačky s UFO              Interception
+briefing            briefing před misí                 Mission Briefing
+briefing_teror      briefing před teroristickou misí   Terror Briefing
+mise                během mise (jen když je zapnuto)   Tactical Battle
+debriefing          výsledek mise                      Mission Debriefing
+konec_hry           prohraná kampaň                    Game Over
+vitezstvi           vítězství v kampani (připraveno)   Victory
+posledni_mise       poslední mise (připraveno)         The Final Mission
+intro_1..intro_3    úvod hry (připraveno)              Intro Part I-III
+
+POPIS SKLADEB PRO REMASTER
+--------------------------
+
+1) Game Over (konec_hry, cca 1:45)
+Pomalá, těžká a smířená. Původní nálada: hluboké syntetické plochy, které se pomalu
+rozpadají, a osamělý motiv, který nikam nedojde. Remaster: temné smyčce a nízký
+syntezátorový pad, dlouhý dozvuk, žádné bicí. Na konci jen šum a jeden vzdálený tón,
+jako by spojení se základnou vypadlo. Ne heroický pohřeb, spíš ticho po prohrané válce.
+
+2) Geoscape 1 (globus_1, cca 8 min)
+Dlouhá, klidná a zároveň neklidná plocha pro čas strávený u glóbu. Pomalé pulzující
+syntezátory, řídké perkuse, opakující se krátké motivy, které se vrací ve variacích.
+Pocit velínu v noci: radar se otáčí, nic se neděje, ale všichni čekají. Remaster: analogové
+pady, jemný pulz basy, občasné "elektronické pípnutí" v pozadí, bez výrazných vrcholů,
+aby šla poslouchat dlouho. Pro Enemy Beyond klidně o kousek temnější.
+
+3) Geoscape 2 (globus_2, cca 9 min)
+Sestra první skladby, o něco melodičtější a chladnější, víc "vesmírná". Delší akordové
+plochy, vzdušnější zvuk, místy zvonivé (FM) tóny. Remaster: širší stereo, jemné arpeggio,
+pomalé modulace filtru. Obě skladby se v menu střídají, takže by měly mít podobnou
+hlasitost a tempo.
+
+4) Interception (stihacky, cca 1 min)
+Krátká, napjatá a rychlejší. Původně tlačí dopředu ostinato basy a stoupající napětí,
+jako vzlet stíhačky. Remaster: rychlý pulz syntezátorové basy, ostré perkuse, stoupající
+motiv, který se točí ve smyčce (musí jít hrát dokola během souboje). Teď je souboj arkádový,
+takže remaster může být akčnější než originál.
+
+5-7) Intro Part I, II, III (intro_1..3, 15 s, 16 s, 1 min)
+Tři části úvodu. I: krátký tajemný nástup, ticho a první tóny. II: zesílení, náznak hrozby.
+III: plnohodnotné téma, dramatické, s bicími, vrchol a utnutý konec. Remaster: filmový
+zvuk, hluboké tympány, syntezátorový sbor, kovové údery. Úvodní video zatím ve hře není,
+skladby jsou připravené na později.
+
+8) Main Menu (hlavni_menu, cca 1:47)
+Hlavní téma hry. Melancholické, tajemné a trochu majestátní: pomalý syntezátorový motiv
+nad plochou, který si člověk zapamatuje. Remaster: zachovat charakter, přidat hloubku
+(pad, sub-basa, jemný sbor), a tichý šum rádia v pozadí jako pozvánka do noci. Hraje
+dokola v menu a lobby, takže konec by měl plynule navazovat na začátek.
+
+9) Mission Briefing (briefing, cca 30 s)
+Krátká, vážná a napjatá. Vojenská porada: pomalé údery, nízké tóny, motiv, který
+naznačuje, že "tam venku něco je". Remaster: bicí jako vzdálené kroky, nízký pad, jeden
+výrazný motiv. Hraje jednou při psaní briefingu, pak navazuje ticho nebo hudba mise.
+
+10) Mission Debriefing (debriefing, cca 45 s)
+Výdech po misi. Méně napětí, ale ne radost: unavená, hořkosladká nálada. Remaster:
+pomalé akordy, jemné klavírní nebo zvonivé tóny, mírný dozvuk. Hraje u výsledků mise
+(úspěšné i neúspěšné).
+
+11) Tactical Battle (mise, cca 1:40)
+Hudba bojiště. V originále temná a neklidná smyčka s nepravidelnými ozvěnami, která
+neruší, ale drží nervy napjaté. Remaster pro horor: minimalistická, hodně prostoru a
+ticha, nízké drony, občasné kovové zvuky, vzdálený tlukot. Žádná melodie, která by
+přehlušila kroky - hráči musí slyšet vetřelce. Proto je ve výchozím stavu vypnutá.
+
+12) Terror Briefing (briefing_teror, cca 30 s)
+Jako briefing, ale naléhavější a děsivější: disonantní akordy, rychlejší puls, poplach.
+Remaster: sirény v dálce zpracované do hudby, stoupající napětí, trhavé údery. Hraje
+před teroristickou misí ve městě.
+
+13) The Final Mission (posledni_mise, cca 30 s)
+Krátká, osudová fanfára před posledním útokem. Temně slavnostní, s pocitem, že není
+návratu. Remaster: velké bicí, nízká dechová sekce ze syntezátoru, sbor. Připraveno pro
+budoucí poslední misi kampaně.
+
+14) Victory (vitezstvi, cca 40 s)
+Vítězství, ale bez přehnané euforie: úleva, světlo po dlouhé noci. Původně se motiv
+otevře do durové a zní hrdě. Remaster: jasnější barvy, smyčce, jemné bicí, závěrečný
+akord, který doznívá. Připraveno pro konec kampaně.

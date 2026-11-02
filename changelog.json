@@ -1,4 +1,18 @@
 {
+ "0.14": [
+  "Stíhačky arkádově: A/D = ostrý úhyb s převalem, UFO střílí přesně a uhýbá raketám.",
+  "Lobby: posílání peněz mezi hráči, nákup do základny hostitele, náhled glóbu a základny, talenty, výstroj.",
+  "Hlas v lobby i na glóbu, hlasitost každého spoluhráče, síla mikrofonu, ukazatel a test mikrofonu.",
+  "Po briefingu musí všichni potvrdit připravenost (Připraveno 2/4). Výsadek čelem ven z Kondoru.",
+  "Kořist se po úspěšné misi sbírá sama. Nový zdroj Moskovium 115 pro vetřelecké technologie.",
+  "Laserové zbraně (pistole, puška, kanón) - výzkum po ukořistění zbraně vetřelců.",
+  "Odstřelovací puška se zaměřovačem. Výchozí výstroj podle typu vojáka.",
+  "Osobní úpravy zbraní: svítilna, laserový zaměřovač, optika, tlumič, zásobník, rukojeť.",
+  "Velikost mapy (malá až obrovská), sníh (hlučné kroky, sněžení) a poušť. V dešti jsou vetřelci méně slyšet.",
+  "Chytřejší vetřelci: kryjí se pod palbou, svolávají ostatní, velitelé posilují. Veterán ještě těžší.",
+  "Vlasy a vousy sedí na hlavě, nůž čepelí vzhůru, vysílačka svisle.",
+  "Hudba: vlastní skladby do složky hudba vedle hry (viz hudba/CTI_ME.txt)."
+ ],
  "0.13": [
   "Automatické aktualizace z GitHubu a toto okno novinek.",
   "Spoluhráči drží zbraň v rukou, ne u břicha.",

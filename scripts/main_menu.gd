@@ -1,4 +1,5 @@
 extends Control
+const MapGen := preload("res://scripts/map_gen.gd")
 ## Main menu in the spirit of UFO's screens: dark blue panels, light frames.
 
 const BG := Color(0.03, 0.05, 0.12)
@@ -28,6 +29,8 @@ func _ready() -> void:
 	add_child(_music)
 	_music.play()
 	Net.roster_changed.connect(_refresh_lobby)
+	Net.wallets_changed.connect(_refresh_lobby)
+	Net.note.connect(_on_note)
 	Net.connection_failed.connect(func(r): _show_main(r))
 	Net.connected_ok.connect(_show_lobby)
 	# coming back from the globe or from a co-op mission
@@ -37,12 +40,14 @@ func _ready() -> void:
 		_back_target = "geo"
 		if scr == "loadout": _show_loadout()
 		elif scr == "merc": _show_merc()
+		elif scr == "money": _show_money()
 	elif Net.is_online() and not multiplayer.is_server():
 		_show_lobby()
 	elif Game.autotest() == "" and Game.seen_version != Game.VERSION_NUM and Game.changelog().has(Game.VERSION_NUM):
 		_show_news()
 	else:
 		_show_main()
+	Game.play_music("main_menu")
 	if Game.autotest() == "":
 		Game.update_changed.connect(_upd_refresh)
 		Game.check_update()
@@ -50,7 +55,11 @@ func _ready() -> void:
 
 var _back_target := ""
 func _back() -> void:
-	if _back_target == "geo":
+	if _back_target == "lobby" or (Net.is_online() and not multiplayer.is_server() and _back_target == ""):
+		_back_target = ""
+		Net.update_merc()
+		_show_lobby()
+	elif _back_target == "geo":
 		_back_target = ""
 		get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
 	else:
@@ -123,20 +132,25 @@ func _button(text: String, cb: Callable) -> Button:
 ## Quick mission types (also used by a hosted co-op game outside the campaign).
 const QUICK := [
 	["Noc na samotě (Šeďáci, Diskoll)", {"group": "sedaci", "type": "crash", "type_name": "Havárie UFO", "biome": "farm", "place": "Samota u Telče", "extra_aliens": 0}],
-	["Teror v městečku (Ještěřani, Líhnouni, civilisté)", {"group": "jestetani", "type": "terror", "type_name": "Teror", "biome": "town", "place": "Městečko u Jihlavy", "extra_aliens": 1}],
+	["Teror v městečku (Ještěřani, Líhnouni, civilisté)", {"group": "jestetani", "type": "terror", "type_name": "Teror", "biome": "town", "place": "Městečko u Jihlavy", "extra_aliens": 1, "size": "huge"}],
 	["Únos na venkově (Levité, Ohař)", {"group": "levite", "type": "abduction", "type_name": "Únos", "biome": "farm", "place": "Samota u Třeště", "extra_aliens": 0}],
 	["Přistání v lesích (Bijci, Nádor, Ohnivec)", {"group": "bijci", "type": "landed", "type_name": "Přistání UFO", "biome": "forest", "place": "Lesy pod Javořicí", "extra_aliens": 2}],
-	["Velká loď (Myslodějové, Kolos)", {"group": "myslodejove", "type": "landed", "type_name": "Přistání UFO", "biome": "forest", "place": "Lesy u Dačic", "extra_aliens": 2, "ufo": "harvester"}],
+	["Velká loď (Myslodějové, Kolos)", {"group": "myslodejove", "type": "landed", "type_name": "Přistání UFO", "biome": "forest", "place": "Lesy u Dačic", "extra_aliens": 2, "ufo": "harvester", "size": "large"}],
+	["Zimní noc v horách (Šeďáci, sníh)", {"group": "sedaci", "type": "crash", "type_name": "Havárie UFO", "biome": "forest", "place": "Krkonoše", "extra_aliens": 1, "terrain": "snow", "size": "medium"}],
+	["Poušť (Bijci, Ohnivec)", {"group": "bijci", "type": "landed", "type_name": "Přistání UFO", "biome": "farm", "place": "Sahara", "extra_aliens": 1, "terrain": "desert", "size": "large"}],
 	["Náhodná mise", {}],
 ]
 var quick_pick := 0
 
+static var quick_size := ""     # "" = by mission type; or small / medium / large / huge
 static func quick_params(i: int) -> Dictionary:
 	var pp: Dictionary = QUICK[i][1].duplicate()
 	if not pp.is_empty():
 		pp["night"] = true
 		pp["hour"] = 23.5
 		pp["id"] = -1
+		if quick_size != "":
+			pp["size"] = quick_size
 	return pp
 
 func _show_quick() -> void:
@@ -219,9 +233,34 @@ func _show_merc() -> void:
 	_label("Přesnost  %d     Reakce  %d\nSíla      %d     Odvaha  %d\nZdraví    %d     Výdrž   %d\nMise %d   Zabití %d" % [
 		m.accuracy, m.reactions, m.strength, m.bravery, m.health, m.stamina, m.missions, m.kills])
 	_label("Přesnost = rozptyl zbraně, Reakce = jak rychle zamíříš, Síla = kolik uneseš, Odvaha = jak dobře snášíš tmu a vetřelce.", FRAME, 9)
+	_button("Úpravy zbraní (svítilna, laser, tlumič...)", _show_mods)
 	_button("Upravit vzhled", func(): _show_create(false))
 	_button("Najmout jiného žoldáka (nový, od nuly)", func(): _show_create(true))
 	_button("Zpět", _back)
+
+## Personal weapon upgrades: each weapon takes only some of them.
+func _show_mods() -> void:
+	_panel("ÚPRAVY ZBRANÍ")
+	_label("Peníze: %d kr. Úpravy patří tvému žoldákovi a fungují, kdykoli tu zbraň drží." % Game.purse(), ACCENT, 9)
+	for w in Game.MOD_FITS:
+		var wid: String = w
+		_label(Game.ITEMS[wid]["name"], FRAME, 9)
+		var grid := GridContainer.new()
+		grid.columns = 3
+		_box.add_child(grid)
+		for m in Game.MOD_FITS[wid]:
+			var mid: String = m
+			var has := Game.has_mod(wid, mid)
+			var b := _small_btn(grid, ("[máš] " if has else "") + "%s%s" % [Game.MODS[mid]["name"], "" if has else " - %d kr" % int(Game.MODS[mid]["price"])], func():
+				if Game.buy_mod(wid, mid):
+					_show_mods()
+				else:
+					_show_main_msg("Nemáš dost peněz."))
+			b.custom_minimum_size = Vector2(124, 14)
+			b.tooltip_text = Game.MODS[mid]["desc"]
+			b.disabled = has
+	_label("Svítilna: delší světlo. Laser: přesnost od boku. Optika: přiblížení. Tlumič: tišší výstřel. Zásobník: +50 % ran. Rukojeť: menší ráz.", FRAME, 8)
+	_button("Zpět", _show_merc)
 
 # ---- creating a mercenary: name, looks, stats by points or by dice ---------------------------
 var _scroll: ScrollContainer
@@ -603,7 +642,12 @@ func _refresh_preview() -> void:
 	if _cr_model and is_instance_valid(_cr_model):
 		Game.apply_look(_cr_model, _cr["look"])
 
+var _lobby_t := 0.0
 func _process(delta: float) -> void:
+	_lobby_t += delta
+	if _lobby_t > 0.3 and Net.is_online() and _status and is_instance_valid(_status) and _status.text.begins_with("Hráči"):
+		_lobby_t = 0.0
+		_refresh_lobby()
 	# keep the menu panel on screen: as tall as its content, at most what fits
 	if _scroll and is_instance_valid(_scroll) and _box and is_instance_valid(_box):
 		var p := _scroll.get_parent() as Control
@@ -630,6 +674,16 @@ func _show_loadout() -> void:
 	var weight := 0
 	for slot in cur:
 		weight += int(Game.ITEMS[cur[slot]]["weight"])
+	var kits := HBoxContainer.new()
+	_box.add_child(kits)
+	var kl := Label.new()
+	kl.text = "Typ vojáka:"
+	kl.add_theme_font_size_override("font_size", 8)
+	kl.add_theme_color_override("font_color", FRAME)
+	kits.add_child(kl)
+	for k in Game.KITS:
+		var kit: String = k
+		_small_btn(kits, kit, func(): Game.loadout = Game.KITS[kit].duplicate(); Game.save_settings(); _show_loadout())
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
 	_box.add_child(row)
@@ -734,8 +788,22 @@ func _show_lobby() -> void:
 		_label("Obtížnost mise: " + ("VETERÁN" if Game.difficulty == "veteran" else "normální") + " (mění se v hlavním menu)", ACCENT, 9)
 		_button("ZAČÍT MISI: " + QUICK[quick_pick][0], func(): Net.start_mission(quick_params(quick_pick)))
 		_button("Změnit typ mise", func(): quick_pick = (quick_pick + 1) % QUICK.size(); _show_lobby())
+		var sizes := ["", "small", "medium", "large", "huge"]
+		_button("Velikost mapy: " + ("podle mise" if quick_size == "" else MapGen.SIZE_NAMES[quick_size]), func():
+			quick_size = sizes[(sizes.find(quick_size) + 1) % sizes.size()]
+			_show_lobby())
 	else:
-		_label("Čekáme, až hostitel spustí misi.", FRAME, 9)
+		_label("Čekáme, až hostitel spustí misi. Mezitím si připrav výstroj a domluvte se (mikrofon funguje i tady).", FRAME, 9)
+		if Campaign.viewer:
+			_button("Základna a glóbus hostitele", func(): _back_target = "lobby"; get_tree().change_scene_to_file("res://scenes/Geoscape.tscn"))
+	_button("Výstroj na misi", func(): _back_target = "lobby"; _show_loadout())
+	_button("Můj žoldák (talenty, vzhled)", func(): _back_target = "lobby"; _show_merc())
+	_button("Poslat peníze spoluhráči", func(): _back_target = "lobby"; _show_money())
+	_button("Hlas a mikrofon (hlasitost spoluhráčů, test)", func():
+		_back_target = "lobby"
+		_panel("NASTAVENÍ")
+		preload("res://scripts/hud.gd").settings_ui(_box)
+		_button("Zpět", _back))
 	_button("Odejít", func(): Net.close(); _show_main())
 	_refresh_lobby()
 
@@ -744,8 +812,58 @@ func _refresh_lobby() -> void:
 		return
 	var lines := []
 	for id in Net.roster:
-		lines.append("%s %s" % ["*" if id == 1 else "-", Net.roster[id]["name"]])
-	_status.text = "Hráči (%d/%d):\n%s" % [Net.roster.size(), Net.MAX_PLAYERS, "\n".join(lines)]
+		var money := ""
+		if Net.wallets.has(id):
+			money = "  -  %d kr%s" % [int(Net.wallets[id]), " (pokladna základny)" if id == 1 and (Campaign.active or Campaign.viewer) else ""]
+		var lv: Node = Net.get_node_or_null("LobbyVoice")
+		var talk := "  (mluví)" if lv and lv.speaking(id) else ""
+		lines.append("%s %s%s%s" % ["*" if id == 1 else "-", Net.roster[id]["name"], money, talk])
+	_status.text = "Hráči (%d/%d):\n%s" % [Net.roster.size(), Net.MAX_PLAYERS, "\n".join(lines)] + ("\n" + _last_note if _last_note != "" else "")
+
+## Money between teammates (host included): agree who buys what and help each other out.
+var _gift_to := 0
+var _gift_amt := 100
+func _show_money() -> void:
+	_panel("PENÍZE V TÝMU")
+	_label("Máš: %d kr. Peníze dostáváš jako žold za mise (hostitel v kampani platí z pokladny základny)." % Net.my_money(), ACCENT, 9)
+	var others := []
+	for id in Net.roster:
+		if id != Net.my_id():
+			others.append(id)
+	if others.is_empty():
+		_label("Nikdo další není připojený.", FRAME, 9)
+	else:
+		if not _gift_to in others:
+			_gift_to = others[0]
+		var row := HBoxContainer.new()
+		_box.add_child(row)
+		for id in others:
+			var pid: int = id
+			_small_btn(row, ("> " if pid == _gift_to else "") + str(Net.roster[pid]["name"]), func(): _gift_to = pid; _show_money())
+		var row2 := HBoxContainer.new()
+		_box.add_child(row2)
+		for a in [50, 100, 250, 500, 1000]:
+			var amt: int = a
+			_small_btn(row2, ("> " if amt == _gift_amt else "") + "%d kr" % amt, func(): _gift_amt = amt; _show_money())
+		_button("Poslat %d kr hráči %s" % [_gift_amt, Net.roster[_gift_to]["name"]], func():
+			if Net.my_money() < _gift_amt:
+				_show_main_msg("Tolik peněz nemáš.")
+				return
+			Net.give_money(_gift_to, _gift_amt)
+			await get_tree().create_timer(0.4).timeout
+			_show_money())
+	_button("Zpět", _back)
+
+var _last_note := ""
+func _on_note(t: String) -> void:
+	_last_note = t
+	_refresh_lobby()
+
+func _show_main_msg(t: String) -> void:
+	if _status and is_instance_valid(_status):
+		_status.text = t
+	else:
+		_label(t, Color(1, 0.5, 0.4), 9)
 
 # ---- headless tests -------------------------------------------------------------
 func _autotest() -> void:
@@ -766,7 +884,7 @@ func _autotest() -> void:
 					preload("res://scripts/hud.gd").settings_ui(_box)
 					_label("Totéž najdeš ve hře v pauze (Esc).", FRAME, 8)
 					_button("Zpět", _show_main)],
-				["loadout", _show_loadout], ["join", _show_join], ["news", _show_news],
+				["loadout", _show_loadout], ["join", _show_join], ["news", _show_news], ["mods", _show_mods], ["money", _show_money], ["lobby", _show_lobby],
 				["update", func(): Game.upd_state = "full"; Game.upd_version = "0.14"; _show_main()],
 				["ready", func(): Game.upd_state = "ready"; _show_main()]]
 			for e in shots:
@@ -807,7 +925,7 @@ func _autotest() -> void:
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
-				"hour": 14.0 if Game.cmd_arg("day", "0") == "1" else 23.0, "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1})
+				"hour": 14.0 if Game.cmd_arg("day", "0") == "1" else 23.0, "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "terrain": Game.cmd_arg("terrain", "temperate"), "size": Game.cmd_arg("size", "medium")})
 		"solo", "shot", "ai", "panic", "arsenal":
 			if Game.autotest() == "shot":
 				await get_tree().create_timer(1.5).timeout
@@ -824,6 +942,33 @@ func _autotest() -> void:
 				get_viewport().get_texture().get_image().save_png("user://00_settings.png")
 			Net.play_solo()
 			Net.start_mission()
+		"checkall":
+			for f in DirAccess.get_files_at("res://scripts"):
+				if f.ends_with(".gd"):
+					print("[CHECK] ", f, " ", "ok" if load("res://scripts/" + f) != null else "FAIL")
+			get_tree().quit()
+		"econhost":
+			Campaign.new_campaign()
+			Campaign.data["found"] = {"a_pistol": 1}
+			Campaign.data["moskovium"] = 40
+			Game.merc["name"] = "Hostitel"
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+		"econclient":
+			Game.merc["name"] = "Klient"
+			Game.merc["money"] = 700
+			await get_tree().create_timer(1.5).timeout
+			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+			while not Campaign.viewer:
+				await get_tree().create_timer(0.2).timeout
+			print("[ECON] snapshot credits=%d my=%d wallets=%s stash_rifle=%d" % [int(Campaign.data["credits"]), Net.my_money(), Net.wallets, int(Game.stash_for(false).get("rifle", 0))])
+			Net.buy_for_base("rifle")
+			await get_tree().create_timer(2.5).timeout
+			print("[ECON] after buy my=%d base rifles=%d" % [Net.my_money(), int(Campaign.data["armory"].get("rifle", 0))])
+			Net.give_money(1, 200)
+			await get_tree().create_timer(2.5).timeout
+			print("[ECON] after gift my=%d wallets=%s" % [Net.my_money(), Net.wallets])
+			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
 		"host":
 			Game.seed_override = 4242
 			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))

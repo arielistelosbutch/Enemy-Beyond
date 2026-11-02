@@ -86,6 +86,7 @@ func setup(data: Dictionary) -> void:
 		hp = max(max_hp * 0.4, max_hp - Game.injury_now(merc))
 		wounded = hp < max_hp
 	position = data["pos"]
+	rotation.y = float(data.get("yaw", PI))     # out of the Kondor, down the ramp
 	collision_layer = 2
 	collision_mask = 1 | 2
 	var cs := CollisionShape3D.new()
@@ -235,7 +236,7 @@ func _build_body(data: Dictionary) -> void:
 var _vm_t := 0.0
 var _vm_kick := 0.0
 var _swing := 0.0            # melee swing timer
-const VM_R := {"rifle": Vector3(0.17, -0.18, -0.4), "plasma_rifle": Vector3(0.17, -0.18, -0.4), "shotgun": Vector3(0.17, -0.19, -0.42), "autocannon": Vector3(0.2, -0.24, -0.48),
+const VM_R := {"rifle": Vector3(0.17, -0.18, -0.4), "sniper": Vector3(0.17, -0.19, -0.42), "plasma_rifle": Vector3(0.17, -0.18, -0.4), "shotgun": Vector3(0.17, -0.19, -0.42), "autocannon": Vector3(0.2, -0.24, -0.48),
 	"minigun": Vector3(0.21, -0.3, -0.42), "rocket_launcher": Vector3(0.21, -0.1, -0.3)}
 const VM_ONE_R := Vector3(0.2, -0.2, -0.36)
 const VM_ONE_L := Vector3(-0.2, -0.2, -0.36)
@@ -419,22 +420,27 @@ func _show_items(r: String, l: String, back: String) -> void:
 			gun.add_child(_held_model(r))
 			gun.add_child(Game.model("hands_" + r if two else "hand_r"))
 		if body_gun:
-			body_gun.add_child(_held_model(r))
+			body_gun.add_child(_held_model(r, true))
 	if l != "" and not two:
 		if gun_l:
 			gun_l.add_child(_held_model(l))
 			gun_l.add_child(Game.model("hand_l"))
 		if body_l:
-			body_l.add_child(_held_model(l))
+			body_l.add_child(_held_model(l, true))
 	if back != "" and body_back:
 		body_back.add_child(Game.model(back))
 
 ## A held item's model. Clubs (baton) are held upright, ready to come down.
-func _held_model(id: String) -> Node3D:
+## Knife: blade up in the fist. Radio: upright, antenna up.
+func _held_model(id: String, third := false) -> Node3D:
 	var m := Game.model(id)
 	if Game.ITEMS.get(id, {}).get("blunt", false):
 		m.rotation.x = deg_to_rad(78.0)
 		m.position = Vector3(0, 0.01, 0.01)
+	elif id == "knife":
+		m.rotation.x = deg_to_rad(80.0 if third else 58.0)
+	elif id in ["radio", "flare", "scanner"]:
+		m.rotation.x = deg_to_rad(80.0 if id == "radio" else 35.0)
 	return m
 
 # ---- inventory helpers --------------------------------------------------------------
@@ -581,7 +587,7 @@ func _physics_process(delta: float) -> void:
 		return
 	var inv_open: bool = mission.hud.inventory_open
 	# look
-	var sens := 0.0012 * Game.mouse_sens * (0.6 if aiming else 1.0)
+	var sens := 0.0012 * Game.mouse_sens * ((0.22 if scoped() else 0.6) if aiming else 1.0)
 	rotation.y -= _mouse.x * sens
 	pitch = clamp(pitch - _mouse.y * sens * (-1.0 if Game.invert_y else 1.0), -1.4, 1.4)
 	_mouse = Vector2.ZERO
@@ -621,7 +627,11 @@ func _physics_process(delta: float) -> void:
 	bracing = brace_w and Input.is_action_pressed("aim") and not inv_open and not sprinting and busy <= 0
 	aiming = two and not brace_w and Input.is_action_pressed("aim") and not inv_open and not sprinting and busy <= 0
 	if cam:
-		cam.fov = lerp(cam.fov, Game.fov * 0.7 if aiming else Game.fov, delta * 8.0)
+		var scoped: bool = aiming and Game.ITEMS[rh["id"]].get("scope", false)
+		var zoom := 0.2 if scoped else (0.5 if Game.has_mod(rh.get("id", ""), "optika", merc) else 0.7)
+		cam.fov = lerp(cam.fov, Game.fov * zoom if aiming else Game.fov, delta * (14.0 if scoped else 8.0))
+		if gun:
+			gun.visible = not (scoped and cam.fov < Game.fov * 0.4)
 	# move
 	var dir := Vector3.ZERO
 	if not inv_open:
@@ -682,8 +692,8 @@ func _physics_process(delta: float) -> void:
 		if step_t <= 0:
 			step_t = 1.6
 			var quiet := 0.5 if Game.has_talent(merc, "kocici_krok") else 1.0
-			Game.play_at(self, "step", global_position, -22 if prone else (-18 if crouching else (-6 if sprint else -12)))
-			mission.noise(global_position, (1.0 if prone else (2.0 if crouching else (14.0 if sprint else 6.0))) * quiet)
+			Game.play_at(self, "step", global_position, (-22 if prone else (-18 if crouching else (-6 if sprint else -12))) + (5.0 if mission.step_noise() > 1.0 else 0.0))
+			mission.noise(global_position, (1.0 if prone else (2.0 if crouching else (14.0 if sprint else 6.0))) * quiet * mission.step_noise())
 	# actions
 	fire_cd -= delta
 	spread_bloom = max(0.0, spread_bloom - delta * 3.0)
@@ -699,6 +709,8 @@ func _physics_process(delta: float) -> void:
 	_stress(delta)
 	_bleed(delta)
 	healed_t = maxf(0.0, healed_t - delta)
+	_laser_charge(delta)
+	_laser_dot()
 	if Input.is_action_just_pressed("flashlight"):
 		light_on = not light_on
 	flash.visible = light_on
@@ -712,6 +724,56 @@ func _physics_process(delta: float) -> void:
 	else:
 		evac_hold = 0.0
 	wants_evac = evac_hold >= 2.0
+
+## Laser sight: a red dot where the gun points (only while the gun is up, not sprinting).
+var _dot: MeshInstance3D
+func _laser_dot() -> void:
+	var w := weapon()
+	var on: bool = not w.is_empty() and Game.has_mod(w["id"], "laser", merc) and not sprinting and not mission.hud.inventory_open and not downed
+	if _dot == null:
+		if not on:
+			return
+		_dot = MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.025
+		sm.height = 0.05
+		sm.radial_segments = 6
+		sm.rings = 3
+		_dot.mesh = sm
+		_dot.material_override = Game.color_mat(Color(1.0, 0.05, 0.02), true)
+		_dot.top_level = true
+		add_child(_dot)
+	_dot.visible = on
+	if not on:
+		return
+	var from := cam.global_position
+	var to := from - cam.global_transform.basis.z * 60.0
+	var q := PhysicsRayQueryParameters3D.create(from, to, 1 | 4)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	_dot.visible = not hit.is_empty()
+	if not hit.is_empty():
+		_dot.global_position = hit["position"]
+
+## Laser cells refill by themselves once the trigger has rested for a moment.
+var _since_shot := 9.0
+func _laser_charge(delta: float) -> void:
+	_since_shot += delta
+	if _since_shot < 0.7:
+		return
+	for s in ["rh", "lh"]:
+		var w := gun_in(s)
+		if w.is_empty():
+			continue
+		var r: Dictionary = Game.ITEMS[w["id"]]
+		if not r.get("laser", false):
+			continue
+		var cap := Game.mag_size(w["id"])
+		var c: float = float(w.get("charge", 0.0)) + float(r["recharge"]) * delta
+		while c >= 1.0 and int(w["loaded"]) < cap:
+			w["loaded"] = int(w["loaded"]) + 1
+			c -= 1.0
+		w["charge"] = c if int(w["loaded"]) < cap else 0.0
 
 func _actions(delta: float) -> void:
 	radio_button = false
@@ -797,6 +859,10 @@ func _use_hand(slot: String, pressed: bool, just: bool, delta: float) -> void:
 				radio_button = true
 
 # ---- shooting ---------------------------------------------------------------------------
+## Looking through a rifle scope right now (zoomed in).
+func scoped() -> bool:
+	return aiming and cam != null and Game.ITEMS.get(item_in("rh").get("id", ""), {}).get("scope", false) and cam.fov < Game.fov * 0.4
+
 func current_spread() -> float:
 	var wp := gun_in("rh")
 	if wp.is_empty():
@@ -808,6 +874,9 @@ func current_spread() -> float:
 	if prone: s *= 0.4
 	elif crouching: s *= 0.6
 	if aiming: s *= 0.5
+	elif rule.has("hip"): s *= float(rule["hip"])      # a scoped rifle from the hip goes anywhere
+	if not aiming and Game.has_mod(wp["id"], "laser", merc): s *= 0.75
+	if aiming and Game.has_mod(wp["id"], "optika", merc): s *= 0.8
 	if bracing: s *= 0.55
 	if Vector2(velocity.x, velocity.z).length() > 0.5: s *= 1.8
 	if not gun_in("rh").is_empty() and not gun_in("lh").is_empty(): s *= 1.35    # two guns at once
@@ -824,16 +893,19 @@ func _muzzle(slot: String, rule: Dictionary) -> Vector3:
 
 func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 	wp["loaded"] = int(wp["loaded"]) - 1
+	_since_shot = 0.0
 	fire_cd = rule["rate"] / (2.0 if slot == "lh" and not gun_in("rh").is_empty() else 1.0)
 	_vm_kick = 1.0
 	kick_mult = float(rule.get("kick", 1.0))
 	var spread := deg_to_rad(current_spread())
+	if Game.has_mod(wp["id"], "rukojet", merc):
+		kick_mult *= 0.65
 	spread_bloom = min(5.0, spread_bloom + 0.7 * kick_mult)
 	pitch += (0.012 + randf() * 0.01) * kick_mult * (0.5 if prone else 1.0)
 	var from := cam.global_position
 	var basis_ := cam.global_transform.basis
 	var muzzle := _muzzle(slot, rule)
-	mission.noise(global_position, rule["noise"])
+	mission.noise(global_position, float(rule["noise"]) * (0.35 if Game.has_mod(wp["id"], "tlumic", merc) else 1.0))
 	if rule.get("projectile", false):
 		var d := (-basis_.z).rotated(basis_.x, randf_range(-spread, spread) * 0.3).normalized()
 		mission.fire_rocket.rpc(muzzle, d, name)
@@ -864,7 +936,7 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 			if c and c.has_method("is_alien"):
 				var dmg: float = rule["damage"] * randf_range(0.6, 1.4) * (1.15 if Game.has_research("pitva") else 1.0)
 				mission.hud.hitmarker()
-				_hit_alien.rpc_id(1, c.name, dmg, "plasma" if wp["id"] == "plasma_rifle" else "bullet")
+				_hit_alien.rpc_id(1, c.name, dmg, "plasma" if wp["id"] == "plasma_rifle" else ("laser" if Game.ITEMS[wp["id"]].get("laser", false) else "bullet"))
 			elif c and c.has_method("is_player") and not c.dead:
 				c.hurt.rpc_id(c.get_multiplayer_authority(), rule["damage"] * randf_range(0.5, 1.0), global_position)
 			elif c and c.has_method("is_civilian") and not c.dead:
@@ -964,6 +1036,17 @@ func _hit_alien(alien_name: String, dmg: float, kind := "bullet") -> void:
 func _shot_fx(from: Vector3, to: Vector3, snd: String) -> void:
 	if snd != "":
 		Game.play_at(mission, snd, from, -2)
+	if multiplayer.is_server() and mission and mission.go:
+		var dir := to - from
+		var L := dir.length()
+		if L > 0.5:
+			for a in mission.aliens():
+				if a.dead:
+					continue
+				var rel: Vector3 = a.global_position + Vector3(0, 1.0, 0) - from
+				var along := clampf(rel.dot(dir / L), 0.0, L + 3.0)
+				if (rel - dir / L * along).length() < 2.5:
+					a.suppressed(from)
 	var tracer := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	var len := from.distance_to(to)
@@ -985,6 +1068,9 @@ func _shot_fx(from: Vector3, to: Vector3, snd: String) -> void:
 func _reload(wp: Dictionary, rule: Dictionary) -> void:
 	var cap := Game.mag_size(wp["id"])
 	if int(wp.get("loaded", 0)) >= cap:
+		return
+	if rule.get("laser", false):
+		mission.hud.message("Laser se dobíjí sám - chvíli nestřílej.", 1.5)
 		return
 	var slot := find_item(func(it): return it["id"] == rule["ammo"])
 	if slot == "" or slot == "rh" or slot == "lh":
@@ -1538,10 +1624,15 @@ func _flicker(delta: float) -> void:
 		if not a.dead:
 			near = min(near, a.global_position.distance_to(global_position))
 	var k := clampf((13.0 - near) / 9.0, 0.0, 1.0)
+	# a torch on the gun: stronger, longer beam
+	var lit := Game.has_mod(weapon().get("id", ""), "svitilna", merc)
+	var base_e := 4.6 if lit else 3.0
+	flash.spot_range = 34.0 if lit else 22.0
+	flash.spot_angle = 19.0 if lit else 16.0
 	if k > 0 and randf() < 0.15 + k * 0.5:
-		flash.light_energy = 3.0 * randf_range(0.0, 0.6)
+		flash.light_energy = base_e * randf_range(0.0, 0.6)
 	else:
-		flash.light_energy = 3.0
+		flash.light_energy = base_e
 
 # ---- others' view ------------------------------------------------------------------------------
 func _remote_visuals() -> void:

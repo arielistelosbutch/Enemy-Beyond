@@ -37,7 +37,7 @@ var t := 0.0
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	set_anchors_preset(Control.PRESET_FULL_RECT)
-	if not Campaign.active and not Campaign.load_campaign():
+	if not Campaign.active and not Campaign.viewer and not Campaign.load_campaign():
 		Campaign.new_campaign()
 	var bg := ColorRect.new()
 	bg.color = BG
@@ -46,6 +46,7 @@ func _ready() -> void:
 	add_child(bg)
 	_build_globe()
 	_build_side()
+	Game.play_music("game_over" if Campaign.data.get("lost", false) else "geoscape")
 	Campaign.mission_found.connect(func(m): _alert("RADAR: %s\n%s\n%s" % [Campaign.MTYPES[m["type"]]["name"], m["place"], Campaign.MTYPES[m["type"]]["text"]]); selected = int(m["id"]); _focus(m))
 	Campaign.flight_found.connect(func(f): _alert("RADAR: UFO V LETU\n%s nad oblastí %s.\nVyber ho na glóbu a vyšli stíhačku Sokol, než zmizí." % [Campaign.UFO_NAMES[f["kind"]], Campaign.nearest_place(float(f["lat"]), float(f["lon"]))]); selected = int(f["id"]); _focus(f))
 	Campaign.research_done.connect(func(id): _alert("VÝZKUM DOKONČEN\n%s\n%s" % [Campaign.RESEARCH[id]["name"], Campaign.RESEARCH[id]["desc"]]))
@@ -172,7 +173,7 @@ func _process(delta: float) -> void:
 	var sun_lon := -(Campaign.utc_hours() - 12.0) * 15.0
 	gmat.set_shader_parameter("sun_dir", latlon_to_local(-18.0, sun_lon))
 	# time
-	if popup == null and not Campaign.data.get("lost", false):
+	if popup == null and not Campaign.viewer and not Campaign.data.get("lost", false):
 		if Campaign.advance(SPEEDS[speed] * delta):
 			speed = 0
 	_sync_markers()
@@ -340,18 +341,25 @@ func _build_side() -> void:
 	status_lbl = _lbl(side, "", TEXT, 8)
 	var row := HBoxContainer.new()
 	side.add_child(row)
-	for i in SPEEDS.size():
+	for i in (0 if Campaign.viewer else SPEEDS.size()):
 		var k := i
 		_btn(row, SPEED_NAMES[i], func(): speed = k, 8).custom_minimum_size = Vector2(44, 14)
 	info_lbl = _lbl(side, "", TEXT, 8)
 	info_lbl.custom_minimum_size = Vector2(196, 130)
-	_btn(side, "VYSLAT (tým / stíhačku)", _launch, 10)
+	var entries := [["Základna", _show_base], ["Výzkum", _show_research], ["Zbrojnice", _show_armory],
+			["Výstroj", func(): _menu_screen("loadout")], ["Žoldák", func(): _menu_screen("merc")],
+			["Hlášení", _show_log], ["Archiv vetřelců", _show_archive]]
+	if Campaign.viewer:
+		# a co-op client: the host's globe, read-only; buying with own money
+		_lbl(side, "Díváš se na základnu hostitele. Misi spouští on.", FRAME, 8)
+		entries += [["Peníze v týmu", func(): _menu_screen("money")], ["Zpět do lobby", func(): get_tree().change_scene_to_file("res://scenes/Main.tscn")]]
+	else:
+		_btn(side, "VYSLAT (tým / stíhačku)", _launch, 10)
+		entries += [["Hostovat co-op", _host], ["Peníze v týmu", func(): _menu_screen("money")], ["Uložit a menu", _quit]]
 	var grid := GridContainer.new()
 	grid.columns = 2
 	side.add_child(grid)
-	for e in [["Základna", _show_base], ["Výzkum", _show_research], ["Zbrojnice", _show_armory],
-			["Výstroj", func(): _menu_screen("loadout")], ["Žoldák", func(): _menu_screen("merc")],
-			["Hlášení", _show_log], ["Archiv vetřelců", _show_archive], ["Hostovat co-op", _host], ["Uložit a menu", _quit]]:
+	for e in entries:
 		_btn(grid, e[0], e[1], 8).custom_minimum_size = Vector2(98, 15)
 
 func _update_text() -> void:
@@ -363,8 +371,8 @@ func _update_text() -> void:
 		rs = "%s %d %%" % [rr["name"], int(float(r["progress"]) / float(rr["days"]) * 100)]
 	var co := ""
 	if Net.is_online():
-		co = "\nCo-op: %d hráčů připojeno" % Net.roster.size()
-	status_lbl.text = "%s\nKredity: %d   Důvěra: %d %%\nVýzkum: %s   Rychlost: %s%s" % [Campaign.date_text(), int(d["credits"]), int(d["trust"]), rs, SPEED_NAMES[speed], co]
+		co = "\nCo-op: %d hráčů, tvoje peníze %d kr" % [Net.roster.size(), Net.my_money()] if Campaign.viewer else "\nCo-op: %d hráčů připojeno" % Net.roster.size()
+	status_lbl.text = "%s\nKredity: %d   Mk-115: %d g   Důvěra: %d %%\nVýzkum: %s   Rychlost: %s%s" % [Campaign.date_text(), int(d["credits"]), Campaign.moskovium(), int(d["trust"]), rs, SPEED_NAMES[speed], co]
 	var fl := _selected_flight()
 	if not fl.is_empty():
 		var left2: float = (float(fl["until"]) - float(d["day"])) * 24.0
@@ -514,10 +522,11 @@ func _show_research() -> void:
 			state = Campaign.needs_text(id)
 		var row := HBoxContainer.new()
 		box.add_child(row)
-		var l := _lbl(row, "%s - %d kr, %d dní\n%s %s" % [rr["name"], rr["cost"], int(rr["days"]), rr["desc"], ("[" + state + "]") if state != "" else ""], TEXT if state == "" else FRAME, 8)
+		var mk_txt := (", %d g Mk-115" % int(rr["mk"])) if rr.has("mk") else ""
+		var l := _lbl(row, "%s - %d kr%s, %d dní\n%s %s" % [rr["name"], rr["cost"], mk_txt, int(rr["days"]), rr["desc"], ("[" + state + "]") if state != "" else ""], TEXT if state == "" else FRAME, 8)
 		l.custom_minimum_size = Vector2(380, 0)
 		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		if state == "":
+		if state == "" and not Campaign.viewer:
 			_btn(row, "Zahájit", func():
 				if Campaign.start_research(key): _show_research()
 				else: _alert("Nelze\nNedostatek kreditů, nebo už běží jiný výzkum."), 8)
@@ -525,19 +534,29 @@ func _show_research() -> void:
 
 func _show_armory() -> void:
 	var box := _overlay("ZBROJNICE - NÁKUP", 470)
-	_lbl(box, "Koupené kusy trvale zvětší výbavu, kterou si každý žoldák může vzít na misi. Kredity: %d" % int(Campaign.data["credits"]), FRAME, 8)
+	var who := ("Platíš ze svých peněz: %d kr." % Net.my_money()) if Campaign.viewer else ("Kredity: %d." % int(Campaign.data["credits"]))
+	_lbl(box, "Koupené kusy trvale zvětší výbavu, kterou si každý žoldák může vzít na misi. %s Moskovium 115: %d g" % [who, Campaign.moskovium()], FRAME, 8)
 	var grid := GridContainer.new()
 	grid.columns = 2
-	box.add_child(grid)
+	_scroll(box, 250).add_child(grid)
 	var stash := Campaign.stash()
 	for id in Campaign.SHOP:
 		if not Game.ITEMS.has(id):
 			continue
 		var key: String = id
 		var ok := Campaign.unlocked(id)
-		var b := _btn(grid, "%s (%d) %s" % [Game.ITEMS[id]["short"], int(stash.get(id, 0)), ("%d kr" % Campaign.price(id)) if ok else "zamčeno"], func():
-			if Campaign.buy(key): _show_armory()
-			else: _alert("Nelze koupit\nNedostatek kreditů."), 8)
+		var mk := int(Campaign.SHOP_MK.get(id, 0))
+		var cost := ("%d kr" % Campaign.price(id) + (" + %d g Mk" % mk if mk > 0 else "")) if ok else "zamčeno"
+		var b := _btn(grid, "%s (%d) %s" % [Game.ITEMS[id]["short"], int(stash.get(id, 0)), cost], func():
+			if Campaign.viewer:
+				if Net.my_money() < Campaign.price(key) or Campaign.moskovium() < int(Campaign.SHOP_MK.get(key, 0)):
+					_alert("Nelze koupit\nNemáš dost peněz (nebo základna nemá Moskovium 115).")
+					return
+				Net.buy_for_base(key)
+				await get_tree().create_timer(0.5).timeout
+				_show_armory()
+			elif Campaign.buy(key): _show_armory()
+			else: _alert("Nelze koupit\nNedostatek kreditů nebo Moskovia 115."), 8)
 		b.custom_minimum_size = Vector2(225, 14)
 		b.disabled = not ok
 	_btn(box, "Zavřít", _close_popup)
@@ -573,6 +592,9 @@ func _show_base() -> void:
 
 func _build_menu(idx: int) -> void:
 	var cell: Dictionary = Campaign.data["base"][idx]
+	if Campaign.viewer and cell["type"] == "":
+		_alert("Stavba\nStavět může jen hostitel (je to jeho základna).")
+		return
 	if cell["type"] != "":
 		_alert("%s\n%s" % [Campaign.FACILITIES[cell["type"]]["name"], Campaign.FACILITIES[cell["type"]]["desc"]])
 		return
@@ -594,6 +616,20 @@ func _ui_check(tag: String) -> void:
 		get_viewport().get_texture().get_image().save_png("user://ui_%s.png" % tag)
 
 func _autotest() -> void:
+	if Game.autotest() == "econhost":
+		await get_tree().create_timer(30.0).timeout
+		print("[ECON-HOST] credits=%d rifles=%d wallets=%s" % [int(Campaign.data["credits"]), int(Campaign.data["armory"].get("rifle", 0)), Net.wallets])
+		get_tree().quit()
+		return
+	if Game.autotest() == "econclient":
+		await get_tree().create_timer(3.0).timeout
+		await _ui_check("econ_geo")
+		_show_armory()
+		await _ui_check("econ_armory")
+		_show_research()
+		await _ui_check("econ_research")
+		get_tree().quit()
+		return
 	if Game.autotest() == "uigeo":
 		for i in 6:
 			Campaign.data["missions"].append(Campaign.generate_mission())
@@ -637,6 +673,8 @@ func _autotest() -> void:
 			speed = 3
 			await get_tree().create_timer(3.0).timeout
 			_close_popup()
+			if Campaign.data["missions"].is_empty():
+				Campaign.data["missions"].append(Campaign.generate_mission())
 			if not Campaign.data["missions"].is_empty():
 				selected = int(Campaign.data["missions"][0]["id"])
 				print("[CAMP] launching ", Campaign.data["missions"][0]["type"], " ", Campaign.data["missions"][0]["biome"])

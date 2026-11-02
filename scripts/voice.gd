@@ -117,7 +117,7 @@ func _capture(delta: float, me: Node) -> void:
 			var buf := capture.get_buffer(n)
 			var ratio := AudioServer.get_mix_rate() / float(RATE)
 			for f in buf:
-				_rs_sum += (f.x + f.y) * 0.5
+				_rs_sum += (f.x + f.y) * 0.5 * Game.mic_gain
 				_rs_n += 1
 				_rs_pos += 1.0
 				if _rs_pos >= ratio:
@@ -135,6 +135,7 @@ func _capture(delta: float, me: Node) -> void:
 		e += v * v
 	if fresh.size() > 0:
 		_rms = lerp(_rms, sqrt(e / fresh.size()), 0.5)
+		Game.mic_level = _rms
 	var alive: bool = me != null and not me.dead
 	var want := false
 	if alive and Game.voice_mode != "off":
@@ -206,6 +207,9 @@ func _play(peer: int, bytes: PackedByteArray, radio: bool) -> void:
 	if p == null or p.dead:
 		return
 	var ch := _channel(peer, p)
+	var vol := linear_to_db(maxf(0.001, Game.peer_volume(p.display_name)))
+	(ch["near"] as AudioStreamPlayer3D).volume_db = 2.0 + vol
+	(ch["radio"] as AudioStreamPlayer).volume_db = -2.0 + vol
 	var smp := decode(bytes)
 	var frames := PackedVector2Array()
 	frames.resize(smp.size())

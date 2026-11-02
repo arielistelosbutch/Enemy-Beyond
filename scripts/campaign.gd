@@ -35,7 +35,7 @@ const RESEARCH := {
 		"desc": "Odemkne autokanón, minigun a raketomet."},
 	"detektor": {"name": "Citlivější detektor", "cost": 200, "days": 3.0, "needs": {},
 		"desc": "Detektor pohybu vidí na 35 m místo 25 m a méně se plete."},
-	"slitiny": {"name": "Vetřelecké slitiny", "cost": 300, "days": 5.0, "needs": {"missions": 2},
+	"slitiny": {"name": "Vetřelecké slitiny", "cost": 300, "mk": 20, "days": 5.0, "needs": {"loot": "slitiny"},
 		"desc": "Pláty do vest z trupu UFO: +8 zdraví všem žoldákům."},
 	"medicina": {"name": "Polní medicína", "cost": 250, "days": 4.0, "needs": {},
 		"desc": "Lékárnička na 4 použití, padlý žoldák vykrvácí o 20 s později."},
@@ -47,7 +47,11 @@ const RESEARCH := {
 		"desc": "Kovová síťka pod helmou a cvičení soustředění. Kněz se do mysli dostane mnohem hůř."},
 	"vysilacky": {"name": "Helmové vysílačky", "cost": 200, "days": 3.0, "needs": {},
 		"desc": "Vysílačka zabudovaná do helmy: mluvíš do éteru bez ruky na vysílačce. Odolnější proti rušení."},
-	"plazma": {"name": "Plazmová puška", "cost": 700, "days": 8.0, "needs": {"research": "vyslech"},
+	"laser": {"name": "Laserové zbraně", "cost": 400, "days": 5.0, "needs": {"loot": "a_pistol"},
+		"desc": "Rozebraná plazmová pistole vetřelců ukázala, jak uchovat obrovskou energii v malém článku. Naše verze: laserová pistole a puška. Žádné zásobníky - článek se dobíjí sám."},
+	"laser_tezky": {"name": "Laserový kanón", "cost": 600, "mk": 15, "days": 6.0, "needs": {"research": "laser", "loot": "a_heavy"},
+		"desc": "Těžký laser podle zbraně Bijců. Na obrněné cíle a stroje."},
+	"plazma": {"name": "Plazmová puška", "cost": 700, "mk": 30, "days": 8.0, "needs": {"research": "vyslech", "loot": "a_rifle"},
 		"desc": "Vlastní zbraň postavená podle zabavené plazmové pistole."},
 }
 
@@ -87,12 +91,21 @@ const GRID_H := 4
 const SHOP := {
 	"rifle_clip": 40, "pistol_clip": 25, "shells": 30, "magnum_rounds": 35, "ac_clip": 80, "minigun_belt": 120,
 	"rocket": 150, "grenade": 60, "smoke_grenade": 50, "mine": 90, "flare": 20, "medkit": 160,
-	"rifle": 250, "shotgun": 250, "magnum": 220, "autocannon": 600, "minigun": 750, "rocket_launcher": 650,
+	"laser_pistol": 300, "laser_rifle": 600, "laser_cannon": 900,
+	"rifle": 250, "sniper": 450, "sniper_clip": 35, "shotgun": 250, "magnum": 220, "autocannon": 600, "minigun": 750, "rocket_launcher": 650,
 	"knife": 60, "stun_baton": 180, "scanner": 300, "radio": 40, "plasma_rifle": 900, "plasma_cell": 90,
 }
 const LOCKED_BY := {"mine": "zenijni", "smoke_grenade": "zenijni", "autocannon": "tezke", "ac_clip": "tezke",
 	"minigun": "tezke", "minigun_belt": "tezke", "rocket_launcher": "tezke", "rocket": "tezke",
-	"plasma_rifle": "plazma", "plasma_cell": "plazma"}
+	"plasma_rifle": "plazma", "plasma_cell": "plazma",
+	"laser_pistol": "laser", "laser_rifle": "laser", "laser_cannon": "laser_tezky"}
+## Alien-tech items also cost Moskovium 115 (the element that powers their ships).
+const SHOP_MK := {"plasma_rifle": 25, "plasma_cell": 3, "laser_cannon": 6}
+## What the team brings home from a won mission (collected automatically).
+const LOOT_NAMES := {"a_pistol": "Plazmová pistole vetřelců", "a_rifle": "Plazmová puška vetřelců", "a_heavy": "Těžká plazma vetřelců",
+	"slitiny": "Vetřelecké slitiny", "moskovium": "Moskovium 115"}
+const RACE_WEAPON := {"grey": "a_pistol", "grey_velitel": "a_pistol", "levit": "a_rifle", "jestetan": "a_rifle", "jestetan_velitel": "a_rifle",
+	"bijec": "a_heavy", "bijec_velitel": "a_heavy", "myslodej": "a_heavy"}
 
 # ---- places (approximate, for mission names) --------------------------------------------------
 const PLACES := [
@@ -114,6 +127,7 @@ const PLACES := [
 
 var data := {}
 var active := false
+var viewer := false        # a co-op client looking at the host's campaign (read-only copy)
 var _land: Image
 var rng := RandomNumberGenerator.new()
 
@@ -338,6 +352,8 @@ func intercept_done(id: int, outcome: String, kind: String, jet_hp: float) -> St
 			m["type"] = "crash"
 			m["lat"] = lat; m["lon"] = lon
 			m["place"] = nearest_place(lat, lon)
+			m["terrain"] = terrain_at(lat, lon)
+			m["size"] = {"scout": "small", "raider": "medium", "harvester": "large"}[kind]
 			m["extra_aliens"] = UFO_ALIENS[kind]
 			m["reward"] = MTYPES["crash"]["reward"] + {"scout": 0, "raider": 200, "harvester": 450}[kind]
 			m["expires"] = float(data["day"]) + 1.0
@@ -384,15 +400,38 @@ func generate_mission() -> Dictionary:
 		biome = "town"
 	elif abs(lat) > 55 or rng.randf() < 0.25:
 		biome = "forest"
+	# map size: terror = the whole town (huge), a big landed ship = large
+	var size := "medium"
+	match t:
+		"terror": size = "huge"
+		"landed": size = "large" if rng.randf() < 0.5 else "medium"
+		"crash": size = "small" if rng.randf() < 0.4 else "medium"
+		"abduction": size = "small" if rng.randf() < 0.5 else "medium"
+	var terr := terrain_at(lat, lon)
+	if terr == "desert" and biome == "forest":
+		biome = "farm"
 	var id := int(data["next_id"])
 	data["next_id"] = id + 1
 	var exp_days: float = float(info["expire"]) * (1.0 + 0.4 * count("radar")) * rng.randf_range(0.8, 1.3)
 	return {
 		"id": id, "type": t, "lat": lat, "lon": lon, "place": nearest_place(lat, lon),
-		"expires": float(data["day"]) + exp_days, "biome": biome, "race": "grey",
+		"expires": float(data["day"]) + exp_days, "biome": biome, "race": "grey", "size": size, "terrain": terr,
 		"extra_aliens": int(info["aliens"]) + int(float(data["day"]) / 20.0),
 		"reward": int(info["reward"]), "seed": rng.randi() % 1000000,
 	}
+
+## Ground by place and season (the campaign starts in November): snow in the north and
+## the mountains, sand in the great deserts, otherwise the usual fields and woods.
+func terrain_at(lat: float, lon: float) -> String:
+	var desert := (lat > 15 and lat < 33 and lon > -15 and lon < 55) or (lat > -30 and lat < -19 and lon > 115 and lon < 145) \
+		or (lat > 25 and lat < 37 and lon > -118 and lon < -105) or (lat > 36 and lat < 45 and lon > 55 and lon < 75)
+	if desert:
+		return "desert"
+	var month := int(float(data.get("day", 0)) / 30.0) % 12      # 0 = November
+	var winter := month <= 4
+	if absf(lat) > 62 or (winter and lat > 50) or (winter and lat < -50):
+		return "snow"
+	return "temperate"
 
 func nearest_place(lat: float, lon: float) -> String:
 	var best := ""
@@ -415,7 +454,18 @@ func mission_params(m: Dictionary) -> Dictionary:
 	return p
 
 ## After the team comes back.
-func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs: int, civ_saved := 0, civ_dead := 0, races := []) -> String:
+func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs: int, civ_saved := 0, civ_dead := 0, races := [], loot := {}) -> String:
+	# what the team brought home: research needs it, Moskovium pays for alien tech
+	var found: Dictionary = data.get("found", {})
+	var got := []
+	for k in loot:
+		if int(loot[k]) <= 0:
+			continue
+		found[k] = int(found.get(k, 0)) + int(loot[k])
+		if k == "moskovium":
+			data["moskovium"] = moskovium() + int(loot[k])
+		got.append("%s %d%s" % [LOOT_NAMES[k], int(loot[k]), " g" if k == "moskovium" else "x"])
+	data["found"] = found
 	# the archive learns what the team has met
 	var seen: Array = data.get("seen_races", [])
 	for r in races:
@@ -446,6 +496,8 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 		txt += " Padlí: %d." % lost_mercs
 	if civ_saved + civ_dead > 0:
 		txt += " Civilisté: zachráněno %d, mrtvých %d." % [civ_saved, civ_dead]
+	if not got.is_empty():
+		txt += " Kořist: " + ", ".join(got) + "."
 	_log(txt)
 	save()
 	changed.emit()
@@ -453,7 +505,7 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 
 # ---- research, building, shop -----------------------------------------------------------------
 func researched(id: String) -> bool:
-	return active and id in data["research"]["done"]
+	return (active or viewer) and id in data["research"]["done"]
 
 func research_available(id: String) -> bool:
 	var r: Dictionary = RESEARCH[id]
@@ -466,6 +518,7 @@ func research_available(id: String) -> bool:
 	if n.has("missions") and int(st["missions"]) < int(n["missions"]): return false
 	if n.has("research") and not researched(n["research"]): return false
 	if n.has("seen") and not n["seen"] in data.get("seen_races", []): return false
+	if n.has("loot") and int(data.get("found", {}).get(n["loot"], 0)) <= 0: return false
 	return true
 
 func needs_text(id: String) -> String:
@@ -476,15 +529,18 @@ func needs_text(id: String) -> String:
 	if n.has("missions"): parts.append("%d mise" % int(n["missions"]))
 	if n.has("research"): parts.append("výzkum " + RESEARCH[n["research"]]["name"])
 	if n.has("seen"): parts.append("setkání: " + RACE_INFO[n["seen"]][0])
+	if n.has("loot"): parts.append("kořist: " + LOOT_NAMES[n["loot"]])
 	return "vyžaduje: " + ", ".join(parts) if not parts.is_empty() else ""
 
 func start_research(id: String) -> bool:
 	if not research_available(id) or data["research"]["current"] != "":
 		return false
 	var cost: int = RESEARCH[id]["cost"]
-	if int(data["credits"]) < cost:
+	var mk := int(RESEARCH[id].get("mk", 0))
+	if int(data["credits"]) < cost or moskovium() < mk:
 		return false
 	data["credits"] = int(data["credits"]) - cost
+	data["moskovium"] = moskovium() - mk
 	data["research"]["current"] = id
 	data["research"]["progress"] = 0.0
 	_log("Zahájen výzkum: " + RESEARCH[id]["name"])
@@ -517,10 +573,14 @@ func unlocked(item: String) -> bool:
 func price(item: String) -> int:
 	return int(SHOP[item] * pow(0.85, count("dilna")))
 
+func moskovium() -> int:
+	return int(data.get("moskovium", 0))
+
 func buy(item: String) -> bool:
-	if not unlocked(item) or int(data["credits"]) < price(item):
+	if not unlocked(item) or int(data["credits"]) < price(item) or moskovium() < int(SHOP_MK.get(item, 0)):
 		return false
 	data["credits"] = int(data["credits"]) - price(item)
+	data["moskovium"] = moskovium() - int(SHOP_MK.get(item, 0))
 	data["armory"][item] = int(data["armory"].get(item, 0)) + 1
 	save()
 	changed.emit()

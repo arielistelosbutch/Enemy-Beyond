@@ -44,7 +44,7 @@ var _hallu_t := 20.0
 
 ## Weather: chosen from the mission seed (every machine picks the same) unless the
 ## mission says. storm = rain + lightning, rain, fog, overcast, clear (moonlit).
-const WEATHER_NAMES := {"storm": "bouřka", "rain": "déšť", "fog": "hustá mlha", "overcast": "zataženo, tma", "clear": "jasno, svítí měsíc"}
+const WEATHER_NAMES := {"snow": "sněží", "storm": "bouřka", "rain": "déšť", "fog": "hustá mlha", "overcast": "zataženo, tma", "clear": "jasno, svítí měsíc"}
 var weather := "storm"
 var _moon_base := 0.12
 var _amb_base := 0.2
@@ -59,7 +59,53 @@ func _pick_weather() -> void:
 		r.seed = Net.mission_seed * 31 + 7
 		var x := r.randf()
 		w = "storm" if x < 0.28 else ("rain" if x < 0.46 else ("fog" if x < 0.66 else ("overcast" if x < 0.82 else "clear")))
+	# snow country: rain falls as snow
+	if Net.mission_params.get("terrain", "") == "snow" and (w == "rain" or w == "storm"):
+		w = "snow"
+	elif Net.mission_params.get("terrain", "") == "desert" and (w == "rain" or w == "fog"):
+		w = "clear"
 	weather = w
+
+# ---- ready check: after the briefing everyone confirms; the night starts together ----------
+var go := false
+var ready_ids := {}
+
+## Called by the local HUD when this player presses "ready".
+func i_am_ready() -> void:
+	_set_ready.rpc_id(1)
+
+@rpc("any_peer", "call_local", "reliable")
+func _set_ready() -> void:
+	if not multiplayer.is_server():
+		return
+	var id := multiplayer.get_remote_sender_id()
+	ready_ids[id if id != 0 else 1] = true
+	_ready_state()
+
+func _ready_state() -> void:
+	var need: Array = Net.roster.keys() if not Net.roster.is_empty() else [1]
+	var n := 0
+	for id in need:
+		if ready_ids.has(id):
+			n += 1
+	_ready_sync.rpc(n, need.size(), n >= need.size())
+
+@rpc("authority", "call_local", "reliable")
+func _ready_sync(n: int, total: int, all: bool) -> void:
+	if hud:
+		hud.ready_count(n, total)
+	if all and not go:
+		go = true
+		if hud:
+			hud.brief_go()
+
+## How much louder footsteps are on this ground (snow crunches).
+func step_noise() -> float:
+	return 1.6 if map.get("terrain", "") == "snow" else 1.0
+
+## Rain drowns what the aliens do: their sounds are quieter for the team.
+func alien_db() -> float:
+	return {"rain": -7.0, "storm": -10.0, "snow": -3.0}.get(weather, 0.0)
 
 func calm() -> bool:
 	return t < CALM_TIME
@@ -101,6 +147,24 @@ func _ready() -> void:
 		add_child(ap)
 		ap.global_position = snd["pos"]
 		_loop_player(ap, snd["name"], snd["db"])
+	if weather == "snow":
+		_build_rain()
+		rain.amount = 900
+		rain.lifetime = 4.0
+		rain.gravity = Vector3(0, -0.6, 0)
+		rain.initial_velocity_min = 0.6
+		rain.initial_velocity_max = 1.4
+		rain.direction = Vector3(0.3, -1, 0.1)
+		rain.spread = 25.0
+		var sq := QuadMesh.new()
+		sq.size = Vector2(0.04, 0.04)
+		var smat := StandardMaterial3D.new()
+		smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		smat.albedo_color = Color(0.85, 0.88, 0.95, 0.8)
+		smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		smat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		sq.material = smat
+		rain.mesh = sq
 	if weather == "storm" or weather == "rain":
 		_build_rain()
 		if weather == "rain":
@@ -140,9 +204,10 @@ func _briefing_text() -> String:
 			"abduction": "Z okolních stavení zmizeli lidé. Nad krajinou viděli světla. Možná ještě někdo žije.",
 			"terror": "Vetřelci vtrhli do městečka. Spojení s místními je přerušeno. Poslední hovor na tísňovou linku: \"Je to černé, je to rychlé, a ti, co to zabilo, zase vstávají.\"\nZachraň, koho můžeš (E u vyděšeného civilisty - půjde za tebou do Kondoru).",
 		}
-		return "%s\nOblast: %s, místní čas %02d:%02d (%s)\n\n%s\n\nÚKOL: zneškodnit posádku a vrátit se do Kondoru.\nOmráčení vetřelci mají pro výzkum velkou cenu." % [
+		var terr: String = {"snow": "\nTerén: sníh - každý krok je slyšet.", "desert": "\nTerén: poušť - málo úkrytů."}.get(mp.get("terrain", ""), "")
+		return "%s\nOblast: %s, místní čas %02d:%02d (%s), mapa %s%s\n\n%s\n\nÚKOL: zneškodnit posádku a vrátit se do Kondoru.\nOmráčení vetřelci mají pro výzkum velkou cenu. Co vetřelci upustí, posbíráme při odletu." % [
 			String(mp.get("type_name", "Mise")).to_upper(), mp.get("place", "?"), int(h), int(fmod(h, 1.0) * 60),
-			"noc" if mp.get("night", true) else "den", flavor.get(mp.get("type", "crash"), "")]
+			"noc" if mp.get("night", true) else "den", MapGen.SIZE_NAMES.get(mp.get("size", "medium"), "střední"), terr, flavor.get(mp.get("type", "crash"), "")]
 	var r := RandomNumberGenerator.new()
 	r.seed = Net.mission_seed
 	var day := r.randi_range(3, 27)
@@ -250,6 +315,12 @@ func _weather_env() -> void:
 			_wind_base = 0.9
 		"rain":
 			_wind_base = 1.1
+		"snow":
+			# snow throws the little light back: brighter, but the falling flakes close the distance
+			env.ambient_light_energy *= 1.6
+			env.fog_density = 0.035 if vol else 0.07
+			env.fog_light_color = Color(0.25, 0.27, 0.32)
+			_wind_base = 0.7
 		"storm":
 			_wind_base = 1.5
 	_moon_base = moon.light_energy
@@ -273,12 +344,12 @@ func _maybe_spawn() -> void:
 	var i := 0
 	for id in Net.roster:
 		var sp: Vector3 = map["player_spawns"][i % map["player_spawns"].size()]
-		spawner.spawn({"kind": "player", "peer": id, "pos": sp, "merc": Net.roster[id]["merc"], "name": Net.roster[id]["name"]})
+		spawner.spawn({"kind": "player", "peer": id, "pos": sp, "yaw": float(map.get("spawn_yaw", PI)), "merc": Net.roster[id]["merc"], "name": Net.roster[id]["name"]})
 		i += 1
 	var rng := RandomNumberGenerator.new()
 	rng.seed = Net.mission_seed + 99
 	var spawns: Array = map["alien_spawns"].duplicate()
-	var count := 2 + Net.roster.size() + int(Net.mission_params.get("extra_aliens", 0))
+	var count := 2 + Net.roster.size() + int(Net.mission_params.get("extra_aliens", 0)) + (1 if Game.veteran() else 0) + int({"large": 1, "huge": 2}.get(Net.mission_params.get("size", ""), 0))
 	var crew := _crew(count, rng)
 	for k in crew.size():
 		var p: Vector3 = spawns[k % spawns.size()] + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
@@ -540,7 +611,8 @@ func _noise(pos: Vector3, radius: float) -> void:
 
 # ---- the end ------------------------------------------------------------------------
 func _process(delta: float) -> void:
-	t += delta
+	if go:
+		t += delta
 	for l in map.get("lights", []):
 		if is_instance_valid(l):
 			l.light_energy = 1.4 + sin(t * 13.0) * 0.25 + sin(t * 7.3) * 0.2
@@ -1043,6 +1115,24 @@ func _judge() -> void:
 		_end.rpc(won, "Posádka UFO zneškodněna." if won else "Tým se stáhl z mise.")
 
 @rpc("authority", "call_local", "reliable")
+## Won missions: everything the aliens dropped is picked up on the way out (no carrying needed).
+func _loot(success: bool) -> Dictionary:
+	var out := {}
+	if not success:
+		return out
+	var r := RandomNumberGenerator.new()
+	r.seed = Net.mission_seed + 77
+	for a in aliens():
+		if a.dead and Campaign.RACE_WEAPON.has(a.race) and r.randf() < 0.6:
+			var w: String = Campaign.RACE_WEAPON[a.race]
+			out[w] = int(out.get(w, 0)) + 1
+	var mt: String = Net.mission_params.get("type", "")
+	var mk: Array = {"crash": [25, 50], "landed": [50, 100], "abduction": [30, 60], "terror": [10, 25]}.get(mt, [0, 0])
+	var al: Array = {"crash": [6, 14], "landed": [10, 20], "abduction": [6, 12], "terror": [0, 3]}.get(mt, [0, 0])
+	out["moskovium"] = r.randi_range(mk[0], mk[1])
+	out["slitiny"] = r.randi_range(al[0], al[1])
+	return out
+
 func _end(success: bool, why: String) -> void:
 	if finished:
 		return
@@ -1055,8 +1145,15 @@ func _end(success: bool, why: String) -> void:
 		Game.merc["missions"] = int(Game.merc.get("missions", 0)) + 1
 		Game.merc["kills"] = int(Game.merc.get("kills", 0)) + me.kills
 		Game.merc["captures"] = int(Game.merc.get("captures", 0)) + me.captures
+		# personal pay (the host's campaign money is the base treasury, so he gets none here)
+		var pay: int = (100 if success else 30) + me.kills * 30 + me.captures * 80 + me.revives * 25
+		if multiplayer.is_server() and not Net.mission_params.is_empty() and Campaign.active:
+			pay = 0
+		var purse := int(Game.merc.get("money", 0)) + pay
+		if pay > 0:
+			xp_text += "\nŽold: +%d kr (máš %d kr)" % [pay, purse]
 		if me.dead or (me.downed and not me.global_position.distance_to(map["evac"]) < 3.5):
-			fate = "PADL - žoldák je mrtvý"
+			fate = "PADL - žoldák je mrtvý (úspory převzal nový žoldák)"
 			Game.merc = Game.new_merc()
 		else:
 			# experience: only the living learn
@@ -1071,6 +1168,7 @@ func _end(success: bool, why: String) -> void:
 					Game.merc["injury"] = me.max_hp - me.hp
 					Game.merc["injury_time"] = Time.get_unix_time_from_system()
 					fate = "zraněn - uzdraví se za %d min" % Game.heal_minutes_left(Game.merc)
+		Game.merc["money"] = purse
 		Game.save_merc()
 	var lines := []
 	for p in players():
@@ -1094,7 +1192,7 @@ func _end(success: bool, why: String) -> void:
 			tc += p.captures
 			if p.dead or (p.downed and p.global_position.distance_to(map["evac"]) >= 3.5):
 				lost += 1
-		camp = Campaign.mission_done(int(Net.mission_params.get("id", -1)), success, tk, tc, lost, civ_saved, civ_dead, crew_names)
+		camp = Campaign.mission_done(int(Net.mission_params.get("id", -1)), success, tk, tc, lost, civ_saved, civ_dead, crew_names, _loot(success))
 		Net.last_result = camp
 	hud.show_result(("MISE SPLNĚNA" if success else "MISE NEÚSPĚŠNÁ"), why + "\n\n" + "\n".join(lines) + "\n\nTvůj žoldák: " + fate + xp_text + ("\n\n" + camp if camp != "" else ""))
 	get_tree().create_timer(8.0 if Game.autotest() != "campaign" else 2.0).timeout.connect(func(): _leave(""))
@@ -1109,6 +1207,9 @@ func _leave(why: String) -> void:
 	Net.after_mission()
 
 func _on_peer_left(id: int) -> void:
+	if multiplayer.is_server() and not go:
+		ready_ids.erase(id)
+		_ready_state.call_deferred()
 	var n := actors.get_node_or_null("P%d" % id)
 	if n and multiplayer.is_server():
 		n.queue_free()

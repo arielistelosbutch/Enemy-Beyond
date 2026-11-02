@@ -95,40 +95,54 @@ piece("Vest", v)
 def hp(name, parts):
     piece(name, parts)
 TOP = 1.775
-hp("Look_HairBuzz", [box(hairm, (0, 0.0, TOP + 0.006), (0.186, 0.206, 0.012), group="head"),
-                     box(hairm, (0, -0.1, 1.71), (0.186, 0.012, 0.1), group="head")])
-hp("Look_HairShort", [box(hairm, (0, -0.01, TOP + 0.02), (0.2, 0.22, 0.04), group="head"),
-                      box(hairm, (0, -0.105, 1.7), (0.2, 0.02, 0.14), group="head"),
-                      box(hairm, (0.096, -0.01, 1.73), (0.012, 0.18, 0.07), group="head"),
-                      box(hairm, (-0.096, -0.01, 1.73), (0.012, 0.18, 0.07), group="head"),
-                      box(hairm, (0, 0.1, TOP + 0.005), (0.18, 0.03, 0.03), rot=(0.4, 0, 0), group="head")])
-hp("Look_HairLong", [box(hairm, (0, -0.01, TOP + 0.022), (0.21, 0.23, 0.045), group="head"),
-                     box(hairm, (0, -0.11, 1.62), (0.22, 0.04, 0.32), group="head"),
-                     box(hairm, (0.1, -0.03, 1.64), (0.025, 0.16, 0.26), group="head"),
-                     box(hairm, (-0.1, -0.03, 1.64), (0.025, 0.16, 0.26), group="head"),
-                     box(hairm, (0, 0.1, TOP + 0.0), (0.19, 0.04, 0.04), rot=(0.3, 0, 0), group="head")])
-hp("Look_HairPony", [box(hairm, (0, -0.01, TOP + 0.018), (0.2, 0.22, 0.036), group="head"),
-                     box(hairm, (0, -0.105, 1.71), (0.2, 0.02, 0.12), group="head"),
-                     cyl(hairm, (0, -0.15, 1.62), 0.035, 0.22, verts=6, r2=0.015, rot=(0.25, 0, 0), group="head")])
-hp("Look_HairMohawk", [box(hairm, (0, -0.02, TOP + 0.05), (0.04, 0.22, 0.1), group="head"),
-                       box(hairm, (0, -0.11, 1.74), (0.04, 0.02, 0.1), group="head")])
-hp("Look_HairBun", [box(hairm, (0, -0.01, TOP + 0.016), (0.2, 0.22, 0.032), group="head"),
-                    box(hairm, (0, -0.105, 1.7), (0.2, 0.02, 0.14), group="head"),
-                    sphere(hairm, (0, -0.13, 1.79), 0.055, seg=8, rings=6, group="head")])
-hp("Look_Stubble", [box(beardm, (0, 0.06, 1.575), (0.185, 0.1, 0.04), group="head"),
-                    box(beardm, (0, 0.101, 1.6), (0.15, 0.012, 0.05), group="head")])
-hp("Look_Moustache", [box(beardm, (0, 0.113, 1.605), (0.08, 0.02, 0.018), group="head")])
-hp("Look_Goatee", [box(beardm, (0, 0.113, 1.605), (0.07, 0.02, 0.016), group="head"),
-                   box(beardm, (0, 0.105, 1.56), (0.05, 0.03, 0.05), group="head")])
-hp("Look_BeardFull", [box(beardm, (0, 0.05, 1.56), (0.2, 0.14, 0.09), group="head"),
-                      box(beardm, (0, 0.105, 1.6), (0.16, 0.03, 0.05), group="head"),
-                      box(beardm, (0.093, 0.0, 1.62), (0.02, 0.16, 0.09), group="head"),
-                      box(beardm, (-0.093, 0.0, 1.62), (0.02, 0.16, 0.09), group="head"),
-                      box(beardm, (0, 0.09, 1.52), (0.12, 0.08, 0.05), group="head")])
+# the head block: x +-0.09, y -0.09 (back) .. 0.11 (face), z 1.545 .. 1.775.
+# Hair and beards are shells that sit flush on it (no floating slabs).
+HX, HB, HF, HZ0 = 0.09, -0.09, 0.11, 1.545
+def bx(m, x0, x1, y0, y1, z0, z1):
+    return box(m, ((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), (x1 - x0, y1 - y0, z1 - z0), group="head")
+
+def shell(t, side_z, back_z, fringe_z, temple_y=0.06):
+    """Hair hugging the skull: crown, both sides above the ears, back, hairline."""
+    return [bx(hairm, -HX - t, HX + t, HB - t, HF + 0.004, TOP - 0.004, TOP + t),        # crown
+            bx(hairm, HX - 0.002, HX + t, HB - t, temple_y, side_z, TOP),                 # right side
+            bx(hairm, -HX - t, -HX + 0.002, HB - t, temple_y, side_z, TOP),               # left side
+            bx(hairm, -HX - t, HX + t, HB - t, HB + 0.002, back_z, TOP),                  # back
+            bx(hairm, -HX, HX, HF - 0.002, HF + 0.006, fringe_z, TOP)]                    # hairline
+
+hp("Look_HairBuzz", shell(0.006, 1.69, 1.6, 1.758))
+hp("Look_HairShort", shell(0.016, 1.665, 1.585, 1.742) +
+   [bx(hairm, -0.07, 0.09, HF, HF + 0.022, 1.738, TOP + 0.012)])                         # side-swept fringe
+hp("Look_HairLong", shell(0.018, 1.62, 1.58, 1.745) +
+   [bx(hairm, -HX - 0.022, HX + 0.022, HB - 0.03, HB + 0.004, 1.44, TOP),                # long at the back
+    bx(hairm, HX - 0.002, HX + 0.022, HB, 0.085, 1.5, 1.66),                              # framing the face
+    bx(hairm, -HX - 0.022, -HX + 0.002, HB, 0.085, 1.5, 1.66),
+    bx(hairm, -0.08, 0.08, HF, HF + 0.016, 1.735, TOP + 0.01)])
+hp("Look_HairPony", shell(0.014, 1.66, 1.6, 1.748) +
+   [bx(hairm, -0.035, 0.035, HB - 0.05, HB - 0.012, 1.69, 1.745),                          # tie
+    cyl(hairm, (0, -0.145, 1.6), 0.03, 0.2, verts=6, r2=0.012, rot=(-0.3, 0, 0), group="head")])
+hp("Look_HairMohawk", shell(0.004, 1.7, 1.62, 1.765) +
+   [bx(hairm, -0.022, 0.022, HB - 0.01, HF - 0.01, TOP, TOP + 0.075),
+    bx(hairm, -0.022, 0.022, HB - 0.03, HB, 1.66, TOP + 0.05)])
+hp("Look_HairBun", shell(0.014, 1.66, 1.6, 1.748) +
+   [sphere(hairm, (0, -0.125, 1.75), 0.05, seg=8, rings=6, group="head")])
+# beards: on the jaw (male jaw is the head width, a bit deeper at the chin)
+hp("Look_Stubble", [bx(beardm, -0.075, 0.075, HF, HF + 0.006, 1.535, 1.585),
+                    bx(beardm, HX - 0.002, HX + 0.005, -0.02, HF, 1.54, 1.635),
+                    bx(beardm, -HX - 0.005, -HX + 0.002, -0.02, HF, 1.54, 1.635),
+                    bx(beardm, -0.08, 0.08, -0.03, HF, 1.532, 1.54)])
+hp("Look_Moustache", [bx(beardm, -0.045, 0.045, HF, HF + 0.016, 1.58, 1.594)])
+hp("Look_Goatee", [bx(beardm, -0.04, 0.04, HF, HF + 0.016, 1.58, 1.594),
+                   bx(beardm, -0.03, 0.03, HF, HF + 0.018, 1.52, 1.575)])
+hp("Look_BeardFull", [bx(beardm, -HX - 0.01, HX + 0.01, -0.02, HF + 0.02, 1.515, 1.585),     # jaw and chin
+                      bx(beardm, HX - 0.002, HX + 0.012, -0.03, HF, 1.585, 1.665),          # sideburns
+                      bx(beardm, -HX - 0.012, -HX + 0.002, -0.03, HF, 1.585, 1.665),
+                      bx(beardm, -0.05, 0.05, HF, HF + 0.02, 1.578, 1.596),                 # moustache
+                      bx(beardm, -0.075, -0.045, HF, HF + 0.018, 1.585, 1.6),
+                      bx(beardm, 0.045, 0.075, HF, HF + 0.018, 1.585, 1.6)])
 hp("Look_Female", [box(lips, (0, 0.112, 1.597), (0.05, 0.008, 0.012), group="head"),
                    box(boots, (0.042 * 1, 0.111, 1.7), (0.044, 0.006, 0.006), group="head"),
                    box(boots, (-0.042, 0.111, 1.7), (0.044, 0.006, 0.006), group="head")])
-hp("Look_Jaw", [box(skin, (0, 0.03, 1.565), (0.195, 0.16, 0.05), group="head")])   # male: a heavier jaw
+hp("Look_Jaw", [box(skin, (0, 0.04, 1.562), (0.174, 0.16, 0.045), group="head")])   # male: a heavier jaw
 # headgear variants
 hm = [sphere(helmet, (0, 0.0, 1.73), 0.13, seg=8, rings=5, scale=(1.05, 1.15, 0.85), group="head"),
       box(helmet, (0, 0.0, 1.69), (0.25, 0.26, 0.04), group="head"),
