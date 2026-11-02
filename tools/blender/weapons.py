@@ -52,25 +52,34 @@ def rifle():
         preview(os.path.join(OUTDIR, "..", "..", "tools", "rifle_prev.png"), target=(0, 0.2, 0.0), dist=1.2, angle=1.9, height=0.1)
 
 def pistol():
+    """Frame, slide and magazine are separate pieces (the reload moves them)."""
     reset(); mats()
     p = []
-    p.append(box(steel, (0, 0.06, 0.03), (0.03, 0.17, 0.035)))           # slide
-    for i in range(5):
-        p.append(box(dark, (0.0155, -0.0 + i * 0.008, 0.03), (0.002, 0.004, 0.025)))
-        p.append(box(dark, (-0.0155, -0.0 + i * 0.008, 0.03), (0.002, 0.004, 0.025)))
     p.append(box(dark, (0, 0.06, 0.006), (0.028, 0.15, 0.02)))           # frame
-    p.append(cyl(dark, (0, 0.148, 0.032), 0.007, 0.012, verts=6, rot=(math.pi / 2, 0, 0)))
-    p.append(box(dark, (0, 0.135, 0.05), (0.004, 0.006, 0.006)))         # sights
-    p.append(box(dark, (0, -0.015, 0.05), (0.014, 0.006, 0.006)))
     p.append(box(poly, (0, -0.005, -0.045), (0.029, 0.04, 0.1), rot=(-0.25, 0, 0)))  # grip
     p.append(box(wood, (0.0152, -0.005, -0.045), (0.002, 0.032, 0.08), rot=(-0.25, 0, 0)))
     p.append(box(wood, (-0.0152, -0.005, -0.045), (0.002, 0.032, 0.08), rot=(-0.25, 0, 0)))
     p.append(box(dark, (0, 0.035, -0.012), (0.008, 0.04, 0.006)))        # trigger guard
     p.append(box(steel, (0, -0.03, 0.04), (0.012, 0.012, 0.012), rot=(0.4, 0, 0)))  # hammer
-    o = join(p, "Pistol")
-    export_glb(os.path.join(OUTDIR, "pistol.glb"), [o])
-    if "--preview" in sys.argv:
-        preview(os.path.join(OUTDIR, "..", "..", "tools", "pistol_prev.png"), target=(0, 0.05, 0.0), dist=0.5, angle=1.9, height=0.05)
+    frame = join(p, "Pistol")
+    s = [box(steel, (0, 0.06, 0.03), (0.03, 0.17, 0.035))]               # slide
+    for i in range(5):
+        s.append(box(dark, (0.0155, -0.0 + i * 0.008, 0.03), (0.002, 0.004, 0.025)))
+        s.append(box(dark, (-0.0155, -0.0 + i * 0.008, 0.03), (0.002, 0.004, 0.025)))
+    s.append(cyl(dark, (0, 0.148, 0.032), 0.007, 0.012, verts=6, rot=(math.pi / 2, 0, 0)))
+    s.append(box(dark, (0, 0.135, 0.05), (0.004, 0.006, 0.006)))         # sights
+    s.append(box(dark, (0, -0.015, 0.05), (0.014, 0.006, 0.006)))
+    slide = join(s, "Slide")
+    m = [box(dark, (0, -0.009, -0.058), (0.022, 0.03, 0.1), rot=(-0.25, 0, 0)),     # magazine body
+         box(steel, (0, -0.019, -0.099), (0.031, 0.043, 0.008), rot=(-0.25, 0, 0)),  # base plate
+         box(brass, (0, 0.002, -0.006), (0.008, 0.016, 0.006), rot=(-0.25, 0, 0))]   # top round
+    mag = join(m, "Mag")
+    export_glb(os.path.join(OUTDIR, "pistol.glb"), [frame, slide, mag])
+    # a spare magazine on its own (in the reloading hand)
+    reset(); mats()
+    m = [box(dark, (0, 0, 0), (0.022, 0.03, 0.1)), box(steel, (0, 0, -0.054), (0.031, 0.043, 0.008)),
+         box(brass, (0, 0.004, 0.052), (0.008, 0.016, 0.006))]
+    export_glb(os.path.join(OUTDIR, "pistol_mag.glb"), [join(m, "SpareMag")])
 
 def limb(m, a, b, r1, r2, verts=6):
     """A tapered cylinder from point a to point b (forearms)."""

@@ -274,9 +274,14 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 		rot = Vector3(0.35 + sin(_vm_t) * 0.06, 0.9, 0.45)
 	# reload: tilt in, hold, back up (the magazine drops at a quarter)
 	var rl := 0.0
-	if busy > 0 and busy_total > 0 and busy_text.begins_with("Přebíj"):
+	var reloading := busy > 0 and busy_total > 0 and busy_text.begins_with("Přebíj")
+	if reloading and not rid in ["pistol", "magnum"]:
 		var ph := 1.0 - busy / busy_total
 		rl = smoothstep(0.0, 0.25, ph) * (1.0 - smoothstep(0.75, 1.0, ph))
+	# pistol and revolver: full hand-made reloads (after Ivo's videos)
+	var ra := _reload_anim(delta, rid, reloading)
+	base += ra[0]
+	rot += ra[1]
 	# digging in the backpack: hands drop out of view
 	var dig := 1.0 if (busy > 0 and busy_stand) else 0.0
 	var target: Vector3 = base + bob + Vector3(0.0, -0.1 * rl - 0.4 * dig, 0.05 * _vm_kick)
@@ -1124,6 +1129,162 @@ func _reload(wp: Dictionary, rule: Dictionary) -> void:
 			inv.erase(slot)
 			wp["loaded"] = cap
 			Game.play_ui(self, "reload", -12))
+
+# ---- reload animations, after Ivo's videos ------------------------------------------------
+# Pistol: tilt the gun in, magazine drops out, the left hand brings a new one up and slaps it
+# in, the gun rolls on its side and the hand racks the slide, back on target.
+# Revolver (top-break): muzzle up, the barrel tips down, empties fall out, the left hand
+# feeds the rounds one by one, a flick of the wrist snaps it shut.
+var _rl_hand: Node3D
+var _rl_carry := ""
+var _rev_open := 0.0
+var _rev_was := false
+var _rev_closing := 0.0
+var _rl_last := 0.0
+
+func _vm_part(n: String) -> Node3D:
+	if gun == null:
+		return null
+	for c in gun.get_children():
+		var f := c.find_child(n, true, false)
+		if f:
+			if not f.has_meta("rest"):
+				f.set_meta("rest", f.transform)
+			return f
+	return null
+
+func _reload_hand(carry: String) -> Node3D:
+	if _rl_hand == null:
+		_rl_hand = Game.model("hand_l")
+		_rl_hand.top_level = true
+		cam.add_child(_rl_hand)
+	if carry != _rl_carry:
+		_rl_carry = carry
+		for c in _rl_hand.get_children():
+			if c.name.begins_with("Carry"):
+				c.queue_free()
+		if carry != "":
+			var m := Game.model(carry)
+			m.name = "Carry"
+			_rl_hand.add_child(m)
+	return _rl_hand
+
+## Returns [position offset, rotation offset] for the gun, and moves slide, magazine,
+## barrel and the reloading hand.
+func _reload_anim(delta: float, rid: String, reloading: bool) -> Array:
+	var dp := Vector3.ZERO
+	var dr := Vector3.ZERO
+	var hand_on := false
+	var hand_at := Vector3.ZERO
+	var hand_rot := Vector3(0.7, 0.0, 0.0)
+	var ph := 1.0 - busy / busy_total if busy_total > 0 else 0.0
+	if rid == "pistol":
+		var slide := _vm_part("Slide")
+		var mag := _vm_part("Mag")
+		var down := Vector3(0, -0.969, 0.247)      # along the grip, out of the gun
+		var mag_off := 0.0
+		var slide_back := _vm_kick * 0.02          # the slide also kicks back on every shot
+		if reloading:
+			var tilt := smoothstep(0.0, 0.12, ph) * (1.0 - smoothstep(0.55, 0.64, ph))
+			var side := smoothstep(0.55, 0.66, ph) * (1.0 - smoothstep(0.86, 0.98, ph))
+			dp = Vector3(-0.13, 0.17, -0.06) * tilt + Vector3(-0.12, 0.12, -0.1) * side
+			dr = Vector3(0.12, 0.3, 0.45) * tilt + Vector3(0.05, -0.1, 0.95) * side
+			# old magazine drops (0.12-0.25), gun empty, the new one goes in (0.38-0.55)
+			if ph < 0.12: mag_off = 0.0
+			elif ph < 0.25: mag_off = smoothstep(0.12, 0.25, ph) * 0.18
+			elif ph < 0.38: mag_off = 1.0
+			elif ph < 0.55: mag_off = 0.11 * (1.0 - smoothstep(0.42, 0.55, ph))
+			if mag:
+				mag.visible = mag_off < 0.9
+			# the left hand: up from below with the spare (0.22-0.38), pushes it in, then racks
+			if ph > 0.2 and ph < 0.58 and mag and slide:
+				hand_on = true
+				var mrest: Transform3D = mag.get_meta("rest")
+				var bottom: Vector3 = gun.global_transform * (mrest.origin + down * (0.05 + maxf(mag_off, 0.11 if ph < 0.38 else mag_off)))
+				var from_below: Vector3 = cam.global_transform * Vector3(-0.08, -0.5, -0.35)
+				hand_at = from_below.lerp(bottom, smoothstep(0.2, 0.36, ph))
+				_reload_hand("pistol_mag" if ph < 0.38 else "")
+			elif ph > 0.62 and ph < 0.92 and slide:
+				hand_on = true
+				var top: Vector3 = slide.global_transform * Vector3(0, 0.03, -0.01)
+				var from_side: Vector3 = cam.global_transform * Vector3(-0.3, -0.3, -0.3)
+				hand_at = from_side.lerp(top, smoothstep(0.62, 0.7, ph)).lerp(from_side, smoothstep(0.84, 0.92, ph))
+				hand_rot = Vector3(0.0, -0.3, 0.2)
+				_reload_hand("")
+				slide_back = 0.04 * smoothstep(0.7, 0.78, ph) * (1.0 - smoothstep(0.8, 0.82, ph))
+			# sounds on the beats of the video: magazine seated, slide released
+			if _rl_last < 0.52 and ph >= 0.52:
+				Game.play_ui(self, "reload", -10)
+			if _rl_last < 0.8 and ph >= 0.8:
+				Game.play_ui(self, "clink", -8)
+			_rl_last = ph
+		elif mag:
+			mag.visible = true
+			_rl_last = 0.0
+		if mag:
+			var r0: Transform3D = mag.get_meta("rest")
+			mag.position = r0.origin + down * clampf(mag_off, 0.0, 0.2)
+		if slide:
+			var s0: Transform3D = slide.get_meta("rest")
+			slide.position = s0.origin + Vector3(0, 0, slide_back)
+	elif rid == "magnum":
+		var barrel := _vm_part("Barrel")
+		var single := reloading and busy_text.begins_with("Přebíjím po")
+		if single and not _rev_was:
+			_rev_was = true
+			_eject_empties()
+		if single:
+			_rev_open = minf(1.0, _rev_open + delta * 4.0)
+			_rev_closing = 0.0
+		elif _rev_was:
+			_rev_was = false
+			_rev_closing = 0.35
+			Game.play_ui(self, "clink", -6)      # snapped shut
+		if _rev_closing > 0.0:
+			_rev_closing -= delta
+			_rev_open = maxf(0.0, _rev_open - delta * 6.0)
+		var o := smoothstep(0.0, 1.0, _rev_open)
+		dp = Vector3(-0.1, 0.08, -0.07) * o
+		dr = Vector3(0.75, 0.35, 0.25) * o + Vector3(0.25, 0, 0) * (_rev_closing / 0.35 if _rev_closing > 0 else 0.0)
+		if barrel:
+			var b0: Transform3D = barrel.get_meta("rest")
+			barrel.transform = b0 * Transform3D(Basis(Vector3.RIGHT, -1.1 * o), Vector3.ZERO)
+			if single and _rev_open >= 1.0:
+				# one round: the hand brings it from the belt and pushes it into a chamber
+				hand_on = true
+				var chamber: Vector3 = barrel.global_transform * Vector3(0.012, 0.019, 0.07) + cam.global_transform.basis * Vector3(-0.03, -0.045, 0.03)
+				var from_low: Vector3 = cam.global_transform * Vector3(-0.15, -0.45, -0.3)
+				hand_at = from_low.lerp(chamber, smoothstep(0.0, 0.55, ph)).lerp(from_low, smoothstep(0.85, 1.0, ph))
+				hand_rot = Vector3(0.4, -0.2, 0.0)
+				_reload_hand("round" if ph < 0.8 else "")
+	if _rl_hand:
+		_rl_hand.visible = hand_on
+		if hand_on:
+			_rl_hand.global_position = hand_at
+			_rl_hand.global_transform.basis = cam.global_transform.basis * Basis.from_euler(hand_rot)
+	return [dp, dr]
+
+## The revolver breaks open: the empties fall out.
+func _eject_empties() -> void:
+	var barrel := _vm_part("Barrel")
+	if barrel == null or not is_inside_tree():
+		return
+	Game.play_at(mission, "clink", global_position, -12)
+	for i in 5:
+		var b := RigidBody3D.new()
+		b.collision_layer = 0
+		b.collision_mask = 1
+		var cs := CollisionShape3D.new()
+		var sh := BoxShape3D.new()
+		sh.size = Vector3(0.01, 0.01, 0.03)
+		cs.shape = sh
+		b.add_child(cs)
+		b.add_child(Game.model("round"))
+		mission.add_child(b)
+		b.global_position = barrel.global_transform * Vector3(randf_range(-0.01, 0.01), 0.02, 0.05)
+		b.linear_velocity = velocity + Vector3(randf_range(-0.4, 0.4), -0.5, randf_range(-0.2, 0.4))
+		b.angular_velocity = Vector3(randf_range(-8, 8), randf_range(-8, 8), 0)
+		get_tree().create_timer(12.0).timeout.connect(b.queue_free)
 
 func _drop_mag() -> void:
 	if gun == null or not is_inside_tree():

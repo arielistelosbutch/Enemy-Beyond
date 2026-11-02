@@ -61,6 +61,7 @@ func _process(delta: float) -> void:
 		"stance": _stance(p)
 		"wshot": _wshot(p)
 		"pose": _pose(p)
+		"rlanim": _rlanim(p)
 		"terror": _terror(p)
 		"panic":
 			if p and step == 0 and t > 3:
@@ -555,6 +556,47 @@ func _pose(p: Node) -> void:
 			p._animate_body(1.0 / 30.0)
 			await get_tree().process_frame
 		get_viewport().get_texture().get_image().save_png("user://pose_item_%s.png" % id)
+	get_tree().quit()
+
+func _rlanim(p: Node) -> void:
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.inventory_open = false
+	p.set_physics_process(false)
+	p.global_position = m().map["evac"] + Vector3(0, 40, 8)     # up in the sky: nothing in the way
+	p.rotation.y = PI
+	p.pitch = 0.0
+	p.flash.visible = false
+	for id in ["pistol", "magnum"]:
+		p.inv["rh"] = {"id": id, "loaded": 0}
+		p.inv.erase("lh")
+		p._update_held()
+		await get_tree().process_frame
+		var phs := [0.0, 0.18, 0.3, 0.45, 0.68, 0.76, 1.0] if id == "pistol" else [0.0, 0.2, 0.5, 0.7, -1.0]
+		if Game.cmd_arg("dense", "") == "1":
+			phs = []
+			var n := 34 if id == "pistol" else 14
+			for j in n:
+				phs.append(float(j) / (n - 1))
+			if id == "magnum":
+				phs += [0.0, 0.3, 0.6, 0.9, -1.0, -1.0, -1.0]
+		for i in phs.size():
+			var ph: float = phs[i]
+			if ph < 0:
+				p.busy = 0.0
+				p.busy_text = ""
+				for k in 3:
+					p._viewmodel_motion(0.05, 0.0)
+			else:
+				p.busy_total = 1.7 if id == "pistol" else 0.7
+				p.busy = p.busy_total * (1.0 - ph) + 0.0001
+				p.busy_text = "Přebíjím" if id == "pistol" else "Přebíjím po náboji"
+				for k in (25 if Game.cmd_arg("dense", "") != "1" else 4):
+					p._viewmodel_motion(0.05, 0.0)
+			await get_tree().process_frame
+			await get_tree().process_frame
+			get_viewport().get_texture().get_image().save_png("user://rl_%s_%d.png" % [id, i])
 	get_tree().quit()
 
 func _wshot(p: Node) -> void:

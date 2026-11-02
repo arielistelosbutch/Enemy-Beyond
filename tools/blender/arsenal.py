@@ -58,19 +58,34 @@ def shotgun():
     save(p, "Shotgun")
 
 def magnum():
+    """Top-break revolver: the barrel with the cylinder tips down on a hinge at the
+    front of the frame (pivot = origin of "Barrel"), exposing the chambers."""
     reset(); m = M(); p = []
-    p.append(box(m["chrome"], (0, 0.03, 0.035), (0.03, 0.08, 0.04)))              # frame
-    p.append(cyl(m["chrome"], (0, 0.06, 0.035), 0.022, 0.05, verts=6, rot=(PI2, 0, 0)))   # cylinder
-    for i in range(6):
-        a = i / 6 * math.tau
-        p.append(cyl(m["dark"], (math.cos(a) * 0.012, 0.086, 0.035 + math.sin(a) * 0.012), 0.004, 0.003, verts=4, rot=(PI2, 0, 0)))
-    p.append(tube(m["chrome"], (0, 0.08, 0.045), (0, 0.27, 0.045), 0.009))       # barrel
-    p.append(box(m["chrome"], (0, 0.17, 0.056), (0.012, 0.19, 0.01)))             # top rib
-    p.append(box(m["dark"], (0, 0.26, 0.064), (0.004, 0.008, 0.01)))
+    p.append(box(m["chrome"], (0, 0.012, 0.035), (0.03, 0.045, 0.04)))            # frame (rear)
+    p.append(box(m["chrome"], (0, 0.055, 0.017), (0.026, 0.04, 0.006)))           # lower strap to the hinge
     p.append(box(m["wood"], (0, -0.01, -0.035), (0.028, 0.04, 0.09), rot=(-0.35, 0, 0)))
     p.append(box(m["chrome"], (0, -0.02, 0.06), (0.01, 0.015, 0.015), rot=(0.6, 0, 0)))  # hammer
     p.append(box(m["dark"], (0, 0.03, 0.002), (0.008, 0.035, 0.006)))
-    save(p, "Magnum")
+    frame = join(p, "Magnum")
+    b = [cyl(m["chrome"], (0, 0.06, 0.035), 0.022, 0.05, verts=6, rot=(PI2, 0, 0))]   # cylinder
+    for i in range(6):
+        a = i / 6 * math.tau
+        b.append(cyl(m["brass"], (math.cos(a) * 0.012, 0.034, 0.035 + math.sin(a) * 0.012), 0.0045, 0.003, verts=5, rot=(PI2, 0, 0)))
+    b.append(tube(m["chrome"], (0, 0.08, 0.045), (0, 0.27, 0.045), 0.009))       # barrel
+    b.append(box(m["chrome"], (0, 0.15, 0.056), (0.012, 0.23, 0.01)))            # top rib (latch at the back)
+    b.append(box(m["dark"], (0, 0.26, 0.064), (0.004, 0.008, 0.01)))
+    b.append(box(m["chrome"], (0, 0.06, 0.017), (0.024, 0.05, 0.006)))           # hinge lug
+    barrel = join(b, "Barrel")
+    bpy.ops.object.select_all(action='DESELECT')
+    barrel.select_set(True)
+    bpy.context.view_layer.objects.active = barrel
+    bpy.context.scene.cursor.location = (0, 0.078, 0.016)
+    bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
+    export_glb(os.path.join(OUTDIR, "magnum.glb"), [frame, barrel])
+    # one round (loaded by hand, and the empties that fall out)
+    reset(); m = M()
+    r = [cyl(m["brass"], (0, 0, 0), 0.0045, 0.03, verts=6, rot=(PI2, 0, 0)), cyl(m["chrome"], (0, 0.017, 0), 0.0035, 0.006, verts=6, rot=(PI2, 0, 0), r2=0.001)]
+    export_glb(os.path.join(OUTDIR, "round.glb"), [join(r, "Round")])
 
 def autocannon():
     reset(); m = M(); p = []

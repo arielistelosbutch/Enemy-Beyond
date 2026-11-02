@@ -1,4 +1,9 @@
 {
+ "0.17": [
+  "Nové nabíjení pistole podle videa: zbraň se naklopí, zásobník vypadne, levá ruka zasune nový a natáhne závěr.",
+  "Revolver Magnum se láme: hlaveň sklopí, prázdné nábojnice vypadnou, levá ruka nabíjí po jednom, cvaknutím se zavře.",
+  "Závěr pistole při výstřelu cuká dozadu."
+ ],
  "0.16": [
   "Lékárnička: H ji vezme do ruky (puška jde sama na záda), další H ošetří spoluhráče v dosahu, jinak tebe. E už neléčí, takže se nepere s odletem.",
   "E u padlého spoluhráče = táhnout ho.",
