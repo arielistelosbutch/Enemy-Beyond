@@ -6,6 +6,7 @@ const PlayerScript := preload("res://scripts/player.gd")
 const AlienScript := preload("res://scripts/alien.gd")
 const MeleeScript := preload("res://scripts/melee_alien.gd")
 const DroneScript := preload("res://scripts/drone_alien.gd")
+const BossScript := preload("res://scripts/boss.gd")
 const CivScript := preload("res://scripts/civilian.gd")
 const MapGen := preload("res://scripts/map_gen.gd")
 const Hud := preload("res://scripts/hud.gd")
@@ -63,6 +64,8 @@ func _pick_weather() -> void:
 	if Net.mission_params.get("terrain", "") == "snow" and (w == "rain" or w == "storm"):
 		w = "snow"
 	elif Net.mission_params.get("terrain", "") == "desert" and (w == "rain" or w == "fog"):
+		w = "clear"
+	if Net.mission_params.get("type", "") == "mars":
 		w = "clear"
 	weather = w
 
@@ -203,12 +206,16 @@ func _briefing_text() -> String:
 			"crash": "Malé UFO spadlo po zásahu do krajiny. Část posádky mohla přežít a hledá úkryt.",
 			"landed": "UFO přistálo neporušené. Posádka je venku a něco tu dělá. Zatím neví, že o nás ví.",
 			"abduction": "Z okolních stavení zmizeli lidé. Nad krajinou viděli světla. Možná ještě někdo žije.",
+			"mars": "Orel přistál na rudé pláni. Před vámi je tunel do jejich velína a za ním Velký mozek - to, co je všechny řídí. Chrání ho štít ze tří pylonů. Zničte pylony, pak mozek. Myslí na vás. Uslyšíte ho.",
 			"terror": "Vetřelci vtrhli do městečka. Spojení s místními je přerušeno. Poslední hovor na tísňovou linku: \"Je to černé, je to rychlé, a ti, co to zabilo, zase vstávají.\"\nZachraň, koho můžeš (E u vyděšeného civilisty - půjde za tebou do Kondoru).",
 		}
 		var terr: String = {"snow": "\nTerén: sníh - každý krok je slyšet.", "desert": "\nTerén: poušť - málo úkrytů."}.get(mp.get("terrain", ""), "")
-		return "%s\nOblast: %s, místní čas %02d:%02d (%s), mapa %s%s\n\n%s\n\nÚKOL: zneškodnit posádku a vrátit se do Kondoru.\nOmráčení vetřelci mají pro výzkum velkou cenu. Co vetřelci upustí, posbíráme při odletu." % [
+		var task := "ÚKOL: zneškodnit posádku a vrátit se do Kondoru.\nOmráčení vetřelci mají pro výzkum velkou cenu. Co vetřelci upustí, posbíráme při odletu."
+		if mp.get("type", "") == "mars":
+			task = "ÚKOL: zničit tři pylony štítu a Velký mozek. Návrat není."
+		return "%s\nOblast: %s, místní čas %02d:%02d (%s), mapa %s%s\n\n%s\n\n" % [
 			String(mp.get("type_name", "Mise")).to_upper(), mp.get("place", "?"), int(h), int(fmod(h, 1.0) * 60),
-			"noc" if mp.get("night", true) else "den", MapGen.SIZE_NAMES.get(mp.get("size", "medium"), "střední"), terr, flavor.get(mp.get("type", "crash"), "")]
+			"noc" if mp.get("night", true) else "den", MapGen.SIZE_NAMES.get(mp.get("size", "medium"), "střední"), terr, flavor.get(mp.get("type", "crash"), "")] + task
 	var r := RandomNumberGenerator.new()
 	r.seed = Net.mission_seed
 	var day := r.randi_range(3, 27)
@@ -324,6 +331,16 @@ func _weather_env() -> void:
 			_wind_base = 0.7
 		"storm":
 			_wind_base = 1.5
+	if Net.mission_params.get("type", "") == "mars":
+		# Mars: a rust-red night, dust hanging in the air, a small cold sun gone down
+		env.background_color = Color(0.09, 0.03, 0.02)
+		env.ambient_light_color = Color(0.45, 0.2, 0.15)
+		env.ambient_light_energy = 0.35
+		env.fog_light_color = Color(0.25, 0.08, 0.05)
+		env.fog_density = 0.02 if vol else 0.045
+		moon.light_color = Color(1.0, 0.6, 0.45)
+		moon.light_energy = 0.25
+		_wind_base = 0.3
 	_moon_base = moon.light_energy
 	_amb_base = env.ambient_light_energy
 	_fog_base = env.fog_density
@@ -364,6 +381,13 @@ func _maybe_spawn() -> void:
 		if not crew[k] in crew_names:
 			crew_names.append(crew[k])
 	aliens_total = crew.size()
+	# Mars: the Great Brain on its dais and the three pylons of its shield
+	if map.has("brain"):
+		spawner.spawn({"kind": "alien", "id": next_alien_id, "pos": map["brain"], "race": "mozek"})
+		next_alien_id += 1
+		for pp in map["pylons"]:
+			spawner.spawn({"kind": "alien", "id": next_alien_id, "pos": pp, "race": "pylon"})
+			next_alien_id += 1
 	# civilians (terror and abduction)
 	var mt: String = Net.mission_params.get("type", "")
 	var nciv := 0
@@ -464,6 +488,8 @@ func _spawn(data: Variant) -> Node:
 		a.set_script(MeleeScript)
 	elif race == "diskoll" or race == "kolos":
 		a.set_script(DroneScript)
+	elif race == "mozek" or race == "pylon":
+		a.set_script(BossScript)
 	else:
 		a.set_script(AlienScript)
 	a.name = "A%d" % data["id"]
@@ -1109,6 +1135,11 @@ func _judge() -> void:
 			standing += 1
 			if p.global_position.distance_to(map["evac"]) < 3.5 and p.wants_evac:
 				at_evac += 1
+	if map.has("brain"):
+		for a in aliens():
+			if a.race == "mozek" and a.dead and not finished:
+				_end.rpc(true, "VELKÝ MOZEK JE MRTVÝ. Jejich velín na Marsu utichl - a s ním každá loď, každý Šeďák, každý hlas v hlavě. Je konec.")
+				return
 	if standing == 0:
 		_end.rpc(false, "Celý tým padl.")
 	elif at_evac == standing:
@@ -1206,6 +1237,12 @@ func _leave(why: String) -> void:
 		Net.back_to_menu()
 		return
 	Net.after_mission()
+
+## A short line for everybody (the Brain calling its guards...).
+@rpc("authority", "call_local", "reliable")
+func hud_note(t: String) -> void:
+	if hud:
+		hud.message(t, 3.0)
 
 func _on_note(t: String) -> void:
 	if hud:

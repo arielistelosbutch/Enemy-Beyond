@@ -62,6 +62,8 @@ func _process(delta: float) -> void:
 		"wshot": _wshot(p)
 		"pose": _pose(p)
 		"rlanim": _rlanim(p)
+		"ufoshot": _ufoshot(p)
+		"mapshot": _mapshot(p)
 		"terror": _terror(p)
 		"panic":
 			if p and step == 0 and t > 3:
@@ -611,6 +613,57 @@ func _rlanim(p: Node) -> void:
 			await get_tree().process_frame
 			await get_tree().process_frame
 			get_viewport().get_texture().get_image().save_png("user://rl_%s_%d.png" % [id, i])
+	get_tree().quit()
+
+func _ufoshot(p: Node) -> void:
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.inventory_open = false
+	p.set_physics_process(false)
+	var races := []
+	for a in m().aliens():
+		races.append(a.race)
+		if Game.cmd_arg("keep", "") == "" or not a.race in ["mozek", "pylon"]:
+			a.queue_free()
+	out("RACES %s brain=%s" % [races, m().map.get("brain", "-")])
+	var u: Vector3 = m().map["ufo"]
+	var door: Vector3 = m().map["ufo_door"]
+	var out := (door - u)
+	out.y = 0
+	out = out.normalized()
+	var shots := [["out", u + out * (40.0 if m().map.has("brain") else 26.0) + Vector3(6, 4.5, 0), u + Vector3(0, 1.5, 0)],
+		["door", door + out * 2.5 + Vector3(0, 0.3, 0), u],
+		["in", door - out * 2.6 + Vector3(0, 0.3, 0), u - out * 3.0]]
+	if m().map.has("brain"):
+		shots = [shots[0], ["door", u + out * 16.0 + Vector3(0, 0.3, 0), u],
+			["in", u + out * 9.0 + Vector3(2, 0.3, 0), m().map["brain"] + Vector3(0, 1.2, 0)]]
+	for e in shots:
+		p.global_position = e[1]
+		_aim_at(p, e[2])
+		p.flash.visible = true
+		await get_tree().create_timer(1.5).timeout
+		get_viewport().get_texture().get_image().save_png("user://ufo_%s_%s.png" % [m().map.get("ufo_kind", "?"), e[0]])
+	get_tree().quit()
+
+## Overview pictures of a whole map (daylight helps to see the tiles).
+func _mapshot(p: Node) -> void:
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.visible = false
+	var size: float = m().map["size"]
+	var cam := Camera3D.new()
+	cam.far = 400
+	m().add_child(cam)
+	var c := Vector3(size / 2, 0, size / 2)
+	for i in 3:
+		var pos: Vector3 = [c + Vector3(-size * 0.55, size * 0.55, size * 0.75), c + Vector3(size * 0.6, size * 0.45, -size * 0.5), c + Vector3(0, size * 0.25, size * 0.2)][i]
+		cam.global_position = pos
+		cam.look_at(c if i < 2 else Vector3(m().map["ufo"]), Vector3.UP)
+		cam.make_current()
+		await get_tree().create_timer(1.0).timeout
+		get_viewport().get_texture().get_image().save_png("user://map_%s_%d.png" % [Game.cmd_arg("biome", "farm"), i])
 	get_tree().quit()
 
 func _wshot(p: Node) -> void:

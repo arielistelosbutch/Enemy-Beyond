@@ -21,6 +21,8 @@ const MTYPES := {
 		"text": "Neporušené UFO přistálo a posádka je venku. Neví, že o nich víme."},
 	"abduction": {"name": "Únos", "reward": 550, "aliens": 1, "expire": 0.5, "trust": 6,
 		"text": "Hlášení o světlech nad samotou a zmizelých lidech. Možná ještě není pozdě."},
+	"mars": {"name": "Velín na Marsu", "reward": 0, "aliens": 4, "expire": 9999.0, "trust": 0,
+		"text": "Orel je připravený. Odlet na Mars, do srdce jejich velení - k Velkému mozku. Zpátky se letí jen s vítězstvím."},
 	"terror": {"name": "Teror", "reward": 900, "aliens": 3, "expire": 0.35, "trust": 10,
 		"text": "Vetřelci vtrhli do městečka. Spojení s místní policií bylo přerušeno."},
 }
@@ -51,6 +53,10 @@ const RESEARCH := {
 		"desc": "Rozebraná plazmová pistole vetřelců ukázala, jak uchovat obrovskou energii v malém článku. Naše verze: laserová pistole a puška. Žádné zásobníky - článek se dobíjí sám."},
 	"laser_tezky": {"name": "Laserový kanón", "cost": 600, "mk": 15, "days": 6.0, "needs": {"research": "laser", "loot": "a_heavy"},
 		"desc": "Těžký laser podle zbraně Bijců. Na obrněné cíle a stroje."},
+	"signal": {"name": "Signál z Marsu", "cost": 600, "days": 6.0, "needs": {"research": "vyslech"},
+		"desc": "Zajatec pořád opakuje jedno slovo a ukazuje do nebe. Radar zachytil úzký paprsek mířící na Mars. Tam je jejich velín - a v něm to, co je všechny řídí."},
+	"orel": {"name": "Hvězdná loď Orel", "cost": 2500, "mk": 120, "days": 10.0, "needs": {"research": "signal"},
+		"desc": "Kondor s motorem na Moskovium 115 a trupem z vetřeleckých slitin. Doletí na Mars a zpátky. Odemkne poslední misi."},
 	"plazma": {"name": "Plazmová puška", "cost": 700, "mk": 30, "days": 8.0, "needs": {"research": "vyslech", "loot": "a_rifle"},
 		"desc": "Vlastní zbraň postavená podle zabavené plazmové pistole."},
 }
@@ -224,6 +230,8 @@ func advance(days: float) -> bool:
 			r["current"] = ""
 			r["progress"] = 0.0
 			_log("Výzkum dokončen: " + RESEARCH[done]["name"])
+			if done == "orel":
+				_add_final()
 			research_done.emit(done)
 			stop = true
 	# construction
@@ -473,6 +481,21 @@ func terrain_at(lat: float, lon: float) -> String:
 		return "snow"
 	return "temperate"
 
+## The last mission appears on the globe at the base: the Orel takes off from there.
+func _add_final() -> void:
+	for mm in data["missions"]:
+		if mm["type"] == "mars":
+			return
+	var id := int(data["next_id"])
+	data["next_id"] = id + 1
+	data["missions"].append({"id": id, "type": "mars", "lat": BASE_LAT, "lon": BASE_LON, "place": "Mars - rudá pláň",
+		"expires": float(data["day"]) + 9999.0, "biome": "mars", "terrain": "mars", "size": "large", "race": "myslodej",
+		"group": "myslodejove", "extra_aliens": 4, "reward": 0, "seed": rng.randi() % 1000000})
+	_log("Orel je připravený na startovací rampě. Poslední mise: Mars.")
+
+func won() -> bool:
+	return bool(data.get("won", false))
+
 func nearest_place(lat: float, lon: float) -> String:
 	var best := ""
 	var bd := 1e9
@@ -519,6 +542,12 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 	if m.is_empty():
 		return ""
 	data["missions"].erase(m)
+	if m["type"] == "mars":
+		if success:
+			data["won"] = true
+			_log("VÍTĚZSTVÍ. Velký mozek je mrtvý, velín na Marsu zničen.")
+		else:
+			data["missions"].append(m)       # the Orel can fly again
 	var info: Dictionary = MTYPES[m["type"]]
 	var money := (int(m["reward"]) if success else 0) + kills * 40 + captures * 160 + civ_saved * 60
 	data["credits"] = int(data["credits"]) + money

@@ -61,6 +61,11 @@ func _ready() -> void:
 	if Net.last_result != "":
 		_alert("NÁVRAT Z MISE\n" + Net.last_result)
 		Net.last_result = ""
+	if Campaign.won() and not Campaign.data.get("won_shown", false):
+		Campaign.data["won_shown"] = true
+		Campaign.save()
+		Game.play_music("victory", false)
+		_alert("VÍTĚZSTVÍ\nVelký mozek je mrtvý a velín na Marsu utichl. UFO padají z nebe jako mrtví ptáci, Šeďáci v lesích jen stojí a dívají se do tmy.\nŽoldáci přežili noc, která neměla konec.\n\nENEMY BEYOND\nPocta UFO: Enemy Unknown - fanouškovská hra, ne na prodej.\nNápad a hra: Ivo Arielistelos Florek.\nKampaň můžeš hrát dál.")
 	_autotest.call_deferred()
 
 # ---- the globe -------------------------------------------------------------------------------

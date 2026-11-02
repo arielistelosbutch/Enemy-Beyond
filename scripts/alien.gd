@@ -52,6 +52,10 @@ const RACES := {
 		"weak": {"explosion": 6.0}},
 	"myslodej": {"name": "Mysloděj", "hp": 140.0, "walk": 1.3, "run": 2.8, "armor": 0.8, "model": "myslodej", "h": 1.6, "r": 0.4, "eye": 1.55,
 		"bolt": 1.2, "shots": [1, 2], "miss": 0.7, "hover": 0.35, "hide": 1.2, "psi": 2},
+	"mozek": {"name": "Velký mozek", "hp": 2200.0, "walk": 0.0, "run": 0.0, "armor": 0.6, "model": "mozek", "h": 2.6, "r": 1.6, "eye": 1.3,
+		"hide": 0.0, "psi": 3, "weak": {"explosion": 1.4, "laser": 1.3, "plasma": 1.2}},
+	"pylon": {"name": "Pylon štítu", "hp": 260.0, "walk": 0.0, "run": 0.0, "armor": 0.7, "model": "pylon", "h": 2.9, "r": 0.6, "eye": 2.8,
+		"hide": 0.0, "explode": [3.0, 25.0], "weak": {"explosion": 2.0}},
 	"kolos": {"name": "Kolos", "hp": 320.0, "walk": 1.6, "run": 3.2, "armor": 0.45, "model": "kolos", "h": 2.4, "r": 0.9, "eye": 2.0,
 		"bolt": 1.3, "shots": [2, 3], "miss": 0.8, "explode": [6.0, 90.0], "hide": 0.0, "weak": {"explosion": 1.3}},
 }

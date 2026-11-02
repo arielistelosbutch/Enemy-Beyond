@@ -139,6 +139,7 @@ const QUICK := [
 	["Velká loď (Myslodějové, Kolos)", {"group": "myslodejove", "type": "landed", "type_name": "Přistání UFO", "biome": "forest", "place": "Lesy u Dačic", "extra_aliens": 2, "ufo": "harvester", "size": "large"}],
 	["Zimní noc v horách (Šeďáci, sníh)", {"group": "sedaci", "type": "crash", "type_name": "Havárie UFO", "biome": "forest", "place": "Krkonoše", "extra_aliens": 1, "terrain": "snow", "size": "medium"}],
 	["Poušť (Bijci, Ohnivec)", {"group": "bijci", "type": "landed", "type_name": "Přistání UFO", "biome": "farm", "place": "Sahara", "extra_aliens": 1, "terrain": "desert", "size": "large"}],
+	["Poslední mise: Velín na Marsu (Velký mozek)", {"group": "myslodejove", "type": "mars", "type_name": "Velín na Marsu", "biome": "mars", "terrain": "mars", "place": "Mars - rudá pláň", "extra_aliens": 3, "size": "large"}],
 	["Náhodná mise", {}],
 ]
 var quick_pick := 0
@@ -940,11 +941,11 @@ func _autotest() -> void:
 		"air":
 			Net.mission_params = {"intercept": true, "id": -1, "ufo": Game.cmd_arg("ufo", "raider")}
 			get_tree().change_scene_to_file("res://scenes/Intercept.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
-				"hour": 14.0 if Game.cmd_arg("day", "0") == "1" else 23.0, "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "terrain": Game.cmd_arg("terrain", "temperate"), "size": Game.cmd_arg("size", "medium")})
+				"hour": 14.0 if Game.cmd_arg("day", "0") == "1" else 23.0, "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "terrain": Game.cmd_arg("terrain", "temperate"), "size": Game.cmd_arg("size", "medium"), "ufo": Game.cmd_arg("ufo", "")})
 		"solo", "shot", "ai", "panic", "arsenal", "evac":
 			if Game.autotest() == "shot":
 				await get_tree().create_timer(1.5).timeout
