@@ -1,4 +1,10 @@
 {
+ "0.16": [
+  "Lékárnička: H ji vezme do ruky (puška jde sama na záda), další H ošetří spoluhráče v dosahu, jinak tebe. E už neléčí, takže se nepere s odletem.",
+  "E u padlého spoluhráče = táhnout ho.",
+  "Kliknutí v menu (výstroj, pauza, briefing) už nevystřelí, když se menu zavře.",
+  "Výstroj ukazuje správně: s dlouhou zbraní LTM střílí a PTM míří, jinak LTM = levá ruka a PTM = pravá."
+ ],
  "0.15": [
   "OPRAVA: mise šla zase ukončit - drž E u Kondoru 2 s, pak můžeš pustit a čekat na ostatní.",
   "Vysílačka: drž K (stačí mít vysílačku na opasku). Hlas je čistý, šum jen když jsou vetřelci blízko.",

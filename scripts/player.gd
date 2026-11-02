@@ -706,6 +706,8 @@ func _physics_process(delta: float) -> void:
 			busy = 0.0       # interrupt single-round reloading to shoot
 	elif not inv_open:
 		_actions(delta)
+	if inv_open:
+		_click_lock = true      # a click in a menu must not fire the gun when the menu closes
 	_stress(delta)
 	_bleed(delta)
 	healed_t = maxf(0.0, healed_t - delta)
@@ -781,12 +783,15 @@ func _laser_charge(delta: float) -> void:
 			c -= 1.0
 		w["charge"] = c if int(w["loaded"]) < cap else 0.0
 
+var _click_lock := false
 func _actions(delta: float) -> void:
 	radio_button = false
 	var rh := item_in("rh")
 	var lh := item_in("lh")
 	var two := not rh.is_empty() and Game.two_handed(rh["id"])
-	if not sprinting:
+	if _click_lock and not Input.is_action_pressed("fire") and not Input.is_action_pressed("aim"):
+		_click_lock = false
+	if not sprinting and not _click_lock:
 		if two:
 			# long gun: left button fires, right button aims
 			_use_hand("rh", Input.is_action_pressed("fire"), Input.is_action_just_pressed("fire"), delta)
@@ -825,7 +830,7 @@ func _actions(delta: float) -> void:
 	if Input.is_action_just_pressed("melee"):
 		_quick_melee()
 	if Input.is_action_just_pressed("heal"):
-		_heal_self()
+		_medkit()
 	if Input.is_action_just_pressed("use"):
 		if not _use_teammate() and not _use_civilian():
 			_pick_up()
@@ -858,7 +863,7 @@ func _use_hand(slot: String, pressed: bool, just: bool, delta: float) -> void:
 				_throw(it["id"], slot)
 		"medkit":
 			if just:
-				_heal_self()
+				_medkit()
 		"radio":
 			# hold the button of the hand with the radio = talk on the radio
 			if pressed:
@@ -1338,6 +1343,39 @@ func set_carried(by_peer: int) -> void:
 	if is_multiplayer_authority() and downed:
 		carried_by = by_peer
 
+## H (or the hand's button): the medkit must be in a hand. A teammate in reach is treated
+## first (bandage the hurt, bring the downed back), otherwise yourself. Not in a hand: H takes it.
+func _medkit() -> void:
+	var slot := ""
+	for s in ["lh", "rh"]:
+		if item_in(s).get("id", "") == "medkit" and int(item_in(s).get("uses", 1)) > 0:
+			slot = s
+	if slot == "":
+		var from := find_item(func(it): return it["id"] == "medkit" and int(it.get("uses", 1)) > 0)
+		if from == "":
+			mission.hud.message("Nemáš lékárničku.", 1.5)
+			return
+		var to := ""
+		if not inv.has("lh") and not Game.two_handed(item_in("rh").get("id", "")):
+			to = "lh"
+		elif not inv.has("rh"):
+			to = "rh"
+		if to == "" and Game.two_handed(item_in("rh").get("id", "")) and not inv.has("back"):
+			# sling the long gun on the back, the medkit goes into the right hand
+			inv["back"] = inv["rh"]
+			inv.erase("rh")
+			to = "rh"
+		if to == "":
+			mission.hud.message("Na lékárničku potřebuješ volnou ruku (Q dá pušku na záda).", 2.0)
+			return
+		mission.hud.message("Beru lékárničku do ruky - pak H ošetří.", 2.0)
+		timed_move(from, to)
+		return
+	if heal_target() != null:
+		_treat_teammate(slot)
+	else:
+		_heal_self()
+
 func _heal_self() -> void:
 	var slot := find_item(func(it): return it["id"] == "medkit" and int(it.get("uses", 0)) > 0)
 	if slot == "":
@@ -1372,12 +1410,19 @@ func heal_target() -> Node:
 func has_medkit() -> bool:
 	return find_item(func(it): return it["id"] == "medkit" and int(it.get("uses", 1)) > 0) != ""
 
+## E next to a downed teammate: drag him (treating is H with the medkit in hand).
 func _use_teammate() -> bool:
 	var best := heal_target()
-	if best == null:
+	if best == null or not best.downed:
 		return false
-	var slot := find_item(func(it): return it["id"] == "medkit" and int(it.get("uses", 1)) > 0)
-	if slot != "":
+	var me := get_multiplayer_authority()
+	best.set_carried.rpc_id(best.get_multiplayer_authority(), 0 if best.carried_by == me else me)
+	mission.hud.message("Táhneš %s (k lodi, nebo ošetři: lékárnička do ruky a H)" % best.display_name if best.carried_by != me else "Pustil jsi %s" % best.display_name, 2.5)
+	return true
+
+func _treat_teammate(slot: String) -> void:
+	var best := heal_target()
+	if true:
 		var target := best
 		var heal_time := 2.0 if Game.has_talent(merc, "felcar") else 3.0
 		if best.infected and not Game.has_research("pitva_lihnoun"):
@@ -1398,13 +1443,6 @@ func _use_teammate() -> bool:
 				target.revived.rpc_id(target.get_multiplayer_authority(), display_name)
 			else:
 				target.patched.rpc_id(target.get_multiplayer_authority(), display_name, 20.0 if Game.has_talent(merc, "felcar") else 10.0))
-	elif best.downed:
-		var me := get_multiplayer_authority()
-		best.set_carried.rpc_id(best.get_multiplayer_authority(), 0 if best.carried_by == me else me)
-		mission.hud.message("Táhneš %s (k lodi, nebo ke spoluhráči s lékárničkou)" % best.display_name if best.carried_by != me else "Pustil jsi %s" % best.display_name, 2.5)
-	else:
-		mission.hud.message("Na obvaz potřebuješ lékárničku.", 1.5)
-	return true
 
 ## A teammate has started treating you (shown on your screen).
 var healed_by := ""

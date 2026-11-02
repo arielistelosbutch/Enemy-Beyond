@@ -323,12 +323,16 @@ func _draw_hud() -> void:
 		var ht: Node = p.heal_target()
 		if ht:
 			var t2 := ""
-			if p.has_medkit():
-				t2 = ("E - OŠETŘIT %s (lékárnička)" if ht.downed else "E - obvázat %s (lékárnička)") % ht.display_name
+			var in_hand: bool = p.item_in("lh").get("id", "") == "medkit" or p.item_in("rh").get("id", "") == "medkit"
+			if in_hand:
+				t2 = ("H - OŠETŘIT %s" if ht.downed else "H - obvázat %s") % ht.display_name
+			elif p.has_medkit():
+				t2 = "H - vzít lékárničku do ruky (pak H ošetří %s)" % ht.display_name
 			elif ht.downed:
-				t2 = "E - táhnout %s  (nemáš lékárničku!)" % ht.display_name
-			if t2 != "":
-				_text(c, Vector2(mid.x - 100, mid.y + 56), t2, Color(0.5, 1.0, 0.5) if p.has_medkit() else ACCENT, 10)
+				t2 = "nemáš lékárničku"
+			if ht.downed:
+				t2 += "    E - táhnout"
+			_text(c, Vector2(mid.x - 100, mid.y + 56), t2, Color(0.5, 1.0, 0.5) if in_hand else ACCENT, 10)
 	if p.busy > 0 and p.busy_total > 0 and (p.busy_text.begins_with("Ošetřuji") or p.busy_text.begins_with("Obvazuji") or p.busy_text.begins_with("Vyřezávám")):
 		c.draw_rect(Rect2(mid.x - 60, mid.y + 42, 120, 5), Color(0, 0, 0, 0.6))
 		c.draw_rect(Rect2(mid.x - 60, mid.y + 42, 120 * (1.0 - p.busy / p.busy_total), 5), Color(0.4, 1.0, 0.4))
@@ -336,7 +340,7 @@ func _draw_hud() -> void:
 		var it: Dictionary = mission().nearest_pickup(p.global_position)["item"]
 		_text(c, Vector2(mid.x - 60, mid.y + 44), "E - sebrat: " + Game.ITEMS[it["id"]]["name"], TEXT, 9)
 	if p.bleeding > 0:
-		_text(c, base + Vector2(0, -12), "KRVÁCÍŠ - H lékárnička", RED, 9)
+		_text(c, base + Vector2(0, -12), "KRVÁCÍŠ - H lékárnička (do ruky, pak H)", RED, 9)
 	# hands, bottom: left hand on the left, right hand on the right
 	var right := Vector2(sz.x - 160, sz.y - 30)
 	_hand_text(c, p, "rh", right)
@@ -642,7 +646,7 @@ func _build_inventory() -> void:
 	var left := VBoxContainer.new()
 	left.add_theme_constant_override("separation", 3)
 	cols.add_child(left)
-	var groups := [["RUCE A ZÁDA  (levé tlačítko myši = pravá ruka, pravé = levá ruka / mířit, Q = zbraň na záda)", ["rh", "lh", "back"]],
+	var groups := [["RUCE A ZÁDA  (dlouhá zbraň: LTM střílí, PTM míří; jinak LTM = levá ruka, PTM = pravá; Q = zbraň na záda)", ["rh", "lh", "back"]],
 		["OPASEK - rychlý: klávesy 1 2 3 4 (zbraň do ruky, náboje nabijí)", ["b0", "b1", "b2", "b3"]],
 		["BATOH - pomalý: stojíš a hrabeš se (granáty, světlice... i odtud fungují svou klávesou)", ["p0", "p1", "p2", "p3", "p4", "p5"]]]
 	var names := {"rh": "pravá ruka", "lh": "levá ruka", "back": "na zádech (jen dlouhá zbraň)"}
@@ -685,8 +689,8 @@ func _keys_text(p: Node) -> String:
 		return "-" if it.is_empty() else Game.ITEMS[it["id"]]["short"]
 	var melee: String = p.find_item(func(it): return Game.ITEMS[it["id"]]["type"] == "melee")
 	var lines := [
-		"LTM  použít pravou ruku: %s" % hand.call("rh"),
-		"PTM  mířit / levá ruka: %s" % hand.call("lh"),
+		("LTM  střelba: %s" % hand.call("rh")) if Game.two_handed(p.item_in("rh").get("id", "")) else ("LTM  levá ruka: %s" % hand.call("lh")),
+		("PTM  mířit") if Game.two_handed(p.item_in("rh").get("id", "")) else ("PTM  pravá ruka: %s" % hand.call("rh")),
 		"R    nabít zbraň",
 		"Q    dlouhá zbraň na záda / ze zad (%s)" % hand.call("back"),
 		"1-4  věc z opasku do ruky / nabít",
@@ -694,8 +698,8 @@ func _keys_text(p: Node) -> String:
 		"X    kouřový granát (%s)" % where.call("smoke_grenade"),
 		"B    mina (%s)" % where.call("mine"),
 		"T    světlice (%s)" % where.call("flare"),
-		"H    lékárnička - sebe (%s)" % where.call("medkit"),
-		"E    ošetřit / vzít / civilista / Kondor",
+		"H    lékárnička: do ruky, pak ošetří spoluhráče / tebe (%s)" % where.call("medkit"),
+		"E    táhnout padlého / sebrat / civilista / Kondor (drž)",
 		"V    rána zblízka (%s)" % ("nemáš nůž ani obušek" if melee == "" else Game.ITEMS[p.inv[melee]["id"]]["short"]),
 		"F    svítilna na helmě",
 		"N / Caps Lock   mluvit (nahlas, kdo je blízko)",
@@ -736,6 +740,9 @@ func _refresh_inventory() -> void:
 		var b: Button = inv_buttons[s]
 		var it: Dictionary = p.item_in(s)
 		var key: String = SLOT_KEY.get(s, "")
+		var two_h := Game.two_handed(p.item_in("rh").get("id", ""))
+		if s == "rh": key = "LTM" if two_h else "PTM"
+		elif s == "lh": key = "LTM"
 		var t: String = ("[%s] " % key if key != "" else "") + ("(prázdné)" if it.is_empty() else Game.ITEMS[it["id"]]["short"])
 		if not it.is_empty():
 			if it.has("loaded"): t += "\n%d / %d" % [int(it["loaded"]), Game.mag_size(it["id"])]

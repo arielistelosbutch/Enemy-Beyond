@@ -595,11 +595,15 @@ func _heal_test(p: Node) -> void:
 		p.global_position = other.global_position + Vector3(1.2, 0.0, 0.5)
 		m().hud.inventory_open = false
 		out("HEAL: target=%s downed=%s medkit=%s" % [p.heal_target(), other.downed, p.has_medkit()])
-		p._use_teammate()
-		out("HEAL: busy %s %.1f" % [p.busy_text, p.busy])
-	elif _ht == 2 and t > 12.0:
+		p._medkit()
+		out("HEAL: (take in hand) busy %s %.1f" % [p.busy_text, p.busy])
+	elif _ht == 2 and t > 10.0:
 		_ht = 3
-		out("HEAL RESULT: other downed=%s hp=%.0f revives=%d" % [other.downed, other.hp, p.revives])
+		p._medkit()
+		out("HEAL: busy %s %.1f lh=%s" % [p.busy_text, p.busy, p.item_in("lh").get("id", "-")])
+	elif _ht == 3 and t > 15.0:
+		_ht = 4
+		out("HEAL RESULT: other downed=%s dead=%s hp=%.0f revives=%d busy=%s" % [other.downed, other.dead, other.hp, p.revives, p.busy_text])
 
 func _skip_brief() -> void:
 	var h: Node = m().hud

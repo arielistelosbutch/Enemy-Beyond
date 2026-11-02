@@ -1,6 +1,6 @@
-# Enemy Beyond — prototyp 0.15
+# Enemy Beyond — prototyp 0.16
 
-**Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.15-windows.zip](hratelny-test/EnemyBeyond-0.15-windows.zip)
+**Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.16-windows.zip](hratelny-test/EnemyBeyond-0.16-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
 Windows může napoprvé ukázat varování SmartScreen (soubor není podepsaný): „Další informace“ → „Přesto spustit“.
 Co-op: jeden hráč dá „Hostovat hru“, ostatní „Připojit ke hře“ s jeho IP (UDP port 7777; přes internet Radmin VPN / ZeroTier).
