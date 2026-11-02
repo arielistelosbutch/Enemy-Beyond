@@ -240,6 +240,11 @@ func _ready() -> void:
 		if weather == "rain":
 			rain.amount = 380
 	_build_door()
+	_build_beacons()
+	if mtype() == "rescue":
+		var vr := RandomNumberGenerator.new()
+		vr.seed = Net.mission_seed + 7
+		vip_name = VIP_NAMES[vr.randi() % VIP_NAMES.size()]
 	hud.briefing(_briefing_text() + "\nPočasí: " + WEATHER_NAMES[weather] + ".")
 	multiplayer.peer_disconnected.connect(_on_peer_left)
 	Net.note.connect(_on_note)
@@ -276,12 +281,18 @@ func _briefing_text() -> String:
 			"landed": "UFO přistálo neporušené. Posádka je venku a něco tu dělá. Zatím neví, že o nás ví.",
 			"abduction": "Z okolních stavení zmizeli lidé. Nad krajinou viděli světla. Možná ještě někdo žije.",
 			"mars": "Orel přistál na rudé pláni. Před vámi je tunel do jejich velína a za ním Velký mozek - to, co je všechny řídí. Chrání ho štít ze tří pylonů. Zničte pylony, pak mozek. Myslí na vás. Uslyšíte ho.",
+			"rescue": "Nouzový maják vysílá z oblasti, kam dosedlo UFO. Někdo tam přežil a vetřelci po něm jdou. Signál ukazuje směr a vzdálenost (nahoře na obrazovce).",
+			"sabotage": "Tři cizí majáky v krajině vysílají k jejich lodím. Dokud stojí, přicházejí další. Každý maják: drž u něj E 3 sekundy, nálož bouchne za 8 sekund.",
+			"base": "Vetřelci přistáli u základny v rokli. Kondor stojí na ploše a nikam se neletí. Útočí ve vlnách od okraje rokle. Vydržet a zabít všechny.",
 			"terror": "Vetřelci vtrhli do městečka. Spojení s místními je přerušeno. Poslední hovor na tísňovou linku: \"Je to černé, je to rychlé, a ti, co to zabilo, zase vstávají.\"\nZachraň, koho můžeš (E u vyděšeného civilisty - půjde za tebou do Kondoru).",
 		}
 		var terr: String = {"snow": "\nTerén: sníh - každý krok je slyšet.", "desert": "\nTerén: poušť - málo úkrytů."}.get(mp.get("terrain", ""), "")
 		var task := "ÚKOL: zneškodnit posádku a vrátit se do Kondoru.\nOmráčení vetřelci mají pro výzkum velkou cenu. Co vetřelci upustí, posbíráme při odletu."
-		if mp.get("type", "") == "mars":
-			task = "ÚKOL: zničit tři pylony štítu a Velký mozek. Návrat není."
+		match String(mp.get("type", "")):
+			"mars": task = "ÚKOL: zničit tři pylony štítu a Velký mozek. Návrat není."
+			"rescue": task = "ÚKOL: najít a přivést do Kondoru živého - ostatní vetřelci jsou až na druhém místě (E u něj = půjde za tebou)."
+			"sabotage": task = "ÚKOL: zničit všechny tři majáky a vrátit se do Kondoru."
+			"base": task = "ÚKOL: ubránit základnu - přežít všechny vlny. Prohra znamená vyrabovanou základnu."
 		return "%s\nOblast: %s, místní čas %02d:%02d (%s), mapa %s%s\n\n%s\n\n" % [
 			String(mp.get("type_name", "Mise")).to_upper(), mp.get("place", "?"), int(h), int(fmod(h, 1.0) * 60),
 			"noc" if mp.get("night", true) else "den", MapGen.SIZE_NAMES.get(mp.get("size", "medium"), "střední"), terr, flavor.get(mp.get("type", "crash"), "")] + task
@@ -467,6 +478,7 @@ func _maybe_spawn() -> void:
 	for ci in nciv:
 		spawner.spawn({"kind": "civ", "id": ci, "pos": _far_point(rng, 12.0)})
 	civs_total = nciv
+	_spawn_objectives(rng)
 
 ## A random walkable point at least @a min_d from the team's landing spot.
 func _far_point(rng: RandomNumberGenerator, min_d: float) -> Vector3:
@@ -708,6 +720,7 @@ func _noise(pos: Vector3, radius: float) -> void:
 # ---- the end ------------------------------------------------------------------------
 func _process(delta: float) -> void:
 	_prep_tick(delta)
+	_nav_tick(delta)
 	if started():
 		t += delta
 	for l in map.get("lights", []):
@@ -719,6 +732,7 @@ func _process(delta: float) -> void:
 	_hallucinate(delta)
 	if multiplayer.is_server() and _spawned and not finished:
 		_watch_tick(delta)
+		_objectives_tick(delta)
 		_judge()
 		_director(delta)
 		_risen()
@@ -929,7 +943,7 @@ func _hallucinate(delta: float) -> void:
 		# footsteps right behind you
 		var back: Vector3 = p.global_transform.basis.z * 2.5
 		for i in 3:
-			get_tree().create_timer(i * 0.45).timeout.connect(func(): if is_instance_valid(p): Game.play_at(self, "step", p.global_position + back, -8))
+			get_tree().create_timer(i * 0.45).timeout.connect(func(): if is_instance_valid(p): Game.play_at(self, "step_%s%d" % [Game.surface_at(self, p.global_position, map), i], p.global_position + back, -8))
 	else:
 		var back2: Vector3 = p.global_transform.basis.z.rotated(Vector3.UP, randf_range(-1, 1)) * 3.0
 		Game.play_at(self, "whisper", p.global_position + back2 + Vector3(0, 1.5, 0), -4)
@@ -1042,6 +1056,7 @@ func explode(p: Vector3, radius: float, dmg: float, by: String, big: bool) -> vo
 		return
 	_boom.rpc(p, big)
 	noise(p, 50.0 if big else 30.0)
+	blast_breakables(p, radius, dmg)
 	var shooter: Node = actors.get_node_or_null(by)
 	for a in aliens():
 		var d: float = a.global_position.distance_to(p)
@@ -1053,6 +1068,105 @@ func explode(p: Vector3, radius: float, dmg: float, by: String, big: bool) -> vo
 		var d2: float = pl.global_position.distance_to(p)
 		if d2 < radius * 0.9 and not pl.dead:
 			pl.hurt.rpc_id(pl.get_multiplayer_authority(), dmg * 0.6 * (1.0 - d2 / radius), p)
+
+# ---- destruction: planks, fences, crates and windows break; brick and sheet metal only to
+# explosives and plasma (like the old game, the ground itself stays) ------------------------------
+const BREAK_MULT := {
+	"bullet": {"wood": 1.0, "crate": 1.0, "glass": 1.0, "brick": 0.0, "metal": 0.0},
+	"melee": {"wood": 0.5, "crate": 1.0, "glass": 1.0, "brick": 0.0, "metal": 0.0},
+	"plasma": {"wood": 2.5, "crate": 2.5, "glass": 1.0, "brick": 0.6, "metal": 0.4},
+	"explosion": {"wood": 3.0, "crate": 3.0, "glass": 1.0, "brick": 1.0, "metal": 0.7}}
+var _nav_dirty := 0.0
+
+@rpc("any_peer", "call_local", "reliable")
+func hit_breakable(i: int, dmg: float, kind: String) -> void:
+	if not multiplayer.is_server() or i < 0 or i >= map.get("breakables", []).size():
+		return
+	var n: Node3D = map["breakables"][i]
+	if not is_instance_valid(n) or n.get_meta("broken", false):
+		return
+	var k: float = BREAK_MULT.get(kind, BREAK_MULT["bullet"]).get(String(n.get_meta("break_kind")), 0.0)
+	if k <= 0.0:
+		return
+	var hp: float = float(n.get_meta("hp")) - dmg * k
+	n.set_meta("hp", hp)
+	if hp <= 0.0:
+		_break.rpc(i)
+
+## Host: a blast breaks what is around it.
+func blast_breakables(p: Vector3, radius: float, dmg: float) -> void:
+	if not multiplayer.is_server():
+		return
+	var arr: Array = map.get("breakables", [])
+	for i in arr.size():
+		var n: Node3D = arr[i]
+		if is_instance_valid(n) and not n.get_meta("broken", false):
+			var d: float = n.global_position.distance_to(p)
+			if d < radius + 1.0:
+				hit_breakable(i, dmg * clampf(1.2 - d / (radius + 1.0), 0.2, 1.0), "explosion")
+
+@rpc("authority", "call_local", "reliable")
+func _break(i: int) -> void:
+	var n: Node3D = map["breakables"][i]
+	if not is_instance_valid(n) or n.get_meta("broken", false):
+		return
+	n.set_meta("broken", true)
+	var kind := String(n.get_meta("break_kind"))
+	var at := n.global_position
+	var sz := Vector3.ONE
+	var mat: Material = null
+	for c in n.get_children():
+		if c is MeshInstance3D and c.mesh is BoxMesh:
+			sz = (c.mesh as BoxMesh).size
+			mat = c.material_override
+	# debris: a burst of chunks of the same stuff, a cloud of dust, a crack
+	var parts := CPUParticles3D.new()
+	parts.one_shot = true
+	parts.amount = clampi(int(sz.x * sz.y * sz.z * 14.0) + 8, 8, 60)
+	parts.lifetime = 1.6
+	parts.explosiveness = 0.95
+	parts.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	parts.emission_box_extents = sz * 0.5
+	parts.direction = Vector3(0, 1, 0)
+	parts.spread = 70.0
+	parts.initial_velocity_min = 1.5
+	parts.initial_velocity_max = 4.5
+	parts.gravity = Vector3(0, -12, 0)
+	parts.angular_velocity_min = -300
+	parts.angular_velocity_max = 300
+	var chunk := BoxMesh.new()
+	chunk.size = Vector3(0.18, 0.1, 0.14) if kind != "glass" else Vector3(0.06, 0.06, 0.01)
+	chunk.material = mat
+	parts.mesh = chunk
+	add_child(parts)
+	parts.global_transform = n.global_transform
+	parts.emitting = true
+	get_tree().create_timer(2.5).timeout.connect(parts.queue_free)
+	# some rubble stays (knee-high at most, so it does not block the way)
+	if kind in ["brick", "wood", "crate"]:
+		var rub := MeshInstance3D.new()
+		var rb := BoxMesh.new()
+		rb.size = Vector3(maxf(sz.x, 0.4) * 0.9, 0.18, maxf(sz.z, 0.4) * 0.9)
+		rub.mesh = rb
+		rub.material_override = mat
+		add_child(rub)
+		rub.global_position = Vector3(at.x, 0.09 + (at.y - sz.y / 2 if at.y - sz.y / 2 > 0.5 else 0.0), at.z)
+		rub.rotation.y = n.global_rotation.y
+	Game.play_at(self, "creak" if kind == "wood" or kind == "crate" else ("hit" if kind == "glass" else "explosion"), at, -4 if kind != "brick" else -10)
+	n.queue_free()
+	_nav_dirty = 2.0
+
+## Host: after things broke, the aliens learn the new ways through (rebuilt in the background).
+func _nav_tick(delta: float) -> void:
+	if _nav_dirty <= 0.0:
+		return
+	_nav_dirty -= delta
+	if _nav_dirty <= 0.0 and multiplayer.is_server():
+		var nav := find_child("Nav", true, false) as NavigationRegion3D
+		if nav and not nav.is_baking():
+			nav.bake_navigation_mesh(true)
+		elif nav:
+			_nav_dirty = 1.0
 
 @rpc("authority", "call_local", "reliable")
 func _boom(p: Vector3, big: bool) -> void:
@@ -1211,11 +1325,29 @@ func _judge() -> void:
 			if a.race == "mozek" and a.dead and not finished:
 				_end.rpc(true, "VELKÝ MOZEK JE MRTVÝ. Jejich velín na Marsu utichl - a s ním každá loď, každý Šeďák, každý hlas v hlavě. Je konec.")
 				return
+	var mt := mtype()
+	if mt == "rescue":
+		var v := vip()
+		if v and v.dead and not finished:
+			_end.rpc(false, "%s nepřežil. Mise selhala." % vip_name)
+			return
+	if mt == "base" and waves_left <= 0 and alive_aliens() == 0 and standing > 0:
+		_end.rpc(true, "Základna ubráněna. Poslední vetřelec leží u plotu.")
+		return
 	if standing == 0:
-		_end.rpc(false, "Celý tým padl.")
-	elif at_evac == standing:
+		_end.rpc(false, "Celý tým padl." if mt != "base" else "Celý tým padl. Základna je v rukou vetřelců.")
+	elif at_evac == standing and mt != "base":
 		var won := alive_aliens() == 0
-		_end.rpc(won, "Posádka UFO zneškodněna." if won else "Tým se stáhl z mise.")
+		var why := "Posádka UFO zneškodněna." if won else "Tým se stáhl z mise."
+		match mt:
+			"rescue":
+				var v2 := vip()
+				won = v2 != null and v2.saved
+				why = ("%s je v bezpečí na palubě." % vip_name) if won else ("Odlet bez %s. Mise selhala." % vip_name)
+			"sabotage":
+				won = beacons_left() == 0
+				why = "Všechny majáky zničeny." if won else "Majáky dál volají posily. Mise selhala."
+		_end.rpc(won, why)
 
 ## Won missions: everything the aliens dropped is picked up on the way out (no carrying needed).
 func _loot(success: bool) -> Dictionary:
@@ -1229,8 +1361,8 @@ func _loot(success: bool) -> Dictionary:
 			var w: String = Campaign.RACE_WEAPON[a.race]
 			out[w] = int(out.get(w, 0)) + 1
 	var mt: String = Net.mission_params.get("type", "")
-	var mk: Array = {"crash": [25, 50], "landed": [50, 100], "abduction": [30, 60], "terror": [10, 25]}.get(mt, [0, 0])
-	var al: Array = {"crash": [6, 14], "landed": [10, 20], "abduction": [6, 12], "terror": [0, 3]}.get(mt, [0, 0])
+	var mk: Array = {"crash": [25, 50], "landed": [50, 100], "abduction": [30, 60], "terror": [10, 25], "rescue": [10, 30], "sabotage": [30, 60], "base": [40, 80]}.get(mt, [0, 0])
+	var al: Array = {"crash": [6, 14], "landed": [10, 20], "abduction": [6, 12], "terror": [0, 3], "rescue": [2, 6], "sabotage": [6, 12], "base": [8, 16]}.get(mt, [0, 0])
 	out["moskovium"] = r.randi_range(mk[0], mk[1])
 	out["slitiny"] = r.randi_range(al[0], al[1])
 	return out
@@ -1240,6 +1372,8 @@ func _end(success: bool, why: String) -> void:
 	if finished:
 		return
 	finished = true
+	if Game.autotest() != "":
+		print("[END] success=%s why=%s" % [success, why])
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var me := local_player()
 	var fate := "zdráv"
@@ -1328,6 +1462,194 @@ func _watch_tick(delta: float) -> void:
 		var who: int = p.get_multiplayer_authority()
 		if who == multiplayer.get_unique_id() or who in multiplayer.get_peers():
 			p.set_watched.rpc_id(who, v)
+
+# ---- objectives (0.23): rescue a VIP, sabotage three beacons, defend the base ------------------
+const VIP_NAMES := ["Dr. Kateřina Hronová", "pilot Sokola Jan Vrba", "Ing. Pavel Mráček", "Dr. Ilona Šebestová", "kpt. Radek Holub"]
+var vip_name := ""
+var beacons := []          # every machine: [{node, pos, planted, gone}]
+var _plant_t := {}         # host: beacon index -> seconds to blast
+var _reinf_t := 80.0
+var waves_left := 0
+var _wave_t := 0.0
+
+func mtype() -> String:
+	return String(Net.mission_params.get("type", ""))
+
+## The person to rescue (a civilian marked as VIP), or null.
+func vip() -> Node:
+	for c in civilians():
+		if c.vip:
+			return c
+	return null
+
+## Host, at spawn: what each kind of mission needs on the map.
+func _spawn_objectives(rng: RandomNumberGenerator) -> void:
+	match mtype():
+		"rescue":
+			var spots: Array = map.get("vip_spots", []).duplicate()
+			var best: Vector3 = _far_point(rng, 40.0)
+			var bd := 0.0
+			for sp in spots:
+				var d: float = (sp as Vector3).distance_to(map["evac"])
+				if d > bd and d > 25.0:
+					bd = d
+					best = sp
+			spawner.spawn({"kind": "civ", "id": 50, "pos": best, "vip": true})
+			# hunters already near the beacon
+			for k in 2:
+				spawn_alien(_crew(1, rng)[0], best + Vector3(rng.randf_range(-12, 12), 0.3, rng.randf_range(-12, 12)))
+		"base":
+			waves_left = 2 + (1 if Game.veteran() else 0) + (1 if Net.roster.size() > 2 else 0)
+			_wave_t = 75.0
+
+## Every machine builds the beacons from the map (same seed = same places).
+func _build_beacons() -> void:
+	if mtype() != "sabotage":
+		return
+	var r := RandomNumberGenerator.new()
+	r.seed = Net.mission_seed + 313
+	var wp: Array = map["waypoints"].duplicate()
+	var picked := []
+	for tries in 400:
+		if picked.size() >= 3 or wp.is_empty():
+			break
+		var p: Vector3 = wp[r.randi() % wp.size()]
+		if p.y > 1.0 or p.distance_to(map["evac"]) < 30.0 or p.distance_to(map["ufo"]) < 14.0:
+			continue
+		var ok := true
+		for q in picked:
+			if p.distance_to(q) < 28.0 - tries * 0.05:
+				ok = false
+		if ok:
+			picked.append(p)
+	for i in picked.size():
+		var n: Node3D = Game.model("pylon")
+		n.scale = Vector3.ONE * 0.6
+		add_child(n)
+		n.global_position = picked[i] + Vector3(1.5, 0, 1.5)
+		var l := OmniLight3D.new()
+		l.light_color = Color(0.4, 1.0, 0.6)
+		l.light_energy = 2.0
+		l.omni_range = 6.0
+		n.add_child(l)
+		l.position = Vector3(0, 2.5, 0)
+		var ap := AudioStreamPlayer3D.new()
+		ap.unit_size = 2.0
+		ap.max_distance = 30.0
+		n.add_child(ap)
+		_loop_player(ap, "hum", -12.0)
+		ap.pitch_scale = 1.6
+		beacons.append({"node": n, "pos": n.global_position, "planted": false, "gone": false, "light": l})
+
+func beacons_left() -> int:
+	var k := 0
+	for b in beacons:
+		if not b["gone"]:
+			k += 1
+	return k
+
+## The beacon a mercenary stands at (-1 = none).
+func beacon_near(p: Vector3) -> int:
+	for i in beacons.size():
+		if not beacons[i]["gone"] and not beacons[i]["planted"] and p.distance_to(beacons[i]["pos"]) < 2.6:
+			return i
+	return -1
+
+@rpc("any_peer", "call_local", "reliable")
+func plant(i: int) -> void:
+	if not multiplayer.is_server() or i < 0 or i >= beacons.size() or beacons[i]["planted"]:
+		return
+	_plant_t[i] = 8.0
+	_armed.rpc(i)
+
+@rpc("authority", "call_local", "reliable")
+func _armed(i: int) -> void:
+	beacons[i]["planted"] = true
+	(beacons[i]["light"] as OmniLight3D).light_color = Color(1.0, 0.15, 0.1)
+	Game.play_at(self, "ping", beacons[i]["pos"], -2)
+	if hud:
+		hud.message("NÁLOŽ POLOŽENA - 8 sekund, pryč od majáku!", 3.0)
+
+@rpc("authority", "call_local", "reliable")
+func _beacon_gone(i: int) -> void:
+	beacons[i]["gone"] = true
+	if is_instance_valid(beacons[i]["node"]):
+		beacons[i]["node"].queue_free()
+	if hud:
+		var left := beacons_left()
+		hud.message(("Maják zničen. Zbývá %d." % left) if left > 0 else "Všechny majáky zničeny. Zpátky do Kondoru!", 3.5)
+
+## Host, every frame: timers of the objectives.
+func _objectives_tick(delta: float) -> void:
+	if not started():
+		return
+	for i in _plant_t.keys():
+		_plant_t[i] -= delta
+		if _plant_t[i] <= 0.0:
+			_plant_t.erase(i)
+			explode(beacons[i]["pos"] + Vector3(0, 0.8, 0), 6.0, 160.0, "", true)
+			_beacon_gone.rpc(i)
+	if mtype() == "sabotage" and beacons_left() > 0:
+		# the beacons call for help
+		_reinf_t -= delta
+		if _reinf_t <= 0.0:
+			_reinf_t = 85.0
+			var rr := RandomNumberGenerator.new()
+			rr.randomize()
+			spawn_alien(_crew(1, rr)[0], _edge_point(rr))
+			hud_note.rpc("Maják vysílá - z temnoty přichází další vetřelec.")
+	if mtype() == "base" and waves_left > 0:
+		_wave_t -= delta
+		if _wave_t <= 0.0 or alive_aliens() == 0:
+			if _wave_t > 82.0 and alive_aliens() == 0 and _wave_t > 0.0:
+				return          # the last wave is still landing
+			waves_left -= 1
+			_wave_t = 90.0
+			var rr2 := RandomNumberGenerator.new()
+			rr2.randomize()
+			var n := 2 + Net.roster.size() + (1 if Game.veteran() else 0)
+			var crew := _crew(n, rr2)
+			var from := _edge_point(rr2)
+			for k in crew.size():
+				spawn_alien(crew[k], from + Vector3(rr2.randf_range(-3, 3), 0.3, rr2.randf_range(-3, 3)))
+			hud_note.rpc("DALŠÍ VLNA! Útočí od okraje rokle (%d)." % crew.size())
+
+## A point at the edge of the map, far from the team.
+func _edge_point(rr: RandomNumberGenerator) -> Vector3:
+	var s: float = map["size"]
+	var best := Vector3(s / 2, 0.3, s - 4)
+	var bd := 0.0
+	for k in 8:
+		var e := rr.randi() % 4
+		var t2 := rr.randf_range(6.0, s - 6.0)
+		var p: Vector3 = [Vector3(t2, 0.3, 4.0), Vector3(t2, 0.3, s - 4.0), Vector3(4.0, 0.3, t2), Vector3(s - 4.0, 0.3, t2)][e]
+		var near := 999.0
+		for pl in players():
+			near = minf(near, pl.global_position.distance_to(p))
+		if near > bd:
+			bd = near
+			best = p
+	return best
+
+## Mission text for the HUD's objective line.
+func objective_text() -> String:
+	match mtype():
+		"rescue":
+			var v := vip()
+			if v == null:
+				return ""
+			if v.dead:
+				return "%s je mrtvý." % vip_name
+			if v.saved:
+				return "%s je v Kondoru. Odlet: drž E u rampy." % vip_name
+			if v.st == v.C.FOLLOW:
+				return "%s jde za tebou (zdraví %d/3) - do Kondoru!" % [vip_name, v.vip_hp]
+			return "Najdi: %s (nouzový maják)" % vip_name
+		"sabotage":
+			return "Majáky: zničeno %d/%d (drž E u majáku 3 s)" % [beacons.size() - beacons_left(), beacons.size()]
+		"base":
+			return "Obrana základny: vln zbývá %d, vetřelců %d" % [waves_left, alive_aliens()]
+	return ""
 
 ## Host: what each mercenary took on board (lost with the Kondor if the whole team falls).
 var kits := {}

@@ -25,6 +25,12 @@ const MTYPES := {
 		"text": "Orel je připravený. Odlet na Mars, do srdce jejich velení - k Velkému mozku. Zpátky se letí jen s vítězstvím."},
 	"terror": {"name": "Teror", "reward": 900, "aliens": 3, "expire": 0.35, "trust": 10,
 		"text": "Vetřelci vtrhli do městečka. Spojení s místní policií bylo přerušeno."},
+	"rescue": {"name": "Záchrana", "reward": 750, "aliens": 1, "expire": 0.4, "trust": 8,
+		"text": "Nouzový maják. Někdo, kdo o vetřelcích ví víc, než by měl, se schovává před jejich hlídkou. Najít, chránit, dostat do Kondoru."},
+	"sabotage": {"name": "Sabotáž", "reward": 800, "aliens": 2, "expire": 0.5, "trust": 6,
+		"text": "Vetřelci rozmístili v krajině tři majáky. Volají jimi posily. Položit nálože, zničit všechny tři a zmizet."},
+	"base": {"name": "Útok na základnu", "reward": 600, "aliens": 3, "expire": 0.2, "trust": 6,
+		"text": "Radar hlásí loď nad roklí. Míří na NÁS. Bránit základnu do posledního vetřelce."},
 }
 
 # ---- research (own projects) ---------------------------------------------------------------
@@ -57,6 +63,10 @@ const RESEARCH := {
 		"desc": "Zajatec pořád opakuje jedno slovo a ukazuje do nebe. Radar zachytil úzký paprsek mířící na Mars. Tam je jejich velín - a v něm to, co je všechny řídí."},
 	"orel": {"name": "Hvězdná loď Orel", "cost": 2500, "mk": 120, "days": 10.0, "needs": {"research": "signal"},
 		"desc": "Kondor s motorem na Moskovium 115 a trupem z vetřeleckých slitin. Doletí na Mars a zpátky. Odemkne poslední misi."},
+	"vesta": {"name": "Balistická vesta a štít", "cost": 200, "days": 3.0, "needs": {},
+		"desc": "Keramické pláty v látkové vestě a ruční štít s průzorem. Vesta: o 20 % menší zranění. Štít v levé ruce zastaví většinu střel zepředu."},
+	"pancir": {"name": "Slitinový pancíř", "cost": 500, "mk": 25, "days": 6.0, "needs": {"research": "slitiny"},
+		"desc": "Pláty z jejich slitiny přes celé tělo: o 38 % menší zranění. Je těžší, ale vidět je na každém žoldákovi."},
 	"plazma": {"name": "Plazmová puška", "cost": 700, "mk": 30, "days": 8.0, "needs": {"research": "vyslech", "loot": "a_rifle"},
 		"desc": "Vlastní zbraň postavená podle zabavené plazmové pistole."},
 }
@@ -100,13 +110,15 @@ const SHOP := {
 	"laser_pistol": 300, "laser_rifle": 600, "laser_cannon": 900,
 	"rifle": 250, "sniper": 450, "sniper_clip": 35, "shotgun": 250, "magnum": 220, "autocannon": 600, "minigun": 750, "rocket_launcher": 650,
 	"knife": 60, "stun_baton": 180, "scanner": 300, "radio": 40, "plasma_rifle": 900, "plasma_cell": 90,
+	"vesta": 300, "stit": 350, "pancir": 900,
 }
 const LOCKED_BY := {"mine": "zenijni", "smoke_grenade": "zenijni", "autocannon": "tezke", "ac_clip": "tezke",
 	"minigun": "tezke", "minigun_belt": "tezke", "rocket_launcher": "tezke", "rocket": "tezke",
 	"plasma_rifle": "plazma", "plasma_cell": "plazma",
-	"laser_pistol": "laser", "laser_rifle": "laser", "laser_cannon": "laser_tezky"}
+	"laser_pistol": "laser", "laser_rifle": "laser", "laser_cannon": "laser_tezky",
+	"vesta": "vesta", "stit": "vesta", "pancir": "pancir"}
 ## Alien-tech items also cost Moskovium 115 (the element that powers their ships).
-const SHOP_MK := {"plasma_rifle": 25, "plasma_cell": 3, "laser_cannon": 6}
+const SHOP_MK := {"plasma_rifle": 25, "plasma_cell": 3, "laser_cannon": 6, "pancir": 15}
 ## What the team brings home from a won mission (collected automatically).
 const LOOT_NAMES := {"a_pistol": "Plazmová pistole vetřelců", "a_rifle": "Plazmová puška vetřelců", "a_heavy": "Těžká plazma vetřelců",
 	"slitiny": "Vetřelecké slitiny", "moskovium": "Moskovium 115"}
@@ -245,6 +257,10 @@ func advance(days: float) -> bool:
 	for m in data["missions"].duplicate():
 		if float(m["expires"]) < float(data["day"]):
 			data["missions"].erase(m)
+			if m["type"] == "base":
+				_log(_base_raided())
+				stop = true
+				continue
 			var lost_trust := 15 if m["type"] == "terror" else 5
 			data["trust"] = int(data["trust"]) - lost_trust
 			_log("%s (%s) zůstala bez odpovědi. Důvěra −%d." % [MTYPES[m["type"]]["name"], m["place"], lost_trust])
@@ -287,6 +303,30 @@ func advance(days: float) -> bool:
 			data["missions"].append(m)
 			mission_found.emit(m)
 		stop = true
+	# from the third week on they know where we are: now and then they come for the base
+	if float(data["day"]) > 18.0 and not data.get("won", false):
+		data["next_raid"] = float(data.get("next_raid", float(data["day"]) + rng.randf_range(6.0, 12.0)))
+		if float(data["day"]) >= float(data["next_raid"]):
+			data["next_raid"] = float(data["day"]) + rng.randf_range(9.0, 16.0)
+			var already := false
+			for mm in data["missions"]:
+				if mm["type"] == "base":
+					already = true
+			if not already:
+				var bm := generate_mission()
+				bm["type"] = "base"
+				bm["lat"] = BASE_LAT; bm["lon"] = BASE_LON
+				bm["place"] = "Základna - Vysočina"
+				bm["biome"] = "base"
+				bm["terrain"] = terrain_at(BASE_LAT, BASE_LON)
+				bm["size"] = "medium"
+				bm["reward"] = MTYPES["base"]["reward"]
+				bm["extra_aliens"] = int(MTYPES["base"]["aliens"]) + int(float(data["day"]) / 15.0)
+				bm["expires"] = float(data["day"]) + float(MTYPES["base"]["expire"])
+				data["missions"].append(bm)
+				_log("POPLACH: vetřelci míří na základnu!")
+				mission_found.emit(bm)
+				stop = true
 	# monthly report
 	var month := int(float(data["day"]) / 30.0)
 	if month > int(data["month"]):
@@ -440,14 +480,28 @@ func generate_mission() -> Dictionary:
 			lon = rng.randf_range(-180, 180)
 		if is_land(lat, lon):
 			break
-	var types := ["crash", "crash", "landed", "abduction", "terror"]
+	var types := ["crash", "crash", "landed", "abduction", "terror", "rescue", "sabotage"]
+	if float(data["day"]) < 4.0:
+		types = ["crash", "crash", "landed", "abduction", "rescue"]
 	var t: String = types[rng.randi() % types.size()]
 	var info: Dictionary = MTYPES[t]
+	var terr0 := terrain_at(lat, lon)
 	var biome := "farm"
+	var roll := rng.randf()
 	if t == "terror":
-		biome = "town"
-	elif abs(lat) > 55 or rng.randf() < 0.25:
+		biome = "town" if roll < 0.75 else "industrial"
+	elif abs(lat) > 63:
+		biome = "polar"
+	elif terr0 == "snow" or abs(lat) > 55:
+		biome = "mountain" if roll < 0.5 else "forest"
+	elif roll < 0.22:
 		biome = "forest"
+	elif roll < 0.36:
+		biome = "industrial"
+	elif roll < 0.46:
+		biome = "town"
+	elif roll < 0.54:
+		biome = "mountain"
 	# map size: terror = the whole town (huge), a big landed ship = large
 	var size := "medium"
 	match t:
@@ -455,8 +509,11 @@ func generate_mission() -> Dictionary:
 		"landed": size = "colossal" if float(data["day"]) > 45 and rng.randf() < 0.3 else ("large" if rng.randf() < 0.5 else "medium")
 		"crash": size = "small" if rng.randf() < 0.4 else "medium"
 		"abduction": size = "small" if rng.randf() < 0.5 else "medium"
+		"rescue", "sabotage": size = "large" if rng.randf() < 0.6 else "medium"
 	var terr := terrain_at(lat, lon)
-	if terr == "desert" and biome == "forest":
+	if biome == "polar":
+		terr = "snow"
+	if terr == "desert" and biome in ["forest", "mountain", "polar"]:
 		biome = "farm"
 	var id := int(data["next_id"])
 	data["next_id"] = id + 1
@@ -515,6 +572,27 @@ func mission_params(m: Dictionary) -> Dictionary:
 	p["stash"] = stash()
 	p["research"] = data["research"]["done"].duplicate()
 	return p
+
+## The base fell to a raid (lost defence or nobody went): money, a facility and gear are gone.
+func _base_raided() -> String:
+	var lost_cr := int(int(data["credits"]) * 0.35)
+	data["credits"] = int(data["credits"]) - lost_cr
+	var txt := "Vetřelci vyplenili základnu: ztráta %d kr" % lost_cr
+	var built := []
+	for i in data["base"].size():
+		var cell: Dictionary = data["base"][i]
+		if cell.get("type", "") in ["laborator", "dilna", "radar", "osetrovna"] and float(cell.get("days", 0)) <= 0:
+			built.append(i)
+	if not built.is_empty():
+		var i2: int = built[rng.randi() % built.size()]
+		var ft: String = data["base"][i2]["type"]
+		data["base"][i2]["days"] = float(FACILITIES[ft]["days"]) * 0.5
+		txt += ", %s poničena (oprava %.0f dní)" % [FACILITIES[ft]["name"], float(FACILITIES[ft]["days"]) * 0.5]
+	for k in data["armory"].keys():
+		data["armory"][k] = int(int(data["armory"][k]) / 2)
+	txt += ", polovina skladu zbraní je pryč."
+	data["trust"] = int(data["trust"]) - 8
+	return txt
 
 ## After the team comes back.
 ## True while the replacement Kondor is still on its way (after a lost team).
@@ -599,7 +677,9 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 		txt += " Civilisté: zachráněno %d, mrtvých %d." % [civ_saved, civ_dead]
 	if not got.is_empty():
 		txt += " Kořist: " + ", ".join(got) + "."
-	if wiped and not success:
+	if m["type"] == "base" and not success:
+		txt += " " + _base_raided()
+	elif wiped and not success:
 		txt += _kondor_lost(kits)
 	_log(txt)
 	save()

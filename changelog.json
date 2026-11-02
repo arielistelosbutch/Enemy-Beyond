@@ -1,4 +1,16 @@
 {
+ "0.23": [
+  "Mapy jsou větší (střední 7x7, velká 9x9, obrovská 11x11, kolosální 14x14 bloků) a hustší.",
+  "Nová místa: dvoupatrové domy se schodištěm (z patra je vidět daleko), ruiny se sutinami a ohněm, zahrady se živými ploty, sady, potoky s lávkou, skály, horské chaty s podkrovím, sklady s ochozem a příhradovou střechou, kontejnery, nádrže, dvory s vysokozdvižným vozíkem, benzínka, samoobsluha se schodištěm na střechu, hospoda s pivní zahrádkou, park s kašnou a parkoviště.",
+  "Nová prostředí: průmyslový areál, hory, polární pustina (zamrzlá jezera, ledové homole, výzkumná bouda) a naše základna. Domy mají kuchyně, gauče, televize, knihovny a koberce.",
+  "Nové mise: ZÁCHRANA (najdi člověka podle majáku, E = půjde za tebou, dostaň ho živého do Kondoru), SABOTÁŽ (drž E 3 s u každého ze tří majáků, nálož bouchne za 8 s; majáky volají posily) a ÚTOK NA ZÁKLADNU (vetřelci útočí ve vlnách, Kondor nikam neletí; prohra = vyrabovaná základna). Od třetího týdne kampaně přicházejí na základnu.",
+  "Ničitelné prostředí: prkna, ploty, bedny a dřevěné stěny prostřelíš, cihly a plech rozbije granát, raketa nebo plazma. Zdi jsou po kusech - výbuch udělá díru. Vetřelci si pak novou cestu najdou taky.",
+  "Zbroj: výzkum Balistická vesta a štít (o 20 % menší zranění), pak Slitinový pancíř (o 38 %). Zbroj je vidět na postavě. Vybírá se ve výstroji (řádek ZBROJ). Nový typ vojáka Štítař.",
+  "Balistický štít do levé ruky k jednoruční zbrani: zastaví většinu střel zepředu.",
+  "Kroky podle povrchu: tráva, hlína, beton, dřevo, kov, sníh, písek. Slyšíš i kroky spoluhráčů.",
+  "Vetřelci sebou při zásahu trhnou. Vetřelci i lidé teď projdou dveřmi a vyjdou po schodech (opravená navigace).",
+  "Opraveno: chyba v okně mise na glóbu u Marsu a nových prostředí."
+ ],
  "0.22.1": [
   "Oprava: mise se v 0.22 nespustila (chyba ve skriptu mise)."
  ],

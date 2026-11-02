@@ -170,6 +170,22 @@ piece("Gear_Medkit", [box(medred, (-0.14, -0.13, 1.05), (0.12, 0.08, 0.1), group
                       box(mat("White", (0.9, 0.9, 0.9)), (-0.14, -0.172, 1.05), (0.015, 0.005, 0.05), group="hips")])
 piece("Gear_Holster", [box(webbing, (-0.2, 0.0, 0.88), (0.05, 0.12, 0.16), group="thigh.R"),
                        box(metal, (-0.2, 0.02, 0.97), (0.03, 0.05, 0.04), group="thigh.R")])
+# armour from research: a ballistic vest, then plates of alien alloy
+piece("Gear_Vest", [box(mat("Kevlar", (0.2, 0.22, 0.18)), (0, 0.115, 1.27), (0.36, 0.06, 0.34), group="spine"),
+                    box(mat("Kevlar", (0.2, 0.22, 0.18)), (0, -0.125, 1.27), (0.36, 0.05, 0.34), group="spine"),
+                    box(webbing, (0.12, 0, 1.45), (0.07, 0.26, 0.04), group="spine"),
+                    box(webbing, (-0.12, 0, 1.45), (0.07, 0.26, 0.04), group="spine"),
+                    box(webbing, (0, 0.15, 1.2), (0.3, 0.02, 0.05), group="spine")])
+alloy = mat("Alloy", (0.24, 0.23, 0.3), rough=0.3)
+seam = mat("AlloyGlow", (0.3, 0.9, 0.8), emit=2.5)
+piece("Gear_Plate", [box(alloy, (0, 0.13, 1.3), (0.4, 0.07, 0.36), group="spine"),
+                     box(alloy, (0, -0.14, 1.3), (0.38, 0.06, 0.36), group="spine"),
+                     box(seam, (0, 0.168, 1.31), (0.26, 0.006, 0.02), group="spine"),
+                     box(alloy, (0, 0.12, 1.07), (0.32, 0.06, 0.15), group="hips"),
+                     box(alloy, (0.25, 0, 1.43), (0.14, 0.17, 0.1), group="upperarm.L"),
+                     box(alloy, (-0.25, 0, 1.43), (0.14, 0.17, 0.1), group="upperarm.R"),
+                     box(alloy, (0.1, 0.09, 0.72), (0.12, 0.05, 0.2), group="thigh.L"),
+                     box(alloy, (-0.1, 0.09, 0.72), (0.12, 0.05, 0.2), group="thigh.R")])
 piece("Gear_Scanner", [box(scan, (0.25, 0.08, 0.82), (0.05, 0.14, 0.09), group="hand.L"),
                        box(screen, (0.25, 0.1, 0.87), (0.04, 0.08, 0.005), group="hand.L")])
 

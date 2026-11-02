@@ -367,6 +367,25 @@ func _draw_hud() -> void:
 			c.draw_rect(Rect2(mid.x - 40, mid.y + 20, 80, 4), Color(0, 0, 0, 0.6))
 			c.draw_rect(Rect2(mid.x - 40, mid.y + 20, 80 * p.evac_hold / 2.0, 4), ACCENT)
 		_text(c, Vector2(mid.x - 120, 32), "Pokud posádka UFO žije, mise nebude splněna.", FRAME, 9)
+	# the objective of this mission, top centre; the beacon's direction for a rescue
+	var ot: String = mission().objective_text()
+	if ot != "":
+		_text(c, Vector2(mid.x - ot.length() * 2.4, 12), ot, ACCENT, 9)
+	var v: Node = mission().vip()
+	if v and not v.dead and not v.saved and v.st != v.C.FOLLOW:
+		var to: Vector3 = v.global_position - p.global_position
+		var ang: float = atan2(to.x, to.z) - (p.rotation.y + PI)
+		var dist: float = snappedf(to.length(), 5.0)
+		var cpos := Vector2(mid.x, 34)
+		var dv := Vector2(sin(-ang), -cos(-ang))
+		c.draw_line(cpos, cpos + dv * 9.0, ACCENT, 2.0)
+		c.draw_circle(cpos + dv * 9.0, 2.0, ACCENT)
+		_text(c, cpos + Vector2(14, 4), "maják ~%d m" % int(dist), ACCENT, 8)
+	if p.plant_hold > 0.0:
+		c.draw_rect(Rect2(mid.x - 40, mid.y + 20, 80, 4), Color(0, 0, 0, 0.6))
+		c.draw_rect(Rect2(mid.x - 40, mid.y + 20, 80 * p.plant_hold / 3.0, 4), RED)
+	elif mission().beacon_near(p.global_position) >= 0:
+		_text(c, Vector2(mid.x - 60, mid.y + 44), "Drž E 3 s - položit nálož", ACCENT, 9)
 	# teammates
 	var y := 10.0
 	for o in mission().players():

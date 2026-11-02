@@ -21,6 +21,7 @@ var bleed_left := BLEED_OUT
 var carried_by := 0
 var wants_evac := false
 var evac_hold := 0.0
+var plant_hold := 0.0
 var kills := 0
 var display_name := ""
 var held := ""            # item id in the right hand (for others to see)
@@ -149,6 +150,7 @@ func _ready() -> void:
 	mission = get_tree().current_scene
 	if is_multiplayer_authority():
 		inv = Game.default_loadout()
+		armor = String(Game.valid_loadout(Game.veteran()).get("armor", ""))
 		var ids := []
 		for sl in inv:
 			ids.append(inv[sl]["id"])
@@ -174,7 +176,8 @@ var _gear_nodes := {}
 var _last_body_pos := Vector3.ZERO
 var _body_speed := 0.0
 const GEAR_BITS := ["Gear_Belt0", "Gear_Belt1", "Gear_Belt2", "Gear_Belt3", "Gear_Backpack", "Gear_Grenade",
-	"Gear_Flare", "Gear_Medkit", "Gear_Holster", "Gear_Scanner"]
+	"Gear_Flare", "Gear_Medkit", "Gear_Holster", "Gear_Scanner", "Gear_Vest", "Gear_Plate"]
+var armor := ""        # worn armour id (vesta / pancir), from the loadout
 const TEAM_COLORS := [Color(0.22, 0.24, 0.17), Color(0.18, 0.2, 0.24), Color(0.26, 0.22, 0.17), Color(0.17, 0.17, 0.17)]
 const PATCH_COLORS := [Color(0.85, 0.65, 0.15), Color(0.2, 0.6, 0.95), Color(0.9, 0.25, 0.2), Color(0.4, 0.9, 0.4)]
 
@@ -371,6 +374,8 @@ func _gear_mask() -> int:
 		if id == "flare": m |= 1 << 6
 		if id == "medkit": m |= 1 << 7
 		if (id == "pistol" or id == "magnum") and s != "rh" and s != "lh": m |= 1 << 8
+	if armor == "vesta": m |= 1 << 10
+	if armor == "pancir": m |= 1 << 11
 	return m
 
 func _apply_gear() -> void:
@@ -458,7 +463,10 @@ func _show_items(r: String, l: String, back: String) -> void:
 			body_gun.add_child(_held_model(r, true))
 	if l != "" and not two:
 		if gun_l:
-			gun_l.add_child(_held_model(l))
+			var lm := _held_model(l)
+			if l == "stit":
+				lm.position = Vector3(0.05, -0.05, -0.15)
+			gun_l.add_child(lm)
 			gun_l.add_child(Game.model("hand_l"))
 		if body_l:
 			body_l.add_child(_held_model(l, true))
@@ -501,7 +509,7 @@ func has_scanner() -> bool:
 	return false
 
 func carried_weight() -> int:
-	var w := 0
+	var w := int(Game.ITEMS[armor]["weight"]) if armor != "" else 0
 	for s in inv:
 		w += int(Game.ITEMS[inv[s]["id"]]["weight"])
 	return w
@@ -777,7 +785,8 @@ func _physics_process(delta: float) -> void:
 		if step_t <= 0:
 			step_t = 1.6
 			var quiet := 0.5 if Game.has_talent(merc, "kocici_krok") else 1.0
-			Game.play_at(self, "step", global_position, (-22 if prone else (-18 if crouching else (-6 if sprint else -12))) + (5.0 if mission.step_noise() > 1.0 else 0.0))
+			var surf := Game.surface_at(self, global_position, mission.map)
+			Game.play_at(self, "step_%s%d" % [surf, randi() % 4], global_position, (-24 if prone else (-19 if crouching else (-7 if sprint else -13))) + float(Game.STEP_DB.get(surf, 0.0)))
 			mission.noise(global_position, (1.0 if prone else (2.0 if crouching else (14.0 if sprint else 6.0))) * quiet * mission.step_noise())
 	# actions
 	fire_cd -= delta
@@ -808,6 +817,15 @@ func _physics_process(delta: float) -> void:
 	# evac: hold E for two seconds (no accidental take-offs)
 	# once you have held E for 2 s you stay "on board" until you step out (others can take their time)
 	var at_ship: bool = global_position.distance_to(mission.map["evac"]) < 3.5
+	# sabotage: hold E at a beacon to plant a charge
+	var bi: int = mission.beacon_near(global_position)
+	if bi >= 0 and Input.is_action_pressed("use") and not inv_open and not downed:
+		plant_hold += delta
+		if plant_hold >= 3.0:
+			plant_hold = 0.0
+			mission.plant.rpc_id(1, bi)
+	else:
+		plant_hold = 0.0
 	if at_ship and Input.is_action_pressed("use") and not inv_open:
 		evac_hold += delta
 	elif not wants_evac:
@@ -1044,6 +1062,8 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 				mission.hud.message("Zasáhl jsi spoluhráče %s!" % c.display_name, 2.0)
 			elif c and c.has_method("is_civilian") and not c.dead:
 				mission.shoot_civ.rpc_id(1, c.name)
+			elif c and c.has_meta("break"):
+				mission.hit_breakable.rpc_id(1, int(c.get_meta("break")), float(rule["damage"]), "plasma" if wp["id"] == "plasma_rifle" or Game.ITEMS[wp["id"]].get("laser", false) else "bullet")
 			if rule.has("splash"):
 				mission.explode.rpc_id(1, to, float(rule["splash"]), float(rule["damage"]) * 0.6, name, false)
 		if i < 4:
@@ -1082,6 +1102,8 @@ func _melee_hit(rule: Dictionary) -> void:
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if not (Game.has_talent(merc, "tichy_zabijak") and rule.has("backstab")):
 		mission.noise(global_position, 3.0)
+	if hit and hit.collider and hit.collider.has_meta("break"):
+		mission.hit_breakable.rpc_id(1, int(hit.collider.get_meta("break")), float(rule["damage"]) * 0.6, "melee")
 	if hit and hit.collider and hit.collider.has_method("is_alien"):
 		var a: Node = hit.collider
 		var behind: bool = (-a.global_transform.basis.z).dot((a.global_position - global_position).normalized()) > 0.3
@@ -1478,6 +1500,7 @@ func _spawn_throwable(kind: String, from: Vector3, vel: Vector3, thrower: String
 			_explosion_fx(p)
 			if multiplayer.is_server():
 				mission.noise(p, 40.0)
+				mission.blast_breakables(p, 4.0, 160.0)
 				for a in mission.aliens():
 					var d: float = a.global_position.distance_to(p)
 					if d < 5.0 and not a.dead:
@@ -1523,6 +1546,15 @@ func hurt(dmg: float, from: Vector3) -> void:
 	if downed:
 		bleed_left -= dmg * 0.5
 		return
+	if armor != "":
+		dmg *= float(Game.ITEMS[armor].get("protect", 1.0))
+	# a shield in the left hand stops most of what comes from the front
+	if item_in("lh").get("id", "") == "stit" and from.distance_to(global_position) > 1.5:
+		var to: Vector3 = (from - global_position)
+		to.y = 0
+		if to.length() > 0.1 and (-global_transform.basis.z).dot(to.normalized()) > 0.45:
+			dmg *= 0.25
+			Game.play_at(self, "clink", global_position + Vector3.UP, -2)
 	hp -= dmg
 	wounded = true
 	stress = min(100.0, stress + dmg * (1.4 - float(merc.get("bravery", 40)) / 100.0) * 2.0)
@@ -1950,7 +1982,26 @@ func _flicker(delta: float) -> void:
 		flash.light_energy = base_e
 
 # ---- others' view ------------------------------------------------------------------------------
+var _rs_last := Vector3.INF
+var _rs_acc := 0.0
+## Teammates' footsteps (their own machine plays them only for themselves).
+func _remote_steps() -> void:
+	if _rs_last == Vector3.INF or downed or dead:
+		_rs_last = global_position
+		return
+	var d := Vector2(global_position.x - _rs_last.x, global_position.z - _rs_last.z).length()
+	_rs_last = global_position
+	if d > 2.0 or absf(velocity.y) > 1.0:
+		return               # teleport or jump
+	_rs_acc += d
+	var stride := 0.6 if prone else (0.65 if crouching else 0.8)
+	if _rs_acc >= stride:
+		_rs_acc = 0.0
+		var surf := Game.surface_at(self, global_position, mission.map)
+		Game.play_at(self, "step_%s%d" % [surf, randi() % 4], global_position, (-24 if prone else (-19 if crouching else -12)) + float(Game.STEP_DB.get(surf, 0.0)))
+
 func _remote_visuals() -> void:
+	_remote_steps()
 	_show_items(held, held_l, held_back)
 	head.rotation.x = pitch
 	flash.visible = light_on and not downed

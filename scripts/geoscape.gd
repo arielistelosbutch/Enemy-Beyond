@@ -239,7 +239,7 @@ func _sync_markers() -> void:
 		var id := int(m["id"])
 		ids[id] = true
 		if not markers.has(id):
-			var col := RED if m["type"] == "terror" else ACCENT
+			var col := RED if m["type"] in ["terror", "base"] else ACCENT
 			markers[id] = _marker(col, 0.045)
 			_place(markers[id], float(m["lat"]), float(m["lon"]))
 		var mk: Node3D = markers[id]
@@ -414,7 +414,7 @@ func _update_text() -> void:
 	var left: float = (float(m["expires"]) - float(d["day"])) * 24.0
 	var night := Campaign.is_night(float(m["lon"]))
 	var lh := Campaign.local_hour(float(m["lon"]))
-	var biome: String = {"farm": "venkov, farma", "forest": "lesy", "town": "městečko"}[m["biome"]]
+	var biome: String = {"farm": "venkov, farma", "forest": "lesy", "town": "městečko", "industrial": "průmyslový areál", "mountain": "hory, horská chata", "polar": "polární pustina", "base": "naše základna", "mars": "Mars"}.get(String(m["biome"]), "krajina")
 	info_lbl.text = "%s\n%s  (%s)\nMístní čas %02d:%02d - %s\nVydrží ještě asi %d h\nOdhad posádky: %s\nOdměna: %d kr\n\n%s" % [
 		Campaign.MTYPES[m["type"]]["name"].to_upper(), m["place"], biome, int(lh), int(fmod(lh, 1.0) * 60),
 		"NOC" if night else "den", int(left), ["malá", "střední", "velká", "obrovská"][clampi(int(m["extra_aliens"]), 0, 3)],
@@ -457,7 +457,7 @@ func _launch() -> void:
 	if m.is_empty():
 		_alert("Nejdřív vyber hlášení na glóbu.")
 		return
-	if not Campaign.kondor_ready():
+	if not Campaign.kondor_ready() and m["type"] != "base":
 		_alert("Kondor je ztracen\nNáhradní Kondor dorazí do hangáru za %d h. Nech čas běžet." % Campaign.kondor_hours())
 		return
 	Campaign.save()

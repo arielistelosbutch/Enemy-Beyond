@@ -64,6 +64,8 @@ func _process(delta: float) -> void:
 		"rlanim": _rlanim(p)
 		"ufoshot": _ufoshot(p)
 		"mapshot": _mapshot(p)
+		"objtest": _objtest(p)
+		"breaktest": _breaktest(p)
 		"terror": _terror(p)
 		"panic":
 			if p and step == 0 and t > 3:
@@ -657,6 +659,8 @@ func _mapshot(p: Node) -> void:
 	cam.far = 400
 	m().add_child(cam)
 	var c := Vector3(size / 2, 0, size / 2)
+	m().env.fog_density = 0.0015
+	m().env.volumetric_fog_enabled = false
 	for i in 3:
 		var pos: Vector3 = [c + Vector3(-size * 0.55, size * 0.55, size * 0.75), c + Vector3(size * 0.6, size * 0.45, -size * 0.5), c + Vector3(0, size * 0.25, size * 0.2)][i]
 		cam.global_position = pos
@@ -664,6 +668,70 @@ func _mapshot(p: Node) -> void:
 		cam.make_current()
 		await get_tree().create_timer(1.0).timeout
 		get_viewport().get_texture().get_image().save_png("user://map_%s_%d.png" % [Game.cmd_arg("biome", "farm"), i])
+	var nmap0: RID = m().get_world_3d().navigation_map
+	for lk in m().find_children("*", "NavigationLink3D", true, false):
+		var sp: Vector3 = lk.global_transform * lk.start_position
+		var ep: Vector3 = lk.global_transform * lk.end_position
+		var cs := NavigationServer3D.map_get_closest_point(nmap0, sp)
+		var ce := NavigationServer3D.map_get_closest_point(nmap0, ep)
+		out("LINK start %s near %s (%.2f)  end %s near %s (%.2f) map_ok=%s links_on_map=%d radius=%.2f" % [sp, cs, cs.distance_to(sp), ep, ce, ce.distance_to(ep), lk.get_navigation_map() == nmap0, NavigationServer3D.map_get_links(nmap0).size(), NavigationServer3D.map_get_link_connection_radius(nmap0)])
+		var lp := NavigationServer3D.map_get_path(nmap0, cs, ce, false)
+		out("LINK path %s" % [lp])
+	# close-ups of the new places, from eye height at a corner of their block
+	var seen := {}
+	var k := 0
+	for lm in m().map.get("landmarks", []):
+		if seen.has(lm[0]) or k >= 6:
+			continue
+		seen[lm[0]] = true
+		var o: Vector3 = lm[1]
+		var mid := o + Vector3(6, 0, 6)
+		var toc := (c - mid)
+		toc.y = 0
+		toc = toc.normalized() if toc.length() > 0.1 else Vector3(1, 0, 0)
+		cam.global_position = mid + toc * 9.5 + Vector3(0, 2.4, 0)
+		cam.look_at(mid + Vector3(0, 1.2, 0), Vector3.UP)
+		await get_tree().create_timer(0.8).timeout
+		get_viewport().get_texture().get_image().save_png("user://lm_%s_%s.png" % [Game.cmd_arg("biome", "farm"), lm[0]])
+		k += 1
+		if lm[0] in ["house2", "cabin", "warehouse"]:
+			# can they walk upstairs? (navigation path from the yard to the upper floor)
+			var up: Vector3 = {"house2": o + Vector3(3.8, 3.1, 7.2), "cabin": o + Vector3(5.2, 2.7, 8.0), "warehouse": o + Vector3(3.5, 3.06, 9.3)}[lm[0]]
+			var nmap: RID = m().get_world_3d().navigation_map
+			var path := NavigationServer3D.map_get_path(nmap, NavigationServer3D.map_get_closest_point(nmap, o + Vector3(6, 0, 0.5)), NavigationServer3D.map_get_closest_point(nmap, up), true)
+			out("NAVUP %s: path %d points, end y %.2f (want %.2f)  start %s target %s closest %s path %s" % [lm[0], path.size(), path[path.size() - 1].y if path.size() > 0 else -1.0, up.y, o + Vector3(6, 0, 0.5), up, NavigationServer3D.map_get_closest_point(nmap, up), path])
+			var nm: NavigationMesh = m().get_node("Nav").navigation_mesh if m().has_node("Nav") else null
+			if nm == null:
+				for ch in m().find_children("*", "NavigationRegion3D", true, false):
+					nm = ch.navigation_mesh
+			var hi := 0
+			var near_up := 99.0
+			for v in nm.get_vertices():
+				if v.y > 1.5:
+					hi += 1
+					near_up = minf(near_up, Vector2(v.x - up.x, v.z - up.z).length())
+			out("NAVUP verts above 1.5 m: %d, nearest to target %.1f m, closest point %s" % [hi, near_up, NavigationServer3D.map_get_closest_point(nmap, up)])
+			if lm[0] == "house2":
+				var cc := o + Vector3(1.8, 0, 2.2)
+				var pts := {"door_out": cc + Vector3(3.6, 0, -1.0), "inside": cc + Vector3(3.6, 0, 1.5), "right_room": cc + Vector3(5.5, 0, 4.0), "ramp_foot": cc + Vector3(7.3, 0, 0.8), "ramp_mid": cc + Vector3(7.3, 1.55, 3.6), "landing": cc + Vector3(7.3, 3.1, 7.4), "upstairs": cc + Vector3(3.0, 3.1, 5.0)}
+				var cnt := 0
+				for v in nm.get_vertices():
+					var lv: Vector3 = v - cc
+					if lv.x > 6.3 and lv.x < 8.4 and lv.z > 0 and lv.z < 8 and v.y > 0.6 and v.y < 3.0:
+						cnt += 1
+						if cnt < 12: out("RAMPV %s" % lv)
+				out("RAMPV count %d" % cnt)
+				var names := pts.keys()
+				for a in names.size() - 1:
+					var pa: Vector3 = NavigationServer3D.map_get_closest_point(nmap, pts[names[a]])
+					var pb: Vector3 = NavigationServer3D.map_get_closest_point(nmap, pts[names[a + 1]])
+					var pp := NavigationServer3D.map_get_path(nmap, pa, pb, true)
+					out("SEG %s %s -> %s %s : end %s ok=%s" % [names[a], pa, names[a + 1], pb, pp[pp.size() - 1] if pp.size() else "-", pp.size() > 0 and pp[pp.size() - 1].distance_to(pb) < 0.5])
+			# and a look from up there
+			cam.global_position = up + Vector3(0, 1.6, 0)
+			cam.look_at(up + Vector3(-3, 1.2, -3), Vector3.UP)
+			await get_tree().create_timer(0.8).timeout
+			get_viewport().get_texture().get_image().save_png("user://lm_%s_%s_up.png" % [Game.cmd_arg("biome", "farm"), lm[0]])
 	get_tree().quit()
 
 func _wshot(p: Node) -> void:
@@ -713,6 +781,123 @@ func _heal_test(p: Node) -> void:
 	elif _ht == 3 and t > 15.0:
 		_ht = 4
 		out("HEAL RESULT: other downed=%s dead=%s hp=%.0f revives=%d busy=%s" % [other.downed, other.dead, other.hp, p.revives, p.busy_text])
+
+## The new mission types, played through by a bot (rescue / sabotage / base).
+func _objtest(p: Node) -> void:
+	if p == null:
+		return
+	_skip_brief()
+	if not m().started():
+		return
+	p.hp = 9999.0
+	p.max_hp = 9999.0
+	if m().finished:
+		if step < 900:
+			step = 900
+			out("OBJ RESULT finished: %s" % str(m().hud.result_panel != null))
+			await get_tree().create_timer(1.0).timeout
+			get_tree().quit()
+		return
+	match m().mtype():
+		"rescue":
+			var v: Node = m().vip()
+			if v == null:
+				return
+			if step == 0:
+				step = 1
+				out("OBJ vip %s at %s (evac %s)" % [m().vip_name, v.global_position, m().map["evac"]])
+				# how much of the map can be reached from the Kondor?
+				var nmap: RID = m().get_world_3d().navigation_map
+				var ev: Vector3 = NavigationServer3D.map_get_closest_point(nmap, m().map["evac"] + Vector3(0, 0, 3))
+				var bad := []
+				for wp in m().map["waypoints"]:
+					var pp := NavigationServer3D.map_get_path(nmap, ev, NavigationServer3D.map_get_closest_point(nmap, wp), true)
+					if pp.is_empty() or pp[pp.size() - 1].distance_to(NavigationServer3D.map_get_closest_point(nmap, wp)) > 1.0:
+						bad.append(wp)
+				out("OBJ reach: %d of %d waypoints unreachable: %s" % [bad.size(), m().map["waypoints"].size(), bad])
+				for lm in m().map.get("landmarks", []):
+					out("OBJ landmark %s at %s" % lm)
+				p.global_position = v.global_position + Vector3(1.0, 0.2, 0)
+			elif step == 1 and t > 1.0:
+				step = 2
+				out("OBJ use civilian: %s" % p._use_civilian())
+			elif step == 2:
+				await get_tree().create_timer(1.0).timeout
+				out("OBJ vip state %d (follow=%d)" % [v.st, v.C.FOLLOW])
+				for a in m().aliens():
+					a.set_physics_process(false)
+				p.global_position = m().map["evac"] + Vector3(0, 0.3, 2.5)
+				step = 3
+			elif step == 3:
+				if v.saved:
+					out("OBJ vip saved")
+					p.global_position = m().map["evac"] + Vector3(0, 0.3, 0)
+					p.wants_evac = true
+					step = 4
+				elif log_t > 1.9:
+					out("OBJ vip walking %s dist %.1f next %s path %s fin %s" % [v.global_position, v.global_position.distance_to(m().map["evac"]), v.agent.get_next_path_position(), v.agent.get_current_navigation_path(), v.agent.is_navigation_finished()])
+					if t > 90.0:
+						v.global_position = m().map["evac"] + Vector3(0, 0.3, 1.0)
+		"sabotage":
+			if step == 0:
+				step = 1
+				out("OBJ beacons %d" % m().beacons.size())
+				for a in m().aliens():
+					a.set_physics_process(false)
+			if step >= 1 and step <= m().beacons.size():
+				var b: Dictionary = m().beacons[step - 1]
+				p.global_position = b["pos"] + Vector3(2.0, 0.3, 0)
+				out("OBJ near beacon %d: %d" % [step - 1, m().beacon_near(p.global_position)])
+				m().plant(step - 1)
+				step += 1
+				p.global_position = m().map["evac"] + Vector3(0, 0.3, 0)
+			elif step == m().beacons.size() + 1 and m().beacons_left() == 0:
+				out("OBJ all beacons gone")
+				p.wants_evac = true
+				step = 99
+		"base":
+			if log_t > 1.9:
+				out("OBJ waves %d alive %d" % [m().waves_left, m().alive_aliens()])
+			for a in m().aliens():
+				if not a.dead:
+					a.damage(5000.0, a.global_position, null)
+
+## Destruction: a house wall before and after a blast, a fence shot to pieces.
+func _breaktest(p: Node) -> void:
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	m().hud.visible = false
+	m().env.fog_density = 0.002
+	var arr: Array = m().map["breakables"]
+	out("BREAK breakables: %d" % arr.size())
+	var target: Node3D = null
+	for n in arr:
+		if n.get_meta("break_kind") == "brick" and n.global_position.y < 2.0 and n.global_position.distance_to(m().map["evac"]) > 15.0:
+			target = n
+			break
+	if target == null:
+		get_tree().quit()
+		return
+	var cam := Camera3D.new()
+	m().add_child(cam)
+	var tp := target.global_position
+	cam.global_position = tp + Vector3(5, 1.2, 5)
+	cam.look_at(tp, Vector3.UP)
+	cam.make_current()
+	await get_tree().create_timer(1.0).timeout
+	_snap("70_before")
+	m().explode(tp + Vector3(0.6, 0.5, 0.6), 4.5, 160.0, "", true)
+	await get_tree().create_timer(0.3).timeout
+	_snap("71_blast")
+	await get_tree().create_timer(2.5).timeout
+	_snap("72_after")
+	var broken := 0
+	for n in arr:
+		if not is_instance_valid(n):
+			broken += 1
+	out("BREAK broken pieces: %d" % broken)
+	get_tree().quit()
 
 func _skip_brief() -> void:
 	var h: Node = m().hud

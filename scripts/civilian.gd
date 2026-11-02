@@ -33,6 +33,8 @@ var _last := Vector3.ZERO
 var _speed := 0.0
 var _scream_t := 0.0
 var model_name := "civ_a"
+var vip := false           # the one to rescue: hides until found, takes three strikes
+var vip_hp := 3
 
 func is_civilian() -> bool:
 	return true
@@ -41,6 +43,9 @@ func setup(data: Dictionary) -> void:
 	position = data["pos"]
 	rng.seed = int(data["id"]) * 4241 + 5
 	model_name = "civ_b" if int(data["id"]) % 2 == 1 else "civ_a"
+	vip = bool(data.get("vip", false))
+	if vip:
+		model_name = "civ_a" if Net.mission_seed % 2 == 0 else "civ_b"
 	collision_layer = 8
 	collision_mask = 1
 	var cs := CollisionShape3D.new()
@@ -77,6 +82,9 @@ func _ready() -> void:
 	add_child(agent)
 	goal = global_position
 	wait = rng.randf_range(2.0, 6.0)
+	if vip:
+		st = C.COWER
+		cowering = true
 
 func _physics_process(delta: float) -> void:
 	_animate(delta)
@@ -152,6 +160,9 @@ func _think(delta: float) -> void:
 	if mission and not mission.started():
 		return
 	var dz := _danger()
+	if vip and st == C.COWER:
+		velocity.x = 0; velocity.z = 0
+		return             # stays hidden, does not run into the dark
 	if dz and st != C.FOLLOW:
 		if st != C.FLEE or fear_t < 3.0:
 			_flee_from(dz.global_position)
@@ -181,7 +192,7 @@ func _think(delta: float) -> void:
 				cowering = true
 				return
 			var d: float = follow.global_position.distance_to(global_position)
-			if global_position.distance_to(mission.map["evac"]) < 3.5:
+			if global_position.distance_to(mission.map["evac"]) < 5.5:
 				_saved.rpc()
 				return
 			if d > 2.5:
@@ -204,11 +215,14 @@ func _saved() -> void:
 	visible = false
 	collision_layer = 0
 	if mission.local_player():
-		mission.hud.message("Civilista je na palubě Kondoru.", 2.5)
+		mission.hud.message(("%s je na palubě Kondoru." % mission.vip_name) if vip else "Civilista je na palubě Kondoru.", 2.5)
 
 ## Struck by an alien (host). A Líhnoun's victim rises again.
 func killed_by(race: String) -> void:
 	if dead:
+		return
+	if vip and vip_hp > 1:
+		_vip_hurt.rpc(vip_hp - 1)
 		return
 	_die.rpc(race == "lihnoun")
 	if race == "lihnoun":
@@ -217,6 +231,13 @@ func killed_by(race: String) -> void:
 			if multiplayer.is_server() and not mission.finished and is_inside_tree():
 				_rise.rpc()
 				mission.spawn_alien("zombie", at))
+
+@rpc("authority", "call_local", "reliable")
+func _vip_hurt(left: int) -> void:
+	vip_hp = left
+	Game.play_at(mission, "scream", global_position, 0)
+	if mission.hud:
+		mission.hud.message("%s je zraněn! (zdraví %d/3)" % [mission.vip_name, left], 2.5)
 
 @rpc("authority", "call_local", "reliable")
 func _die(seeded: bool) -> void:

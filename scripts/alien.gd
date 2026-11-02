@@ -216,7 +216,29 @@ func _physics_process(delta: float) -> void:
 
 ## Picks the animation from what the alien is doing (works on every machine:
 ## speed comes from how far it moved, the rest from synced flags).
+## Hit reaction: the body jerks away from the shot and comes back (every machine).
+var _flinch_t := 0.0
+var _flinch_dir := Vector3.ZERO
+@rpc("authority", "call_local", "unreliable")
+func _flinch(from: Vector3) -> void:
+	_flinch_t = 0.35
+	var d := global_position - from
+	d.y = 0
+	_flinch_dir = (global_transform.basis.inverse() * d.normalized()) if d.length() > 0.1 else Vector3(0, 0, 1)
+
+func _flinch_tick(delta: float) -> void:
+	if _flinch_t <= 0.0 or body == null:
+		return
+	_flinch_t = maxf(0.0, _flinch_t - delta)
+	var k := sin(_flinch_t / 0.35 * PI) * 0.22
+	body.rotation.x = _flinch_dir.z * k
+	body.rotation.z = -_flinch_dir.x * k
+	if _flinch_t <= 0.0:
+		body.rotation.x = 0.0
+		body.rotation.z = 0.0
+
 func _animate(delta: float) -> void:
+	_flinch_tick(delta)
 	if anim == null:
 		return
 	var moved := global_position - _last_anim_pos
@@ -467,6 +489,7 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 			_credit.rpc_id(by.get_multiplayer_authority(), by.name)
 		return
 	# hurt: break contact at once and come back from somewhere else
+	_flinch.rpc(from)
 	last_seen = from
 	_enter_combat(null)
 	_relocate(from)

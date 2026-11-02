@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.22.1 prototyp"
-const VERSION_NUM := "0.22.1"
+const VERSION := "0.23 prototyp"
+const VERSION_NUM := "0.23"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -37,6 +37,9 @@ const ITEMS := {
 	"mine": {"name": "Nášlapná mina", "short": "Mina", "weight": 3, "type": "grenade"},
 	"flare": {"name": "Světlice", "short": "Světlice", "weight": 1, "type": "flare"},
 	"medkit": {"name": "Lékárnička", "short": "Lékárnička", "weight": 3, "type": "medkit", "uses": 3},
+	"stit": {"name": "Balistický štít", "short": "Štít", "weight": 6, "type": "shield"},
+	"vesta": {"name": "Balistická vesta", "short": "Vesta", "weight": 4, "type": "armor", "protect": 0.8},
+	"pancir": {"name": "Slitinový pancíř", "short": "Pancíř", "weight": 7, "type": "armor", "protect": 0.62},
 	"scanner": {"name": "Detektor pohybu", "short": "Detektor", "weight": 4, "type": "scanner"},
 	"radio": {"name": "Vysílačka", "short": "Vysílačka", "weight": 1, "type": "radio"},
 }
@@ -469,20 +472,23 @@ func heal_minutes_left(m: Dictionary) -> int:
 # ---- loadout: chosen in the menu from what the base can spare ------------------------
 const STASH := {"sniper": 1, "sniper_clip": 3, "rifle": 1, "pistol": 1, "shotgun": 1, "magnum": 1, "autocannon": 1, "minigun": 1, "rocket_launcher": 1,
 	"stun_baton": 1, "knife": 1, "rifle_clip": 4, "pistol_clip": 3, "shells": 3, "magnum_rounds": 3, "ac_clip": 3,
-	"minigun_belt": 2, "rocket": 3, "grenade": 3, "smoke_grenade": 2, "mine": 2, "flare": 4, "medkit": 1, "scanner": 1, "radio": 4}
+	"minigun_belt": 2, "rocket": 3, "grenade": 3, "smoke_grenade": 2, "mine": 2, "flare": 4, "medkit": 1, "scanner": 1, "radio": 4,
+	"vesta": 1, "stit": 1, "pancir": 1}
 const STASH_VETERAN := {"sniper": 1, "sniper_clip": 2, "rifle": 1, "pistol": 1, "shotgun": 1, "magnum": 1, "autocannon": 1, "minigun": 1, "rocket_launcher": 1,
 	"stun_baton": 1, "knife": 1, "rifle_clip": 2, "pistol_clip": 2, "shells": 2, "magnum_rounds": 2, "ac_clip": 1,
-	"minigun_belt": 1, "rocket": 1, "grenade": 1, "smoke_grenade": 1, "mine": 1, "flare": 2, "medkit": 1, "scanner": 1, "radio": 4}
+	"minigun_belt": 1, "rocket": 1, "grenade": 1, "smoke_grenade": 1, "mine": 1, "flare": 2, "medkit": 1, "scanner": 1, "radio": 4,
+	"vesta": 1, "stit": 1, "pancir": 1}
 const DEFAULT_LOADOUT := {"rh": "rifle", "back": "", "b0": "scanner", "b1": "rifle_clip", "b2": "rifle_clip", "b3": "radio",
 	"p0": "medkit", "p1": "pistol", "p2": "knife", "p3": "flare", "p4": "grenade", "p5": "smoke_grenade"}
 ## Starting kits by soldier type (trimmed to what the base has).
 const KITS := {
-	"Střelec": {"rh": "rifle", "b0": "rifle_clip", "b1": "rifle_clip", "b2": "medkit", "b3": "radio", "p0": "rifle_clip", "p1": "pistol", "p2": "grenade", "p3": "flare", "p4": "scanner", "p5": "knife"},
-	"Odstřelovač": {"rh": "sniper", "b0": "sniper_clip", "b1": "sniper_clip", "b2": "pistol_clip", "b3": "radio", "p0": "sniper_clip", "p1": "pistol", "p2": "knife", "p3": "flare", "p4": "smoke_grenade", "p5": "medkit"},
-	"Útočník": {"rh": "shotgun", "b0": "shells", "b1": "shells", "b2": "grenade", "b3": "radio", "p0": "shells", "p1": "magnum", "p2": "magnum_rounds", "p3": "grenade", "p4": "knife", "p5": "flare"},
-	"Těžký": {"rh": "autocannon", "b0": "ac_clip", "b1": "ac_clip", "b2": "grenade", "b3": "radio", "p0": "ac_clip", "p1": "pistol", "p2": "pistol_clip", "p3": "flare"},
-	"Zdravotník": {"rh": "rifle", "b0": "rifle_clip", "b1": "medkit", "b2": "smoke_grenade", "b3": "radio", "p0": "rifle_clip", "p1": "medkit", "p2": "smoke_grenade", "p3": "flare", "p4": "pistol", "p5": "stun_baton"},
+	"Střelec": {"rh": "rifle", "b0": "rifle_clip", "b1": "rifle_clip", "b2": "medkit", "b3": "radio", "p0": "rifle_clip", "p1": "pistol", "p2": "grenade", "p3": "flare", "p4": "scanner", "p5": "knife", "armor": "vesta"},
+	"Odstřelovač": {"rh": "sniper", "b0": "sniper_clip", "b1": "sniper_clip", "b2": "pistol_clip", "b3": "radio", "p0": "sniper_clip", "p1": "pistol", "p2": "knife", "p3": "flare", "p4": "smoke_grenade", "p5": "medkit", "armor": "vesta"},
+	"Útočník": {"rh": "shotgun", "b0": "shells", "b1": "shells", "b2": "grenade", "b3": "radio", "p0": "shells", "p1": "magnum", "p2": "magnum_rounds", "p3": "grenade", "p4": "knife", "p5": "flare", "armor": "vesta"},
+	"Těžký": {"rh": "autocannon", "b0": "ac_clip", "b1": "ac_clip", "b2": "grenade", "b3": "radio", "p0": "ac_clip", "p1": "pistol", "p2": "pistol_clip", "p3": "flare", "armor": "vesta"},
+	"Zdravotník": {"rh": "rifle", "b0": "rifle_clip", "b1": "medkit", "b2": "smoke_grenade", "b3": "radio", "p0": "rifle_clip", "p1": "medkit", "p2": "smoke_grenade", "p3": "flare", "p4": "pistol", "p5": "stun_baton", "armor": "vesta"},
 	"Ženista": {"rh": "shotgun", "b0": "shells", "b1": "mine", "b2": "grenade", "b3": "radio", "p0": "shells", "p1": "mine", "p2": "grenade", "p3": "smoke_grenade", "p4": "scanner", "p5": "flare"},
+	"Štítař": {"rh": "pistol", "lh": "stit", "armor": "vesta", "b0": "pistol_clip", "b1": "pistol_clip", "b2": "grenade", "b3": "radio", "p0": "pistol_clip", "p1": "medkit", "p2": "smoke_grenade", "p3": "flare", "p4": "knife"},
 }
 var loadout := {}    # slot -> item id
 
@@ -517,6 +523,10 @@ func valid_loadout(vet: bool) -> Dictionary:
 		if int(left.get(id, 0)) > 0:
 			left[id] = int(left[id]) - 1
 			out[slot] = id
+	# armour is worn, not carried in a slot
+	var arm: String = String(src.get("armor", ""))
+	if arm != "" and ITEMS.has(arm) and int(left.get(arm, 0)) > 0:
+		out["armor"] = arm
 	# everybody gets a radio (older saved loadouts did not have one): first free belt/pack slot
 	if not "radio" in out.values() and int(left.get("radio", 0)) > 0:
 		for slot in ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
@@ -530,6 +540,8 @@ func default_loadout() -> Dictionary:
 	var inv := {}
 	var ids := valid_loadout(vet)
 	for slot in ids:
+		if slot == "armor":
+			continue
 		var id: String = ids[slot]
 		var it := {"id": id}
 		if ITEMS[id]["type"] == "weapon":
@@ -588,8 +600,46 @@ func mat(tex_name: String, scale := 0.5, emission := Color.BLACK) -> ShaderMater
 	m.set_shader_parameter("emission_color", emission)
 	m.set_shader_parameter("emission_energy", 1.0 if emission != Color.BLACK else 0.0)
 	m.set_shader_parameter("jitter", 1.0 if retro else 0.0)
+	m.set_meta("tex", tex_name)
 	_materials[key] = m
 	return m
+
+## What a texture sounds like underfoot.
+const TEX_SURFACE := {"planks": "wood", "barn": "wood", "fence": "wood", "bark": "wood",
+	"metal": "metal", "skyranger": "metal", "ufo_floor": "metal", "ufo_hull": "metal", "ufo_wall": "metal", "gun": "metal",
+	"plaster": "hard", "roof": "hard", "dirt": "dirt", "hay": "dirt", "scorch": "dirt", "mars": "dirt",
+	"snow": "snow", "sand": "sand", "grass": "grass", "wheat": "grass", "leaves": "grass",
+	"concrete": "hard", "asphalt": "hard", "brick": "hard", "rock": "hard", "tiles": "hard", "wallpaper": "wood",
+	"corrugated": "metal", "container_red": "metal", "container_blue": "metal", "container_green": "metal", "water": "dirt"}
+
+## The surface under @a pos: a decal floor (road, path) first, then what the feet stand on.
+func surface_at(world: Node3D, pos: Vector3, map: Dictionary) -> String:
+	for r in map.get("surfaces", []):
+		var lp: Vector3 = (r[0] as Transform3D).affine_inverse() * pos
+		if absf(lp.x) <= r[1].x and absf(lp.z) <= r[1].y and pos.y < r[3]:
+			return r[2]
+	var q := PhysicsRayQueryParameters3D.create(pos + Vector3(0, 0.3, 0), pos + Vector3(0, -0.6, 0), 1)
+	var hit := world.get_world_3d().direct_space_state.intersect_ray(q)
+	if not hit.is_empty():
+		var n: Node = hit["collider"]
+		for k in 3:
+			if n == null:
+				break
+			if n.has_meta("surf"):
+				return n.get_meta("surf")
+			for c in n.get_children():
+				if c is MeshInstance3D and c.material_override and c.material_override.has_meta("tex"):
+					var sf: String = TEX_SURFACE.get(String(c.material_override.get_meta("tex")), "")
+					if sf != "":
+						return sf
+			n = n.get_parent()
+	match String(map.get("terrain", "")):
+		"snow": return "snow"
+		"desert": return "sand"
+		"mars": return "dirt"
+	return "grass"
+
+const STEP_DB := {"grass": -2.0, "dirt": 0.0, "hard": 0.0, "wood": 1.0, "metal": 2.0, "snow": 1.0, "sand": -3.0}
 
 func color_mat(c: Color, emission := false) -> ShaderMaterial:
 	var key := "c|%s|%s" % [c, emission]

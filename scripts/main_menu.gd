@@ -140,6 +140,11 @@ const QUICK := [
 	["Velká loď (Myslodějové, Kolos)", {"group": "myslodejove", "type": "landed", "type_name": "Přistání UFO", "biome": "forest", "place": "Lesy u Dačic", "extra_aliens": 2, "ufo": "harvester", "size": "large"}],
 	["Zimní noc v horách (Šeďáci, sníh)", {"group": "sedaci", "type": "crash", "type_name": "Havárie UFO", "biome": "forest", "place": "Krkonoše", "extra_aliens": 1, "terrain": "snow", "size": "medium"}],
 	["Poušť (Bijci, Ohnivec)", {"group": "bijci", "type": "landed", "type_name": "Přistání UFO", "biome": "farm", "place": "Sahara", "extra_aliens": 1, "terrain": "desert", "size": "large"}],
+	["Záchrana v horách (vědkyně, Levité, sníh)", {"group": "levite", "type": "rescue", "type_name": "Záchrana", "biome": "mountain", "place": "Krkonoše", "extra_aliens": 1, "terrain": "snow", "size": "large"}],
+	["Sabotáž v průmyslovém areálu (Šeďáci)", {"group": "sedaci", "type": "sabotage", "type_name": "Sabotáž", "biome": "industrial", "place": "Kladno - Poldi", "extra_aliens": 2, "size": "large"}],
+	["Obrana základny (Bijci, vlny)", {"group": "bijci", "type": "base", "type_name": "Útok na základnu", "biome": "base", "place": "Základna - Vysočina", "extra_aliens": 2, "size": "medium"}],
+	["Polární stanice (Šeďáci, led)", {"group": "sedaci", "type": "sabotage", "type_name": "Sabotáž", "biome": "polar", "place": "Špicberky", "extra_aliens": 1, "terrain": "snow", "size": "large"}],
+	["Teror v průmyslu (Ještěřani)", {"group": "jestetani", "type": "terror", "type_name": "Teror", "biome": "industrial", "place": "Ostrava - Vítkovice", "extra_aliens": 2, "size": "huge"}],
 	["Poslední mise: Velín na Marsu (Velký mozek)", {"group": "myslodejove", "type": "mars", "type_name": "Velín na Marsu", "biome": "mars", "terrain": "mars", "place": "Mars - rudá pláň", "extra_aliens": 3, "size": "large"}],
 	["Náhodná mise", {}],
 ]
@@ -686,6 +691,9 @@ func _show_loadout() -> void:
 	var left: Dictionary = Game.stash_for(vet).duplicate()
 	for slot in cur:
 		left[cur[slot]] = int(left[cur[slot]]) - 1
+	for k in left.keys():
+		if int(left[k]) <= 0:
+			left.erase(k)
 	var weight := 0
 	for slot in cur:
 		weight += int(Game.ITEMS[cur[slot]]["weight"])
@@ -706,6 +714,19 @@ func _show_loadout() -> void:
 	var body := VBoxContainer.new()
 	row.add_child(body)
 	var names := {"rh": "P. ruka", "lh": "L. ruka", "back": "Záda"}
+	var arm_lbl := Label.new()
+	arm_lbl.text = "ZBROJ"
+	arm_lbl.add_theme_font_size_override("font_size", 8)
+	arm_lbl.add_theme_color_override("font_color", FRAME)
+	body.add_child(arm_lbl)
+	var ab := _button(Game.ITEMS[cur["armor"]]["short"] if cur.has("armor") else "(žádná - vesta/pancíř ze skladu)", func():
+		if Game.loadout.has("armor"):
+			Game.loadout.erase("armor")
+			Game.save_settings()
+			_show_loadout())
+	ab.reparent(body)
+	ab.custom_minimum_size = Vector2(160, 16)
+	ab.add_theme_font_size_override("font_size", 8)
 	for g in [["RUCE A ZÁDA", ["rh", "lh", "back"]], ["OPASEK", ["b0", "b1", "b2", "b3"]], ["BATOH", ["p0", "p1", "p2", "p3", "p4", "p5"]]]:
 		var l := Label.new()
 		l.text = g[0]
@@ -742,8 +763,15 @@ func _show_loadout() -> void:
 	for id in left:
 		var item: String = id
 		var b := _button("%s x%d (%dkg)" % [Game.ITEMS[item]["short"], int(left[item]), int(Game.ITEMS[item]["weight"])], func():
+			if Game.ITEMS[item]["type"] == "armor":
+				Game.loadout["armor"] = item
+				Game.save_settings()
+				_show_loadout()
+				return
 			var two := Game.two_handed(item)
 			var order := ["rh", "back"] if two else ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]
+			if Game.ITEMS[item]["type"] == "shield":
+				order = ["lh", "p0", "p1", "p2", "p3", "p4", "p5"]
 			if not two and Game.ITEMS[item]["type"] in ["weapon", "melee", "scanner"]:
 				order = ["rh", "lh"] + order
 			for slot in order:
@@ -942,7 +970,7 @@ func _autotest() -> void:
 		"air":
 			Net.mission_params = {"intercept": true, "id": -1, "ufo": Game.cmd_arg("ufo", "raider")}
 			get_tree().change_scene_to_file("res://scenes/Intercept.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
