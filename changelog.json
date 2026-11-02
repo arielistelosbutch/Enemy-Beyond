@@ -1,4 +1,9 @@
 {
+ "0.18": [
+  "Myš křížem jako ruce: levé tlačítko = pravá ruka (střelba), pravé tlačítko = levá ruka (vysílačka, lékárnička, druhá pistole...).",
+  "Jen pistole/revolver v ruce a levá volná: držíš ji oběma rukama, pravým tlačítkem míříš před oči jako s puškou.",
+  "Dvě pistole: při nabíjení levá ruka odloží svou zbraň, nabije pravou a pak ji zase vezme (nabíjení trvá o chvilku déle)."
+ ],
  "0.17": [
   "Nové nabíjení pistole podle videa: zbraň se naklopí, zásobník vypadne, levá ruka zasune nový a natáhne závěr.",
   "Revolver Magnum se láme: hlaveň sklopí, prázdné nábojnice vypadnou, levá ruka nabíjí po jednom, cvaknutím se zavře.",

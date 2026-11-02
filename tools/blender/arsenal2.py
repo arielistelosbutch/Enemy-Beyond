@@ -97,6 +97,7 @@ ap.GRIPS.update({
     "laser_rifle": ((0, -0.01, -0.045), (0, 0.3, -0.04)),
     "laser_cannon": ((0, 0.0, -0.07), (0, 0.42, -0.07)),
 })
-for k in ("sniper", "laser_rifle", "laser_cannon"):
+ap.GRIPS["laser_pistol"] = ((0, -0.005, -0.04), (-0.035, 0.0, -0.06))
+for k in ("sniper", "laser_rifle", "laser_cannon", "magnum", "laser_pistol"):
     ap.OUTDIR = OUTDIR
     ap.hands(k)

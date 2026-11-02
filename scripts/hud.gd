@@ -646,7 +646,7 @@ func _build_inventory() -> void:
 	var left := VBoxContainer.new()
 	left.add_theme_constant_override("separation", 3)
 	cols.add_child(left)
-	var groups := [["RUCE A ZÁDA  (dlouhá zbraň: LTM střílí, PTM míří; jinak LTM = levá ruka, PTM = pravá; Q = zbraň na záda)", ["rh", "lh", "back"]],
+	var groups := [["RUCE A ZÁDA  (LTM = pravá ruka / střelba, PTM = levá ruka, nebo mířit když je levá volná; Q = zbraň na záda)", ["rh", "lh", "back"]],
 		["OPASEK - rychlý: klávesy 1 2 3 4 (zbraň do ruky, náboje nabijí)", ["b0", "b1", "b2", "b3"]],
 		["BATOH - pomalý: stojíš a hrabeš se (granáty, světlice... i odtud fungují svou klávesou)", ["p0", "p1", "p2", "p3", "p4", "p5"]]]
 	var names := {"rh": "pravá ruka", "lh": "levá ruka", "back": "na zádech (jen dlouhá zbraň)"}
@@ -689,8 +689,8 @@ func _keys_text(p: Node) -> String:
 		return "-" if it.is_empty() else Game.ITEMS[it["id"]]["short"]
 	var melee: String = p.find_item(func(it): return Game.ITEMS[it["id"]]["type"] == "melee")
 	var lines := [
-		("LTM  střelba: %s" % hand.call("rh")) if Game.two_handed(p.item_in("rh").get("id", "")) else ("LTM  levá ruka: %s" % hand.call("lh")),
-		("PTM  mířit") if Game.two_handed(p.item_in("rh").get("id", "")) else ("PTM  pravá ruka: %s" % hand.call("rh")),
+		"LTM  pravá ruka / střelba: %s" % hand.call("rh"),
+		("PTM  mířit (obě ruce na zbrani)") if (Game.two_handed(p.item_in("rh").get("id", "")) or p.pistol_grip()) else ("PTM  levá ruka: %s" % hand.call("lh")),
 		"R    nabít zbraň",
 		"Q    dlouhá zbraň na záda / ze zad (%s)" % hand.call("back"),
 		"1-4  věc z opasku do ruky / nabít",
@@ -741,8 +741,8 @@ func _refresh_inventory() -> void:
 		var it: Dictionary = p.item_in(s)
 		var key: String = SLOT_KEY.get(s, "")
 		var two_h := Game.two_handed(p.item_in("rh").get("id", ""))
-		if s == "rh": key = "LTM" if two_h else "PTM"
-		elif s == "lh": key = "LTM"
+		if s == "rh": key = "LTM"
+		elif s == "lh": key = "PTM"
 		var t: String = ("[%s] " % key if key != "" else "") + ("(prázdné)" if it.is_empty() else Game.ITEMS[it["id"]]["short"])
 		if not it.is_empty():
 			if it.has("loaded"): t += "\n%d / %d" % [int(it["loaded"]), Game.mag_size(it["id"])]

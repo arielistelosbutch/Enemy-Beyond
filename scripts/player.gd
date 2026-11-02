@@ -264,6 +264,11 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 	if aiming and two:
 		base = Vector3(0.0, -0.165, -0.3) if rid != "rocket_launcher" else Vector3(0.12, -0.09, -0.22)
 		rot = Vector3(0, 0, 0)
+	elif aiming and pistol_grip():
+		base = Vector3(0.0, -0.105, -0.34)      # both hands, sights in front of the eye
+		rot = Vector3(0, 0, 0)
+	elif pistol_grip():
+		base = Vector3(0.1, -0.17, -0.38)       # both hands, low ready, a little to the right
 	if bracing:
 		# braced against the hip, pulled in and a bit to the centre
 		base = Vector3(base.x * 0.55, base.y - 0.03, base.z + 0.08)
@@ -282,6 +287,15 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 	var ra := _reload_anim(delta, rid, reloading)
 	base += ra[0]
 	rot += ra[1]
+	# which right-hand grip shows: both hands on the gun, or the right hand alone (the left
+	# is busy reloading, or holds something)
+	var busy_l := (reloading and rid in ["pistol", "magnum"]) or _rev_open > 0.05
+	var g2 := gun.get_node_or_null("GripTwo")
+	var g1 := gun.get_node_or_null("GripOne")
+	if g2 and g1:
+		g2.visible = pistol_grip() and not busy_l
+		g1.visible = not g2.visible
+	_lower_left = busy_l and inv.has("lh")
 	# digging in the backpack: hands drop out of view
 	var dig := 1.0 if (busy > 0 and busy_stand) else 0.0
 	var target: Vector3 = base + bob + Vector3(0.0, -0.1 * rl - 0.4 * dig, 0.05 * _vm_kick)
@@ -290,7 +304,9 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 	gun.rotation.y = lerp(gun.rotation.y, rot.y, k)
 	gun.rotation.z = lerp(gun.rotation.z, rot.z + rl * 0.7, k)
 	if gun_l:
-		var lt: Vector3 = VM_ONE_L + Vector3(-bob.x, bob.y, 0) + Vector3(0, -0.4 * dig, 0)
+		# the left hand puts its thing down while it helps reload the right gun
+		_lower_l_t = move_toward(_lower_l_t, 1.0 if _lower_left else 0.0, delta * 4.0)
+		var lt: Vector3 = VM_ONE_L + Vector3(-bob.x, bob.y, 0) + Vector3(0, -0.4 * dig - 0.45 * _lower_l_t, 0)
 		if sprinting:
 			lt += Vector3(0, -0.15, 0.05)
 		gun_l.position = gun_l.position.lerp(lt, k)
@@ -423,7 +439,17 @@ func _show_items(r: String, l: String, back: String) -> void:
 	if r != "":
 		if gun:
 			gun.add_child(_held_model(r))
-			gun.add_child(Game.model("hands_" + r if two else "hand_r"))
+			if two:
+				gun.add_child(Game.model("hands_" + r))
+			else:
+				var one := Game.model("hand_r")
+				one.name = "GripOne"
+				gun.add_child(one)
+				if Game.ITEMS[r]["type"] == "weapon" and ResourceLoader.exists("res://assets/models/hands_%s.glb" % r):
+					var both := Game.model("hands_" + r)
+					both.name = "GripTwo"
+					both.visible = false
+					gun.add_child(both)
 		if body_gun:
 			body_gun.add_child(_held_model(r, true))
 	if l != "" and not two:
@@ -630,7 +656,7 @@ func _physics_process(delta: float) -> void:
 	var brace_w: bool = two and Game.ITEMS[rh["id"]].get("brace", false)
 	# heavy guns are not aimed down a sight: they are pulled in tight to the body
 	bracing = brace_w and Input.is_action_pressed("aim") and not inv_open and not sprinting and busy <= 0
-	aiming = two and not brace_w and Input.is_action_pressed("aim") and not inv_open and not sprinting and busy <= 0
+	aiming = (two and not brace_w or pistol_grip()) and Input.is_action_pressed("aim") and not inv_open and not sprinting and busy <= 0
 	if cam:
 		var scoped: bool = aiming and Game.ITEMS[rh["id"]].get("scope", false)
 		var zoom := 0.2 if scoped else (0.5 if Game.has_mod(rh.get("id", ""), "optika", merc) else 0.7)
@@ -797,13 +823,13 @@ func _actions(delta: float) -> void:
 	if _click_lock and not Input.is_action_pressed("fire") and not Input.is_action_pressed("aim"):
 		_click_lock = false
 	if not sprinting and not _click_lock:
-		if two:
-			# long gun: left button fires, right button aims
+		if two or pistol_grip():
+			# long gun, or a pistol held in both hands: left button fires, right button aims
 			_use_hand("rh", Input.is_action_pressed("fire"), Input.is_action_just_pressed("fire"), delta)
 		else:
-			# each hand on its own button: left button = left hand, right button = right hand
-			_use_hand("lh", Input.is_action_pressed("fire"), Input.is_action_just_pressed("fire"), delta)
-			_use_hand("rh", Input.is_action_pressed("aim"), Input.is_action_just_pressed("aim"), delta)
+			# crossed, like the hands: left button = right hand, right button = left hand
+			_use_hand("rh", Input.is_action_pressed("fire"), Input.is_action_just_pressed("fire"), delta)
+			_use_hand("lh", Input.is_action_pressed("aim"), Input.is_action_just_pressed("aim"), delta)
 	if Input.is_action_just_pressed("reload"):
 		var g := gun_in("rh")
 		var slot := "rh"
@@ -875,6 +901,11 @@ func _use_hand(slot: String, pressed: bool, just: bool, delta: float) -> void:
 				radio_button = true
 
 # ---- shooting ---------------------------------------------------------------------------
+## A one-handed gun in the right hand and nothing in the left: held in both hands, aimed like a rifle.
+func pistol_grip() -> bool:
+	var r := item_in("rh")
+	return not r.is_empty() and not inv.has("lh") and Game.ITEMS[r["id"]]["type"] == "weapon" and not Game.two_handed(r["id"])
+
 ## Looking through a rifle scope right now (zoomed in).
 func scoped() -> bool:
 	return aiming and cam != null and Game.ITEMS.get(item_in("rh").get("id", ""), {}).get("scope", false) and cam.fov < Game.fov * 0.4
@@ -1105,6 +1136,8 @@ func _reload(wp: Dictionary, rule: Dictionary) -> void:
 	if rule.has("single"):
 		# shotgun / revolver: one round at a time (fire interrupts)
 		var t: float = float(rule["single"]) * fast + (Game.fetch_time(rule["ammo"], slot) * 0.5 if dig else 0.0)
+		if wp == item_in("rh") and inv.has("lh") and _rev_open < 0.05:
+			t += 0.5
 		Game.play_at(self, "reload", global_position, -12)
 		_start_busy(t, "Přebíjím po náboji", func():
 			if not inv.has(slot):
@@ -1119,6 +1152,8 @@ func _reload(wp: Dictionary, rule: Dictionary) -> void:
 				_reload(wp, rule))
 		return
 	var t2: float = float(rule.get("reload", 1.5)) * fast + (Game.fetch_time(rule["ammo"], slot) if dig else 0.0)
+	if wp == item_in("rh") and inv.has("lh") and not Game.two_handed(wp["id"]):
+		t2 += 0.6      # the left hand has to put its thing away and take it back
 	busy_stand = dig
 	Game.play_at(self, "reload", global_position, -8)
 	# the empty magazine drops out at a quarter of the motion
@@ -1141,6 +1176,8 @@ var _rev_open := 0.0
 var _rev_was := false
 var _rev_closing := 0.0
 var _rl_last := 0.0
+var _lower_left := false
+var _lower_l_t := 0.0
 
 func _vm_part(n: String) -> Node3D:
 	if gun == null:

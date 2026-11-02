@@ -568,12 +568,26 @@ func _rlanim(p: Node) -> void:
 	p.rotation.y = PI
 	p.pitch = 0.0
 	p.flash.visible = false
-	for id in ["pistol", "magnum"]:
-		p.inv["rh"] = {"id": id, "loaded": 0}
+	for id in Game.cmd_arg("rlguns", "pistol,magnum").split(","):
+		p.inv["rh"] = {"id": id.trim_suffix("2"), "loaded": 0}
 		p.inv.erase("lh")
+		if id.ends_with("2"):
+			p.inv["lh"] = {"id": "pistol", "loaded": 12}
+		if id == "aim":
+			p.inv["rh"] = {"id": "pistol", "loaded": 12}
+			p._update_held()
+			for a in 2:
+				p.aiming = a == 1
+				for k in 25:
+					p._viewmodel_motion(0.05, 0.0)
+				await get_tree().process_frame
+				await get_tree().process_frame
+				get_viewport().get_texture().get_image().save_png("user://rl_aim_%d.png" % a)
+			continue
+		id = id.trim_suffix("2") if not id.ends_with("2") else id
 		p._update_held()
 		await get_tree().process_frame
-		var phs := [0.0, 0.18, 0.3, 0.45, 0.68, 0.76, 1.0] if id == "pistol" else [0.0, 0.2, 0.5, 0.7, -1.0]
+		var phs := [0.0, 0.18, 0.3, 0.45, 0.68, 0.76, 1.0] if id.begins_with("pistol") else [0.0, 0.2, 0.5, 0.7, -1.0]
 		if Game.cmd_arg("dense", "") == "1":
 			phs = []
 			var n := 34 if id == "pistol" else 14
@@ -589,9 +603,9 @@ func _rlanim(p: Node) -> void:
 				for k in 3:
 					p._viewmodel_motion(0.05, 0.0)
 			else:
-				p.busy_total = 1.7 if id == "pistol" else 0.7
+				p.busy_total = 1.7 if id.begins_with("pistol") else 0.7
 				p.busy = p.busy_total * (1.0 - ph) + 0.0001
-				p.busy_text = "Přebíjím" if id == "pistol" else "Přebíjím po náboji"
+				p.busy_text = "Přebíjím" if id.begins_with("pistol") else "Přebíjím po náboji"
 				for k in (25 if Game.cmd_arg("dense", "") != "1" else 4):
 					p._viewmodel_motion(0.05, 0.0)
 			await get_tree().process_frame
