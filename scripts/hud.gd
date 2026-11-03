@@ -149,7 +149,8 @@ func briefing(text: String) -> void:
 	_brief_bg.add_child(hint)
 	_brief_len = text.length()
 	_brief_t = 0.0
-	Game.play_music("terror_briefing" if Net.mission_params.get("type", "") == "terror" else "briefing", false)
+	var mt: String = Net.mission_params.get("type", "")
+	Game.play_music("final_mission" if mt == "mars" else ("terror_briefing" if mt == "terror" else "briefing"), mt == "mars")
 	inventory_open = true     # blocks the mercenary while the screen is black
 
 var _ready_lbl: Label
@@ -196,7 +197,10 @@ func ready_count(n: int, total: int) -> void:
 	ready_total = total
 
 func brief_go() -> void:
-	Game.play_music("tactical" if Game.tactical_music else "")
+	if Net.mission_params.get("type", "") == "mars":
+		Game.play_music("final_mission")      # the last mission keeps its own music
+	else:
+		Game.play_music("tactical" if Game.tactical_music else "")
 
 func show_result(title: String, text: String) -> void:
 	Game.play_music("debriefing", false)

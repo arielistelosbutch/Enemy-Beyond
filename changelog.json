@@ -1,4 +1,9 @@
 {
+ "0.28": [
+  "Hudba je ve hře! Ivova vlastní hudba: hlavní menu, glóbus (dvě skladby), souboj stíhaček, briefing, briefing teroru, mise, debriefing, prohra, vítězství a poslední mise na Marsu.",
+  "Poslední mise má vlastní hudbu od briefingu až do konce. Hudba během běžné mise je dál volitelná (Nastavení).",
+  "Složka hudba vedle hry teď slouží jen k výměně skladeb: soubor se stejným názvem hraje místo vestavěného."
+ ],
  "0.27.1": [
   "Hrabání v batohu (podle Ivova videa): batoh se přetočí dopředu a ruka v něm hledá; ostatní vidí vojáka na koleni s batohem na zemi.",
   "Ošetřování: v ruce je role obvazu, kterou voják ovíjí; ostatní ho vidí na koleni s rukama u zraněného.",

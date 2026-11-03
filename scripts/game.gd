@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.27.1 prototyp"
-const VERSION_NUM := "0.27.1"
+const VERSION := "0.28 prototyp"
+const VERSION_NUM := "0.28"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -1134,7 +1134,18 @@ func music_dir() -> String:
 		return ProjectSettings.globalize_path("res://hudba")
 	return OS.get_executable_path().get_base_dir().path_join("hudba")
 
+## A track: the player's own file in the "hudba" folder next to the game wins (so anyone can
+## swap a track), otherwise Ivo's music that comes with the game.
 func _music_stream(base: String) -> AudioStream:
+	var own := _music_file(base)
+	if own:
+		return own
+	var bundled := "res://assets/music/%s.mp3" % base
+	if ResourceLoader.exists(bundled):
+		return (load(bundled) as AudioStream).duplicate()
+	return null
+
+func _music_file(base: String) -> AudioStream:
 	for ext in ["ogg", "mp3", "wav"]:
 		var p := music_dir().path_join(base + "." + ext)
 		if not FileAccess.file_exists(p):

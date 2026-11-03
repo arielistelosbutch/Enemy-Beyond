@@ -1,8 +1,9 @@
 ENEMY BEYOND - HUDBA
 ====================
 
-Hra se dodává bez hudby. Skladby vlož do této složky "hudba" (vedle EnemyBeyond.exe)
-jako .ogg, .mp3 nebo .wav s těmito názvy. Co chybí, tam je ticho.
+Hra už obsahuje vlastní hudbu Iva Arielistelose Floreka (od verze 0.28).
+Tato složka slouží jen k výměně: když sem (vedle EnemyBeyond.exe) vložíš skladbu
+se stejným názvem jako .ogg, .mp3 nebo .wav, hraje místo té vestavěné.
 Hlasitost: Nastavení -> Hudba. Hudba během mise je ve výchozím stavu vypnutá (jen vítr a ticho),
 zapíná se v Nastavení.
 
