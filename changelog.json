@@ -1,4 +1,14 @@
 {
+ "0.30": [
+  "Vetřelci mají práci, dokud si vás nevšimnou: šedí klečí u krav a něco s nimi dělají, opravují trup UFO, dva si šeptají ve tmě, jeden nehybně zírá do okna. Ještěřani a bijci hlídají dveře lodi a rozhlížejí se. Líhnoun hoduje nad tělem, ohař čmuchá, nakažení se kymácejí. Kdo nic nedělá, občas se pomalu rozhlédne. Při poplachu práci pustí a jdou po vás.",
+  "Přidal jsem další zvuky: kliknutí tlačítek, potvrzení a odmítnutí v menu, psaní hlášení, radar (nové UFO, nová mise), dokončený výzkum, peníze, hučení velínu na glóbu, konec mise (úspěch i neúspěch).",
+  "Ve vzduchu: motor Sokola, kanón, odpálení rakety, zaměření, siréna při poškozeném trupu, UFO prosviští kolem, sestřelené UFO padá k zemi.",
+  "Na misi: rampa Kondoru, motory transportu na přistávací ploše (podle zvuku najdeš cestu zpátky), tíživý hukot, když je něco blízko a nevidíš to, vzdálený výkřik ve městě, nové šepoty a čtyři hororové akordy.",
+  "Omračovací obušek: rána zasáhne i trochu vedle středu, má delší dosah, omračuje víc (zezadu ještě o polovinu víc) a vetřelce na chvíli ochromí. Na obrazovce je vidět, kolik už je omráčený.",
+  "Opravené obličeje: pusa je níž pod nosem, muži mají taky pusu.",
+  "Civilisté už neutíkají před vojáky: kroky a střelba žoldáků je neodhánějí, blízký výstřel je jen přiměje přikrčit se na místě.",
+  "HARDCORE: nad hlavami spoluhráčů nejsou jména a na obrazovce není seznam týmu se vzdálenostmi. Ukáže se jen, že někdo padl - kdo to je, poznáte po hlase."
+ ],
  "0.29.1": [
   "Ikony věcí vyrenderované přímo z modelů ve hře: v inventáři, ve výstroji na misi, ve skladu i ve zbrojnici je vidět puška, granát, lékárnička... Políčka mají obrázek, pod ním název, vlevo nahoře klávesu a vpravo nahoře náboje nebo počet použití.",
   "Zásobníky, náboje, vesty, pancíř, plazmový článek a batoh vetřelce mají vlastní obrázky (skládané z dílů, které ve hře jsou).",

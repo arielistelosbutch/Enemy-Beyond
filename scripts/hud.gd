@@ -189,7 +189,7 @@ func _brief_tick(delta: float) -> void:
 	if typed <= _brief_len and _brief_lbl.visible_characters != typed:
 		_brief_lbl.visible_characters = typed
 		if typed % 3 == 0 and _brief_lbl.text.substr(typed - 1, 1) != " ":
-			Game.play_ui(mission(), "step", -30)
+			Game.play_ui(mission(), "type", -14)
 	# the briefing is over: into the ship (Enter there = ready, the ramp opens when all are)
 	if _brief_t >= hold and _brief_fade < 0 and (key or _brief_t > hold + 2.5 or Game.autotest() != ""):
 		_brief_lbl.visible_characters = -1
@@ -222,6 +222,7 @@ func brief_go() -> void:
 
 func show_result(title: String, text: String) -> void:
 	Game.play_music("debriefing", false)
+	Game.play_ui(self, "mission_complete" if title.begins_with("MISE SPLN") else "mission_failed", -2)
 	_close_inventory()
 	pause_panel.visible = false
 	result_panel = _panel(title, Vector2(110, 12), Vector2(420, 0))
@@ -410,8 +411,10 @@ func _draw_hud() -> void:
 	var y := 10.0
 	for o in mission().players():
 		if o == p: continue
+		if Game.veteran() and not (o.downed or o.dead):
+			continue        # hardcore: no roster on screen, only who has fallen
 		var st: String = "MRTEV" if o.dead else ("ODVLEČEN! %d s" % int(o.bleed_left) if o.downed and o.carried_by < 0 else ("PADL! %d s" % int(o.bleed_left) if o.downed else "%d m" % int(p.global_position.distance_to(o.global_position))))
-		_text(c, Vector2(10, y + 8), "%s  %s" % [o.display_name, st], RED if o.downed or o.dead else TEXT, 9)
+		_text(c, Vector2(10, y + 8), "%s  %s" % ["Někdo z týmu" if Game.veteran() else o.display_name, st if not Game.veteran() else st.split(" ")[0]], RED if o.downed or o.dead else TEXT, 9)
 		y += 11
 	if p.has_scanner():
 		_draw_scanner(c, Vector2(sz.x - 52, 52), 40.0, p)

@@ -69,6 +69,7 @@ var striking := false     # melee races: the attack animation is playing
 var husk := false         # Nádor: "dead" on the ground - must be destroyed again or it comes back
 var race := "grey"
 var bleeding := false     # badly hurt: it drips as it goes - a trail to follow
+var activity := 0         # what it does while nobody is looking (ACTS index)
 
 # ---- host only ----
 var hp := 70.0
@@ -134,6 +135,9 @@ func setup(data: Dictionary) -> void:
 		for an in anim.get_animation_list():
 			anim.get_animation(an).loop_mode = Animation.LOOP_LINEAR
 		anim.play("idle")
+		# advanced by hand, so the activity poses can be laid over the clip each frame
+		anim.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+		_rig = m.find_child("Skeleton3D", true, false)
 	# eye glint follows the head bone
 	eye_glint = MeshInstance3D.new()
 	var bm := BoxMesh.new()
@@ -158,7 +162,7 @@ func setup(data: Dictionary) -> void:
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"
 	var cfg := SceneReplicationConfig.new()
-	for prop in [":position", ":rotation", ":dead", ":alert", ":lurking", ":captured", ":striking", ":husk", ":bleeding"]:
+	for prop in [":position", ":rotation", ":dead", ":alert", ":lurking", ":captured", ":striking", ":husk", ":bleeding", ":activity"]:
 		cfg.add_property(NodePath("." + prop))
 	sync.replication_config = cfg
 	sync.root_path = NodePath("..")
@@ -219,6 +223,15 @@ func _physics_process(delta: float) -> void:
 		return
 	if mission and not mission.started():
 		return      # the team is still reading the briefing
+	if activity != 0 and state != S.LURK:
+		if Game.autotest() != "": print("[ACT] %s disturbed at %s (state %d)" % [name, ACTS[activity], state])
+		activity = 0         # disturbed: the job is forgotten
+	if _stagger > 0.0:
+		_stagger -= delta
+		velocity.x = 0
+		velocity.z = 0
+		move_and_slide()
+		return
 	_think(delta)
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
@@ -306,6 +319,8 @@ func _animate(delta: float) -> void:
 	if anim.current_animation != want:
 		anim.play(want, 0.25)
 	anim.speed_scale = clamp(_speed / walk_spd, 0.7, 1.6) if want == "walk" else (clamp(_speed / run_spd * 1.2, 0.7, 1.4) if want == "run" else 1.0)
+	anim.advance(delta)
+	_activity_pose(delta)
 
 ## Eyes only flash when a flashlight catches them - and only for a moment.
 func _eyeshine(delta: float) -> void:
@@ -554,6 +569,9 @@ func stun(amount: float, from: Vector3, by: Node) -> void:
 		return
 	stun_dmg += amount
 	alert = true
+	_stagger = 1.1           # the shock rattles it: a moment without shooting or moving
+	if by and by.has_method("is_player") and stun_dmg < hp:
+		_stun_note.rpc_id(by.get_multiplayer_authority(), by.name, int(100.0 * stun_dmg / maxf(hp, 1.0)))
 	if stun_dmg >= hp:
 		if dragging:
 			_release()
@@ -563,6 +581,13 @@ func stun(amount: float, from: Vector3, by: Node) -> void:
 		return
 	last_seen = from
 	_enter_combat(null)
+
+var _stagger := 0.0
+@rpc("authority", "call_local", "reliable")
+func _stun_note(player_name: String, pct: int) -> void:
+	var p: Node = mission.actors.get_node_or_null(player_name)
+	if p and p.is_multiplayer_authority():
+		mission.hud.message("Omráčení %d %%" % pct, 1.0)
 
 @rpc("authority", "call_local", "reliable")
 func _knocked_out() -> void:
@@ -642,6 +667,9 @@ func _credit(player_name: String) -> void:
 
 # ---- brain (host) ------------------------------------------------------------------
 func _go(p: Vector3) -> void:
+	if activity != 0 and p.distance_to(_act_spot) > 1.5:
+		if Game.autotest() != "": print("[ACT] %s leaves %s (state %d)" % [name, ACTS[activity], state])
+		activity = 0         # off somewhere else: the job is left
 	goal = p
 	agent.target_position = p
 
@@ -680,7 +708,7 @@ func _find_target() -> Node:
 	var bd := 1e9
 	var aware := state == S.COMBAT or state == S.DRAG
 	for p in mission.players():
-		if p.dead or p.downed:
+		if p.dead or p.downed or p.has_meta("ghost"):
 			continue
 		var seen_now := visible_to(p)
 		if not aware:
@@ -776,7 +804,13 @@ func _think(delta: float) -> void:
 	match state:
 		S.LURK:
 			wait -= delta
-			if _arrived():
+			if _arrived() and activity != 0:
+				# at its job: it stays there, turned to what it is doing, until disturbed
+				lurking = false
+				velocity.x = 0; velocity.z = 0
+				_face(_act_face, delta * 0.5)
+				wait = maxf(wait, 5.0)
+			elif _arrived():
 				lurking = true
 				velocity.x = 0; velocity.z = 0
 				if rng.randf() < delta * 0.15:
@@ -930,6 +964,17 @@ func _flank() -> void:
 
 ## Back into the dark: a hiding spot away from the mercenaries.
 func _go_lurk(move_far: bool) -> void:
+	if not move_far and activity != 0:
+		state = S.LURK       # already given a job by a partner: go and do it
+		phase = ""
+		return
+	if not move_far and not _act_picked:
+		_act_picked = true
+		if _pick_activity():
+			state = S.LURK
+			phase = ""
+			wait = rng.randf_range(25.0, 60.0)
+			return
 	state = S.LURK
 	phase = ""
 	wait = rng.randf_range(25.0, 60.0)
@@ -1106,7 +1151,7 @@ func _psi(delta: float) -> void:
 	if best == null:
 		psi_cd = 2.0
 		# too far from their minds: creep closer (stays out of sight, 12-17 m)
-		if state == S.LURK and _arrived():
+		if state == S.LURK and _arrived() and activity == 0:
 			var near: Node = null
 			for p in mission.players():
 				if not p.dead and (near == null or p.global_position.distance_to(global_position) < near.global_position.distance_to(global_position)):
@@ -1168,3 +1213,225 @@ func _psi_fx() -> void:
 		anim.play("attack", 0.1)
 	Game.play_at(mission, "psi", global_position, 2)
 	get_tree().create_timer(1.0).timeout.connect(func(): striking = false)
+
+# ---- what they do while nobody is looking -------------------------------------------------------
+## Activities: the host picks one at the start (a grey working at a cow, two greys whispering,
+## a guard at the ship's door, a Líhnoun feeding...). Every machine lays a pose over the
+## animation clip while the alien stands at it; any alarm and the job is dropped for good.
+const ACTS := ["", "work", "work_high", "talk", "guard", "stare", "eat", "sniff"]
+const HUMANOID := ["grey", "grey_velitel", "jestetan", "jestetan_velitel", "bijec", "bijec_velitel"]
+var _rig: Skeleton3D
+var _act_picked := false
+var _act_spot := Vector3.INF
+var _act_face := Vector3.ZERO
+var _act_w := 0.0
+var _act_t := 0.0
+var _act_snd := 3.0
+var _corpse: Node3D
+var _look_t := 0.0
+
+## Host: picks a job for this alien (returns false = none, it just lurks).
+func _pick_activity() -> bool:
+	if _rig == null or rng.randf() > 0.8:
+		return false
+	var me := global_position
+	var spot := Vector3.INF
+	var face := Vector3.ZERO
+	var act := ""
+	var base := race.trim_suffix("_velitel")
+	match base:
+		"grey":
+			var cows: Array = mission.map.get("cows", [])
+			var near_cow := Vector3.INF
+			for c in cows:
+				if me.distance_to(c) < 60.0 and (near_cow == Vector3.INF or me.distance_to(c) < me.distance_to(near_cow)):
+					near_cow = c
+			var partner: Node = null
+			for a in mission.aliens():
+				if a != self and not a.dead and a.race.trim_suffix("_velitel") == "grey" and a.global_position.distance_to(me) < 30.0 \
+						and int(a.activity) in [0, ACTS.find("stare")]:
+					partner = a
+					break
+			var roll := rng.randf()
+			if near_cow != Vector3.INF and roll < 0.45:
+				var away: Vector3 = (me - near_cow)
+				away.y = 0
+				spot = near_cow + (away.normalized() if away.length() > 0.1 else Vector3.FORWARD) * 1.2
+				face = near_cow
+				act = "work"
+			elif partner and roll < 0.75:
+				# two of them, close together, chittering in the dark
+				var pp: Vector3 = partner.goal if partner.goal != Vector3.ZERO else partner.global_position
+				var side := Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized()
+				spot = pp + side * 1.4
+				face = pp
+				act = "talk"
+				partner.activity = ACTS.find("talk")
+				partner._act_picked = true
+				partner._act_spot = pp
+				partner._act_face = spot
+				partner._go(pp)
+			elif mission.map.get("ufo", Vector3.ZERO) != Vector3.ZERO and me.distance_to(mission.map["ufo"]) < 45.0:
+				var u: Vector3 = mission.map["ufo"]
+				var dir := (me - u)
+				dir.y = 0
+				dir = dir.normalized() if dir.length() > 0.1 else Vector3.BACK
+				spot = u + dir * 6.5
+				face = u
+				act = "work_high"
+			elif mission.map.get("house", Vector3.ZERO) != Vector3.ZERO and me.distance_to(mission.map["house"]) < 50.0:
+				spot = mission.map["house"] + Vector3(rng.randf_range(-3, 3), 0, rng.randf_range(3.5, 5.0))
+				face = mission.map["house"]
+				act = "stare"
+			else:
+				spot = me
+				face = me + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
+				act = "stare"
+		"jestetan", "bijec":
+			var door: Vector3 = mission.map.get("ufo_door", Vector3.ZERO)
+			if door != Vector3.ZERO and me.distance_to(door) < 50.0:
+				var u: Vector3 = mission.map.get("ufo", door)
+				var out := (door - u)
+				out.y = 0
+				out = out.normalized() if out.length() > 0.1 else Vector3.BACK
+				var side := out.cross(Vector3.UP) * rng.randf_range(-2.5, 2.5)
+				spot = door + out * 2.5 + side
+				face = spot + out * 5.0
+			else:
+				spot = goal if goal != Vector3.ZERO else me
+				face = spot + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
+			act = "guard"
+		"lihnoun":
+			spot = goal if goal != Vector3.ZERO else me
+			face = spot + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized()
+			act = "eat"
+		"ohar":
+			spot = goal if goal != Vector3.ZERO else me
+			face = spot + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
+			act = "sniff"
+	if act == "":
+		return false
+	_act_spot = spot         # (no nav snap here: at spawn the navigation map is not ready yet)
+	_act_face = face
+	activity = ACTS.find(act)
+	_go(_act_spot)
+	return true
+
+## Every machine: the pose of the job laid over the clip, plus a slow look around when idle.
+func _activity_pose(delta: float) -> void:
+	if _rig == null:
+		return
+	_act_t += delta
+	var act: String = ACTS[clampi(activity, 0, ACTS.size() - 1)]
+	if race == "zombie" and not striking:
+		act = "sway"           # the infected never stand still, they rock
+	var on := act != "" and not alert and _speed < 0.35 and not striking and not dead and not husk
+	_act_w = move_toward(_act_w, 1.0 if on else 0.0, delta * (1.2 if on else 3.0))
+	if on:
+		_act_sounds(act, delta)
+		if act == "eat" and _corpse == null:
+			_lay_corpse()
+	if _act_w > 0.01:
+		var pose := _pose_for(act if act != "" else "stare", _act_t + float(absi(hash(String(name))) % 100))
+		for bn in pose[0]:
+			var i := _rig.find_bone(bn)
+			if i < 0:
+				continue
+			var rest: Quaternion = _rig.get_bone_rest(i).basis.get_rotation_quaternion()
+			var cur := _rig.get_bone_pose_rotation(i)
+			_rig.set_bone_pose_rotation(i, cur.slerp(rest * Quaternion.from_euler(pose[0][bn]), _act_w))
+		var ri := _rig.find_bone("root")
+		if ri >= 0 and float(pose[1]) != 0.0:
+			var cp := _rig.get_bone_pose_position(ri)
+			_rig.set_bone_pose_position(ri, cp.lerp(_rig.get_bone_rest(ri).origin + Vector3(0, float(pose[1]), 0), _act_w))
+	elif _speed < 0.35 and not alert and not dead and not husk:
+		# no job: now and then the head turns slowly, looks, comes back
+		_look_t += delta
+		var hi := _rig.find_bone("head")
+		if hi >= 0:
+			var k := smoothstep(0.0, 1.0, sin(_look_t * 0.23) * 1.6 - 0.6)
+			var turn := sin(_look_t * 0.61 + 1.3) * 0.55 * k
+			_rig.set_bone_pose_rotation(hi, _rig.get_bone_pose_rotation(hi) * Quaternion.from_euler(Vector3(0, turn, 0)))
+	else:
+		_look_t = 0.0
+
+## [bone -> euler, root drop] for a job at time t (Blender-style absolute bone rotations).
+func _pose_for(act: String, t: float) -> Array:
+	var s := float(R["h"]) / 1.3
+	match act:
+		"work":
+			return [{"spine": Vector3(-0.5, 0, 0), "neck": Vector3(0.1, 0, 0), "head": Vector3(0.35 + sin(t * 0.9) * 0.08, sin(t * 0.7) * 0.15, 0),
+				"thigh.L": Vector3(1.2, 0, 0.1), "thigh.R": Vector3(0.4, 0, -0.1), "shin.L": Vector3(-1.6, 0, 0), "shin.R": Vector3(-1.9, 0, 0),
+				"upperarm.L": Vector3(1.1 + sin(t * 2.1) * 0.12, 0, 0.15), "upperarm.R": Vector3(1.15, 0, -0.15),
+				"forearm.L": Vector3(0.6 + sin(t * 3.3) * 0.25, 0, 0), "forearm.R": Vector3(0.8 + sin(t * 5.0 + 1.0) * 0.3, 0, 0),
+				"hand.R": Vector3(sin(t * 6.0) * 0.35, 0, 0)}, -0.3 * s]
+		"work_high":
+			return [{"spine": Vector3(-0.05, 0, sin(t * 0.4) * 0.06), "head": Vector3(0.3, sin(t * 0.5) * 0.2, 0),
+				"upperarm.L": Vector3(1.9, 0, 0.2), "upperarm.R": Vector3(1.7 + sin(t * 1.3) * 0.15, 0, -0.2),
+				"forearm.L": Vector3(0.5 + sin(t * 4.0) * 0.25, 0, 0), "forearm.R": Vector3(0.7 + sin(t * 5.0 + 2.0) * 0.3, 0, 0),
+				"hand.L": Vector3(sin(t * 7.0) * 0.3, 0, 0)}, 0.0]
+		"talk":
+			return [{"spine": Vector3(-0.08, sin(t * 0.5) * 0.12, 0), "head": Vector3(0.05 + sin(t * 0.9) * 0.1, sin(t * 0.6) * 0.25, sin(t * 1.3) * 0.25),
+				"upperarm.R": Vector3(0.5 + sin(t * 1.1) * 0.3, 0, -0.25), "forearm.R": Vector3(1.2 + sin(t * 1.7) * 0.4, 0, 0),
+				"hand.R": Vector3(sin(t * 2.3) * 0.4, 0, 0), "upperarm.L": Vector3(0.1, 0, 0.1), "forearm.L": Vector3(0.3, 0, 0)}, 0.0]
+		"guard":
+			return [{"spine": Vector3(-0.05, sin(t * 0.3) * 0.25, 0), "head": Vector3(0.0, sin(t * 0.35) * 0.6, 0),
+				"upperarm.R": Vector3(0.6, 0, 0.1), "forearm.R": Vector3(0.9, 0, 0), "upperarm.L": Vector3(0.8, 0, -0.4), "forearm.L": Vector3(1.0, 0, 0),
+				"thigh.L": Vector3(0.08, 0, 0.08), "thigh.R": Vector3(-0.05, 0, -0.08)}, 0.0]
+		"stare":
+			var tw := pow(maxf(0.0, sin(t * 0.9)), 30.0) * 0.5
+			return [{"head": Vector3(0.05, tw * 0.6, 0.35 - tw), "neck": Vector3(0.05, 0, 0.05),
+				"upperarm.L": Vector3(0.0, 0, 0.05), "upperarm.R": Vector3(0.0, 0, -0.05), "forearm.L": Vector3(0.15, 0, 0), "forearm.R": Vector3(0.15, 0, 0)}, 0.0]
+		"eat":
+			return [{"spine": Vector3(-1.25, 0, sin(t * 1.3) * 0.08), "neck": Vector3(0.6, 0, 0), "head": Vector3(1.0 + sin(t * 8.0) * 0.18, sin(t * 2.0) * 0.15, 0),
+				"thigh.L": Vector3(1.45, 0, 0.35), "thigh.R": Vector3(1.45, 0, -0.35), "shin.L": Vector3(-1.85, 0, 0), "shin.R": Vector3(-1.85, 0, 0),
+				"upperarm.L": Vector3(1.6 + sin(t * 6.0) * 0.2, 0, 0.2), "upperarm.R": Vector3(1.5 + sin(t * 6.0 + 1.5) * 0.2, 0, -0.2),
+				"forearm.L": Vector3(0.4, 0, 0), "forearm.R": Vector3(0.6, 0, 0), "hand.L": Vector3(0.5, 0, 0), "hand.R": Vector3(0.5, 0, 0)}, -0.45]
+		"sniff":
+			return [{"neck": Vector3(-0.6, 0, 0), "head": Vector3(-0.4 + sin(t * 3.0) * 0.1, sin(t * 1.7) * 0.5, 0)}, 0.0]
+		"sway":
+			return [{"spine": Vector3(-0.25, 0, sin(t * 0.8) * 0.15), "head": Vector3(-0.5, sin(t * 0.5) * 0.2, sin(t * 0.7) * 0.3),
+				"upperarm.L": Vector3(0.1 + sin(t * 0.8) * 0.1, 0, 0.05), "upperarm.R": Vector3(0.1 - sin(t * 0.8) * 0.1, 0, -0.05),
+				"forearm.L": Vector3(0.3, 0, 0), "forearm.R": Vector3(0.3, 0, 0)}, 0.0]
+	return [{}, 0.0]
+
+## Little noises of the job (each machine plays its own - quiet, close up only).
+func _act_sounds(act: String, delta: float) -> void:
+	_act_snd -= delta
+	if _act_snd > 0.0 or mission == null:
+		return
+	var p: Node3D = mission.local_player() if mission.has_method("local_player") else null
+	if p == null or p.global_position.distance_to(global_position) > 30.0:
+		_act_snd = 2.0
+		return
+	var at := global_position + Vector3.UP
+	match act:
+		"work": Game.play_at(mission, "clink" if randf() < 0.6 else "zap", at, -16); _act_snd = randf_range(1.5, 3.5)
+		"work_high": Game.play_at(mission, "zap", at + Vector3.UP, -16); _act_snd = randf_range(2.0, 4.5)
+		"talk": Game.play_at(mission, "alien", at, -14); _act_snd = randf_range(4.0, 8.0)
+		"eat": Game.play_at(mission, "growl" if randf() < 0.3 else "skitter", at, -12); _act_snd = randf_range(2.0, 4.0)
+		"sniff": Game.play_at(mission, "sniff", at, -12); _act_snd = randf_range(3.0, 6.0)
+		"sway": Game.play_at(mission, "groan", at, -14); _act_snd = randf_range(6.0, 12.0)
+		"stare": _act_snd = 10.0
+		"guard": _act_snd = 10.0
+
+## The Líhnoun's meal: what is left of somebody, lying in front of it (every machine makes its own).
+func _lay_corpse() -> void:
+	_corpse = Game.model("civ_b" if absi(hash(String(name))) % 2 == 0 else "civ_a")
+	mission.add_child(_corpse)
+	var fwd := -global_transform.basis.z
+	fwd.y = 0
+	_corpse.global_position = global_position + fwd.normalized() * 0.9 + Vector3(0, 0.12, 0)
+	_corpse.rotation = Vector3(-PI / 2, rotation.y + 1.2, 0)
+	var ap: AnimationPlayer = _corpse.find_child("AnimationPlayer", true, false)
+	if ap:
+		ap.stop()
+	var pool := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.75
+	cm.bottom_radius = 0.75
+	cm.height = 0.01
+	pool.mesh = cm
+	pool.material_override = Game.color_mat(Color(0.22, 0.02, 0.02))
+	mission.add_child(pool)
+	pool.global_position = _corpse.global_position - Vector3(0, 0.1, 0)

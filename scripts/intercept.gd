@@ -30,6 +30,8 @@ var env: Environment
 var speed := 70.0
 var throttle := 0.7
 var jet_hp := 100.0
+var _alarm: AudioStreamPlayer
+var _flyby_cd := 0.0
 var ammo := 400
 var missiles := 4
 var cannon_cd := 0.0
@@ -137,6 +139,12 @@ func _ready() -> void:
 	add_child(cl)
 	var music := AudioStreamPlayer.new()
 	music.stream = Game.loop_stream("wind")
+	var jet_snd := AudioStreamPlayer.new()
+	jet_snd.stream = Game.loop_stream("jet_engine")
+	jet_snd.volume_db = -9
+	jet_snd.bus = "SFX"
+	add_child(jet_snd)
+	jet_snd.play()
 	music.volume_db = -6
 	music.bus = "Wind"
 	add_child(music)
@@ -226,6 +234,12 @@ func _say(s: String, secs := 3.0) -> void:
 func _physics_process(delta: float) -> void:
 	t += delta
 	msg_t -= delta
+	# the saucer whooshing past close
+	_flyby_cd -= delta
+	if _flyby_cd <= 0.0 and outcome == "" and is_instance_valid(ufo) and ufo.visible and jet \
+			and ufo.global_position.distance_to(jet.global_position) < 110.0:
+		_flyby_cd = 7.0
+		Game.play_ui(self, "jet_flyby", -4)
 	(get_node("Clouds").material_override as ShaderMaterial).set_shader_parameter("time_s", t)
 	get_node("Stars").position = cam.global_position
 	if outcome != "":
@@ -320,6 +334,8 @@ func _weapons(delta: float) -> void:
 	var ang := fwd.angle_to(to_ufo)
 	# missile lock: keep the UFO in a 12 degree cone within 900 m for 1.5 s
 	if ang < deg_to_rad(12) and dist < 900 and missiles > 0:
+		if lock < 1.0 and lock + delta / 1.5 >= 1.0:
+			Game.play_ui(self, "missile_lock", -4)
 		lock = min(1.0, lock + delta / 1.5)
 	else:
 		lock = max(0.0, lock - delta * 2.0)
@@ -333,7 +349,7 @@ func _weapons(delta: float) -> void:
 		if net and _shots % 3 == 0:
 			_fx_tracer.rpc(jet.global_position + fwd * 5.0, d)
 		if ammo % 3 == 0:
-			Game.play_ui(self, "minigun", -12)
+			Game.play_ui(self, "cannon_jet", -8)
 	if (Input.is_action_just_pressed("aim") or Input.is_action_just_pressed("reload")) and missile_cd <= 0:
 		if missiles <= 0:
 			_say("Rakety došly.", 1.5)
@@ -356,7 +372,7 @@ func _tracer(from: Vector3, dir: Vector3, fake := false) -> void:
 	tracers.append({"node": n, "vel": dir * 900.0 + (dir * 120.0 if fake else -jet.global_transform.basis.z * speed), "life": 1.2, "fake": fake})
 
 func _fire_missile() -> void:
-	Game.play_ui(self, "launch", -2)
+	Game.play_ui(self, "missile_launch", -2)
 	var side := 2.0 if missiles % 2 == 0 else -2.0
 	var from := jet.global_position + jet.global_transform.basis.x * side - jet.global_transform.basis.y * 0.4
 	var vel := -jet.global_transform.basis.z * (speed + 40.0)
@@ -423,6 +439,13 @@ func _projectiles(delta: float) -> void:
 				_say("SOKOL SESTŘELEN. Pilot se katapultoval - díváš se z křídla ostatních.", 5.0)
 				_jet_down.rpc(Net.my_id())
 			_say("ZÁSAH! Trup %d %%" % int(max(jet_hp, 0)), 1.5)
+			if jet_hp < 35.0 and jet_hp > 0.0 and _alarm == null:
+				_alarm = AudioStreamPlayer.new()
+				_alarm.stream = Game.loop_stream("warning_alarm")
+				_alarm.volume_db = -10
+				_alarm.bus = "SFX"
+				add_child(_alarm)
+				_alarm.play()
 			_flash(n.global_position, 8.0)
 			Game.play_ui(self, "hit", 0)
 			bo["life"] = 0
@@ -684,6 +707,10 @@ func _end(o: String) -> void:
 		outcome = ""
 	outcome = o
 	Game.play_ui(self, "explosion", 2)
+	if _alarm:
+		_alarm.stop()
+	if o == "crashed":
+		Game.play_ui(self, "ufo_crash", -2)
 	match o:
 		"destroyed":
 			_flash(ufo.global_position, _ufo_radius() * 5.0)

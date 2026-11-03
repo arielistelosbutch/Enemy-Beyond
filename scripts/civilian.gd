@@ -132,8 +132,19 @@ func _animate(delta: float) -> void:
 func hear(pos: Vector3, radius: float) -> void:
 	if dead or st == C.FOLLOW or st == C.SAFE:
 		return
-	if global_position.distance_to(pos) < radius * 0.6:
-		_flee_from(pos)
+	if global_position.distance_to(pos) >= radius * 0.6:
+		return
+	# the noise is one of the soldiers (steps, a shot): people don't run from their rescuers -
+	# a close shot makes them duck where they are
+	for p in mission.players():
+		if not p.dead and p.global_position.distance_to(pos) < 3.0:
+			if radius > 10.0 and st != C.FLEE and global_position.distance_to(pos) < 15.0:
+				st = C.COWER
+				cowering = true
+				velocity.x = 0
+				velocity.z = 0
+			return
+	_flee_from(pos)
 
 func _danger() -> Node:
 	for a in mission.aliens():

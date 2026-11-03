@@ -66,7 +66,7 @@ body.append(box(cloth, (0, 0, 1.24), (0.38, 0.22, 0.38), group="spine"))        
 body.append(box(cloth, (0, 0, 1.0), (0.34, 0.2, 0.16), group="hips"))
 body.append(cyl(skin, (0, 0, 1.49), 0.055, 0.1, verts=6, group="neck"))
 body.append(box(skin, (0, 0.01, 1.66), (0.18, 0.2, 0.23), group="head"))           # head
-body.append(box(skin, (0, 0.11, 1.62), (0.04, 0.03, 0.05), group="head"))          # nose
+body.append(box(skin, (0, 0.11, 1.628), (0.036, 0.026, 0.042), group="head"))      # nose
 # eyes (iris colour set in the game), whites, brows (hair colour)
 eyes = mat("Eyes", (0.3, 0.2, 0.1), rough=0.2)
 white = mat("EyeWhite", (0.85, 0.85, 0.8), rough=0.3)
@@ -139,10 +139,11 @@ hp("Look_BeardFull", [bx(beardm, -HX - 0.01, HX + 0.01, -0.02, HF + 0.02, 1.515,
                       bx(beardm, -0.05, 0.05, HF, HF + 0.02, 1.578, 1.596),                 # moustache
                       bx(beardm, -0.075, -0.045, HF, HF + 0.018, 1.585, 1.6),
                       bx(beardm, 0.045, 0.075, HF, HF + 0.018, 1.585, 1.6)])
-hp("Look_Female", [box(lips, (0, 0.112, 1.597), (0.05, 0.008, 0.012), group="head"),
+hp("Look_Female", [box(lips, (0, 0.112, 1.574), (0.052, 0.008, 0.013), group="head"),
                    box(boots, (0.042 * 1, 0.111, 1.7), (0.044, 0.006, 0.006), group="head"),
                    box(boots, (-0.042, 0.111, 1.7), (0.044, 0.006, 0.006), group="head")])
-hp("Look_Jaw", [box(skin, (0, 0.04, 1.562), (0.174, 0.16, 0.045), group="head")])   # male: a heavier jaw
+hp("Look_Jaw", [box(skin, (0, 0.04, 1.562), (0.174, 0.16, 0.045), group="head"),   # male: a heavier jaw
+                box(lips, (0, 0.1115, 1.576), (0.05, 0.006, 0.008), group="head")])  # and a thin mouth
 # headgear variants
 # a dome that sits ON the head (over the hair), its rim above the brows so the eyes show
 hm = [sphere(helmet, (0, 0.005, 1.772), 0.132, seg=10, rings=6, scale=(1.18, 1.25, 0.78), group="head"),

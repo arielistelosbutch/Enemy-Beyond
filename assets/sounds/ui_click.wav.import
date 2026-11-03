@@ -2,13 +2,13 @@
 
 importer="wav"
 type="AudioStreamWAV"
-uid="uid://bnv37eyl1lc32"
-path="res://.godot/imported/sting.wav-06a8e226c3a5b76e75e03965b76eb69c.sample"
+uid="uid://bhhmwat5s1ucw"
+path="res://.godot/imported/ui_click.wav-681cae56068d64c3b139d49774fd27e3.sample"
 
 [deps]
 
-source_file="res://assets/sounds/sting.wav"
-dest_files=["res://.godot/imported/sting.wav-06a8e226c3a5b76e75e03965b76eb69c.sample"]
+source_file="res://assets/sounds/ui_click.wav"
+dest_files=["res://.godot/imported/ui_click.wav-681cae56068d64c3b139d49774fd27e3.sample"]
 
 [params]
 

@@ -86,7 +86,7 @@ func _pick_prey() -> Node:
 	var best: Node = null
 	var bs := 1e9
 	for p in mission.players():
-		if p.dead:
+		if p.dead or p.has_meta("ghost"):
 			continue
 		if p.downed and race != "lihnoun":
 			continue

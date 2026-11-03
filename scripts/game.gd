@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.29.1 prototyp"
-const VERSION_NUM := "0.29.1"
+const VERSION := "0.30 prototyp"
+const VERSION_NUM := "0.30"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -21,7 +21,7 @@ const ITEMS := {
 	"laser_pistol": {"name": "Laserová pistole", "short": "Laser. pistole", "weight": 2, "type": "weapon", "ammo": "", "laser": true, "cap": 10, "recharge": 2.5, "damage": 34, "spread": 1.2, "rate": 0.3, "auto": false, "sound": "laser", "noise": 25.0, "muzzle": 0.21, "kick": 0.3},
 	"laser_rifle": {"name": "Laserová puška", "short": "Laser. puška", "weight": 6, "type": "weapon", "two": true, "ammo": "", "laser": true, "cap": 24, "recharge": 4.0, "damage": 42, "spread": 0.8, "rate": 0.17, "auto": true, "sound": "laser", "noise": 28.0, "muzzle": 0.6, "kick": 0.4},
 	"laser_cannon": {"name": "Laserový kanón", "short": "Laser. kanón", "weight": 13, "type": "weapon", "two": true, "heavy": 0.75, "brace": true, "ammo": "", "laser": true, "cap": 12, "recharge": 1.6, "damage": 90, "spread": 1.2, "rate": 0.55, "auto": true, "sound": "laser", "noise": 40.0, "muzzle": 0.78, "kick": 1.5},
-	"stun_baton": {"name": "Omračovací obušek", "short": "Obušek", "weight": 2, "type": "melee", "blunt": true, "damage": 4, "stun": 30, "reach": 1.9, "rate": 0.8, "sound": "zap"},
+	"stun_baton": {"name": "Omračovací obušek", "short": "Obušek", "weight": 2, "type": "melee", "blunt": true, "damage": 4, "stun": 42, "reach": 2.1, "rate": 0.8, "sound": "zap"},
 	"knife": {"name": "Bojový nůž", "short": "Nůž", "weight": 1, "type": "melee", "damage": 38, "backstab": 3.0, "reach": 1.7, "rate": 0.45, "sound": "swish"},
 	"rifle_clip": {"name": "Zásobník pušky", "short": "Zás. puška", "weight": 3, "type": "ammo", "rounds": 20},
 	"sniper_clip": {"name": "Zásobník odstřelovačky", "short": "Zás. odstř.", "weight": 1, "type": "ammo", "rounds": 5},
@@ -879,7 +879,7 @@ func loop_stream(sname: String) -> AudioStream:
 	return st
 
 ## Sounds with several takes (name_0..name_N-1): a random one each time.
-const VARIANTS := {"plasma_heavy": 10, "casing": 4, "step_heavy": 3, "gear": 4}
+const VARIANTS := {"plasma_heavy": 10, "casing": 4, "step_heavy": 3, "gear": 4, "sting": 4, "type": 4}
 func sound(sname: String) -> AudioStream:
 	if VARIANTS.has(sname):
 		sname = "%s_%d" % [sname, randi() % int(VARIANTS[sname])]

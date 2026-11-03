@@ -180,7 +180,7 @@ func _ready_sync(n: int, total: int, all: bool) -> void:
 		if hud:
 			hud.brief_go()
 			hud.message("Rampa dole. Hodně štěstí.", 2.0)
-		Game.play_ui(self, "creak", -4)
+		Game.play_ui(self, "ramp", -2)
 
 ## How much louder footsteps are on this ground (snow crunches).
 func step_noise() -> float:
@@ -255,6 +255,13 @@ func _ready() -> void:
 			rain.amount = 380
 	_build_door()
 	_ufo_ambience()
+	_ship_engine()
+	_drone = AudioStreamPlayer.new()
+	_drone.stream = Game.loop_stream("low_drone")
+	_drone.volume_db = -60.0
+	_drone.bus = "Ambient"
+	add_child(_drone)
+	_drone.play()
 	_build_beacons()
 	if mtype() == "rescue":
 		var vr := RandomNumberGenerator.new()
@@ -317,11 +324,44 @@ func _critters(delta: float) -> void:
 		pool += ["dog", "dog", "cow"]
 	if biome == "forest":
 		pool += ["owl"]
+	if mtype() == "terror" or biome == "town":
+		pool += ["distant_scream"]
 	var s: String = pool[randi() % pool.size()]
 	var a := randf() * TAU
 	var me: Node3D = local_player()
 	var c: Vector3 = me.global_position if me else Vector3(map["size"] / 2.0, 0, map["size"] / 2.0)
 	Game.play_at(self, s, c + Vector3(cos(a), 0.2, sin(a)) * randf_range(30.0, 55.0), -6)
+
+## Our transport waits at the landing zone with the engines idling: you can find it by ear.
+func _ship_engine() -> void:
+	if map.get("evac", Vector3.ZERO) == Vector3.ZERO or mtype() == "base":
+		return
+	var heli := String(Net.mission_params.get("transport", "kondor")) == "heli"
+	var ap := AudioStreamPlayer3D.new()
+	ap.unit_size = 4.0
+	ap.max_distance = 45.0
+	add_child(ap)
+	ap.global_position = map["evac"] + Vector3(0, 2.0, 0)
+	_loop_player(ap, "heli_flight" if heli else "dropship_engine", -14.0 if heli else -10.0)
+
+## Dread: a low drone swells when something is close and you cannot see it.
+var _drone: AudioStreamPlayer
+var _drone_t := 0.0
+func _drone_tick(delta: float) -> void:
+	_drone_t -= delta
+	if _drone == null or _drone_t > 0.0:
+		return
+	_drone_t = 0.25
+	var me: Node3D = local_player()
+	var want := -60.0
+	if me and not me.dead:
+		var near := 1e9
+		for a in aliens():
+			if not a.dead:
+				near = minf(near, a.global_position.distance_to(me.global_position))
+		if near < 28.0:
+			want = lerpf(-6.0, -26.0, clampf((near - 6.0) / 22.0, 0.0, 1.0))
+	_drone.volume_db = lerpf(_drone.volume_db, want, 0.15)
 
 ## The landed (or crashed) ship hums in the dark: you hear it before you see it.
 func _ufo_ambience() -> void:
@@ -801,6 +841,7 @@ func _process(delta: float) -> void:
 	if started():
 		t += delta
 		_critters(delta)
+		_drone_tick(delta)
 	for l in map.get("lights", []):
 		if is_instance_valid(l):
 			l.light_energy = 1.4 + sin(t * 13.0) * 0.25 + sin(t * 7.3) * 0.2

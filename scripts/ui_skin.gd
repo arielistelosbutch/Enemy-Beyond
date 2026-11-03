@@ -160,6 +160,11 @@ static func button(b: BaseButton) -> void:
 	b.add_theme_color_override("font_hover_color", Color(0.92, 1.0, 1.0))
 	b.add_theme_color_override("font_pressed_color", Color(1, 1, 1))
 	b.add_theme_color_override("font_disabled_color", Color(0.42, 0.45, 0.47))
+	if not b.has_meta("click"):
+		b.set_meta("click", true)
+		b.pressed.connect(func():
+			if b.is_inside_tree():
+				Game.play_ui(b.get_tree().root, "ui_click", -9))
 
 ## A slot / tile button tinted by what it holds (base facilities and the like).
 static func tile(b: BaseButton, tint: Color) -> void:

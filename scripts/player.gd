@@ -123,6 +123,7 @@ func setup(data: Dictionary) -> void:
 	label.pixel_size = 0.006
 	label.modulate = Color(0.6, 0.85, 1.0)
 	label.no_depth_test = true
+	label.visible = not Game.veteran()     # hardcore: no names over heads - who is who, you learn by voice
 	add_child(label)
 	# what everybody needs to see
 	sync = MultiplayerSynchronizer.new()
@@ -1541,13 +1542,27 @@ func _melee_hit(rule: Dictionary) -> void:
 		mission.noise(global_position, 3.0)
 	if hit and hit.collider and hit.collider.has_meta("break"):
 		mission.hit_breakable.rpc_id(1, int(hit.collider.get_meta("break")), float(rule["damage"]) * 0.6, "melee")
-	if hit and hit.collider and hit.collider.has_method("is_alien"):
-		var a: Node = hit.collider
+	var a: Node = hit.collider if hit and hit.collider and hit.collider.has_method("is_alien") else null
+	if a == null:
+		# a swing is wide: anything in a narrow cone in front within reach is hit too
+		var best := 1e9
+		for x in mission.aliens():
+			if x.dead:
+				continue
+			var to: Vector3 = x.global_position + Vector3(0, 0.8, 0) - from
+			if to.length() < float(rule["reach"]) + 0.5 and to.normalized().dot(dir) > 0.8 and to.length() < best:
+				best = to.length()
+				a = x
+		if a:
+			hit = {"position": a.global_position + Vector3(0, 0.9, 0)}
+	if a:
 		var behind: bool = (-a.global_transform.basis.z).dot((a.global_position - global_position).normalized()) > 0.3
 		var dmg: float = float(rule["damage"]) * (float(rule.get("backstab", 1.0)) if behind else 1.0)
 		if behind and Game.has_talent(merc, "tichy_zabijak") and rule.has("backstab"):
 			dmg = 999.0
 		var stun: float = float(rule.get("stun", 0.0)) * (1.5 if Game.has_talent(merc, "lovec_hlav") else 1.0)
+		if behind:
+			stun *= 1.5          # from behind it never saw it coming
 		mission.hud.hitmarker()
 		Game.play_at(mission, "baton_hit" if rule.get("blunt", false) else "knife_stab", hit.position, -2)
 		_melee_alien.rpc_id(1, a.name, dmg, stun)

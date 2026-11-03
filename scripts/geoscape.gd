@@ -55,10 +55,17 @@ func _ready() -> void:
 	_toast.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
 	add_child(_toast)
 	Net.note.connect(_on_note)
-	Campaign.mission_found.connect(func(m): _alert("RADAR: %s\n%s\n%s" % [Campaign.MTYPES[m["type"]]["name"], m["place"], Campaign.MTYPES[m["type"]]["text"]]); selected = int(m["id"]); _focus(m))
-	Campaign.flight_found.connect(func(f): _alert("RADAR: UFO V LETU\n%s nad oblastí %s.\nVyber ho na glóbu a vyšli stíhačku Sokol, než zmizí." % [Campaign.UFO_NAMES[f["kind"]], Campaign.nearest_place(float(f["lat"]), float(f["lon"]))]); selected = int(f["id"]); _focus(f))
-	Campaign.research_done.connect(func(id): _alert("VÝZKUM DOKONČEN\n%s\n%s" % [Campaign.RESEARCH[id]["name"], Campaign.RESEARCH[id]["desc"]]))
-	Campaign.report.connect(func(txt): _alert(txt))
+	Campaign.mission_found.connect(func(m): Game.play_ui(self, "radar_alert", -4); _alert("RADAR: %s\n%s\n%s" % [Campaign.MTYPES[m["type"]]["name"], m["place"], Campaign.MTYPES[m["type"]]["text"]]); selected = int(m["id"]); _focus(m))
+	Campaign.flight_found.connect(func(f): Game.play_ui(self, "radar_ping", -4); _alert("RADAR: UFO V LETU\n%s nad oblastí %s.\nVyber ho na glóbu a vyšli stíhačku Sokol, než zmizí." % [Campaign.UFO_NAMES[f["kind"]], Campaign.nearest_place(float(f["lat"]), float(f["lon"]))]); selected = int(f["id"]); _focus(f))
+	Campaign.research_done.connect(func(id): Game.play_ui(self, "research_done", -3); _alert("VÝZKUM DOKONČEN\n%s\n%s" % [Campaign.RESEARCH[id]["name"], Campaign.RESEARCH[id]["desc"]]))
+	Campaign.report.connect(func(txt): Game.play_ui(self, "warning_alarm" if String(txt).begins_with("KONEC") or "MÍNUSU" in String(txt) else "money", -6); _alert(txt))
+	# the hum of the control room under everything
+	var hum := AudioStreamPlayer.new()
+	hum.stream = Game.loop_stream("geoscape_hum")
+	hum.volume_db = -14
+	hum.bus = "Ambient"
+	add_child(hum)
+	hum.play()
 	Campaign.craft_arrived.connect(_on_arrived)
 	Campaign.craft_ambushed.connect(_on_ambush)
 	# a craft that was waiting at the target when the game was saved
@@ -525,6 +532,7 @@ func _go_jets(fl: Dictionary) -> void:
 	_pick = {}
 	_close_popup()
 	Campaign.launch_craft("jet", fl, "flight", {"n": pilots.size(), "pilots": pilots})
+	Game.play_ui(self, "ui_confirm", -4)
 	_toast_say("Sokol vzlétl. Pusť čas - na místě začne souboj.")
 
 ## Before a ground mission: the transport flies there; jets can go along as escort.
@@ -572,6 +580,7 @@ func _go_transport(m: Dictionary, tk: String) -> void:
 	_pick = {}
 	_close_popup()
 	Campaign.launch_craft(tk, m, "mission", {"escort": _escort, "pilots": pilots, "driver": drv2})
+	Game.play_ui(self, "ui_confirm", -4)
 	_toast_say("%s vzlétl. Pusť čas - u cíle začne mise." % Campaign.CRAFT_NAMES[tk].capitalize())
 
 func _toast_say(s: String) -> void:
@@ -689,6 +698,8 @@ func _close_popup() -> void:
 
 func _alert(text: String) -> void:
 	var parts := text.split("\n", true, 1)
+	if parts[0].begins_with("Nelze") or parts[0].begins_with("Nemáš") or parts[0].begins_with("Stavba"):
+		Game.play_ui(self, "ui_deny", -6)
 	var box := _overlay(parts[0], 330)
 	if parts.size() > 1:
 		_lbl(box, parts[1], TEXT, 9)
@@ -740,7 +751,7 @@ func _show_research() -> void:
 		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if state == "" and not Campaign.viewer:
 			_btn(row, "Zahájit", func():
-				if Campaign.start_research(key): _show_research()
+				if Campaign.start_research(key): Game.play_ui(self, "ui_confirm", -6); _show_research()
 				else: _alert("Nelze\nNedostatek kreditů, nebo už běží jiný výzkum."), 8)
 	_btn(outer, "Zavřít", _close_popup)
 
@@ -767,7 +778,7 @@ func _show_armory() -> void:
 				Net.buy_for_base(key)
 				await get_tree().create_timer(0.5).timeout
 				_show_armory()
-			elif Campaign.buy(key): _show_armory()
+			elif Campaign.buy(key): Game.play_ui(self, "money", -10); _show_armory()
 			else: _alert("Nelze koupit\nNedostatek kreditů nebo Moskovia 115."), 8)
 		b.custom_minimum_size = Vector2(225, 16)
 		UiSkin.item_icon(b, key, 30)

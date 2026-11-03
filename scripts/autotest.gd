@@ -64,6 +64,8 @@ func _process(delta: float) -> void:
 		"invtest": _invtest(p)
 		"rlanim": _rlanim(p)
 		"ufoshot": _ufoshot(p)
+		"actshot": _actshot(p)
+		"stuntest": _stuntest(p)
 		"mapshot": _mapshot(p)
 		"objtest": _objtest(p)
 		"breaktest": _breaktest(p)
@@ -1249,3 +1251,64 @@ func _terror(p: Node) -> void:
 			if a.race == "lihnoun": lh += 1
 		out("RESULT terror: aliens %d (zombies %d, lihnoun %d), civ dead %d" % [m().aliens().size(), z, lh, m().civilians().filter(func(cv): return cv.dead).size()])
 		get_tree().quit()
+
+## Aliens at their jobs: let them walk to them, then photograph each one from close by.
+func _actshot(p: Node) -> void:
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.inventory_open = false
+	p.set_meta("ghost", true)     # nobody to notice: they stay at their jobs
+	p.hp = 1000.0
+	p.set_physics_process(false)
+	p.global_position = Vector3(2, 0.3, 2)
+	Engine.time_scale = 6.0
+	await get_tree().create_timer(70.0).timeout
+	Engine.time_scale = 1.0
+	var n := 0
+	for a in m().aliens():
+		var act: String = a.ACTS[a.activity] if a.activity < a.ACTS.size() else "?"
+		out("ALIEN %s act=%s speed=%.2f w=%.2f at %s" % [a.race, act, a._speed, a._act_w, a.global_position])
+	for a in m().aliens():
+		if n >= 6 or a.dead:
+			continue
+		if a.activity == 0 and a.race != "zombie":
+			continue
+		var fwd: Vector3 = -a.global_transform.basis.z
+		var side: Vector3 = a.global_transform.basis.x
+		p.global_position = a.global_position + fwd * 2.6 + side * 1.6 - Vector3(0, 0.6, 0)
+		_aim_at(p, a.global_position + Vector3(0, 0.7, 0))
+		for f in 8:
+			await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png("user://act_%d_%s.png" % [n, a.ACTS[a.activity] if a.activity > 0 else "sway"])
+		n += 1
+	out("RESULT actshot %d" % n)
+	get_tree().quit()
+
+## The stun baton: three blows must knock a grey out.
+func _stuntest(p: Node) -> void:
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.inventory_open = false
+	var a: Node = null
+	for x in m().aliens():
+		if x.race.begins_with("grey"):
+			a = x
+			break
+	if a == null:
+		out("RESULT no grey"); get_tree().quit(); return
+	p.inv["rh"] = {"id": "stun_baton"}
+	p._update_held()
+	for i in 6:
+		a.set_physics_process(false)
+		p.global_position = a.global_position - a.global_transform.basis.z * 1.1
+		_aim_at(p, a.global_position + Vector3(0, 0.9, 0))
+		await get_tree().process_frame
+		p._melee("rh", Game.ITEMS["stun_baton"])
+		await get_tree().create_timer(0.9).timeout
+		out("blow %d: stun %.0f hp %.0f captured %s dead %s" % [i, a.stun_dmg, a.hp, a.captured, a.dead])
+		if a.dead:
+			break
+	out("RESULT stuntest captured=%s" % a.captured)
+	get_tree().quit()
