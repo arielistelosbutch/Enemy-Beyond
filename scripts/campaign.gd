@@ -42,7 +42,7 @@ const RESEARCH := {
 	"zenijni": {"name": "Ženijní výbava", "cost": 150, "days": 2.0, "needs": {},
 		"desc": "Odemkne nášlapné miny a kouřové granáty ve zbrojnici."},
 	"tezke": {"name": "Těžké zbraně", "cost": 300, "days": 4.0, "needs": {},
-		"desc": "Odemkne autokanón, minigun a raketomet."},
+		"desc": "Odemkne autokanón, minigun, raketomet a odstřelovací pušku."},
 	"detektor": {"name": "Citlivější detektor", "cost": 200, "days": 3.0, "needs": {},
 		"desc": "Detektor pohybu vidí na 35 m místo 25 m a méně se plete."},
 	"slitiny": {"name": "Vetřelecké slitiny", "cost": 300, "mk": 20, "days": 5.0, "needs": {"loot": "slitiny"},
@@ -118,6 +118,7 @@ const SHOP := {
 }
 const LOCKED_BY := {"mine": "zenijni", "smoke_grenade": "zenijni", "autocannon": "tezke", "ac_clip": "tezke",
 	"minigun": "tezke", "minigun_belt": "tezke", "rocket_launcher": "tezke", "rocket": "tezke",
+	"sniper": "tezke", "sniper_clip": "tezke",
 	"plasma_rifle": "plazma", "plasma_cell": "plazma",
 	"laser_pistol": "laser", "laser_rifle": "laser", "laser_cannon": "laser_tezky",
 	"vesta": "vesta", "stit": "vesta", "pancir": "pancir"}

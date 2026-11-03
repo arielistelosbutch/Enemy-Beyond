@@ -1,7 +1,8 @@
 {
  "0.31": [
   "Dílna (tlačítko v hlavním menu): sám si posunu a natočím předměty v rukou - z očí i zvenku - a zbraň na zádech. U póz (držení zbraně, nabíjení, úder, pozdrav, pohov, ruce v bok, práce vetřelců) natočím kterokoli kloub; kloub se vybírá i kliknutím do obrázku.",
-  "Úpravy se ukládají do souboru upravy.json vedle hry a platí hned v misi. Ten soubor pošlu Claudovi a ten je zapíše do hry natrvalo."
+  "Úpravy se ukládají do souboru upravy.json vedle hry a platí hned v misi. Ten soubor pošlu Claudovi a ten je zapíše do hry natrvalo.",
+  "Odstřelovací puška je v kampani až po výzkumu Těžké zbraně - na začátku se do tmy chodí s puškou a brokovnicí, ne s dalekohledem."
  ],
  "0.30": [
   "Vetřelci mají práci, dokud si vás nevšimnou: šedí klečí u krav a něco s nimi dělají, opravují trup UFO, dva si šeptají ve tmě, jeden nehybně zírá do okna. Ještěřani a bijci hlídají dveře lodi a rozhlížejí se. Líhnoun hoduje nad tělem, ohař čmuchá, nakažení se kymácejí. Kdo nic nedělá, občas se pomalu rozhlédne. Při poplachu práci pustí a jdou po vás.",
