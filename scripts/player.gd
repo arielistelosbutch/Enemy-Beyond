@@ -314,7 +314,7 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 	if reloading and not rid in ["pistol", "magnum", "shotgun"]:
 		var ph := 1.0 - busy / busy_total
 		rl = smoothstep(0.0, 0.25, ph) * (1.0 - smoothstep(0.75, 1.0, ph))
-	# pistol and revolver: full hand-made reloads (after Ivo's videos)
+	# pistol and revolver: full hand-made reloads (after Ari's videos)
 	var ra := _reload_anim(delta, rid, reloading)
 	base += ra[0]
 	rot += ra[1]
@@ -568,7 +568,7 @@ func _hold_pose(delta: float) -> void:
 			want.merge(POSE_PISTOL2)
 			if act == 1:
 				# pistol / revolver reload: the gun comes in to the chest, muzzle down,
-				# the left hand works at it (after Ivo's videos)
+				# the left hand works at it (after Ari's videos)
 				var k3 := sin(_act_t * 5.0)
 				want["upperarm.R"] = Vector3(0.3, 0, -0.35)
 				want["forearm.R"] = Vector3(1.75, 0, 0)
@@ -646,7 +646,7 @@ func _body_pack(on: bool) -> void:
 		_ground_pack.position = Vector3(0, 0, -0.55)
 	_ground_pack.visible = true
 
-# ---- emotes and idling (after Ivo's videos): J salute, U at ease; empty hands at rest go
+# ---- emotes and idling (after Ari's videos): J salute, U at ease; empty hands at rest go
 # to the hips and the head looks around -------------------------------------------------------
 ## 0 nothing, 1 salute, 2 at ease (synced)
 var emote := 0
@@ -1700,7 +1700,7 @@ func _reload(wp: Dictionary, rule: Dictionary) -> void:
 			wp["loaded"] = cap
 			Game.play_ui(self, "reload", -18))
 
-# ---- reload animations, after Ivo's videos ------------------------------------------------
+# ---- reload animations, after Ari's videos ------------------------------------------------
 # Pistol: tilt the gun in, magazine drops out, the left hand brings a new one up and slaps it
 # in, the gun rolls on its side and the hand racks the slide, back on target.
 # Revolver (top-break): muzzle up, the barrel tips down, empties fall out, the left hand
@@ -1933,7 +1933,7 @@ func _reload_anim(delta: float, rid: String, reloading: bool) -> Array:
 				hand_rot = Vector3(0.4, -0.2, 0.0)
 				_reload_hand("round" if ph < 0.8 else "")
 	# digging in the backpack (it comes round to the front, the hand rummages in it) and
-	# bandaging (a roll of bandage wound round and round) - after Ivo's videos
+	# bandaging (a roll of bandage wound round and round) - after Ari's videos
 	var digging := busy > 0 and busy_stand and busy_text.begins_with("Hrabu")
 	var wrapping := busy > 0 and (busy_text.begins_with("Ošetřuji") or busy_text.begins_with("Obvazuji"))
 	_vm_pack(digging, delta)
@@ -2164,7 +2164,7 @@ func hurt(dmg: float, from: Vector3) -> void:
 		crouching = true
 		light_on = false
 		mission.hud.message("PADL JSI! Krvácíš - spoluhráč tě musí ošetřit (E s lékárničkou) nebo odnést.", 6.0)
-		Game.play_ui(self, "death_male", -6)
+		Game.play_ui(self, "death_female" if merc.get("look", {}).get("female", false) else "death_male", -6)
 
 func _bleed(delta: float) -> void:
 	if bleeding > 0 and not downed:

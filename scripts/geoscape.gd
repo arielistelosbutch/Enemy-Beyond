@@ -3,10 +3,10 @@ extends Control
 ## radar found, time controls and the base menus (research, armory, building).
 
 const BG := Color(0.02, 0.03, 0.07)
-const PANEL := Color(0.05, 0.08, 0.17, 0.95)
-const FRAME := Color(0.45, 0.65, 0.95)
-const TEXT := Color(0.80, 0.90, 1.0)
-const ACCENT := Color(0.95, 0.75, 0.30)
+const PANEL := Color(0.10, 0.115, 0.13, 0.95)
+const FRAME := Color(0.45, 0.78, 0.86)
+const TEXT := Color(0.84, 0.89, 0.92)
+const ACCENT := Color(1.0, 0.74, 0.32)
 const RED := Color(1.0, 0.4, 0.3)
 const SPEEDS := [0.0, 5.0 / 1440.0, 1.0 / 24.0, 6.0 / 24.0]   # days per second
 const SPEED_NAMES := ["Stop", "5 min", "1 h", "6 h"]
@@ -77,7 +77,7 @@ func _ready() -> void:
 		Campaign.data["won_shown"] = true
 		Campaign.save()
 		Game.play_music("victory", false)
-		_alert("VÍTĚZSTVÍ\nVelký mozek je mrtvý a velín na Marsu utichl. UFO padají z nebe jako mrtví ptáci, Šeďáci v lesích jen stojí a dívají se do tmy.\nŽoldáci přežili noc, která neměla konec.\n\nENEMY BEYOND\nPocta UFO: Enemy Unknown - fanouškovská hra, ne na prodej.\nNápad a hra: Ivo Arielistelos Florek.\nKampaň můžeš hrát dál.")
+		_alert("VÍTĚZSTVÍ\nVelký mozek je mrtvý a velín na Marsu utichl. UFO padají z nebe jako mrtví ptáci, Šeďáci v lesích jen stojí a dívají se do tmy.\nŽoldáci přežili noc, která neměla konec.\n\nOPERACE X - ENEMY BEYOND\nPocta UFO: Enemy Unknown - fanouškovská hra, ne na prodej.\nNápad a hra: Ari (Ivo Arielistelos Florek).\nKampaň můžeš hrát dál.")
 	_autotest.call_deferred()
 
 # ---- the globe -------------------------------------------------------------------------------
@@ -328,13 +328,8 @@ func _pick_at(lp: Vector2) -> int:
 	return best
 
 # ---- side panel ---------------------------------------------------------------------------------
-func _style(c: Control, bgc := PANEL) -> void:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = bgc
-	sb.border_color = FRAME
-	sb.set_border_width_all(1)
-	sb.set_content_margin_all(5)
-	c.add_theme_stylebox_override("panel", sb)
+func _style(c: Control, _bgc := PANEL) -> void:
+	c.add_theme_stylebox_override("panel", UiSkin.panel(7))
 
 func _lbl(parent: Node, s: String, col := TEXT, size := 9) -> Label:
 	var l := Label.new()
@@ -349,18 +344,7 @@ func _btn(parent: Node, s: String, cb: Callable, size := 9) -> Button:
 	var b := Button.new()
 	b.text = s
 	b.add_theme_font_size_override("font_size", size)
-	var n := StyleBoxFlat.new()
-	n.bg_color = Color(0.10, 0.18, 0.38)
-	n.border_color = FRAME
-	n.set_border_width_all(1)
-	n.set_content_margin_all(2)
-	var h := n.duplicate()
-	h.bg_color = Color(0.18, 0.30, 0.55)
-	b.add_theme_stylebox_override("normal", n)
-	b.add_theme_stylebox_override("hover", h)
-	b.add_theme_stylebox_override("pressed", h)
-	b.add_theme_stylebox_override("focus", n)
-	b.add_theme_color_override("font_color", TEXT)
+	UiSkin.button(b)
 	b.focus_mode = Control.FOCUS_NONE
 	b.pressed.connect(cb)
 	parent.add_child(b)
@@ -377,7 +361,7 @@ func _build_side() -> void:
 	side.add_theme_constant_override("separation", 3)
 	p.add_child(side)
 	var title := _lbl(side, "VELÍN", ACCENT, 13)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	UiSkin.title(title, 12)
 	status_lbl = _lbl(side, "", TEXT, 8)
 	var row := HBoxContainer.new()
 	side.add_child(row)
@@ -666,6 +650,7 @@ func _overlay(title: String, w := 400.0) -> VBoxContainer:
 	box.add_theme_constant_override("separation", 3)
 	popup.add_child(box)
 	var tl := _lbl(box, title, ACCENT, 12)
+	UiSkin.title(tl, 12)
 	tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	return box
 
@@ -797,12 +782,7 @@ func _show_base() -> void:
 		var b := _btn(grid, txt, func(): _build_menu(idx), 8)
 		b.custom_minimum_size = Vector2(72, 40)
 		if cell["type"] != "":
-			var sb := StyleBoxFlat.new()
-			sb.bg_color = colors.get(cell["type"], Color(0.2, 0.2, 0.2)) * (0.6 if float(cell["days"]) > 0 else 1.0)
-			sb.border_color = FRAME
-			sb.set_border_width_all(1)
-			b.add_theme_stylebox_override("normal", sb)
-			b.add_theme_stylebox_override("hover", sb)
+			UiSkin.tile(b, colors.get(cell["type"], Color(0.2, 0.2, 0.2)) * (0.6 if float(cell["days"]) > 0 else 1.0))
 	_btn(box, "Zavřít", _close_popup)
 
 func _build_menu(idx: int) -> void:

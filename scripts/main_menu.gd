@@ -2,11 +2,11 @@ extends Control
 const MapGen := preload("res://scripts/map_gen.gd")
 ## Main menu in the spirit of UFO's screens: dark blue panels, light frames.
 
-const BG := Color(0.03, 0.05, 0.12)
-const PANEL := Color(0.06, 0.10, 0.22)
-const FRAME := Color(0.45, 0.65, 0.95)
-const TEXT := Color(0.80, 0.90, 1.0)
-const ACCENT := Color(0.95, 0.75, 0.30)
+const BG := Color(0.04, 0.045, 0.05)
+const PANEL := Color(0.10, 0.115, 0.13)
+const FRAME := Color(0.45, 0.78, 0.86)
+const TEXT := Color(0.84, 0.89, 0.92)
+const ACCENT := Color(1.0, 0.74, 0.32)
 
 var _box: VBoxContainer
 var _confirm_new := false
@@ -16,10 +16,12 @@ var _status: Label
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	set_anchors_preset(Control.PRESET_FULL_RECT)
-	var bg := ColorRect.new()
-	bg.color = BG
+	var bg := TextureRect.new()
+	bg.texture = UiSkin.backdrop()
+	bg.stretch_mode = TextureRect.STRETCH_SCALE
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
+	_build_logo()
 	Net.roster_changed.connect(_refresh_lobby)
 	Net.wallets_changed.connect(_refresh_lobby)
 	Net.note.connect(_on_note)
@@ -59,18 +61,55 @@ func _back() -> void:
 		_show_main()
 
 # ---- helpers -----------------------------------------------------------------
+## The game's name on a steel nameplate at the left, with the version and a blinking terminal line.
+func _build_logo() -> void:
+	var holder := Control.new()      # not a PanelContainer: screens clear those
+	holder.name = "Logo"
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(holder)
+	var plate := PanelContainer.new()
+	plate.add_theme_stylebox_override("panel", UiSkin.inset(6))
+	plate.position = Vector2(10, 10)
+	plate.custom_minimum_size = Vector2(150, 0)
+	holder.add_child(plate)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 0)
+	plate.add_child(v)
+	for e in [["OPERACE", 20, UiSkin.TEXT], ["X", 34, UiSkin.AMBER], ["ENEMY BEYOND", 10, UiSkin.DIM]]:
+		var l := Label.new()
+		l.text = e[0]
+		l.add_theme_font_override("font", UiSkin.font(true))
+		l.add_theme_font_size_override("font_size", e[1])
+		l.add_theme_color_override("font_color", e[2])
+		l.add_theme_constant_override("line_spacing", -4)
+		v.add_child(l)
+	var line := ColorRect.new()
+	line.color = UiSkin.GLOW
+	line.custom_minimum_size = Vector2(0, 1)
+	v.add_child(line)
+	var sub := Label.new()
+	sub.text = "TERMINÁL X-NET  v" + Game.VERSION_NUM
+	sub.add_theme_font_size_override("font_size", 7)
+	sub.add_theme_color_override("font_color", UiSkin.GLOW)
+	v.add_child(sub)
+	var cur := Label.new()
+	cur.add_theme_font_size_override("font_size", 7)
+	cur.add_theme_color_override("font_color", UiSkin.DIM)
+	v.add_child(cur)
+	var tw := cur.create_tween().set_loops()
+	tw.tween_callback(func(): cur.text = "> SPOJENÍ NAVÁZÁNO _")
+	tw.tween_interval(0.6)
+	tw.tween_callback(func(): cur.text = "> SPOJENÍ NAVÁZÁNO")
+	tw.tween_interval(0.6)
+
+
 func _panel(title: String) -> void:
 	_free_preview()
 	for c in get_children():
 		if c is PanelContainer:
 			c.queue_free()
 	var p := PanelContainer.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = PANEL
-	sb.border_color = FRAME
-	sb.set_border_width_all(2)
-	sb.set_content_margin_all(10)
-	p.add_theme_stylebox_override("panel", sb)
+	p.add_theme_stylebox_override("panel", UiSkin.panel(10))
 	p.position = Vector2(170, 8)
 	p.custom_minimum_size = Vector2(300, 0)
 	add_child(p)
@@ -84,9 +123,7 @@ func _panel(title: String) -> void:
 	_scroll.add_child(_box)
 	var t := Label.new()
 	t.text = title
-	t.add_theme_color_override("font_color", ACCENT)
-	t.add_theme_font_size_override("font_size", 16)
-	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	UiSkin.title(t, 15)
 	_box.add_child(t)
 	_status = null
 
@@ -103,20 +140,8 @@ func _button(text: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.add_theme_font_size_override("font_size", 11)
-	var n := StyleBoxFlat.new()
-	n.bg_color = Color(0.10, 0.18, 0.38)
-	n.border_color = FRAME
-	n.set_border_width_all(1)
-	n.set_content_margin_all(4)
-	n.content_margin_top = 2
-	n.content_margin_bottom = 2
-	var h := n.duplicate()
-	h.bg_color = Color(0.18, 0.30, 0.55)
-	b.add_theme_stylebox_override("normal", n)
-	b.add_theme_stylebox_override("hover", h)
-	b.add_theme_stylebox_override("pressed", h)
-	b.add_theme_stylebox_override("focus", h)
-	b.add_theme_color_override("font_color", TEXT)
+	UiSkin.button(b)
+	b.custom_minimum_size.y = 17
 	b.pressed.connect(cb)
 	_box.add_child(b)
 	return b
@@ -164,7 +189,7 @@ func _show_quick() -> void:
 	_button("Zpět", _show_main)
 
 func _show_main(msg := "") -> void:
-	_panel("ENEMY BEYOND")
+	_panel("OPERACE X - Enemy Beyond")
 	_label("Pocta UFO: Enemy Unknown  -  %s" % Game.VERSION, FRAME, 9).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# started straight from the zip (Windows unpacks it into a temporary folder):
 	# settings, updates and the microphone may not work - say so
@@ -385,12 +410,7 @@ func _build_create() -> void:
 		if c is PanelContainer:
 			c.queue_free()
 	var p := PanelContainer.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = PANEL
-	sb.border_color = FRAME
-	sb.set_border_width_all(2)
-	sb.set_content_margin_all(8)
-	p.add_theme_stylebox_override("panel", sb)
+	p.add_theme_stylebox_override("panel", UiSkin.panel(8))
 	p.position = Vector2(8, 4)
 	p.custom_minimum_size = Vector2(624, 352)
 	add_child(p)
@@ -561,20 +581,7 @@ func _small_btn(parent: Node, text: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.add_theme_font_size_override("font_size", 8)
-	var n := StyleBoxFlat.new()
-	n.bg_color = Color(0.10, 0.18, 0.38)
-	n.border_color = FRAME
-	n.set_border_width_all(1)
-	n.set_content_margin_all(2)
-	var h := n.duplicate()
-	h.bg_color = Color(0.18, 0.3, 0.55)
-	b.add_theme_stylebox_override("normal", n)
-	b.add_theme_stylebox_override("hover", h)
-	b.add_theme_stylebox_override("pressed", h)
-	var dis := n.duplicate()
-	dis.bg_color = Color(0.08, 0.1, 0.16)
-	b.add_theme_stylebox_override("disabled", dis)
-	b.add_theme_color_override("font_color", TEXT)
+	UiSkin.button(b)
 	b.focus_mode = Control.FOCUS_NONE
 	b.pressed.connect(cb)
 	parent.add_child(b)

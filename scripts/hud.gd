@@ -2,10 +2,10 @@ extends CanvasLayer
 ## Everything drawn over the 3D view: crosshair, health, ammo, motion scanner,
 ## messages, the UFO-style inventory screen, pause and the mission result.
 
-const FRAME := Color(0.45, 0.65, 0.95)
-const PANEL := Color(0.04, 0.07, 0.16, 0.92)
-const TEXT := Color(0.80, 0.90, 1.0)
-const ACCENT := Color(0.95, 0.75, 0.30)
+const PANEL := Color(0.10, 0.115, 0.13, 0.94)
+const FRAME := Color(0.45, 0.78, 0.86)
+const TEXT := Color(0.84, 0.89, 0.92)
+const ACCENT := Color(1.0, 0.74, 0.32)
 const RED := Color(0.9, 0.2, 0.15)
 
 var inventory_open := false
@@ -128,22 +128,41 @@ func briefing(text: String) -> void:
 	_brief_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_brief_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_brief_bg)
+	var back := TextureRect.new()
+	back.texture = UiSkin.backdrop()
+	back.stretch_mode = TextureRect.STRETCH_SCALE
+	back.set_anchors_preset(Control.PRESET_FULL_RECT)
+	back.modulate = Color(0.55, 0.55, 0.55)
+	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_brief_bg.add_child(back)
+	var frame := Panel.new()
+	frame.add_theme_stylebox_override("panel", UiSkin.panel())
+	frame.position = Vector2(40, 22)
+	frame.size = Vector2(560, 306)
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_brief_bg.add_child(frame)
+	var head := Label.new()
+	head.text = "Hlášení z velínu - " + String(Net.mission_params.get("type_name", "mise"))
+	UiSkin.title(head, 12)
+	head.position = Vector2(52, 30)
+	head.size = Vector2(536, 0)
+	_brief_bg.add_child(head)
 	_brief_lbl = Label.new()
 	_brief_lbl.text = Game.shipify(text)
 	_brief_lbl.position = Vector2(60, 70)
 	_brief_lbl.size = Vector2(520, 220)
 	_brief_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
 	_brief_lbl.add_theme_font_size_override("font_size", 10)
-	_brief_lbl.add_theme_color_override("font_color", Color(0.75, 0.85, 0.75))
+	_brief_lbl.add_theme_color_override("font_color", Color(0.62, 0.95, 0.88))
 	_brief_lbl.visible_characters = 0
 	_brief_lbl.custom_minimum_size = Vector2(520, 0)
 	_brief_bg.add_child(_brief_lbl)
 	_brief_lbl.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_brief_lbl.position = Vector2(60, 50)
-	_brief_lbl.size = Vector2(520, 260)
+	_brief_lbl.position = Vector2(60, 58)
+	_brief_lbl.size = Vector2(520, 250)
 	var hint := Label.new()
 	hint.text = "Mezerník - přeskočit"
-	hint.position = Vector2(540, 335)
+	hint.position = Vector2(500, 334)
 	hint.add_theme_font_size_override("font_size", 8)
 	hint.add_theme_color_override("font_color", Color(0.4, 0.45, 0.4))
 	_brief_bg.add_child(hint)
@@ -179,8 +198,7 @@ func _brief_tick(delta: float) -> void:
 	if _brief_fade >= 0:
 		_brief_fade += delta
 		var a := 1.0 - _brief_fade / 2.5
-		_brief_bg.color.a = a
-		_brief_lbl.modulate.a = a
+		_brief_bg.modulate.a = maxf(a, 0.0)
 		if _ready_lbl:
 			_ready_lbl.modulate.a = a
 		if a <= 0:
@@ -644,12 +662,7 @@ func _bar(c: Control, pos: Vector2, label: String, v: float, col: Color) -> void
 
 func _panel(title: String, pos: Vector2, min_size: Vector2) -> PanelContainer:
 	var p := PanelContainer.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = PANEL
-	sb.border_color = FRAME
-	sb.set_border_width_all(2)
-	sb.set_content_margin_all(8)
-	p.add_theme_stylebox_override("panel", sb)
+	p.add_theme_stylebox_override("panel", UiSkin.panel(8))
 	p.position = pos
 	p.custom_minimum_size = min_size
 	add_child(p)
@@ -657,7 +670,7 @@ func _panel(title: String, pos: Vector2, min_size: Vector2) -> PanelContainer:
 	box.add_theme_constant_override("separation", 4)
 	p.add_child(box)
 	var t := _lbl(box, title, ACCENT, 14)
-	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	UiSkin.title(t, 13)
 	return p
 
 func _lbl(parent: Node, s: String, col := TEXT, size := 10) -> Label:
@@ -675,18 +688,7 @@ func _btn(parent: Node, s: String, cb: Callable, min_size := Vector2.ZERO) -> Bu
 	b.custom_minimum_size = min_size
 	b.clip_text = true
 	b.add_theme_font_size_override("font_size", 9)
-	var n := StyleBoxFlat.new()
-	n.bg_color = Color(0.08, 0.14, 0.30)
-	n.border_color = FRAME
-	n.set_border_width_all(1)
-	n.set_content_margin_all(2)
-	var h := n.duplicate()
-	h.bg_color = Color(0.18, 0.30, 0.55)
-	b.add_theme_stylebox_override("normal", n)
-	b.add_theme_stylebox_override("hover", h)
-	b.add_theme_stylebox_override("pressed", h)
-	b.add_theme_stylebox_override("focus", n)
-	b.add_theme_color_override("font_color", TEXT)
+	UiSkin.button(b)
 	b.pressed.connect(cb)
 	parent.add_child(b)
 	return b

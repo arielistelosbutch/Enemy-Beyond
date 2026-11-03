@@ -1,6 +1,14 @@
 {
+ "0.29": [
+  "Hra se teď jmenuje Operace X - Enemy Beyond (v menu, v titulku okna i v závěrečných titulcích). Uložené hry a nastavení zůstávají.",
+  "Nový vzhled celého rozhraní: ocelově šedé panely se zkosenými rohy, nýty a azurovou linkou - vojenský terminál z konce devadesátek, pořád v duchu UFO.",
+  "Tlačítka jsou kovové destičky s kontrolkou vlevo, která se po najetí myší rozsvítí. Posuvníky, rolovátka i textová pole mají stejný styl.",
+  "Nové písmo Chakra Petch (licence SIL OFL) s plnou češtinou.",
+  "Hlavní menu: pozadí z ocelových plátů a štítek s názvem hry. Hlášení před misí běží v rámu terminálu.",
+  "Dodal jsem výkřik pro žoldačky - ženy už neumírají mužským hlasem."
+ ],
  "0.28.3": [
-  "Nové kroky od Iva na všech površích (tráva, hlína, beton, dřevo, kov, sníh, písek) - každý soubor rozstříhaný na jednotlivé došlapy. Nově voda (potok) a vlastní kroky na podlaze UFO.",
+  "Nahrál jsem nové kroky na všech površích (tráva, hlína, beton, dřevo, kov, sníh, písek) - každý soubor rozstříhaný na jednotlivé došlapy. Nově voda (potok) a vlastní kroky na podlaze UFO.",
   "Vítr podle krajiny: les šumí, na sněhu polární vichr, v poušti tíživé ticho, na Marsu řídký vzduch, v horách vlastní vítr.",
   "Pod větrem žije noc: cvrčci nad poli, vzdálené město, hučící továrna. Občas zaštěká pes, zahouká sova nebo zabučí kráva.",
   "Bouřka má vlastní smyčku, nový déšť a hrom. Hořící domy praskají ohněm. Uvnitř UFO je slyšet jeho nitro.",
@@ -8,8 +16,8 @@
   "Tažené tělo je slyšet, jak drhne po zemi. Transportní vrtulník v letecké bitvě má zvuk rotorů."
  ],
  "0.28.2": [
-  "Hlavní menu: hraje už jen Ivova hudba, stará syntetická melodie (a ta z mise) je pryč.",
-  "Nové zvuky od Iva zapojené do hry: hlasy mimozemšťanů při spatření (šedí cvrlikají, velcí řvou, ostatní syčí), kyselinové plivnutí, vrčení, smrtelné výkřiky.",
+  "Hlavní menu: hraje už jen moje hudba, stará syntetická melodie (a ta z mise) je pryč.",
+  "Přidal jsem nové zvuky: hlasy mimozemšťanů při spatření (šedí cvrlikají, velcí řvou, ostatní syčí), kyselinové plivnutí, vrčení, smrtelné výkřiky.",
   "Žoldáci: zranění muž/žena, výkřik při pádu, vyděšený dech při velkém stresu, obvazování (i u kamaráda), zip a hrabání v batohu.",
   "Smyčky: pulzující mozek a praskající štítový pylon jsou slyšet z dálky, diskoll dron má vlastní bzučení, přistálé UFO hučí, UFO ve vzdušném boji mají motor.",
   "Skener při kontaktu blíž než 8 m varuje jiným, naléhavějším tónem. Laser se nabíjí vlastním zvukem.",
@@ -17,19 +25,19 @@
   "Opraveno: smyčkové zvuky se ořezávaly (špatný konec smyčky u komprimovaných zvuků)."
  ],
  "0.28.1": [
-  "Nové zvuky zbraní od Iva: puška, pistole, magnum, brokovnice, autokanón, odstřelovačka (vlastní výstřel), laserové zbraně (blaster).",
+  "Přidal jsem nové zvuky zbraní: puška, pistole, magnum, brokovnice, autokanón, odstřelovačka (vlastní výstřel), laserové zbraně (blaster).",
   "Minigun: hlavně se roztočí, při střelbě běží plynulá smyčka, po puštění se dotočí. Ostatní hráči to slyší taky.",
   "Brokovnice po výstřelu pumpuje, odstřelovačka natáhne závěr. Při nabíjení brokovnice je slyšet zasouvání nábojů a pumpa na konci. Prázdná zbraň cvakne naprázdno.",
   "Raketomet: nový zvuk zážehu a motor rakety je slyšet, jak letí, dokud nevybuchne.",
   "Přebíjení zásobníkových zbraní: zvuk vytažení a zasunutí zásobníku."
  ],
  "0.28": [
-  "Hudba je ve hře! Ivova vlastní hudba: hlavní menu, glóbus (dvě skladby), souboj stíhaček, briefing, briefing teroru, mise, debriefing, prohra, vítězství a poslední mise na Marsu.",
+  "Hudba je ve hře! Moje vlastní hudba: hlavní menu, glóbus (dvě skladby), souboj stíhaček, briefing, briefing teroru, mise, debriefing, prohra, vítězství a poslední mise na Marsu.",
   "Poslední mise má vlastní hudbu od briefingu až do konce. Hudba během běžné mise je dál volitelná (Nastavení).",
   "Složka hudba vedle hry teď slouží jen k výměně skladeb: soubor se stejným názvem hraje místo vestavěného."
  ],
  "0.27.1": [
-  "Hrabání v batohu (podle Ivova videa): batoh se přetočí dopředu a ruka v něm hledá; ostatní vidí vojáka na koleni s batohem na zemi.",
+  "Hrabání v batohu (podle mého videa): batoh se přetočí dopředu a ruka v něm hledá; ostatní vidí vojáka na koleni s batohem na zemi.",
   "Ošetřování: v ruce je role obvazu, kterou voják ovíjí; ostatní ho vidí na koleni s rukama u zraněného.",
   "Opraveno: ostatní hráči teď opravdu vidí přebíjení, hrabání i ošetřování (dřív se to během práce neposílalo)."
  ],
@@ -40,7 +48,7 @@
   "Na začátku kampaně má tým vlastní dvourotorový vrtulník Čáp (pomalejší, s rampou vzadu). Výzkum Transportér Kondor přinese rychlý Kondor - lety asi třikrát kratší. Starší uložené kampaně Kondor už mají.",
   "Start mise: místo odpočtu - po briefingu jste v lodi, vybavíte se a ENTER = připraven. Rampa se otevře, až jsou připraveni všichni.",
   "Odlet: ENTER v lodi (už ne držení E). Musí ho dát všichni živí, i ranění na zemi (dotáhnout je do lodi). Mrtví se nepočítají. Raněný vytažený na palubu přežije, ale na marodce bude dlouho. Odškodné za padlého je menší, když jeho tělo přivezete domů.",
-  "Animace podle Ivových videí: nůž - bodnutí dopředu, bodnutí shora a sek napříč (střídají se), zvenku bojový postoj s krytem volnou rukou. Brokovnice - zbraň se překlopí na bok a levá ruka zasouvá náboje zespodu, nakonec pumpa; zvenku nabíjení od opasku. Pistole a revolver zvenku - zbraň u hrudi hlavní dolů, levá ruka pracuje. Puška zvenku - ruka k zásobníku.",
+  "Animace podle mých natočených videí: nůž - bodnutí dopředu, bodnutí shora a sek napříč (střídají se), zvenku bojový postoj s krytem volnou rukou. Brokovnice - zbraň se překlopí na bok a levá ruka zasouvá náboje zespodu, nakonec pumpa; zvenku nabíjení od opasku. Pistole a revolver zvenku - zbraň u hrudi hlavní dolů, levá ruka pracuje. Puška zvenku - ruka k zásobníku.",
   "Magnum: R s plným bubínkem = protočení revolveru na prstu (jen pro parádu).",
   "J = zasalutovat, U = pohov (ruce za zády, nohy od sebe). S prázdnýma rukama voják po chvíli dá ruce v bok a rozhlíží se."
  ],

@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.28.3 prototyp"
-const VERSION_NUM := "0.28.3"
+const VERSION := "0.29 prototyp"
+const VERSION_NUM := "0.29"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -174,6 +174,11 @@ var test_phase := 0
 var open_screen := ""      # main menu screen to open (from the globe)
 
 func _ready() -> void:
+	# the steel look for every control in the game, CanvasLayers included
+	ThemeDB.get_default_theme().merge_with(UiSkin.theme())
+	ThemeDB.get_default_theme().default_font = UiSkin.font()
+	ThemeDB.fallback_font = UiSkin.font()
+	get_window().title = "Operace X - Enemy Beyond"
 	_make_buses()
 	load_settings()
 	apply_volumes()
@@ -1147,7 +1152,7 @@ func music_dir() -> String:
 	return OS.get_executable_path().get_base_dir().path_join("hudba")
 
 ## A track: the player's own file in the "hudba" folder next to the game wins (so anyone can
-## swap a track), otherwise Ivo's music that comes with the game.
+## swap a track), otherwise Ari's music that comes with the game.
 func _music_stream(base: String) -> AudioStream:
 	var own := _music_file(base)
 	if own:
