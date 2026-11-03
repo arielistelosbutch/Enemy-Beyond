@@ -45,6 +45,7 @@ var status: Label
 var _syncing := false
 var grip_sliders := {}       # "x" -> HSlider (left hand on the gun)
 var _paused := false
+var _bone_drag := false
 var _grip_on := true
 var _clip: Variant = null    # copied tweak (Dictionary) and what kind it was
 var _clip_kind := ""
@@ -301,14 +302,14 @@ func _rebuild_panel() -> void:
 		for ax in [["x", "předklon"], ["y", "otočení"], ["z", "do strany"]]:
 			var a: String = ax[0]
 			bone_sliders[a] = _slider(dyn, ax[1], -180, 180, 1, func(): _bone_changed())
-		_lbl(dyn, "Kost vybereš i kliknutím do obrázku.", UiSkin.DIM)
+		_lbl(dyn, "Klikni na kloub v obrázku a táhni: nahoru/dolů ho ohýbá, do stran otáčí, se Shiftem naklání do strany. Pravé tlačítko otáčí pohled.", UiSkin.DIM)
 	if mode == "tp":
 		_lbl(dyn, "LEVÁ RUKA NA ZBRANI (oranžová tečka)")
 		for ax in [["x", "do strany"], ["y", "nahoru"], ["z", "dopředu/zpět"]]:
 			var a2: String = ax[0]
 			grip_sliders[a2] = _slider(dyn, ax[1], -0.8, 0.8, 0.002, func(): _grip_changed())
 		_lbl(dyn, "Levá ruka se sama chytí zbraně - posuneš zbraň nebo pravou ruku a levá jde s ní.", UiSkin.DIM)
-	_lbl(dyn, "Myš: tažení otáčí pohled, kolečko přibližuje." if mode != "fp" else "Pohled je přesně z očí žoldáka.", UiSkin.DIM)
+	_lbl(dyn, "Myš: tažení mimo kloub (nebo pravým tlačítkem) otáčí pohled, kolečko přibližuje." if mode != "fp" else "Pohled je přesně z očí žoldáka.", UiSkin.DIM)
 	_fill_sub2()
 	_build_scene()
 
@@ -678,15 +679,28 @@ func _view_input(ev: InputEvent) -> void:
 			dist = maxf(0.4, dist * 0.9)
 		elif ev.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			dist = minf(8.0, dist * 1.1)
+		elif ev.button_index == MOUSE_BUTTON_RIGHT:
+			dragging = ev.pressed           # right button: turn the view
+			_bone_drag = false
 		elif ev.button_index == MOUSE_BUTTON_LEFT:
 			if ev.pressed:
 				dragging = true
+				_bone_drag = false
 				_pick_bone(ev.position)
 			else:
 				dragging = false
+				_bone_drag = false
 	elif ev is InputEventMouseMotion and dragging:
-		yaw -= ev.relative.x * 0.01
-		pitch = clampf(pitch + ev.relative.y * 0.01, -1.3, 1.3)
+		if _bone_drag and not bone_sliders.is_empty():
+			# drag the joint: up/down bends it forward/back, left/right turns it (Shift: sideways)
+			if ev.shift_pressed:
+				bone_sliders["z"].value = clampf(bone_sliders["z"].value - ev.relative.x * 0.6, -180, 180)
+			else:
+				bone_sliders["y"].value = clampf(bone_sliders["y"].value + ev.relative.x * 0.6, -180, 180)
+				bone_sliders["x"].value = clampf(bone_sliders["x"].value + ev.relative.y * 0.6, -180, 180)
+		else:
+			yaw -= ev.relative.x * 0.01
+			pitch = clampf(pitch + ev.relative.y * 0.01, -1.3, 1.3)
 
 ## Click near a joint in the picture: that bone is selected.
 func _pick_bone(at: Vector2) -> void:
@@ -696,7 +710,7 @@ func _pick_bone(at: Vector2) -> void:
 	var scale := vs / Vector2(378, 342)
 	var p := at * scale
 	var best := -1
-	var bd := 14.0 * scale.x
+	var bd := 20.0 * scale.x
 	for i in bone_opt.item_count:
 		var bi := sk.find_bone(String(bone_opt.get_item_metadata(i)))
 		if bi < 0:
@@ -712,4 +726,4 @@ func _pick_bone(at: Vector2) -> void:
 		bone_opt.select(best)
 		bone = String(bone_opt.get_item_metadata(best))
 		_sync_sliders()
-		dragging = false
+		_bone_drag = true        # keep the button down and drag: the joint turns

@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.31.2 prototyp"
-const VERSION_NUM := "0.31.2"
+const VERSION := "0.32 prototyp"
+const VERSION_NUM := "0.32"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -850,6 +850,8 @@ func model(mname: String) -> Node3D:
 		holder.add_child(mi)
 		return holder
 	var n: Node3D = _models[mname].instantiate()
+	if model_mods.has(mname):
+		ModelMods.apply(n, model_mods[mname])
 	_restyle(n)
 	return n
 
@@ -1248,7 +1250,41 @@ func tweak_path() -> String:
 		return ProjectSettings.globalize_path("res://upravy.json")
 	return OS.get_executable_path().get_base_dir().path_join("upravy.json")
 
+## Block-modeller changes per model (res://modely/<model>.json bundled, then modely/ next to the game).
+var model_mods := {}
+
+func models_dir() -> String:
+	if OS.has_feature("editor"):
+		return ProjectSettings.globalize_path("res://modely")
+	return OS.get_executable_path().get_base_dir().path_join("modely")
+
+func load_model_mods() -> void:
+	model_mods = {}
+	for dir in ["res://modely", models_dir()]:
+		var d := DirAccess.open(dir)
+		if d == null:
+			continue
+		for f in d.get_files():
+			if f.ends_with(".json"):
+				var m = JSON.parse_string(FileAccess.get_file_as_string(dir.path_join(f)))
+				if m is Dictionary:
+					model_mods[f.get_basename()] = m
+
+func save_model_mods(mname: String) -> bool:
+	DirAccess.make_dir_recursive_absolute(models_dir())
+	var path := models_dir().path_join(mname + ".json")
+	if not model_mods.has(mname) or (model_mods[mname].get("parts", {}).is_empty() and model_mods[mname].get("new", []).is_empty()):
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
+		return true
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return false
+	f.store_string(JSON.stringify(model_mods[mname], "  ", true))
+	return true
+
 func load_tweaks() -> void:
+	load_model_mods()
 	tweaks = {}
 	for p in ["res://upravy.json", tweak_path()]:
 		if FileAccess.file_exists(p):

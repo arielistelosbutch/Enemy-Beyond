@@ -1,4 +1,9 @@
 {
+ "0.32": [
+  "Modelář (tlačítko v hlavním menu): každý model ve hře (zbraně, žoldák, vetřelci, UFO, lodě, kráva...) si můžu sám upravit. Kliknu na kostku a táhnu ji myší kam patří, nebo ji posunu, otočím, zvětším či zmenším tlačítky. Přebarvím ji z palety, přidám novou kostku, válec nebo kouli, zkopíruju nebo smažu. Kostky na postavách se drží svého kloubu, takže se hýbou s rukou nebo hlavou. Krok zpět (i Ctrl+Z) a Vše vrátit.",
+  "Úpravy modelů se ukládají do složky modely vedle hry a hra je hned používá. Tu složku pošlu Claudovi a ten ji dá do hry natrvalo.",
+  "Dílna: klouby se dají natáčet tažením myší přímo v obrázku - kliknu na kloub a táhnu (nahoru/dolů ohnout, do stran otočit, se Shiftem naklonit). Pohled otáčí pravé tlačítko nebo tažení mimo kloub."
+ ],
  "0.31.2": [
   "Žoldáci drží zbraň konečně v pravé ruce: model byl zrcadlově obráceně (zbraňová ruka byla anatomicky levá). Teď salutují pravou, zbraň nosí v pravé - ve hře, v menu i v Dílně. Moje úpravy z Dílny se otočily s ním.",
   "Dílna: přepínač „Levá drží zbraň“ - při ladění polohy zbraně ho vypnu, ať se mi nehýbe ruka. Tlačítka pohledu Zepředu / Z boku / Shora / Zezadu pro snadné vycentrování."
