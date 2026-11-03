@@ -442,7 +442,7 @@ func _animate_body(delta: float) -> void:
 		want = "prone_crawl" if _body_speed > 0.2 else "prone"
 	elif sprinting:
 		want = "sprint"
-	elif crouching:
+	elif crouching or (act >= 3 and _body_speed < 0.3):
 		want = "crouch_walk" if _body_speed > 0.3 else "crouch"
 	elif _body_speed > 3.2:
 		want = "run"
@@ -577,11 +577,41 @@ func _hold_pose(delta: float) -> void:
 		want.merge(POSE_RADIO_L, true)
 		want["upperarm.R"] = Vector3(0.15, 0, -0.2)
 		want["forearm.R"] = Vector3(0.5, 0, 0)
+	if act >= 3:
+		# down on one knee at the pack / over the wounded: both hands low in front, working
+		var w := sin(_act_t * (6.0 if act == 3 else 7.0))
+		want["upperarm.R"] = Vector3(0.9 + 0.15 * w, 0, -0.15)
+		want["forearm.R"] = Vector3(0.5 + 0.2 * w, 0, 0)
+		want["upperarm.L"] = Vector3(0.9 - 0.15 * w, 0, 0.15)
+		want["forearm.L"] = Vector3(0.5 - 0.2 * w, 0, 0)
+		want["spine"] = Vector3(-0.35, 0, 0)
 	for bn in want:
 		var i := _bone(bn)
 		if i >= 0:
 			var rest: Quaternion = _sk.get_bone_rest(i).basis.get_rotation_quaternion()
 			_sk.set_bone_pose_rotation(i, rest * Quaternion.from_euler(want[bn]))
+	_body_pack(act == 3)
+
+## Others see the pack on the ground in front while he digs in it.
+var _ground_pack: Node3D
+func _body_pack(on: bool) -> void:
+	if not on:
+		if _ground_pack:
+			_ground_pack.visible = false
+		return
+	if _ground_pack == null:
+		_ground_pack = Node3D.new()
+		for part in [[Vector3(0.36, 0.26, 0.14), Vector3(0, 0.13, 0), Color(0.2, 0.21, 0.18)], [Vector3(0.33, 0.02, 0.12), Vector3(0, 0.26, 0), Color(0.55, 0.55, 0.5)]]:
+			var mi := MeshInstance3D.new()
+			var bm := BoxMesh.new()
+			bm.size = part[0]
+			mi.mesh = bm
+			mi.material_override = Game.color_mat(part[2])
+			mi.position = part[1]
+			_ground_pack.add_child(mi)
+		merc_model.add_child(_ground_pack)
+		_ground_pack.position = Vector3(0, 0, -0.55)
+	_ground_pack.visible = true
 
 # ---- emotes and idling (after Ivo's videos): J salute, U at ease; empty hands at rest go
 # to the hips and the head looks around -------------------------------------------------------
@@ -643,6 +673,10 @@ func _act_tick() -> void:
 		a = 1
 	elif _swing > 0.0:
 		a = 2
+	elif busy > 0 and busy_stand and busy_text.begins_with("Hrabu"):
+		a = 3
+	elif busy > 0 and (busy_text.begins_with("Ošetřuji") or busy_text.begins_with("Obvazuji") or busy_text.begins_with("Vyřezávám")):
+		a = 4
 	if a != act:
 		act = a
 		_act_t = 0.0
@@ -1132,6 +1166,7 @@ func _physics_process(delta: float) -> void:
 	fire_cd -= delta
 	spread_bloom = max(0.0, spread_bloom - delta * 3.0)
 	spin = max(0.0, spin - delta * 0.8)
+	_act_tick()
 	if busy > 0:
 		busy -= delta
 		if busy <= 0 and busy_done.is_valid():
@@ -1252,7 +1287,6 @@ func _actions(delta: float) -> void:
 	if Input.is_action_just_pressed("swap") and busy <= 0:
 		_q_swap(two)
 	_radio_tick(delta)
-	_act_tick()
 	if Input.is_action_just_pressed("drop") and not mission.hud.inventory_open:
 		drop_slot("lh" if inv.has("lh") and not inv.has("rh") else "rh")
 	_emote_input(delta)
@@ -1642,7 +1676,28 @@ func _reload_hand(carry: String) -> Node3D:
 		for c in _rl_hand.get_children():
 			if c.name.begins_with("Carry"):
 				c.queue_free()
-		if carry == "shell":
+		if carry == "bandage":
+			# a white roll, a loose end trailing from it
+			var bd := MeshInstance3D.new()
+			var bc := CylinderMesh.new()
+			bc.top_radius = 0.022
+			bc.bottom_radius = 0.022
+			bc.height = 0.06
+			bc.radial_segments = 10
+			bd.mesh = bc
+			bd.material_override = Game.color_mat(Color(0.92, 0.9, 0.85))
+			bd.name = "Carry"
+			bd.position = Vector3(0, 0.03, -0.04)
+			bd.rotation = Vector3(0, 0, PI / 2)
+			var tail := MeshInstance3D.new()
+			var tm := BoxMesh.new()
+			tm.size = Vector3(0.05, 0.18, 0.004)
+			tail.mesh = tm
+			tail.material_override = bd.material_override
+			tail.position = Vector3(0, -0.1, 0.02)
+			bd.add_child(tail)
+			_rl_hand.add_child(bd)
+		elif carry == "shell":
 			# a red shotgun shell with a brass base
 			var sh := MeshInstance3D.new()
 			var cm := CylinderMesh.new()
@@ -1671,6 +1726,34 @@ func _reload_hand(carry: String) -> Node3D:
 			m.name = "Carry"
 			_rl_hand.add_child(m)
 	return _rl_hand
+
+## The backpack swung round to the front while digging in it (first person).
+var _pack_node: Node3D
+var _pack_t := 0.0
+func _vm_pack(on: bool, delta: float) -> void:
+	_pack_t = move_toward(_pack_t, 1.0 if on else 0.0, delta * 4.0)
+	if _pack_t <= 0.0:
+		if _pack_node:
+			_pack_node.visible = false
+		return
+	if _pack_node == null:
+		_pack_node = Node3D.new()
+		var dark := Game.color_mat(Color(0.2, 0.21, 0.18))
+		var inner := Game.color_mat(Color(0.55, 0.55, 0.5))
+		for part in [[Vector3(0.36, 0.13, 0.26), Vector3.ZERO, dark], [Vector3(0.33, 0.01, 0.23), Vector3(0, 0.066, 0), inner],
+				[Vector3(0.36, 0.25, 0.02), Vector3(0, 0.18, 0.13), dark], [Vector3(0.33, 0.23, 0.01), Vector3(0, 0.18, 0.118), inner]]:
+			var mi := MeshInstance3D.new()
+			var bm := BoxMesh.new()
+			bm.size = part[0]
+			mi.mesh = bm
+			mi.material_override = part[2]
+			mi.position = part[1]
+			_pack_node.add_child(mi)
+		cam.add_child(_pack_node)
+	_pack_node.visible = true
+	var k := smoothstep(0.0, 1.0, _pack_t)
+	_pack_node.position = Vector3(0.0, -0.75, -0.3).lerp(Vector3(0.0, -0.29, -0.42), k)
+	_pack_node.rotation = Vector3(0.75, 0, 0)
 
 ## Returns [position offset, rotation offset] for the gun, and moves slide, magazine,
 ## barrel and the reloading hand.
@@ -1782,6 +1865,23 @@ func _reload_anim(delta: float, rid: String, reloading: bool) -> Array:
 				hand_at = from_low.lerp(chamber, smoothstep(0.0, 0.55, ph)).lerp(from_low, smoothstep(0.85, 1.0, ph))
 				hand_rot = Vector3(0.4, -0.2, 0.0)
 				_reload_hand("round" if ph < 0.8 else "")
+	# digging in the backpack (it comes round to the front, the hand rummages in it) and
+	# bandaging (a roll of bandage wound round and round) - after Ivo's videos
+	var digging := busy > 0 and busy_stand and busy_text.begins_with("Hrabu")
+	var wrapping := busy > 0 and (busy_text.begins_with("Ošetřuji") or busy_text.begins_with("Obvazuji"))
+	_vm_pack(digging, delta)
+	if digging and _pack_node:
+		hand_on = true
+		var tt := Time.get_ticks_msec() / 1000.0
+		hand_at = _pack_node.global_transform * Vector3(sin(tt * 5.0) * 0.07, 0.06 + absf(sin(tt * 3.3)) * 0.06, cos(tt * 4.1) * 0.04)
+		hand_rot = Vector3(1.3, 0.2, 0.3)
+		_reload_hand("medkit" if ph > 0.75 else "")
+	elif wrapping:
+		hand_on = true
+		var tw := Time.get_ticks_msec() / 1000.0 * 6.5
+		hand_at = cam.global_transform * Vector3(-0.02 + cos(tw) * 0.07, -0.26 + sin(tw) * 0.05, -0.36)
+		hand_rot = Vector3(0.6, 0.3 * sin(tw), 0.8)
+		_reload_hand("bandage")
 	if _rl_hand:
 		_rl_hand.visible = hand_on
 		if hand_on:

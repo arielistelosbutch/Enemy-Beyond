@@ -562,6 +562,26 @@ func _invtest(p: Node) -> void:
 	p._weapon_key("back"); await wait.call(); show.call("key1")
 	p._weapon_key("back"); await wait.call(); show.call("key1 again (holster)")
 	p._q_swap(false); await wait.call(); show.call("Q")
+	# digging in the pack and bandaging, first person
+	var ps := ""
+	for sl in ["p0", "p1", "p2", "p3", "p4", "p5"]:
+		if not p.item_in(sl).is_empty():
+			ps = sl
+			break
+	if ps != "":
+		p.draw_slot(ps)
+		for i in 6:
+			await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png("user://fp_dig.png")
+		await wait.call()
+	p.hp = p.max_hp - 5.0
+	p.bleeding = 1.0
+	p._heal_self()
+	for i in 8:
+		await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png("user://fp_bandage.png")
+	out("act during bandage: %d busy=%s" % [p.act, p.busy_text])
+	await wait.call()
 	# radio with the rifle: the gun goes down first, then the radio comes up
 	Input.action_press("radio_talk")
 	var t0 := Time.get_ticks_msec()

@@ -1,4 +1,9 @@
 {
+ "0.27.1": [
+  "Hrabání v batohu (podle Ivova videa): batoh se přetočí dopředu a ruka v něm hledá; ostatní vidí vojáka na koleni s batohem na zemi.",
+  "Ošetřování: v ruce je role obvazu, kterou voják ovíjí; ostatní ho vidí na koleni s rukama u zraněného.",
+  "Opraveno: ostatní hráči teď opravdu vidí přebíjení, hrabání i ošetřování (dřív se to během práce neposílalo)."
+ ],
  "0.27": [
   "Lety na glóbu: stíhačky i transport teď ze základny k cíli opravdu letí v herním čase (bílá a modrá značka na glóbu). UFO nebo vetřelci mohou zmizet dřív, než dorazí - pak se stroj vrátí. Před vysláním okno ukáže, jak dlouho let trvá a jak dlouho hlášení vydrží.",
   "Před leteckou misí si v co-op naklikáte, kdo usedne do Sokolů. Před pozemní misí lze přidat doprovod stíhaček a vybrat, kdo řídí transport (nebo AI pilot).",
