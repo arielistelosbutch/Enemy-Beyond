@@ -529,13 +529,10 @@ const POSE_ITEM_R := {"upperarm.R": Vector3(0.35, 0, -0.1), "forearm.R": Vector3
 const POSE_ITEM_L := {"upperarm.L": Vector3(0.35, 0, 0.1), "forearm.L": Vector3(1.0, 0, 0)}
 const POSE_RADIO_L := {"upperarm.L": Vector3(0.9, 0, 0.55), "forearm.L": Vector3(2.1, 0, 0)}
 
-func _hold_pose(delta: float) -> void:
-	if _sk == null:
-		return
-	_act_t += delta
+## The arms (and spine) for what is in the hands - pure, so the workshop can show it too.
+## act: 1 reload, 2 melee strike, 3 digging in the pack, 4 treating; t: time in that act.
+static func hold_want(r: String, l: String, act: int, _act_t: float) -> Dictionary:
 	var want := {}
-	var r: String = held
-	var l: String = held_l
 	var rule: Dictionary = Game.ITEMS.get(r, {})
 	var two := Game.two_handed(r)
 	if r == "":
@@ -619,6 +616,14 @@ func _hold_pose(delta: float) -> void:
 		want["upperarm.L"] = Vector3(0.9 - 0.15 * w, 0, 0.15)
 		want["forearm.L"] = Vector3(0.5 - 0.2 * w, 0, 0)
 		want["spine"] = Vector3(-0.35, 0, 0)
+	return want
+
+func _hold_pose(delta: float) -> void:
+	if _sk == null:
+		return
+	_act_t += delta
+	var want := hold_want(held, held_l, act, _act_t)
+	want = Game.tweak_pose("hold/" + (held if held != "" else "nic"), want)
 	for bn in want:
 		var i := _bone(bn)
 		if i >= 0:
@@ -677,16 +682,16 @@ func _emote_pose(delta: float) -> void:
 		return
 	var want := {}
 	if emote == 1:
-		want = POSE_SALUTE
+		want = Game.tweak_pose("emote/salute", POSE_SALUTE)
 	elif emote == 2:
-		want = POSE_ATEASE
+		want = Game.tweak_pose("emote/atease", POSE_ATEASE)
 	if _body_speed < 0.15 and not crouching:
 		_idle_t += delta
 	else:
 		_idle_t = 0.0
 	# standing about with empty hands: hands on the hips
 	if want.is_empty() and held == "" and held_l == "" and _idle_t > 4.0:
-		want = POSE_HIPS
+		want = Game.tweak_pose("emote/hips", POSE_HIPS)
 	for bn in want:
 		var i := _bone(bn)
 		if i >= 0:
@@ -767,20 +772,15 @@ func _show_items(r: String, l: String, back: String) -> void:
 		if body_l:
 			body_l.add_child(_held_model(l, true))
 	if back != "" and body_back:
-		body_back.add_child(Game.model(back))
+		var bk := Game.model(back)
+		Game.apply_item_tweak(bk, "back/" + back)
+		body_back.add_child(bk)
 
 ## A held item's model. Clubs (baton) are held upright, ready to come down.
 ## Knife: blade up in the fist. Radio: upright, antenna up.
 func _held_model(id: String, third := false) -> Node3D:
-	var m := Game.model(id)
-	if Game.ITEMS.get(id, {}).get("blunt", false):
-		m.rotation.x = deg_to_rad(78.0)
-		m.position = Vector3(0, 0.01, 0.01)
-	elif id == "knife":
-		m.rotation.x = deg_to_rad(80.0 if third else 58.0)
-	elif id in ["radio", "flare", "scanner"]:
-		m.rotation.x = deg_to_rad(80.0 if id == "radio" else 35.0)
-	return m
+	return Game.held_model(id, third)
+
 
 # ---- inventory helpers --------------------------------------------------------------
 func item_in(slot: String) -> Dictionary:

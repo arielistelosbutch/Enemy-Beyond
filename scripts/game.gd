@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.30 prototyp"
-const VERSION_NUM := "0.30"
+const VERSION := "0.31 prototyp"
+const VERSION_NUM := "0.31"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -174,6 +174,7 @@ var test_phase := 0
 var open_screen := ""      # main menu screen to open (from the globe)
 
 func _ready() -> void:
+	load_tweaks()
 	# the steel look for every control in the game, CanvasLayers included
 	ThemeDB.get_default_theme().merge_with(UiSkin.theme())
 	ThemeDB.get_default_theme().default_font = UiSkin.font()
@@ -1234,3 +1235,69 @@ func apply_volumes() -> void:
 			var v := get_volume(b)
 			AudioServer.set_bus_volume_db(i, linear_to_db(maxf(0.0001, v)))
 			AudioServer.set_bus_mute(i, v <= 0.001)
+
+# ---- tweaks: positions of held items and pose corrections, made in the Workshop ------------------
+## Keys: "fp/<item>" and "tp/<item>" (in the hands, first person / seen by others), "back/<item>"
+## {"pos": [x,y,z], "rot": [deg x,y,z], "scale": s}; "hold/<item>", "emote/<name>", "act/<job>"
+## {bone: [deg x,y,z]} added to the pose. Bundled res://upravy.json first, then the player's own
+## upravy.json next to the game (the Workshop writes that one).
+var tweaks := {}
+
+func tweak_path() -> String:
+	if OS.has_feature("editor"):
+		return ProjectSettings.globalize_path("res://upravy.json")
+	return OS.get_executable_path().get_base_dir().path_join("upravy.json")
+
+func load_tweaks() -> void:
+	tweaks = {}
+	for p in ["res://upravy.json", tweak_path()]:
+		if FileAccess.file_exists(p):
+			var d = JSON.parse_string(FileAccess.get_file_as_string(p))
+			if d is Dictionary:
+				for k in d:
+					tweaks[k] = d[k]
+
+func save_tweaks() -> bool:
+	var f := FileAccess.open(tweak_path(), FileAccess.WRITE)
+	if f == null:
+		return false
+	f.store_string(JSON.stringify(tweaks, "  ", true))
+	return true
+
+static func _v3(a, def := Vector3.ZERO) -> Vector3:
+	if a is Array and a.size() >= 3:
+		return Vector3(float(a[0]), float(a[1]), float(a[2]))
+	return def
+
+## Moves/turns/scales an item model by its tweak (in the holder's space).
+func apply_item_tweak(n: Node3D, key: String) -> void:
+	var t: Dictionary = tweaks.get(key, {})
+	if t.is_empty():
+		return
+	var r := _v3(t.get("rot", null)) * (PI / 180.0)
+	var s := float(t.get("scale", 1.0))
+	n.transform = Transform3D(Basis.from_euler(r).scaled(Vector3.ONE * s), _v3(t.get("pos", null))) * n.transform
+
+## A pose with the workshop corrections added (degrees, per bone).
+func tweak_pose(key: String, want: Dictionary) -> Dictionary:
+	var t: Dictionary = tweaks.get(key, {})
+	if t.is_empty():
+		return want
+	var out := want.duplicate()
+	for bn in t:
+		out[bn] = (out.get(bn, Vector3.ZERO) as Vector3) + _v3(t[bn]) * (PI / 180.0)
+	return out
+
+## A held item's model. Clubs (baton) are held upright, ready to come down.
+## Knife: blade up in the fist. Radio: upright, antenna up. Plus the workshop tweak.
+func held_model(id: String, third := false) -> Node3D:
+	var m := model(id)
+	if ITEMS.get(id, {}).get("blunt", false):
+		m.rotation.x = deg_to_rad(78.0)
+		m.position = Vector3(0, 0.01, 0.01)
+	elif id == "knife":
+		m.rotation.x = deg_to_rad(80.0 if third else 58.0)
+	elif id in ["radio", "flare", "scanner"]:
+		m.rotation.x = deg_to_rad(80.0 if id == "radio" else 35.0)
+	apply_item_tweak(m, ("tp/" if third else "fp/") + id)
+	return m

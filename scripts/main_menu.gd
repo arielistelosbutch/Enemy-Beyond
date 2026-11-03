@@ -224,6 +224,7 @@ func _show_main(msg := "") -> void:
 		preload("res://scripts/hud.gd").settings_ui(_box)
 		_label("Totéž najdeš ve hře v pauze (Esc).", FRAME, 8)
 		_button("Zpět", _show_main))
+	_button("Dílna (úpravy modelů a póz)", func(): get_tree().change_scene_to_file("res://scenes/Workshop.tscn"))
 	_button("Obtížnost: " + Game.DIFF_NAMES.get(Game.difficulty, "normální"), func():
 		Game.next_difficulty()
 		Game.save_settings()
@@ -978,6 +979,8 @@ func _show_main_msg(t: String) -> void:
 # ---- headless tests -------------------------------------------------------------
 func _autotest() -> void:
 	match Game.autotest():
+		"workshop":
+			get_tree().change_scene_to_file("res://scenes/Workshop.tscn")
 		"geo", "campaign", "campair", "uigeo":
 			if Game.cmd_arg("newcamp", "1") == "1":
 				Campaign.new_campaign()

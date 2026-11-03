@@ -1332,7 +1332,8 @@ func _activity_pose(delta: float) -> void:
 		if act == "eat" and _corpse == null:
 			_lay_corpse()
 	if _act_w > 0.01:
-		var pose := _pose_for(act if act != "" else "stare", _act_t + float(absi(hash(String(name))) % 100))
+		var pose := pose_for(act if act != "" else "stare", _act_t + float(absi(hash(String(name))) % 100), float(R["h"]))
+		pose[0] = Game.tweak_pose("act/" + act, pose[0])
 		for bn in pose[0]:
 			var i := _rig.find_bone(bn)
 			if i < 0:
@@ -1356,8 +1357,8 @@ func _activity_pose(delta: float) -> void:
 		_look_t = 0.0
 
 ## [bone -> euler, root drop] for a job at time t (Blender-style absolute bone rotations).
-func _pose_for(act: String, t: float) -> Array:
-	var s := float(R["h"]) / 1.3
+static func pose_for(act: String, t: float, height: float) -> Array:
+	var s := height / 1.3
 	match act:
 		"work":
 			return [{"spine": Vector3(-0.5, 0, 0), "neck": Vector3(0.1, 0, 0), "head": Vector3(0.35 + sin(t * 0.9) * 0.08, sin(t * 0.7) * 0.15, 0),
