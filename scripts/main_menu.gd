@@ -10,6 +10,7 @@ const ACCENT := Color(0.95, 0.75, 0.30)
 
 var _box: VBoxContainer
 var _confirm_new := false
+var _confirm_fire := false
 var _status: Label
 var _music: AudioStreamPlayer
 
@@ -213,7 +214,7 @@ func _show_main(msg := "") -> void:
 		Game.save_settings()
 		_show_main())
 	if Game.difficulty == "veteran":
-		_label("Veterán: plazma zabíjí na 1-2 zásahy, panika, palba do vlastních, zranění se hojí v reálném čase, jen jeden náhradní zásobník.", Color(1, 0.55, 0.4), 8)
+		_label("Veterán: plazma zabíjí na 1-2 zásahy, panika, palba do vlastních, zranění se hojí déle (herní dny), jen jeden náhradní zásobník.", Color(1, 0.55, 0.4), 8)
 	elif Game.difficulty == "easy":
 		_label("Snadná: slabší, pomalejší a méně přesní vetřelci, o jednoho méně, zranění bolí méně.", Color(0.6, 1.0, 0.6), 8)
 	_button("Ukončit", func(): get_tree().quit())
@@ -221,18 +222,43 @@ func _show_main(msg := "") -> void:
 		_label(msg, Color(1, 0.5, 0.4), 10)
 
 func _show_merc() -> void:
-	if not Game.merc.get("created", true):
+	if not Game.merc.get("created", true) and Game.mercs.size() <= 1:
 		_show_create(true)
 		return
 	_panel("ŽOLDÁK")
+	# the roster: up to three mercenaries, one goes on missions
+	var rrow := HBoxContainer.new()
+	rrow.add_theme_constant_override("separation", 4)
+	_box.add_child(rrow)
+	for i in Game.MERC_SLOTS:
+		var k := i
+		if i < Game.mercs.size():
+			var mm: Dictionary = Game.mercs[i]
+			var sick := Game.heal_days_left(mm) > 0.0
+			var b := _small_btn(rrow, "%s%d: %s%s" % ["> " if i == Game.active else "", i + 1, str(mm.get("name", "?")), " (marodka)" if sick else ""], func():
+				Game.switch_merc(k)
+				_confirm_fire = false
+				_show_merc())
+			b.custom_minimum_size = Vector2(120, 18)
+			if sick:
+				b.add_theme_color_override("font_color", Color(1, 0.5, 0.4))
+		else:
+			_small_btn(rrow, "%d: + najmout" % (i + 1), func():
+				var n := Game.hire_merc()
+				if n >= 0:
+					Game.switch_merc(n)
+				_show_create(true)).custom_minimum_size = Vector2(120, 18)
+	_label("Na misi jde žoldák označený >. Peníze jsou tvoje a přecházejí s tebou.", FRAME, 8)
+	if not Game.merc.get("created", true):
+		_button("Vytvořit tohoto žoldáka (vlastnosti, vzhled)", func(): _show_create(true))
 	var name_edit := LineEdit.new()
 	name_edit.text = Game.merc["name"]
 	name_edit.add_theme_font_size_override("font_size", 11)
 	name_edit.text_changed.connect(func(t): Game.merc["name"] = t; Game.save_merc())
 	_box.add_child(name_edit)
 	var m: Dictionary = Game.merc
-	if Game.injury_now(m) > 0:
-		_label("ZRANĚN: chybí %d zdraví, uzdraví se za %d min (platí na Veterána)" % [ceili(Game.injury_now(m)), Game.heal_minutes_left(m)], Color(1, 0.5, 0.4), 9)
+	if Game.heal_days_left(m) > 0.0:
+		_label("%s - chybí mu %d zdraví. Na misi nemůže, dokud se v kampani neuzdraví. Vyber si zatím jiného žoldáka." % [Game.sick_text(m), ceili(float(m.get("injury", 0)))], Color(1, 0.5, 0.4), 9)
 	var xp := int(m.get("xp", 0))
 	var rk := Game.rank_of(m)
 	var nxt := "" if rk + 1 >= Game.RANK_XP.size() else " / %d" % Game.RANK_XP[rk + 1]
@@ -251,7 +277,16 @@ func _show_merc() -> void:
 	_label("Přesnost = rozptyl zbraně, Reakce = jak rychle zamíříš, Síla = kolik uneseš, Odvaha = jak dobře snášíš tmu a vetřelce.", FRAME, 9)
 	_button("Úpravy zbraní (svítilna, laser, tlumič...)", _show_mods)
 	_button("Upravit vzhled", func(): _show_create(false))
-	_button("Najmout jiného žoldáka (nový, od nuly)", func(): _show_create(true))
+	_button("Najmout místo něj nového (od nuly)", func(): _show_create(true))
+	if Game.mercs.size() > 1:
+		_button("Propustit tohoto žoldáka" if not _confirm_fire else "OPRAVDU propustit %s? (klikni znovu)" % Game.merc["name"], func():
+			if not _confirm_fire:
+				_confirm_fire = true
+				_show_merc()
+				return
+			_confirm_fire = false
+			Game.dismiss_merc(Game.active)
+			_show_merc())
 	_button("Zpět", _back)
 
 ## Personal weapon upgrades: each weapon takes only some of them.
@@ -486,11 +521,13 @@ func _build_create() -> void:
 	var ok := _small_btn(brow, "NAJMOUT" if _cr_full else "ULOŽIT VZHLED", func():
 		_cr["created"] = true
 		if _cr_full:
+			_cr["money"] = int(Game.merc.get("money", 0))
 			Game.merc = _cr
 		else:
 			Game.merc["look"] = _cr["look"]
 			Game.merc["name"] = _cr["name"]
 		Game.save_merc()
+		Net.reregister()
 		_show_merc())
 	ok.custom_minimum_size = Vector2(150, 18)
 	if _cr_full:
@@ -713,7 +750,7 @@ func _show_loadout() -> void:
 	# left: the body (slots)
 	var body := VBoxContainer.new()
 	row.add_child(body)
-	var names := {"rh": "P. ruka", "lh": "L. ruka", "back": "Záda"}
+	var names := {"rh": "1 primární", "side": "2 sekundár.", "lh": "štít"}
 	var arm_lbl := Label.new()
 	arm_lbl.text = "ZBROJ"
 	arm_lbl.add_theme_font_size_override("font_size", 8)
@@ -727,14 +764,14 @@ func _show_loadout() -> void:
 	ab.reparent(body)
 	ab.custom_minimum_size = Vector2(160, 16)
 	ab.add_theme_font_size_override("font_size", 8)
-	for g in [["RUCE A ZÁDA", ["rh", "lh", "back"]], ["OPASEK", ["b0", "b1", "b2", "b3"]], ["BATOH", ["p0", "p1", "p2", "p3", "p4", "p5"]]]:
+	for g in [["ZBRANĚ (primární je na začátku v rukou)", ["rh", "side", "lh"]], ["OPASEK (3-6)", ["b0", "b1", "b2", "b3"]], ["BATOH", ["p0", "p1", "p2", "p3", "p4", "p5"]]]:
 		var l := Label.new()
 		l.text = g[0]
 		l.add_theme_font_size_override("font_size", 8)
 		l.add_theme_color_override("font_color", FRAME)
 		body.add_child(l)
 		var grid := GridContainer.new()
-		grid.columns = 4 if g[0] == "OPASEK" else 3
+		grid.columns = 4 if g[0].begins_with("OPASEK") else 3
 		body.add_child(grid)
 		for slot in g[1]:
 			var sl: String = slot
@@ -769,13 +806,20 @@ func _show_loadout() -> void:
 				_show_loadout()
 				return
 			var two := Game.two_handed(item)
-			var order := ["rh", "back"] if two else ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]
-			if Game.ITEMS[item]["type"] == "shield":
+			var t: String = Game.ITEMS[item]["type"]
+			var order := ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]
+			if t == "shield":
 				order = ["lh", "p0", "p1", "p2", "p3", "p4", "p5"]
-			if not two and Game.ITEMS[item]["type"] in ["weapon", "melee", "scanner"]:
-				order = ["rh", "lh"] + order
+			elif t == "weapon" and two:
+				order = ["rh", "p0", "p1", "p2", "p3", "p4", "p5"]
+			elif t == "weapon":
+				order = ["rh", "side"] + order
+			elif t == "melee":
+				order = ["side", "rh"] + order
 			for slot in order:
 				if Game.loadout.has(slot) and Game.loadout[slot] != "":
+					continue
+				if slot in ["rh", "lh", "side"] and Game.slot_refuse(slot, item) != "":
 					continue
 				if slot == "rh" and two and Game.loadout.get("lh", "") != "":
 					continue
@@ -863,6 +907,9 @@ func _refresh_lobby() -> void:
 			money = "  -  %d kr%s" % [int(Net.wallets[id]), " (pokladna základny)" if id == 1 and (Campaign.active or Campaign.viewer) else ""]
 		var lv: Node = Net.get_node_or_null("LobbyVoice")
 		var talk := "   <<< MLUVÍ" if lv and lv.speaking(id) else ""
+		var sick_m: Dictionary = Game.merc if id == Net.my_id() else Net.roster[id].get("merc", {})
+		if float(sick_m.get("sick", 0.0)) > 0.0:
+			talk += "  [NA MARODCE]"
 		lines.append("%s %s%s%s" % ["*" if id == 1 else "-", Net.roster[id]["name"], money, talk])
 	var bars := int(clampf(Game.mic_level * 60.0, 0.0, 12.0))
 	var mic := "Mikrofon vypnutý (Nastavení)" if Game.voice_mode == "off" else "Tvůj mikrofon: [%s%s] %s" % ["|".repeat(bars), " ".repeat(12 - bars),
@@ -983,7 +1030,7 @@ func _autotest() -> void:
 		"air":
 			Net.mission_params = {"intercept": true, "id": -1, "ufo": Game.cmd_arg("ufo", "raider")}
 			get_tree().change_scene_to_file("res://scenes/Intercept.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",

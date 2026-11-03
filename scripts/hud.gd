@@ -345,11 +345,15 @@ func _draw_hud() -> void:
 	var right := Vector2(sz.x - 160, sz.y - 30)
 	_hand_text(c, p, "rh", right)
 	var rid: String = p.item_in("rh").get("id", "")
-	if not Game.two_handed(rid):
+	if p.item_in("lh").size() > 0:
 		_hand_text(c, p, "lh", Vector2(sz.x - 330, sz.y - 30))
 	_belt_bar(c, p, sz)
-	if p.item_in("back").size() > 0:
-		_text(c, right + Vector2(0, -24), "Na zádech: " + Game.ITEMS[p.inv["back"]["id"]]["short"] + " (Q)", FRAME, 8)
+	var holst := []
+	for hs in [["back", "1"], ["side", "2"]]:
+		if p.item_in(hs[0]).size() > 0:
+			holst.append("%s %s" % [hs[1], Game.ITEMS[p.inv[hs[0]]["id"]]["short"]])
+	if not holst.is_empty():
+		_text(c, right + Vector2(0, -24), "   ".join(holst), FRAME, 8)
 	if p.spin > 0.05 and rid == "minigun":
 		c.draw_rect(Rect2(mid.x - 20, mid.y + 14, 40 * p.spin, 3), Color(1, 0.6, 0.2))
 	_stance_icon(c, Vector2(132, sz.y - 36), p)
@@ -436,21 +440,21 @@ func _belt_bar(c: Control, p: Node, sz: Vector2) -> void:
 	var parts := []
 	for i in 4:
 		var it: Dictionary = p.item_in("b%d" % i)
-		parts.append("%d %s" % [i + 1, "-" if it.is_empty() else Game.ITEMS[it["id"]]["short"]])
+		parts.append("%d %s" % [i + 3, "-" if it.is_empty() else Game.ITEMS[it["id"]]["short"]])
 	var n := func(id: String) -> int:
 		var k := 0
 		for s in p.inv:
 			if p.inv[s]["id"] == id:
 				k += 1
 		return k
-	var extra := "   G %d  X %d  5 %d  H %d" % [n.call("grenade"), n.call("smoke_grenade"), n.call("flare"), n.call("medkit")]
+	var extra := "   G %d  X %d  7 %d  H %d" % [n.call("grenade"), n.call("smoke_grenade"), n.call("flare"), n.call("medkit")]
 	_text(c, Vector2(222, sz.y - 6), "  ".join(parts) + extra + "   (I = výstroj)", FRAME, 7)
 
 func _hand_text(c: Control, p: Node, slot: String, at: Vector2) -> void:
 	var it: Dictionary = p.item_in(slot)
-	var label := "P: " if slot == "rh" else "L: "
+	var label := "" if slot == "rh" else "Štít: "
 	if it.is_empty():
-		_text(c, at + Vector2(0, 12), label + "prázdná", FRAME, 9)
+		_text(c, at + Vector2(0, 12), label + "prázdné ruce", FRAME, 9)
 		return
 	var rule: Dictionary = Game.ITEMS[it["id"]]
 	_text(c, at, label + ((rule["short"] + " (neznámá)") if Game.alien_unknown(it["id"]) else rule["name"]), TEXT, 9)
@@ -699,7 +703,7 @@ func _btn(parent: Node, s: String, cb: Callable, min_size := Vector2.ZERO) -> Bu
 
 # ---- inventory (UFO style: hands, belt, backpack) -----------------------------------------
 var inv_keys: Label
-const SLOT_KEY := {"rh": "LTM", "lh": "PTM", "back": "Q", "b0": "1", "b1": "2", "b2": "3", "b3": "4"}
+const SLOT_KEY := {"rh": "LTM", "lh": "štít", "back": "1", "side": "2", "b0": "3", "b1": "4", "b2": "5", "b3": "6"}
 func _build_inventory() -> void:
 	inv_panel = _panel("VÝSTROJ", Vector2(14, 8), Vector2(612, 0))
 	var box: VBoxContainer = inv_panel.get_child(0)
@@ -709,21 +713,22 @@ func _build_inventory() -> void:
 	var left := VBoxContainer.new()
 	left.add_theme_constant_override("separation", 3)
 	cols.add_child(left)
-	var groups := [["RUCE A ZÁDA  (LTM = pravá ruka / střelba, PTM = levá ruka, nebo mířit když je levá volná; Q = zbraň na záda)", ["rh", "lh", "back"]],
-		["OPASEK - rychlý: klávesy 1 2 3 4 (zbraň do ruky, náboje nabijí)", ["b0", "b1", "b2", "b3"]],
+	var groups := [["V RUKOU a ŠTÍT  (LTM = použít / střílet, PTM = mířit)", ["rh", "lh"]],
+		["ZBRANĚ - 1 primární, 2 sekundární (jednoruční); Q = primární a zpět", ["back", "side"]],
+		["OPASEK - rychlý: klávesy 3 4 5 6 (do rukou, náboje nabijí)", ["b0", "b1", "b2", "b3"]],
 		["BATOH - pomalý: stojíš a hrabeš se (granáty, světlice... i odtud fungují svou klávesou)", ["p0", "p1", "p2", "p3", "p4", "p5"]]]
-	var names := {"rh": "pravá ruka", "lh": "levá ruka", "back": "na zádech (jen dlouhá zbraň)"}
+	var names := {"rh": "v rukou - jedna věc, zbraň oběma rukama", "lh": "štít (jen s jednoruční zbraní)", "back": "primární zbraň (klávesa 1)", "side": "sekundární zbraň - pistole, revolver, nůž (klávesa 2)"}
 	for g in groups:
 		var gl := _lbl(left, g[0], FRAME, 8)
 		gl.custom_minimum_size = Vector2(360, 0)
 		var row := GridContainer.new()
-		row.columns = 4 if g[1].size() == 4 else 3
+		row.columns = 4 if g[1].size() == 4 else (2 if g[1].size() == 2 else 3)
 		row.add_theme_constant_override("h_separation", 3)
 		row.add_theme_constant_override("v_separation", 3)
 		left.add_child(row)
 		for sl in g[1]:
 			var slot: String = sl
-			inv_buttons[slot] = _btn(row, "", func(): _slot_clicked(slot), Vector2(86 if g[1].size() == 4 else 116, 32))
+			inv_buttons[slot] = _btn(row, "", func(): _slot_clicked(slot), Vector2(86 if g[1].size() == 4 else (176 if g[1].size() == 2 else 116), 32))
 			inv_buttons[slot].tooltip_text = names.get(slot, "")
 	inv_info = _lbl(left, "", TEXT, 9)
 	var hint := _lbl(left, "Přetáhni věc (nebo klikni na ni a pak na místo), kam ji dát. Přetažení mimo okno ji zahodí před tebe. Z batohu to trvá a stojíš. I zavře.", FRAME, 8)
@@ -751,23 +756,22 @@ func _keys_text(p: Node) -> String:
 		for s2 in p.inv:
 			if p.inv[s2]["id"] == id:
 				n += 1
-		return ("%dx, " % n if n > 1 else "") + ("v ruce" if sl in ["rh", "lh"] else ("opasek" if sl.begins_with("b") else "batoh - pomalu"))
+		return ("%dx, " % n if n > 1 else "") + ("v rukou" if sl in ["rh", "lh"] else ("opasek" if sl.begins_with("b") else ("pouzdro" if sl in ["back", "side"] else "batoh - pomalu")))
 	var hand := func(sl: String) -> String:
 		var it: Dictionary = p.item_in(sl)
 		return "-" if it.is_empty() else Game.ITEMS[it["id"]]["short"]
 	var melee: String = p.find_item(func(it): return Game.ITEMS[it["id"]]["type"] == "melee")
 	var lines := [
-		"LTM  pravá ruka / střelba: %s" % hand.call("rh"),
-		("PTM  mířit (obě ruce na zbrani)") if (Game.two_handed(p.item_in("rh").get("id", "")) or p.pistol_grip()) else ("PTM  levá ruka: %s" % hand.call("lh")),
+		"LTM  použít / střílet: %s" % hand.call("rh"),
+		"PTM  mířit (zbraň oběma rukama)",
 		"R    nabít zbraň",
-		"Q    hlavní zbraň do rukou / znovu Q: zpět, co jsi držel (%s)" % hand.call("back"),
-		"1-4  věc z opasku do ruky / nabít",
-		"G    granát (%s)" % where.call("grenade"),
-		"X    kouřový granát (%s)" % where.call("smoke_grenade"),
-		"B    mina (%s)" % where.call("mine"),
-		"5    světlice (%s)" % where.call("flare"),
+		"1    primární zbraň (%s)" % hand.call("back") if p.item_in("rh").get("home", "") != "back" else "1    primární zbraň - znovu 1 ji uklidí",
+		"2    sekundární zbraň (%s)" % hand.call("side") if p.item_in("rh").get("home", "") != "side" else "2    sekundární zbraň - znovu 2 ji uklidí",
+		"Q    primární do rukou / znovu Q: zpět, co jsi držel",
+		"3-6  věc z opasku do rukou / nabít",
+		"G granát %d   X kouř %d   B mina %d   7 světlice %d" % [p.inv.values().filter(func(it): return it["id"] == "grenade").size(), p.inv.values().filter(func(it): return it["id"] == "smoke_grenade").size(), p.inv.values().filter(func(it): return it["id"] == "mine").size(), p.inv.values().filter(func(it): return it["id"] == "flare").size()],
 		"Backspace  zahodit, co máš v ruce",
-		"H    lékárnička: do ruky, pak ošetří spoluhráče / tebe (%s)" % where.call("medkit"),
+		"H    lékárnička - do rukou, pak ošetří (%s)" % where.call("medkit"),
 		"E    táhnout padlého / sebrat / civilista / Kondor (drž)",
 		"V    rána zblízka (%s)" % ("nemáš nůž ani obušek" if melee == "" else Game.ITEMS[p.inv[melee]["id"]]["short"]),
 		"F    svítilna na helmě",
@@ -849,7 +853,6 @@ func _refresh_inventory() -> void:
 		var key: String = SLOT_KEY.get(s, "")
 		var two_h := Game.two_handed(p.item_in("rh").get("id", ""))
 		if s == "rh": key = "LTM"
-		elif s == "lh": key = "PTM"
 		var t: String = ("[%s] " % key if key != "" else "") + ("(prázdné)" if it.is_empty() else Game.ITEMS[it["id"]]["short"])
 		if not it.is_empty():
 			if it.has("loaded"): t += "\n%d / %d" % [int(it["loaded"]), Game.mag_size(it["id"])]

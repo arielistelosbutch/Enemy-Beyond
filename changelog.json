@@ -1,4 +1,12 @@
 {
+ "0.26": [
+  "Marodka podle herního času: zraněný žoldák po misi v kampani jde na marodku na několik HERNÍCH dní (podle toho, kolik zdraví ztratil; na Veterána déle). Dokud se neuzdraví, na misi nemůže - hostitel misi nespustí a napíše, kdo je na marodce. Čas se počítá na glóbu kampaně, ne podle hodin na zdi.",
+  "Až tři žoldáci: v \"Můj žoldák\" jsou nahoře tři sloty. Klikem vybereš, kdo jde na misi (označený >), prázdný slot = najmout nového, žoldáka jde i propustit. Peníze jsou tvoje a přecházejí s tebou.",
+  "Nový inventář: v rukou je vždy jen jedna věc, zbraň se drží oběma rukama (i pistole, revolver a Magnum). Levá ruka nese jen štít.",
+  "1 = primární zbraň, 2 = sekundární zbraň (jednoruční: pistole, revolver, nůž...), 3-6 = opasek. Co máš v rukou, se uklidí zpátky tam, odkud to bylo. Znovu stejná klávesa zbraň uklidí. Z opasku a pouzder je to rychlé, z batohu pomalé. Q = primární zbraň a znovu Q zpět, co jsi držel. Světlice je teď na 7.",
+  "Vysílačka (T): voják nejdřív pustí zbraň levou rukou a nechá ji klesnout v pravé mimo obraz, teprve pak zvedne vysílačku. Po puštění T ji uklidí a vezme zbraň zase do rukou. S vysílačkami v helmách (výzkum) se nic z toho nedělá - mluví se rovnou.",
+  "Výstroj na misi: sloty Primární (na začátku v rukou), Sekundární a Štít. Staré uložené výstroje se převedou samy (pistole z batohu jde do sekundárního slotu)."
+ ],
  "0.25": [
   "Nové ovládání: Shift sprint, C kleknout, Y (Z) lehnout, G granát, F baterka, 1-4 opasek, 5 světlice, Backspace zahodí věc z ruky. Přetažení věci z inventáře ven ji zahodí před tebe (ostatní ji můžou sebrat), v inventáři je i tlačítko Zahodit.",
   "Q: vytáhne hlavní zbraň a ostatní z rukou uklidí. Druhé Q vrátí do rukou to, co jsi držel předtím (pokud to ještě máš).",

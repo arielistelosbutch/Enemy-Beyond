@@ -61,6 +61,7 @@ func _process(delta: float) -> void:
 		"stance": _stance(p)
 		"wshot": _wshot(p)
 		"pose": _pose(p)
+		"invtest": _invtest(p)
 		"rlanim": _rlanim(p)
 		"ufoshot": _ufoshot(p)
 		"mapshot": _mapshot(p)
@@ -522,6 +523,59 @@ func _stance(p: Node) -> void:
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	out("RESULT stance: after rest stamina %.1f sprinting again %s" % [p.stamina, p.sprinting])
+	get_tree().quit()
+
+## One weapon in the hands: 1 / 2 / belt / Q / radio, checked step by step.
+func _invtest(p: Node) -> void:
+	if p == null or step > 0:
+		return
+	step = 1
+	_skip_brief()
+	await get_tree().create_timer(3.0).timeout
+	m().hud.inventory_open = false
+	m().set_process(false)
+	for a in m().aliens():
+		a.queue_free()
+	var show := func(tag: String) -> void:
+		var d := {}
+		for sl in ["rh", "lh", "back", "side", "b0", "b1", "b2", "b3"]:
+			d[sl] = p.item_in(sl).get("id", "-")
+		out("%s  rh=%s back=%s side=%s belt=%s,%s,%s,%s home=%s" % [tag, d.rh, d.back, d.side, d.b0, d.b1, d.b2, d.b3, p.item_in("rh").get("home", "")])
+	var wait := func() -> void:
+		await get_tree().process_frame
+		while p.busy > 0:
+			await get_tree().process_frame
+		await get_tree().process_frame
+	show.call("start")
+	p._weapon_key("side"); await wait.call(); show.call("key2")
+	p._weapon_key("back"); await wait.call(); show.call("key1")
+	var bi := -1
+	for i in 4:
+		var it: Dictionary = p.item_in("b%d" % i)
+		if not it.is_empty() and Game.ITEMS[it["id"]]["type"] != "ammo":
+			bi = i
+			break
+	if bi >= 0:
+		p._belt_key(bi); await wait.call(); show.call("belt%d" % (bi + 3))
+	p._q_swap(false); await wait.call(); show.call("Q")
+	p._q_swap(false); await wait.call(); show.call("Q again")
+	p._weapon_key("back"); await wait.call(); show.call("key1")
+	p._weapon_key("back"); await wait.call(); show.call("key1 again (holster)")
+	p._q_swap(false); await wait.call(); show.call("Q")
+	# radio with the rifle: the gun goes down first, then the radio comes up
+	Input.action_press("radio_talk")
+	var t0 := Time.get_ticks_msec()
+	while not p.radio_up and Time.get_ticks_msec() - t0 < 3000:
+		await get_tree().process_frame
+	out("radio up after %d ms, lowered %.2f, left=%s, tx=%s" % [Time.get_ticks_msec() - t0, p._radio_lower, p.held_l, p.radio_tx()])
+	Input.action_release("radio_talk")
+	for i in 30:
+		await get_tree().process_frame
+	out("radio down: up=%s lowered %.2f left=%s" % [p.radio_up, p._radio_lower, p.held_l])
+	# the loadout rules
+	out("refuse lh rifle: " + Game.slot_refuse("lh", "rifle"))
+	out("refuse side rifle: " + Game.slot_refuse("side", "rifle"))
+	out("RESULT invtest done")
 	get_tree().quit()
 
 ## Third-person look at our own mercenary in every stance (gun in the hands, prone on the belly).

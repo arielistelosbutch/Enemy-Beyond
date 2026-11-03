@@ -36,6 +36,7 @@ var t := 0.0
 
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	Net.blocked.connect(_alert)
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	if not Campaign.active and not Campaign.viewer and not Campaign.load_campaign():
 		Campaign.new_campaign()

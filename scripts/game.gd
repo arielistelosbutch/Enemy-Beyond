@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.25 prototyp"
-const VERSION_NUM := "0.25"
+const VERSION := "0.26 prototyp"
+const VERSION_NUM := "0.26"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -129,13 +129,40 @@ func fetch_time(id: String, from_slot: String) -> float:
 		return 0.3 + w * 0.04
 	if from_slot == "back":
 		return 0.8
+	if from_slot == "side":
+		return 0.45
 	return 0.25
 
-const SLOTS := ["rh", "lh", "back", "b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]
-const SLOT_NAMES := {"rh": "Pravá ruka", "lh": "Levá ruka", "back": "Na zádech", "b": "Opasek", "p": "Batoh"}
+## Where a thing may go: "" = fine, else why not. One weapon in the hands at a time; the left
+## hand only carries the shield. 1 = primary weapon, 2 = secondary (a sidearm), 3-6 = belt.
+func slot_refuse(slot: String, id: String) -> String:
+	var t: String = ITEMS.get(id, {}).get("type", "")
+	match slot:
+		"rh":
+			if t == "ammo": return "Náboje se do ruky neberou - nabíjí se klávesou R."
+			if t == "shield": return "Štít patří do levé ruky."
+		"lh":
+			if t != "shield": return "Levá ruka drží jen štít - zbraň se drží oběma rukama."
+		"back":
+			if t != "weapon" and t != "melee": return "Primární slot je jen pro zbraň."
+		"side":
+			if t != "weapon" and t != "melee": return "Sekundární slot je jen pro zbraň."
+			if two_handed(id): return "Do sekundárního slotu patří jen jednoruční zbraň (pistole, revolver, nůž...)."
+	return ""
 
-# ---- the mercenary (kept between sessions in user://merc.cfg) ----
-var merc := {}
+const SLOTS := ["rh", "lh", "back", "side", "b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]
+const SLOT_NAMES := {"rh": "V rukou", "lh": "Štít", "back": "Primární zbraň", "side": "Sekundární zbraň", "b": "Opasek", "p": "Batoh"}
+
+# ---- the mercenaries (kept between sessions in user://merc.cfg) ----
+## a player keeps up to three; one of them (merc) goes on missions, the wounded wait at the sick bay
+const MERC_SLOTS := 3
+var mercs: Array = []
+var active := 0
+var merc := {}:
+	set(v):
+		merc = v
+		if active < mercs.size():
+			mercs[active] = v
 var seed_override := -1
 var test_phase := 0
 var open_screen := ""      # main menu screen to open (from the globe)
@@ -172,9 +199,10 @@ func _setup_input() -> void:
 		"move_left": [KEY_A], "move_right": [KEY_D],
 		"sprint": [KEY_SHIFT], "crouch": [KEY_C, KEY_CTRL], "jump": [KEY_SPACE],
 		"reload": [KEY_R], "flashlight": [KEY_F], "use": [KEY_E], "heal": [KEY_H],
-		"grenade": [KEY_G], "flare": [KEY_5], "swap": [KEY_Q], "inventory": [KEY_I],
+		"grenade": [KEY_G], "flare": [KEY_7], "swap": [KEY_Q], "inventory": [KEY_I],
 		"pause": [KEY_ESCAPE], "prone": [KEY_Z, KEY_Y], "melee": [KEY_V], "smoke": [KEY_X], "mine": [KEY_B],
-		"belt1": [KEY_1], "belt2": [KEY_2], "belt3": [KEY_3], "belt4": [KEY_4],
+		"primary": [KEY_1], "secondary": [KEY_2],
+		"belt1": [KEY_3], "belt2": [KEY_4], "belt3": [KEY_5], "belt4": [KEY_6],
 		"talk": [KEY_CAPSLOCK, KEY_N], "radio_talk": [KEY_T, KEY_K], "mic_toggle": [KEY_TAB], "drop": [KEY_BACKSPACE],
 	}
 	for action in keys:
@@ -398,15 +426,69 @@ func pick_talent(id: String) -> void:
 func load_merc() -> void:
 	var cf := ConfigFile.new()
 	if cf.load("user://merc.cfg") == OK:
-		merc = cf.get_value("merc", "data", {})
-	if merc.is_empty():
-		merc = new_merc()
-		save_merc()
+		mercs = cf.get_value("merc", "roster", [])
+		active = int(cf.get_value("merc", "active", 0))
+		if mercs.is_empty():
+			var one: Dictionary = cf.get_value("merc", "data", {})
+			if not one.is_empty():
+				mercs = [one]
+	if mercs.is_empty():
+		mercs = [new_merc()]
+	active = clampi(active, 0, mercs.size() - 1)
+	merc = mercs[active]
+	# wounds from before 0.26 healed in real time - let them be healed
+	for m in mercs:
+		if m.has("injury_time"):
+			m.erase("injury_time")
+			m.erase("injury")
+	save_merc()
 
 func save_merc() -> void:
+	if active < mercs.size():
+		mercs[active] = merc
 	var cf := ConfigFile.new()
 	cf.set_value("merc", "data", merc)
+	cf.set_value("merc", "roster", mercs)
+	cf.set_value("merc", "active", active)
 	cf.save("user://merc.cfg")
+
+## Another mercenary from the roster goes on the next mission (the purse goes with the player).
+func switch_merc(i: int) -> void:
+	if i < 0 or i >= mercs.size() or i == active:
+		return
+	var money := int(merc.get("money", 0))
+	merc["money"] = 0
+	mercs[active] = merc
+	active = i
+	merc = mercs[i]
+	merc["money"] = int(merc.get("money", 0)) + money
+	save_merc()
+	Net.reregister()
+
+## A new recruit in a free slot (made with the creation screen afterwards).
+func hire_merc() -> int:
+	if mercs.size() >= MERC_SLOTS:
+		return -1
+	var m := new_merc()
+	mercs.append(m)
+	save_merc()
+	return mercs.size() - 1
+
+## Dismiss a mercenary for good (never the last one).
+func dismiss_merc(i: int) -> void:
+	if mercs.size() <= 1 or i < 0 or i >= mercs.size():
+		return
+	var money := int(mercs[i].get("money", 0))
+	var was_active := i == active
+	mercs.remove_at(i)
+	if i < active:
+		active -= 1
+	active = clampi(active, 0, mercs.size() - 1)
+	merc = mercs[active]
+	if was_active:
+		merc["money"] = int(merc.get("money", 0)) + money
+		Net.reregister()
+	save_merc()
 
 # ---- difficulty: "normal" or "veteran" (the host's choice decides the mission) ----
 var difficulty := "normal"
@@ -479,16 +561,50 @@ func save_settings() -> void:
 	cf.set_value("voice", "volumes", voice_volumes)
 	cf.save("user://settings.cfg")
 
-## Health still missing from earlier wounds (heals with real time).
-func injury_now(m: Dictionary) -> float:
-	var inj := float(m.get("injury", 0.0))
-	if inj <= 0:
+## Wounds heal in GAME time: days on the campaign clock (any campaign the player is in -
+## days that pass in a campaign count, real time does not).
+const HEAL_HP_PER_DAY := 5.0
+func wound(m: Dictionary, hp_lost: float, cid: String, day: float) -> float:
+	if hp_lost < 1.0:
 		return 0.0
-	var mins := (Time.get_unix_time_from_system() - float(m.get("injury_time", 0.0))) / 60.0
-	return max(0.0, inj - mins / HEAL_MINUTES_PER_HP)
+	var days := maxf(1.0, ceilf(hp_lost / HEAL_HP_PER_DAY * (1.0 if veteran() else 0.6)))
+	m["injury"] = hp_lost
+	m["heal_days"] = days
+	m["heal_cid"] = cid
+	m["heal_seen"] = day
+	return days
 
-func heal_minutes_left(m: Dictionary) -> int:
-	return int(ceil(injury_now(m) * HEAL_MINUTES_PER_HP))
+## counts the days that passed on the campaign clock since we last looked
+func tick_injury(m: Dictionary) -> void:
+	if float(m.get("heal_days", 0.0)) <= 0.0 or not Campaign.data.has("day"):
+		return
+	var cid := str(Campaign.data.get("cid", ""))
+	var d := float(Campaign.data["day"])
+	if str(m.get("heal_cid", "")) == cid:
+		m["heal_days"] = float(m["heal_days"]) - maxf(0.0, d - float(m.get("heal_seen", d)))
+	m["heal_cid"] = cid
+	m["heal_seen"] = d
+	if float(m["heal_days"]) <= 0.0:
+		m.erase("heal_days")
+		m.erase("injury")
+
+func heal_days_left(m: Dictionary) -> float:
+	tick_injury(m)
+	return float(m.get("heal_days", 0.0))
+
+func can_deploy(m: Dictionary) -> bool:
+	return heal_days_left(m) <= 0.0
+
+## health still missing (only while on the sick bay - and then he does not go anyway)
+func injury_now(m: Dictionary) -> float:
+	return float(m.get("injury", 0.0)) if heal_days_left(m) > 0.0 else 0.0
+
+func sick_text(m: Dictionary) -> String:
+	var d := heal_days_left(m)
+	if d <= 0.0:
+		return ""
+	var h := ceili(d * 24.0)
+	return "NA MARODCE ještě %s (herního času)" % (("%d h" % h) if h < 24 else ("%.1f dne" % d))
 
 # ---- loadout: chosen in the menu from what the base can spare ------------------------
 const STASH := {"sniper": 1, "sniper_clip": 3, "rifle": 1, "pistol": 1, "shotgun": 1, "magnum": 1, "autocannon": 1, "minigun": 1, "rocket_launcher": 1,
@@ -500,14 +616,14 @@ const STASH_VETERAN := {"sniper": 1, "sniper_clip": 2, "rifle": 1, "pistol": 1, 
 	"minigun_belt": 1, "rocket": 1, "grenade": 1, "smoke_grenade": 1, "mine": 1, "flare": 2, "medkit": 1, "scanner": 1, "radio": 4,
 	"vesta": 1, "stit": 1, "pancir": 1}
 const DEFAULT_LOADOUT := {"rh": "rifle", "back": "", "b0": "scanner", "b1": "rifle_clip", "b2": "rifle_clip", "b3": "radio",
-	"p0": "medkit", "p1": "pistol", "p2": "knife", "p3": "flare", "p4": "grenade", "p5": "smoke_grenade"}
+	"side": "pistol", "p0": "medkit", "p1": "pistol_clip", "p2": "knife", "p3": "flare", "p4": "grenade", "p5": "smoke_grenade"}
 ## Starting kits by soldier type (trimmed to what the base has).
 const KITS := {
-	"Střelec": {"rh": "rifle", "b0": "rifle_clip", "b1": "rifle_clip", "b2": "medkit", "b3": "radio", "p0": "rifle_clip", "p1": "pistol", "p2": "grenade", "p3": "flare", "p4": "scanner", "p5": "knife", "armor": "vesta"},
-	"Odstřelovač": {"rh": "sniper", "b0": "sniper_clip", "b1": "sniper_clip", "b2": "pistol_clip", "b3": "radio", "p0": "sniper_clip", "p1": "pistol", "p2": "knife", "p3": "flare", "p4": "smoke_grenade", "p5": "medkit", "armor": "vesta"},
-	"Útočník": {"rh": "shotgun", "b0": "shells", "b1": "shells", "b2": "grenade", "b3": "radio", "p0": "shells", "p1": "magnum", "p2": "magnum_rounds", "p3": "grenade", "p4": "knife", "p5": "flare", "armor": "vesta"},
-	"Těžký": {"rh": "autocannon", "b0": "ac_clip", "b1": "ac_clip", "b2": "grenade", "b3": "radio", "p0": "ac_clip", "p1": "pistol", "p2": "pistol_clip", "p3": "flare", "armor": "vesta"},
-	"Zdravotník": {"rh": "rifle", "b0": "rifle_clip", "b1": "medkit", "b2": "smoke_grenade", "b3": "radio", "p0": "rifle_clip", "p1": "medkit", "p2": "smoke_grenade", "p3": "flare", "p4": "pistol", "p5": "stun_baton", "armor": "vesta"},
+	"Střelec": {"rh": "rifle", "b0": "rifle_clip", "b1": "rifle_clip", "b2": "medkit", "b3": "radio", "side": "pistol", "p0": "rifle_clip", "p1": "pistol_clip", "p2": "grenade", "p3": "flare", "p4": "scanner", "p5": "knife", "armor": "vesta"},
+	"Odstřelovač": {"rh": "sniper", "b0": "sniper_clip", "b1": "sniper_clip", "b2": "pistol_clip", "b3": "radio", "side": "pistol", "p0": "sniper_clip", "p1": "pistol_clip", "p2": "knife", "p3": "flare", "p4": "smoke_grenade", "p5": "medkit", "armor": "vesta"},
+	"Útočník": {"rh": "shotgun", "b0": "shells", "b1": "shells", "b2": "grenade", "b3": "radio", "side": "magnum", "p0": "shells", "p1": "magnum_rounds", "p2": "magnum_rounds", "p3": "grenade", "p4": "knife", "p5": "flare", "armor": "vesta"},
+	"Těžký": {"rh": "autocannon", "b0": "ac_clip", "b1": "ac_clip", "b2": "grenade", "b3": "radio", "side": "pistol", "p0": "ac_clip", "p1": "pistol_clip", "p2": "pistol_clip", "p3": "flare", "armor": "vesta"},
+	"Zdravotník": {"rh": "rifle", "b0": "rifle_clip", "b1": "medkit", "b2": "smoke_grenade", "b3": "radio", "p0": "rifle_clip", "p1": "medkit", "p2": "smoke_grenade", "p3": "flare", "side": "pistol", "p4": "pistol_clip", "p5": "stun_baton", "armor": "vesta"},
 	"Ženista": {"rh": "shotgun", "b0": "shells", "b1": "mine", "b2": "grenade", "b3": "radio", "p0": "shells", "p1": "mine", "p2": "grenade", "p3": "smoke_grenade", "p4": "scanner", "p5": "flare"},
 	"Štítař": {"rh": "pistol", "lh": "stit", "armor": "vesta", "b0": "pistol_clip", "b1": "pistol_clip", "b2": "grenade", "b3": "radio", "p0": "pistol_clip", "p1": "medkit", "p2": "smoke_grenade", "p3": "flare", "p4": "knife"},
 }
@@ -537,17 +653,44 @@ func valid_loadout(vet: bool) -> Dictionary:
 		var id: String = src[slot]
 		if id == "" or not ITEMS.has(id):
 			continue
-		if slot == "lh" and out.has("rh") and two_handed(out["rh"]):
+		if int(left.get(id, 0)) <= 0:
 			continue
-		if slot == "back" and not two_handed(id):
+		# older loadouts: a gun on the back with nothing in the hands becomes the primary,
+		# a second gun goes to the secondary slot (if it fits) or into the pack
+		var to: String = slot
+		if slot == "back":
+			to = "rh" if not out.has("rh") else "p"
+		if to == "rh" and slot_refuse("rh", id) != "":
+			to = "p"
+		if to == "lh" and slot_refuse("lh", id) != "":
+			to = "side" if slot_refuse("side", id) == "" and not out.has("side") else "p"
+		if to == "lh" and out.has("rh") and two_handed(out["rh"]):
+			to = "p"
+		if to == "side" and slot_refuse("side", id) != "":
+			to = "p"
+		if to == "p":
+			to = ""
+			for ps in ["p0", "p1", "p2", "p3", "p4", "p5", "b0", "b1", "b2", "b3"]:
+				if not out.has(ps) and not src.has(ps):
+					to = ps
+					break
+			if to == "":
+				continue
+		if out.has(to):
 			continue
-		if int(left.get(id, 0)) > 0:
-			left[id] = int(left[id]) - 1
-			out[slot] = id
+		left[id] = int(left[id]) - 1
+		out[to] = id
 	# armour is worn, not carried in a slot
 	var arm: String = String(src.get("armor", ""))
 	if arm != "" and ITEMS.has(arm) and int(left.get(arm, 0)) > 0:
 		out["armor"] = arm
+	# older saved loadouts: the pistol in the pack becomes the secondary weapon
+	if not out.has("side"):
+		for ps in ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
+			if out.has(ps) and ITEMS[out[ps]]["type"] == "weapon" and slot_refuse("side", out[ps]) == "":
+				out["side"] = out[ps]
+				out.erase(ps)
+				break
 	# everybody gets a radio (older saved loadouts did not have one): first free belt/pack slot
 	if not "radio" in out.values() and int(left.get("radio", 0)) > 0:
 		for slot in ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:

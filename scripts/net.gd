@@ -6,6 +6,7 @@ signal roster_changed
 signal connected_ok
 signal connection_failed(reason: String)
 signal mission_started
+signal blocked(why: String)
 
 const PORT := 7777
 const MAX_PLAYERS := 4
@@ -69,6 +70,7 @@ func close() -> void:
 		Campaign.data = {}
 
 func _on_connected() -> void:
+	Game.merc["sick"] = Game.heal_days_left(Game.merc)
 	_register.rpc_id(1, Game.merc)
 	connected_ok.emit()
 
@@ -113,6 +115,11 @@ var last_result := ""      # shown on the globe when the team comes back
 func start_mission(params := {}) -> void:
 	if not multiplayer.is_server():
 		return
+	if params.has("cid"):
+		var sick := sick_in_team()
+		if not sick.is_empty():
+			blocked.emit("Na marodce: %s.\nZraněný žoldák nemůže na misi, dokud neuplyne doba léčení (herní čas). Hráč si může vybrat jiného ze svých žoldáků v \"Můj žoldák\"." % ", ".join(sick))
+			return
 	var s := Game.seed_override if Game.seed_override >= 0 else randi() % 1000000
 	if params.has("seed") and Game.seed_override < 0:
 		s = int(params["seed"])
@@ -224,6 +231,11 @@ func _wallets(w: Dictionary) -> void:
 func _base_snapshot(d: Dictionary) -> void:
 	Campaign.data = d
 	Campaign.viewer = true
+	# days passed on the host's globe: our wounds heal - tell him when we are fit again
+	var was := float(Game.merc.get("sick", 0.0))
+	if was > 0.0 and Game.heal_days_left(Game.merc) <= 0.0:
+		Game.save_merc()
+		reregister()
 	base_changed.emit()
 
 func give_money(to: int, amount: int) -> void:
@@ -272,6 +284,29 @@ signal note(text: String)
 @rpc("authority", "call_local", "reliable")
 func _note(t: String) -> void:
 	note.emit(t)
+
+## The player picked another mercenary (or his wounds changed): the host gets the new one.
+func reregister() -> void:
+	Game.tick_injury(Game.merc)
+	Game.merc["sick"] = Game.heal_days_left(Game.merc)
+	if not is_online() or multiplayer.is_server():
+		if roster.has(1) or not is_online():
+			roster[1] = {"name": Game.merc["name"], "merc": Game.merc}
+			if is_online():
+				_set_roster.rpc(roster)
+			roster_changed.emit()
+	else:
+		_register.rpc_id(1, Game.merc)
+
+## Who cannot go: mercenaries still on the sick bay (game time).
+func sick_in_team() -> Array:
+	var out := []
+	Game.merc["sick"] = Game.heal_days_left(Game.merc)
+	for id in roster:
+		var m: Dictionary = Game.merc if id == 1 else roster[id].get("merc", {})
+		if float(m.get("sick", 0.0)) > 0.0:
+			out.append(str(m.get("name", "?")))
+	return out
 
 ## A client changed his mercenary (talent, looks): tell the host.
 func update_merc() -> void:

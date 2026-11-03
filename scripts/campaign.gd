@@ -175,7 +175,7 @@ func new_campaign() -> void:
 		"stats": {"kills": 0, "captures": 0, "missions": 0, "won": 0},
 		"base": [], "log": ["Kampaň začala. Základna v rokli na Vysočině je v provozu."],
 		"flights": [], "sokol_ready": 0.0,
-		"lost": false,
+		"lost": false, "cid": str(randi()),
 	}
 	var b := []
 	for i in GRID_W * GRID_H:
@@ -193,6 +193,8 @@ func load_campaign() -> bool:
 	if cf.load("user://campaign.cfg") != OK:
 		return false
 	data = cf.get_value("campaign", "data", {})
+	if not data.is_empty() and not data.has("cid"):
+		data["cid"] = str(randi())
 	active = not data.is_empty()
 	return active
 
@@ -586,6 +588,8 @@ func mission_params(m: Dictionary) -> Dictionary:
 	p["type_name"] = MTYPES[m["type"]]["name"]
 	p["stash"] = stash()
 	p["research"] = data["research"]["done"].duplicate()
+	p["cid"] = str(data.get("cid", ""))
+	p["day"] = float(data["day"])
 	return p
 
 ## The base fell to a raid (lost defence or nobody went): money, a facility and gear are gone.

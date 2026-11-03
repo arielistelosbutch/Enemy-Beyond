@@ -152,6 +152,11 @@ func _ready() -> void:
 	mission = get_tree().current_scene
 	if is_multiplayer_authority():
 		inv = Game.default_loadout()
+		if inv.has("rh"):
+			inv["rh"]["home"] = "back"
+		for hs in ["side", "b0", "b1", "b2", "b3"]:
+			if inv.has(hs):
+				inv[hs]["home"] = hs
 		armor = String(Game.valid_loadout(Game.veteran()).get("armor", ""))
 		var ids := []
 		for sl in inv:
@@ -296,8 +301,9 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 		base = Vector3(base.x * 0.55, base.y - 0.03, base.z + 0.08)
 		rot = Vector3(0.0, 0.02, 0.0)
 	if _radio_lower > 0.01:
-		base = base.lerp(Vector3(0.2, -0.36, -0.34), _radio_lower)
-		rot = rot.lerp(Vector3(0.55, 0.45, 0.25), _radio_lower)
+		# the left hand lets go, the gun sinks in the right hand out of sight
+		base = base.lerp(Vector3(0.32, -0.8, -0.3), _radio_lower)
+		rot = rot.lerp(Vector3(1.0, 0.55, 0.35), _radio_lower)
 	if sprinting:
 		# weapon swung low across the body, swinging with the stride
 		base = Vector3(0.12, -0.32, -0.32) + Vector3(sin(_vm_t) * 0.04, -abs(cos(_vm_t)) * 0.04, 0)
@@ -671,21 +677,16 @@ func timed_move(a: String, b: String) -> bool:
 	after.erase(a); after.erase(b)
 	after[b] = ia
 	if ib != null: after[a] = ib
+	for sl in after:
+		if sl in ["rh", "lh", "back", "side"]:
+			var why := Game.slot_refuse(sl, after[sl]["id"])
+			if why != "":
+				mission.hud.message(why, 2.0)
+				return false
 	var r: Dictionary = after.get("rh", {})
 	var l: Dictionary = after.get("lh", {})
-	for hand in [r, l]:
-		if not hand.is_empty() and Game.ITEMS[hand["id"]]["type"] == "ammo":
-			mission.hud.message("Náboje se do ruky neberou - nabíjí se klávesou R.", 2.0)
-			return false
 	if not r.is_empty() and Game.two_handed(r["id"]) and not l.is_empty():
-		mission.hud.message("Obouruční zbraň potřebuje obě ruce - uvolni levou.", 2.0)
-		return false
-	if not l.is_empty() and Game.two_handed(l["id"]):
-		mission.hud.message("Obouruční zbraň patří do pravé ruky (drží se oběma).", 2.0)
-		return false
-	var bk: Dictionary = after.get("back", {})
-	if not bk.is_empty() and not Game.two_handed(bk["id"]):
-		mission.hud.message("Na záda patří jen dlouhá zbraň.", 2.0)
+		mission.hud.message("Obouruční zbraň potřebuje obě ruce - štít nejdřív odlož.", 2.0)
 		return false
 	var t: float = Game.fetch_time(ia["id"], a)
 	if ib != null:
@@ -700,76 +701,112 @@ func timed_move(a: String, b: String) -> bool:
 		inv.erase(a); inv.erase(b)
 		inv[b] = ia
 		if ib != null: inv[a] = ib
+		for hs in [a, b]:
+			if inv.has(hs) and hs in ["back", "side", "b0", "b1", "b2", "b3"]:
+				inv[hs]["home"] = hs
 		_update_held()
 		Game.play_ui(self, "reload", -16))
 	return true
 
-## Where an item taken out by a shortcut came from (so Q can put it back there).
+## Where an item taken out by a shortcut came from (medkit by H).
 var _came_from := {}
-## What the hands held before Q brought the main gun out (Q again brings it back).
-var _q_set := {}
+## Q: the slot of what the hands held before Q brought the primary out (Q again brings it back).
+var _q_prev := ""
 
-## Q: everything in the hands is put away and the main gun comes out; Q again puts the gun
-## away and brings back what the hands held before (whatever of it is still there).
-func _q_swap(two: bool) -> void:
-	var rh_id: String = item_in("rh").get("id", "")
-	var primary_out: bool = two or (rh_id != "" and _q_set.has("primary") and rh_id == String(_q_set["primary"]))
-	if primary_out:
-		var gun_now: Dictionary = inv["rh"]
-		var want := _q_set.duplicate()
-		_q_set = {}
-		var gun_to := "back" if two and not inv.has("back") else _free_slot([])
-		if gun_to == "":
-			mission.hud.message("Není kam zbraň dát.", 1.5)
+## One thing in the hands at a time. 1 = primary weapon, 2 = secondary, 3-6 = belt; what the
+## hands held goes back where it came from (its home), else to the slot it is swapped with,
+## else to a free belt/pack slot. Belt and holsters are quick, the backpack is a dig.
+func draw_slot(src: String) -> void:
+	if busy > 0 or not inv.has(src) or src == "rh":
+		return
+	var it: Dictionary = inv[src]
+	var why := Game.slot_refuse("rh", it["id"])
+	if why != "":
+		mission.hud.message(why, 2.0)
+		return
+	var cur := item_in("rh")
+	var put := ""
+	if not cur.is_empty():
+		var home: String = cur.get("home", "")
+		if home != "" and home != src and not inv.has(home) and Game.slot_refuse(home, cur["id"]) == "":
+			put = home
+		elif Game.slot_refuse(src, cur["id"]) == "":
+			put = src          # straight swap
+		else:
+			put = _free_slot([src])
+		if put == "":
+			mission.hud.message("Není kam uklidit %s." % Game.ITEMS[cur["id"]]["short"], 1.5)
 			return
-		_start_busy(0.8 if gun_to == "back" else Game.fetch_time(gun_now["id"], gun_to), "Dávám zbraň pryč", func():
-			if inv.get("rh") != gun_now:
-				return
+	# a long gun and the shield do not go together: the shield goes off the arm
+	var shield_to := ""
+	if Game.two_handed(it["id"]) and inv.has("lh"):
+		shield_to = _free_slot([src, put])
+		if shield_to == "":
+			mission.hud.message("S dlouhou zbraní štít neudržíš a není kam ho dát.", 2.0)
+			return
+	var t: float = Game.fetch_time(it["id"], src)
+	if put != "":
+		t += Game.fetch_time(cur["id"], put) * 0.6
+	t *= 0.65 if Game.has_talent(merc, "rychle_ruce") else 1.0
+	var dig := src.begins_with("p") or put.begins_with("p")
+	busy_stand = dig
+	if src in ["back", "side", "b0", "b1", "b2", "b3"]:
+		it["home"] = src
+	_start_busy(t, ("Hrabu se v batohu" if dig else "Beru") + ": " + Game.ITEMS[it["id"]]["short"], func():
+		busy_stand = false
+		if inv.get(src) != it or (not cur.is_empty() and inv.get("rh") != cur):
+			return
+		inv.erase(src)
+		if not cur.is_empty():
 			inv.erase("rh")
-			inv[gun_to] = gun_now
-			# the old set back into the hands (from the belt quickly, from the pack it was there already)
-			for hand in ["rh", "lh"]:
-				var id: String = want.get(hand, "")
-				if id == "" or inv.has(hand):
-					continue
-				var from := ""
-				for s2 in ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
-					if item_in(s2).get("id", "") == id:
-						from = s2
-						break
-				if from != "" and not from in ["rh", "lh"]:
-					inv[hand] = inv[from]
-					inv.erase(from)
-			_update_held()
-			Game.play_ui(self, "reload", -16))
+			inv[put] = cur
+			if put in ["back", "side", "b0", "b1", "b2", "b3"]:
+				cur["home"] = put
+		if shield_to != "":
+			inv[shield_to] = inv["lh"]
+			inv.erase("lh")
+		inv["rh"] = it
+		_update_held()
+		Game.play_ui(self, "reload", -16))
+
+## Puts what the hands hold away (home, else a free slot) - hands empty.
+func holster() -> void:
+	var cur := item_in("rh")
+	if cur.is_empty() or busy > 0:
 		return
-	# bring the main gun out: the long one from the back, else the best gun on the belt / in the pack
-	var src := "back" if inv.has("back") else ""
-	if src == "":
-		for s3 in ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
-			var it3 := item_in(s3)
-			if not it3.is_empty() and Game.ITEMS[it3["id"]]["type"] == "weapon":
-				src = s3
-				break
-	if src == "":
-		mission.hud.message("Žádnou zbraň u sebe nemáš.", 1.5)
+	var home: String = cur.get("home", "")
+	var to := home if home != "" and not inv.has(home) else _free_slot([])
+	if to == "":
+		mission.hud.message("Není kam to uklidit.", 1.5)
 		return
-	_q_set = {"rh": item_in("rh").get("id", ""), "lh": item_in("lh").get("id", ""), "primary": inv[src]["id"]}
-	if src == "back":
-		if inv.has("lh") or inv.has("rh"):
-			_stow_hands_take_back()
+	timed_move("rh", to)
+
+## Q: the primary weapon into the hands; Q again brings back what the hands held before.
+func _q_swap(_two: bool) -> void:
+	var rh := item_in("rh")
+	if not rh.is_empty() and rh.get("home", "") == "back":
+		if _q_prev != "" and inv.has(_q_prev):
+			draw_slot(_q_prev)
 		else:
-			timed_move("back", "rh")
-	else:
-		if inv.has("rh"):
-			var to := _free_slot([src])
-			if to == "":
-				mission.hud.message("Není kam uklidit, co máš v ruce.", 1.5)
-				return
-			timed_move("rh", to)
-			get_tree().create_timer(0.9).timeout.connect(func(): if is_instance_valid(self) and inv.has(src) and not inv.has("rh"): timed_move(src, "rh"))
-		else:
-			timed_move(src, "rh")
+			holster()
+		_q_prev = ""
+		return
+	if not inv.has("back"):
+		mission.hud.message("Nemáš primární zbraň (slot 1).", 1.5)
+		return
+	_q_prev = String(rh.get("home", "")) if not rh.is_empty() else ""
+	draw_slot("back")
+
+## Keys 1 and 2: primary / secondary weapon. Pressed again with it in the hands: put it away.
+func _weapon_key(slot: String) -> void:
+	var rh := item_in("rh")
+	if not rh.is_empty() and rh.get("home", "") == slot:
+		holster()
+		return
+	if not inv.has(slot):
+		mission.hud.message("Ve slotu %s nic není." % ("1 (primární zbraň)" if slot == "back" else "2 (sekundární zbraň)"), 1.5)
+		return
+	draw_slot(slot)
 
 func _free_slot(skip: Array) -> String:
 	for sl in ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
@@ -787,26 +824,30 @@ func drop_slot(slot: String) -> void:
 	mission.drop_item(it, global_position + Vector3(0, 0.3, 0) - global_transform.basis.z * 0.9)
 	mission.hud.message("Zahozeno: %s" % Game.ITEMS[it["id"]]["short"], 1.5)
 
-# ---- T: the radio. On the belt it is in the hand at once, from the pack it takes a moment.
-# A long gun is lowered in the right hand while you talk; a one-handed one stays up.
+# ---- T: the radio. On the belt it is at hand at once, from the pack it takes a moment.
+# Whatever is in the hands goes down first (the left hand lets go, the gun sinks out of
+# sight in the right), then the radio comes up; let go of T and the gun comes back up.
+# With radios in the helmets (research) nothing of this is needed.
 var radio_up := false
 var _radio_fetch := 0.0
 var _radio_lower := 0.0
+var _radio_have := false
 
 func _radio_tick(delta: float) -> void:
 	var held_t := Input.is_action_pressed("radio_talk") and not downed and not dead
 	if not held_t:
-		if radio_up or _radio_fetch > 0.0:
+		if radio_up or _radio_fetch > 0.0 or _radio_have:
 			radio_up = false
+			_radio_have = false
 			_radio_fetch = 0.0
 			_update_held()
-		_radio_lower = move_toward(_radio_lower, 0.0, delta * 4.0)
+		_radio_lower = move_toward(_radio_lower, 0.0, delta * 3.5)
 		return
 	if Game.has_research("vysilacky"):
 		return     # in the helmet: no hands needed
-	if not radio_up:
+	if not _radio_have:
 		var where := ""
-		for s in ["lh", "rh", "b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
+		for s in ["rh", "b0", "b1", "b2", "b3", "side", "p0", "p1", "p2", "p3", "p4", "p5"]:
 			if item_in(s).get("id", "") == "radio":
 				where = s
 				break
@@ -814,106 +855,47 @@ func _radio_tick(delta: float) -> void:
 			if Input.is_action_just_pressed("radio_talk"):
 				mission.hud.message("Nemáš vysílačku.", 1.5)
 			return
-		if where in ["lh", "rh"] or where.begins_with("b"):
-			radio_up = true
-		else:
+		if where.begins_with("p"):
 			if _radio_fetch <= 0.0:
 				_radio_fetch = 1.3
 				mission.hud.message("Lovím vysílačku z batohu...", 1.3)
 			_radio_fetch -= delta
-			if _radio_fetch <= 0.0:
-				radio_up = true
-			else:
+			if _radio_fetch > 0.0:
+				_radio_lower = move_toward(_radio_lower, 1.0, delta * 3.5)
 				return
-		if radio_up and item_in("lh").get("id", "") != "radio" and item_in("rh").get("id", "") != "radio":
-			held_l = "radio"
-			_show_items(held, "radio", held_back)
-	_radio_lower = move_toward(_radio_lower, 1.0 if Game.two_handed(held) else 0.0, delta * 4.0)
+		_radio_have = true
+	if held == "radio":
+		radio_up = true      # the radio itself is in the hands
+		return
+	# the hands are busy with something: down with it first, then the radio
+	var needs_down := held != ""
+	_radio_lower = move_toward(_radio_lower, 1.0 if needs_down else 0.0, delta * 3.5)
+	if not radio_up and (not needs_down or _radio_lower >= 0.98):
+		radio_up = true
+		held_l = "radio"
+		_show_items(held, "radio", held_back)
 
-## Q with a long gun on the back and something in the hands: the hand items go back
-## (where they came from, else the belt, else the backpack), then the gun comes off the shoulder.
-func _stow_hands_take_back() -> void:
-	var plan := {}      # hand -> slot
-	var taken := []
-	for hand in ["lh", "rh"]:
-		if not inv.has(hand):
-			continue
-		var id: String = inv[hand]["id"]
-		var to := ""
-		var pref: String = _came_from.get(id, "")
-		if pref != "" and not inv.has(pref) and not pref in taken:
-			to = pref
-		else:
-			for sl in ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
-				if not inv.has(sl) and not sl in taken:
-					to = sl
-					break
-		if to == "":
-			mission.hud.message("Není kam uklidit %s - opasek i batoh jsou plné." % Game.ITEMS[id]["short"], 2.0)
-			return
-		plan[hand] = to
-		taken.append(to)
-	var t := 0.8
-	var dig := false
-	for hand in plan:
-		t += Game.fetch_time(inv[hand]["id"], plan[hand])
-		dig = dig or String(plan[hand]).begins_with("p")
-	t *= 0.65 if Game.has_talent(merc, "rychle_ruce") else 1.0
-	var gun: Dictionary = inv["back"]
-	var snap := inv.duplicate()
-	busy_stand = dig
-	_start_busy(t, "Uklízím a beru ze zad: " + Game.ITEMS[gun["id"]]["short"], func():
-		busy_stand = false
-		if inv.get("back") != gun:
-			return
-		for hand in plan:
-			if inv.get(hand) != snap.get(hand) or inv.has(plan[hand]):
-				return
-		for hand in plan:
-			inv[plan[hand]] = inv[hand]
-			inv.erase(hand)
-		inv["rh"] = gun
-		inv.erase("back")
-		_update_held()
-		Game.play_ui(self, "reload", -16))
-
-## Keys 1-4: belt slot <-> hand. A one-handed item goes to the left hand when
-## the right is busy; a long gun in the hands goes on the back first.
+## Keys 3-6: a belt slot into the hands (ammunition on the belt reloads instead).
+## An empty belt slot takes what the hands hold.
 func _belt_key(i: int) -> void:
 	var slot := "b%d" % i
 	if not inv.has(slot):
-		# empty belt slot: put the left-hand (or right-hand) item there
-		if inv.has("lh"): timed_move("lh", slot)
-		elif inv.has("rh") and not Game.two_handed(inv["rh"]["id"]): timed_move("rh", slot)
+		if inv.has("rh"):
+			timed_move("rh", slot)
 		return
 	var id: String = inv[slot]["id"]
 	if Game.ITEMS[id]["type"] == "ammo":
-		# ammunition on the belt: the key reloads the gun that takes it
-		for hs in ["rh", "lh"]:
-			var g := gun_in(hs)
-			if not g.is_empty() and Game.ITEMS[g["id"]].get("ammo", "") == id:
-				_reload(g, Game.ITEMS[g["id"]])
-				return
+		var g := gun_in("rh")
+		if not g.is_empty() and Game.ITEMS[g["id"]].get("ammo", "") == id:
+			_reload(g, Game.ITEMS[g["id"]])
+			return
 		mission.hud.message("%s - do ruky se nebere, nabíjí se klávesou R." % Game.ITEMS[id]["short"], 2.0)
 		return
-	if Game.two_handed(id):
-		if inv.has("lh"):
-			mission.hud.message("Nejdřív uvolni levou ruku.", 1.5)
-			return
-		timed_move(slot, "rh")
-		return
 	var rh := item_in("rh")
-	if not rh.is_empty() and Game.two_handed(rh["id"]):
-		if inv.has("back"):
-			mission.hud.message("Na zádech už zbraň máš - dlouhou zbraň nejdřív odlož.", 1.5)
-			return
-		# sling the long gun, then the item into the left hand
-		inv["back"] = rh
-		inv.erase("rh")
-		_update_held()
-		timed_move(slot, "lh")
+	if not rh.is_empty() and rh.get("home", "") == slot:
+		holster()
 		return
-	timed_move(slot, "lh" if not inv.has("lh") or inv.has("rh") else "rh")
+	draw_slot(slot)
 
 # ---- input (owner only) ------------------------------------------------------------
 func _unhandled_input(event: InputEvent) -> void:
@@ -971,6 +953,7 @@ func _physics_process(delta: float) -> void:
 			# nobody crawls with an autocannon: it goes on the back (or down next to you)
 			if not inv.has("back"):
 				inv["back"] = hv
+				hv["home"] = "back"
 			else:
 				mission.drop_item(hv, global_position + Vector3(0, 0.2, 0) - global_transform.basis.z * 0.6)
 			inv.erase("rh")
@@ -1158,20 +1141,11 @@ func _actions(delta: float) -> void:
 	var two := not rh.is_empty() and Game.two_handed(rh["id"])
 	if _click_lock and not Input.is_action_pressed("fire") and not Input.is_action_pressed("aim"):
 		_click_lock = false
-	if not sprinting and not _click_lock:
-		if two or pistol_grip():
-			# long gun, or a pistol held in both hands: left button fires, right button aims
-			_use_hand("rh", Input.is_action_pressed("fire"), Input.is_action_just_pressed("fire"), delta)
-		else:
-			# crossed, like the hands: left button = right hand, right button = left hand
-			_use_hand("rh", Input.is_action_pressed("fire"), Input.is_action_just_pressed("fire"), delta)
-			_use_hand("lh", Input.is_action_pressed("aim"), Input.is_action_just_pressed("aim"), delta)
+	if not sprinting and not _click_lock and not radio_up and _radio_lower < 0.05:
+		# one thing in the hands: left button uses it, right button aims
+		_use_hand("rh", Input.is_action_pressed("fire"), Input.is_action_just_pressed("fire"), delta)
 	if Input.is_action_just_pressed("reload"):
 		var g := gun_in("rh")
-		var slot := "rh"
-		if g.is_empty() or int(g.get("loaded", 0)) >= Game.mag_size(g["id"]):
-			if not gun_in("lh").is_empty():
-				g = gun_in("lh"); slot = "lh"
 		if not g.is_empty():
 			_reload(g, Game.ITEMS[g["id"]])
 	if Input.is_action_just_pressed("swap") and busy <= 0:
@@ -1180,6 +1154,10 @@ func _actions(delta: float) -> void:
 	_act_tick()
 	if Input.is_action_just_pressed("drop") and not mission.hud.inventory_open:
 		drop_slot("lh" if inv.has("lh") and not inv.has("rh") else "rh")
+	if Input.is_action_just_pressed("primary") and busy <= 0:
+		_weapon_key("back")
+	if Input.is_action_just_pressed("secondary") and busy <= 0:
+		_weapon_key("side")
 	for i in 4:
 		if Input.is_action_just_pressed("belt%d" % (i + 1)):
 			_belt_key(i)
@@ -1914,22 +1892,10 @@ func _medkit() -> void:
 		if from == "":
 			mission.hud.message("Nemáš lékárničku.", 1.5)
 			return
-		var to := ""
-		if not inv.has("lh") and not Game.two_handed(item_in("rh").get("id", "")):
-			to = "lh"
-		elif not inv.has("rh"):
-			to = "rh"
-		if to == "" and Game.two_handed(item_in("rh").get("id", "")) and not inv.has("back"):
-			# sling the long gun on the back, the medkit goes into the right hand
-			inv["back"] = inv["rh"]
-			inv.erase("rh")
-			to = "rh"
-		if to == "":
-			mission.hud.message("Na lékárničku potřebuješ volnou ruku (Q dá pušku na záda).", 2.0)
-			return
-		mission.hud.message("Beru lékárničku do ruky - H ošetří, Q ji uklidí a vezme zbraň ze zad.", 2.5)
+		mission.hud.message("Beru lékárničku do rukou - H ošetří, Q vrátí zbraň.", 2.5)
 		_came_from["medkit"] = from
-		timed_move(from, to)
+		_q_prev = ""
+		draw_slot(from)
 		return
 	if heal_target() != null:
 		_treat_teammate(slot)
@@ -2215,8 +2181,9 @@ func _pick_up() -> void:
 		Game.play_ui(self, "ping", -8)
 		return
 	var slot := ""
-	for s in ["rh"] + Game.SLOTS:
-		if not inv.has(s):
+	var pid: String = it["item"]["id"]
+	for s in ["rh", "back", "side", "lh", "b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
+		if not inv.has(s) and Game.slot_refuse(s, pid) == "" and not (s == "rh" and inv.has("lh") and Game.two_handed(pid)):
 			slot = s
 			break
 	if slot == "":
@@ -2225,6 +2192,8 @@ func _pick_up() -> void:
 	mission.take_pickup.rpc(it["pid"])
 	var item: Dictionary = it["item"]
 	inv[slot] = item
+	if slot != "rh" and not slot.begins_with("p"):
+		item["home"] = slot
 	_update_held()
 	mission.hud.message("Sebral jsi: %s" % Game.ITEMS[item["id"]]["name"], 1.5)
 

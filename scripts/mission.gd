@@ -1431,7 +1431,7 @@ func _end(success: bool, why: String) -> void:
 			xp_text += "\nŽold: +%d kr (máš %d kr)%s" % [pay, purse, ("  - z toho nálezy %d kr" % me.salvage) if me.salvage > 0 else ""]
 		if me.dead or (me.downed and not me.global_position.distance_to(map["evac"]) < 3.5):
 			fate = "PADL - žoldák je mrtvý (úspory převzal nový žoldák)"
-			Game.merc = Game.new_merc()
+			Game.merc = Game.new_merc()      # the same slot gets a fresh recruit
 		else:
 			# experience: only the living learn
 			var xp: int = 40 + (120 if success else 0) + me.kills * 25 + me.captures * 60 + me.revives * 30
@@ -1439,12 +1439,13 @@ func _end(success: bool, why: String) -> void:
 			xp_text = "\nZkušenosti +%d  (%s)" % [xp, Game.rank_name(Game.merc)]
 			for g in gained:
 				xp_text += "\n" + g
-			if me.wounded:
+			if me.wounded or me.hp < me.max_hp - 0.5:
 				fate = "zraněn"
-				if Game.veteran():
-					Game.merc["injury"] = me.max_hp - me.hp
-					Game.merc["injury_time"] = Time.get_unix_time_from_system()
-					fate = "zraněn - uzdraví se za %d min" % Game.heal_minutes_left(Game.merc)
+				# campaign missions: off to the sick bay for some days of game time
+				if Net.mission_params.has("cid"):
+					var days := Game.wound(Game.merc, me.max_hp - me.hp, str(Net.mission_params["cid"]), float(Net.mission_params.get("day", 0.0)))
+					if days > 0.0:
+						fate = "zraněn - na marodce %d %s herního času (mezitím můžeš hrát za jiného žoldáka)" % [int(days), "den" if days < 2 else ("dny" if days < 5 else "dní")]
 		Game.merc["money"] = purse
 		Game.save_merc()
 	var lines := []
