@@ -130,7 +130,7 @@ func setup(data: Dictionary) -> void:
 	var cfg := SceneReplicationConfig.new()
 	for prop in [":position", ":rotation", ":pitch", ":crouching", ":light_on", ":hp", ":downed", ":dead", ":wounded",
 			":bleed_left", ":carried_by", ":wants_evac", ":kills", ":held", ":panic", ":gear",
-			":held_l", ":held_back", ":prone", ":sprinting", ":captures", ":infected", ":act"]:
+			":held_l", ":held_back", ":prone", ":sprinting", ":captures", ":infected", ":act", ":emote"]:
 		cfg.add_property(NodePath("." + prop))
 		cfg.property_set_replication_mode(NodePath("." + prop), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	sync.replication_config = cfg
@@ -311,7 +311,7 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 	# reload: tilt in, hold, back up (the magazine drops at a quarter)
 	var rl := 0.0
 	var reloading := busy > 0 and busy_total > 0 and busy_text.begins_with("Přebíj")
-	if reloading and not rid in ["pistol", "magnum"]:
+	if reloading and not rid in ["pistol", "magnum", "shotgun"]:
 		var ph := 1.0 - busy / busy_total
 		rl = smoothstep(0.0, 0.25, ph) * (1.0 - smoothstep(0.75, 1.0, ph))
 	# pistol and revolver: full hand-made reloads (after Ivo's videos)
@@ -320,7 +320,7 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 	rot += ra[1]
 	# which right-hand grip shows: both hands on the gun, or the right hand alone (the left
 	# is busy reloading, or holds something)
-	var busy_l := (reloading and rid in ["pistol", "magnum"]) or _rev_open > 0.05
+	var busy_l := (reloading and rid in ["pistol", "magnum", "shotgun"]) or _rev_open > 0.05
 	var g2 := gun.get_node_or_null("GripTwo")
 	var g1 := gun.get_node_or_null("GripOne")
 	if g2 and g1:
@@ -333,6 +333,11 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 	gun.position = gun.position.lerp(target, k)
 	gun.rotation.x = lerp(gun.rotation.x, rot.x + _vm_kick * 0.12 * kick_mult - rl * 0.5, k)
 	gun.rotation.y = lerp(gun.rotation.y, rot.y, k)
+	if _twirl > 0.0:
+		# two turns around the trigger finger, slowing into the grip at the end
+		_twirl = maxf(0.0, _twirl - delta / 0.9)
+		var tw := 1.0 - _twirl
+		gun.rotation.x = rot.x - TAU * 2.0 * (1.0 - pow(1.0 - tw, 2.0))
 	gun.rotation.z = lerp(gun.rotation.z, rot.z + rl * 0.7, k)
 	if gun_l:
 		# the left hand puts its thing down while it helps reload the right gun
@@ -347,10 +352,22 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 		var side := -1.0 if _swing_left else 1.0
 		var ph := 1.0 - _swing
 		if _swing_kind == 0:
-			# knife: a quick diagonal slash
+			# knife: a quick thrust forward
 			var sw := sin(ph * PI)
 			holder.rotation = Vector3(-0.9 * sw, 0.6 * sw * side, 0.4 * sw)
 			_swing_shift(holder, Vector3(-0.15 * sw * side, 0.05 * sw, -0.12 * sw))
+		elif _swing_kind == 4:
+			# knife: up high, point down - then a hard stab down and forward
+			var up4 := smoothstep(0.0, 0.35, ph) * (1.0 - smoothstep(0.35, 0.55, ph))
+			var dn4 := smoothstep(0.35, 0.55, ph) * (1.0 - smoothstep(0.7, 1.0, ph))
+			holder.rotation = Vector3(1.6, 0.2, 0.3) * up4 + Vector3(-1.2, 0.1, 0.2) * dn4
+			_swing_shift(holder, Vector3(-0.05, 0.22, 0.05) * up4 + Vector3(-0.08, -0.06, -0.18) * dn4)
+		elif _swing_kind == 5:
+			# knife: a wide slash from the right shoulder across to the left hip
+			var a5 := smoothstep(0.0, 0.3, ph) * (1.0 - smoothstep(0.3, 0.45, ph))
+			var b5 := smoothstep(0.3, 0.5, ph) * (1.0 - smoothstep(0.7, 1.0, ph))
+			holder.rotation = Vector3(0.6, -0.5, -0.9) * a5 + Vector3(-0.7, 0.9, 1.0) * b5
+			_swing_shift(holder, Vector3(0.1, 0.12, 0.02) * a5 + Vector3(-0.28, -0.1, -0.12) * b5)
 		else:
 			# club: raise it back (wind-up), bring it down hard, recover
 			var up := smoothstep(0.0, 0.3, ph) * (1.0 - smoothstep(0.3, 0.45, ph))
@@ -443,13 +460,14 @@ func _animate_body(delta: float) -> void:
 	merc_model.position.z = lerp(merc_model.position.z, -0.9 if dead else (0.9 if prone and not downed else 0.0), delta * 6.0)
 	if not (dead or downed or prone or sprinting):
 		_hold_pose(delta)
+		_emote_pose(delta)
 	# the long gun sits in the right hand (follows the arms in every pose), not on the belly
 	if _sk and _hand_r >= 0 and body_gun:
 		var hand := _sk.global_transform * _sk.get_bone_global_pose(_hand_r)
 		body_gun.global_position = hand.origin + hand.basis.y.normalized() * -0.05
 	# fallen: the hands are empty (the gun lies by him), only the slung one stays on the back
 	if body_gun:
-		body_gun.visible = not (dead or downed)
+		body_gun.visible = not (dead or downed or emote != 0)
 	if body_l:
 		body_l.visible = not (dead or downed)
 
@@ -492,10 +510,13 @@ func _hold_pose(delta: float) -> void:
 		if r in ["shotgun"]:
 			want.merge(POSE_HIP)
 			if act == 1:
-				# racking the pump: the left hand slides back and forth
-				var k := sin(_act_t * 9.0)
-				want["upperarm.L"] = Vector3(0.6 - 0.25 * k, 0, 0.4)
-				want["forearm.L"] = Vector3(0.95 + 0.35 * k, 0, 0)
+				# one shell after another: the left hand from the belt up under the gun
+				# (the gun turned over a little), then the pump
+				var k := 0.5 + 0.5 * sin(_act_t * 6.0)
+				want["upperarm.R"] = Vector3(0.25, 0, -0.3)
+				want["forearm.R"] = Vector3(1.15, 0, 0)
+				want["upperarm.L"] = Vector3(0.1 + 0.5 * k, 0, 0.1 + 0.35 * k)
+				want["forearm.L"] = Vector3(0.6 + 0.45 * k, 0, 0)
 		elif r in ["minigun", "autocannon", "a_heavy"]:
 			want.merge(POSE_HIP)
 			want["upperarm.R"] = Vector3(0.1, 0, -0.35)
@@ -503,8 +524,24 @@ func _hold_pose(delta: float) -> void:
 			want.merge(POSE_SHOULDER)
 		elif two:
 			want.merge(POSE_RIFLE)
+			if act == 1:
+				# reload: the gun dips, the left hand goes to the magazine and back
+				var k2 := sin(_act_t * 3.0)
+				want["upperarm.R"] = Vector3(0.3, 0, -0.25)
+				want["forearm.R"] = Vector3(1.25, 0, 0)
+				want["upperarm.L"] = Vector3(0.45 + 0.15 * k2, 0, 0.3)
+				want["forearm.L"] = Vector3(1.2 + 0.2 * k2, 0, 0)
 		elif l == "":
 			want.merge(POSE_PISTOL2)
+			if act == 1:
+				# pistol / revolver reload: the gun comes in to the chest, muzzle down,
+				# the left hand works at it (after Ivo's videos)
+				var k3 := sin(_act_t * 5.0)
+				want["upperarm.R"] = Vector3(0.3, 0, -0.35)
+				want["forearm.R"] = Vector3(1.75, 0, 0)
+				want["hand.R"] = Vector3(-0.6, 0, 0)
+				want["upperarm.L"] = Vector3(0.45, 0, 0.45)
+				want["forearm.L"] = Vector3(1.55 + 0.2 * k3, 0, 0)
 		else:
 			want.merge(POSE_PISTOL)
 	elif rule.get("type", "") == "melee":
@@ -519,10 +556,13 @@ func _hold_pose(delta: float) -> void:
 		else:
 			want.merge(POSE_SIDE_R)        # knife low at the hip
 			if act == 2:
-				var ph2 := clampf(_act_t / 0.3, 0.0, 1.0)
+				# a fighter's stance: the free hand up in front as a guard, the knife cuts
+				var ph2 := clampf(_act_t / 0.4, 0.0, 1.0)
 				var th := sin(ph2 * PI)
-				want["upperarm.R"] = Vector3(0.1 + 1.3 * th, 0, -0.12)
-				want["forearm.R"] = Vector3(0.45 - 0.35 * th, 0, 0)
+				want["upperarm.R"] = Vector3(0.6 + 1.0 * th, 0, -0.3 + 0.6 * th)
+				want["forearm.R"] = Vector3(1.2 - 0.8 * th, 0, 0)
+				want["upperarm.L"] = Vector3(1.0, 0, 0.35)
+				want["forearm.L"] = Vector3(1.0, 0, 0)
 	else:
 		want.merge(POSE_ITEM_R)
 	if not two:
@@ -530,7 +570,7 @@ func _hold_pose(delta: float) -> void:
 			want.merge(POSE_RADIO_L, true)
 		elif l != "":
 			want.merge(POSE_ITEM_L, true)
-		elif not (rule.get("type", "") == "weapon" and l == "" and not two):
+		elif not (rule.get("type", "") == "weapon" and l == "" and not two) and not (act == 2 and rule.get("type", "") == "melee" and not rule.get("blunt", false)):
 			want.merge(POSE_LOOSE_L, true)
 	elif l == "radio":
 		# talking on the radio with a long gun: lowered in the right hand
@@ -542,6 +582,59 @@ func _hold_pose(delta: float) -> void:
 		if i >= 0:
 			var rest: Quaternion = _sk.get_bone_rest(i).basis.get_rotation_quaternion()
 			_sk.set_bone_pose_rotation(i, rest * Quaternion.from_euler(want[bn]))
+
+# ---- emotes and idling (after Ivo's videos): J salute, U at ease; empty hands at rest go
+# to the hips and the head looks around -------------------------------------------------------
+## 0 nothing, 1 salute, 2 at ease (synced)
+var emote := 0
+var _emote_t := 0.0
+var _idle_t := 0.0
+const POSE_SALUTE := {"upperarm.R": Vector3(0.1, 0, 1.35), "forearm.R": Vector3(0, 0, 2.6),
+	"upperarm.L": Vector3(0.0, 0, 0.05), "forearm.L": Vector3(0.05, 0, 0)}
+const POSE_ATEASE := {"upperarm.R": Vector3(-0.3, 3.1, 0.1), "forearm.R": Vector3(1.5, 0, 0), "upperarm.L": Vector3(-0.3, -3.1, -0.1), "forearm.L": Vector3(1.5, 0, 0),
+	"thigh.L": Vector3(0, 0, -0.1), "thigh.R": Vector3(0, 0, 0.1), "shin.L": Vector3(0, 0, 0.1), "shin.R": Vector3(0, 0, -0.1)}
+const POSE_HIPS := {"upperarm.R": Vector3(-0.1, 0, 0.8), "forearm.R": Vector3(0, 0, -2.0), "upperarm.L": Vector3(-0.1, 0, -0.8), "forearm.L": Vector3(0, 0, 2.0)}
+
+func _emote_input(delta: float) -> void:
+	if Input.is_action_just_pressed("salute"):
+		emote = 1
+		_emote_t = 2.4
+	elif Input.is_action_just_pressed("atease"):
+		emote = 0 if emote == 2 else 2
+		_emote_t = 9999.0
+	if emote != 0:
+		_emote_t -= delta
+		var moving := Vector2(velocity.x, velocity.z).length() > 0.6
+		if _emote_t <= 0.0 or moving or Input.is_action_just_pressed("fire") or busy > 0 or crouching or prone or downed:
+			emote = 0
+
+func _emote_pose(delta: float) -> void:
+	if _sk == null:
+		return
+	var want := {}
+	if emote == 1:
+		want = POSE_SALUTE
+	elif emote == 2:
+		want = POSE_ATEASE
+	if _body_speed < 0.15 and not crouching:
+		_idle_t += delta
+	else:
+		_idle_t = 0.0
+	# standing about with empty hands: hands on the hips
+	if want.is_empty() and held == "" and held_l == "" and _idle_t > 4.0:
+		want = POSE_HIPS
+	for bn in want:
+		var i := _bone(bn)
+		if i >= 0:
+			var rest: Quaternion = _sk.get_bone_rest(i).basis.get_rotation_quaternion()
+			_sk.set_bone_pose_rotation(i, rest * Quaternion.from_euler(want[bn]))
+	# a long wait: the head turns, looks around now and then
+	if _idle_t > 3.0 and emote != 1:
+		var hi := _bone("head")
+		if hi >= 0:
+			var look := sin(_idle_t * 0.45) * 0.5 * smoothstep(3.0, 5.0, _idle_t) + sin(_idle_t * 1.3) * 0.05
+			var rest2: Quaternion = _sk.get_bone_rest(hi).basis.get_rotation_quaternion()
+			_sk.set_bone_pose_rotation(hi, rest2 * Quaternion.from_euler(Vector3(-0.08 * sin(_idle_t * 0.3), look, 0)))
 
 ## Owner: what the hands are doing, for the others to see.
 func _act_tick() -> void:
@@ -841,7 +934,7 @@ func _radio_tick(delta: float) -> void:
 			_radio_have = false
 			_radio_fetch = 0.0
 			_update_held()
-		_radio_lower = move_toward(_radio_lower, 0.0, delta * 3.5)
+		_radio_lower = move_toward(_radio_lower, 1.0 if emote != 0 else 0.0, delta * 3.5)
 		return
 	if Game.has_research("vysilacky"):
 		return     # in the helmet: no hands needed
@@ -1073,15 +1166,20 @@ func _physics_process(delta: float) -> void:
 			mission.plant.rpc_id(1, bi)
 	else:
 		plant_hold = 0.0
-	if at_ship and Input.is_action_pressed("use") and not inv_open:
-		evac_hold += delta
-	elif not wants_evac:
-		evac_hold = 0.0
+	_evac_input(at_ship, inv_open)
+
+## Enter in the ship: "ready to take off" (again = not yet). The wounded on the floor can
+## do it too; the dead cannot. Leaving the ship takes it back.
+func _evac_input(at_ship: bool, inv_open: bool) -> void:
 	if not at_ship:
-		evac_hold = 0.0
 		wants_evac = false
-	elif evac_hold >= 2.0:
-		wants_evac = true
+		return
+	if not mission.started() or inv_open or dead:
+		return
+	if Input.is_action_just_pressed("ready"):
+		wants_evac = not wants_evac
+		mission.hud.message("PŘIPRAVEN K ODLETU - čeká se na ostatní (Enter = ještě ne)." if wants_evac else "Ještě neodlétáme.", 2.5)
+		Game.play_ui(self, "clink", -10)
 
 ## Laser sight: a red dot where the gun points (only while the gun is up, not sprinting).
 var _dot: MeshInstance3D
@@ -1146,7 +1244,10 @@ func _actions(delta: float) -> void:
 		_use_hand("rh", Input.is_action_pressed("fire"), Input.is_action_just_pressed("fire"), delta)
 	if Input.is_action_just_pressed("reload"):
 		var g := gun_in("rh")
-		if not g.is_empty():
+		if not g.is_empty() and g["id"] == "magnum" and int(g.get("loaded", 0)) >= Game.mag_size("magnum") and busy <= 0:
+			_twirl = 1.0      # full already: a twirl on the trigger finger (just for show)
+			Game.play_ui(self, "swish", -18)
+		elif not g.is_empty():
 			_reload(g, Game.ITEMS[g["id"]])
 	if Input.is_action_just_pressed("swap") and busy <= 0:
 		_q_swap(two)
@@ -1154,6 +1255,7 @@ func _actions(delta: float) -> void:
 	_act_tick()
 	if Input.is_action_just_pressed("drop") and not mission.hud.inventory_open:
 		drop_slot("lh" if inv.has("lh") and not inv.has("rh") else "rh")
+	_emote_input(delta)
 	if Input.is_action_just_pressed("primary") and busy <= 0:
 		_weapon_key("back")
 	if Input.is_action_just_pressed("secondary") and busy <= 0:
@@ -1328,9 +1430,17 @@ func _melee(slot: String, rule: Dictionary) -> void:
 		# the blow lands when the club comes down
 		get_tree().create_timer(0.14 / (_swing_speed / 2.2)).timeout.connect(func(): if is_instance_valid(self) and not dead: _melee_hit(rule))
 		return
-	_swing_kind = 0
-	_swing_speed = 3.5
-	_melee_hit(rule)
+	# knife: a thrust, an overhead stab, a slash across - never the same twice in a row
+	var kk: int = [0, 4, 5][randi() % 3]
+	if kk == _swing_kind:
+		kk = {0: 4, 4: 5, 5: 0}[kk]
+	_swing_kind = kk
+	_swing_speed = 3.5 if kk == 0 else 2.6
+	Game.play_at(self, "swish", global_position + Vector3.UP, -12)
+	if kk == 0:
+		_melee_hit(rule)
+	else:
+		get_tree().create_timer(0.16).timeout.connect(func(): if is_instance_valid(self) and not dead: _melee_hit(rule))
 
 func _melee_hit(rule: Dictionary) -> void:
 	Game.play_at(self, rule.get("sound", "swish"), global_position + Vector3.UP, -6)
@@ -1501,6 +1611,9 @@ func _reload(wp: Dictionary, rule: Dictionary) -> void:
 # feeds the rounds one by one, a flick of the wrist snaps it shut.
 var _rl_hand: Node3D
 var _rl_carry := ""
+var _twirl := 0.0
+var _sg_roll := 0.0
+var _sg_was := false
 var _rev_open := 0.0
 var _rev_was := false
 var _rev_closing := 0.0
@@ -1529,7 +1642,31 @@ func _reload_hand(carry: String) -> Node3D:
 		for c in _rl_hand.get_children():
 			if c.name.begins_with("Carry"):
 				c.queue_free()
-		if carry != "":
+		if carry == "shell":
+			# a red shotgun shell with a brass base
+			var sh := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = 0.0105
+			cm.bottom_radius = 0.0105
+			cm.height = 0.065
+			cm.radial_segments = 8
+			sh.mesh = cm
+			sh.material_override = Game.color_mat(Color(0.7, 0.12, 0.08))
+			sh.name = "Carry"
+			sh.position = Vector3(0, 0.02, -0.04)
+			sh.rotation = Vector3(PI / 2, 0, 0)
+			var base := MeshInstance3D.new()
+			var bm := CylinderMesh.new()
+			bm.top_radius = 0.011
+			bm.bottom_radius = 0.011
+			bm.height = 0.015
+			bm.radial_segments = 8
+			base.mesh = bm
+			base.material_override = Game.color_mat(Color(0.75, 0.6, 0.25))
+			base.position = Vector3(0, -0.035, 0)
+			sh.add_child(base)
+			_rl_hand.add_child(sh)
+		elif carry != "":
 			var m := Game.model(carry)
 			m.name = "Carry"
 			_rl_hand.add_child(m)
@@ -1593,6 +1730,28 @@ func _reload_anim(delta: float, rid: String, reloading: bool) -> Array:
 		if slide:
 			var s0: Transform3D = slide.get_meta("rest")
 			slide.position = s0.origin + Vector3(0, 0, slide_back)
+	elif rid == "shotgun":
+		var single2 := reloading and busy_text.begins_with("Přebíjím po")
+		_sg_roll = move_toward(_sg_roll, 1.0 if single2 else 0.0, delta * 5.0)
+		var o2 := smoothstep(0.0, 1.0, _sg_roll)
+		# the gun rolls onto its side (loading port up to the hand), muzzle a little down
+		dp = Vector3(-0.06, 0.03, 0.02) * o2
+		dr = Vector3(-0.15, 0.25, 1.1) * o2
+		if single2 and _sg_roll > 0.6:
+			hand_on = true
+			var port: Vector3 = gun.global_transform * Vector3(0.0, -0.06, -0.12)
+			var from_belt: Vector3 = cam.global_transform * Vector3(-0.12, -0.5, -0.25)
+			hand_at = from_belt.lerp(port, smoothstep(0.05, 0.5, ph)).lerp(from_belt, smoothstep(0.75, 1.0, ph))
+			hand_rot = Vector3(0.9, -0.3, 1.0)
+			_reload_hand("shell" if ph < 0.65 else "")
+			if _rl_last < 0.55 and ph >= 0.55:
+				Game.play_ui(self, "clink", -14)
+			_rl_last = ph
+			if ph < 0.05:
+				_rl_last = 0.0
+		elif _sg_was and not single2:
+			Game.play_ui(self, "reload", -8)     # the pump racked at the end
+		_sg_was = single2
 	elif rid == "magnum":
 		var barrel := _vm_part("Barrel")
 		var single := reloading and busy_text.begins_with("Přebíjím po")
@@ -1837,8 +1996,10 @@ func _downed(delta: float) -> void:
 		bleed_left -= delta      # while a medic works on you, you do not bleed out
 	if bleed_left <= 0:
 		dead = true
+		wants_evac = false
 		mission.hud.message("Vykrvácel jsi.", 8.0)
 		return
+	_evac_input(global_position.distance_to(mission.map["evac"]) < 3.5, mission.hud.inventory_open)
 	# being dragged by a teammate
 	if carried_by > 0:
 		var c: Node = mission.actors.get_node_or_null("P%d" % carried_by)

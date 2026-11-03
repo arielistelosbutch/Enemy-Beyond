@@ -1,4 +1,15 @@
 {
+ "0.27": [
+  "Lety na glóbu: stíhačky i transport teď ze základny k cíli opravdu letí v herním čase (bílá a modrá značka na glóbu). UFO nebo vetřelci mohou zmizet dřív, než dorazí - pak se stroj vrátí. Před vysláním okno ukáže, jak dlouho let trvá a jak dlouho hlášení vydrží.",
+  "Před leteckou misí si v co-op naklikáte, kdo usedne do Sokolů. Před pozemní misí lze přidat doprovod stíhaček a vybrat, kdo řídí transport (nebo AI pilot).",
+  "Přepadení cestou: občas malá UFO napadnou transport ve vzduchu. Sokoly z doprovodu ho brání (hráči nebo AI piloti), transport řídí hráč nebo jeho pilot; bez doprovodu ho řídíš sám a musíš vydržet. Sestřelený transport = mise propadla, nový stroj za 24 h.",
+  "Na začátku kampaně má tým vlastní dvourotorový vrtulník Čáp (pomalejší, s rampou vzadu). Výzkum Transportér Kondor přinese rychlý Kondor - lety asi třikrát kratší. Starší uložené kampaně Kondor už mají.",
+  "Start mise: místo odpočtu - po briefingu jste v lodi, vybavíte se a ENTER = připraven. Rampa se otevře, až jsou připraveni všichni.",
+  "Odlet: ENTER v lodi (už ne držení E). Musí ho dát všichni živí, i ranění na zemi (dotáhnout je do lodi). Mrtví se nepočítají. Raněný vytažený na palubu přežije, ale na marodce bude dlouho. Odškodné za padlého je menší, když jeho tělo přivezete domů.",
+  "Animace podle Ivových videí: nůž - bodnutí dopředu, bodnutí shora a sek napříč (střídají se), zvenku bojový postoj s krytem volnou rukou. Brokovnice - zbraň se překlopí na bok a levá ruka zasouvá náboje zespodu, nakonec pumpa; zvenku nabíjení od opasku. Pistole a revolver zvenku - zbraň u hrudi hlavní dolů, levá ruka pracuje. Puška zvenku - ruka k zásobníku.",
+  "Magnum: R s plným bubínkem = protočení revolveru na prstu (jen pro parádu).",
+  "J = zasalutovat, U = pohov (ruce za zády, nohy od sebe). S prázdnýma rukama voják po chvíli dá ruce v bok a rozhlíží se."
+ ],
  "0.26": [
   "Marodka podle herního času: zraněný žoldák po misi v kampani jde na marodku na několik HERNÍCH dní (podle toho, kolik zdraví ztratil; na Veterána déle). Dokud se neuzdraví, na misi nemůže - hostitel misi nespustí a napíše, kdo je na marodce. Čas se počítá na glóbu kampaně, ne podle hodin na zdi.",
   "Až tři žoldáci: v \"Můj žoldák\" jsou nahoře tři sloty. Klikem vybereš, kdo jde na misi (označený >), prázdný slot = najmout nového, žoldáka jde i propustit. Peníze jsou tvoje a přecházejí s tebou.",

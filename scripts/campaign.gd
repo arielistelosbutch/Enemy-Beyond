@@ -8,6 +8,8 @@ signal mission_found(m: Dictionary)
 signal flight_found(f: Dictionary)
 signal research_done(id: String)
 signal report(text: String)
+signal craft_arrived(c: Dictionary)
+signal craft_ambushed(c: Dictionary)
 
 const START_YEAR := 1999
 const BASE_LAT := 49.6      # the base: somewhere in the Bohemian-Moravian highlands
@@ -63,6 +65,8 @@ const RESEARCH := {
 		"desc": "Zajatec pořád opakuje jedno slovo a ukazuje do nebe. Radar zachytil úzký paprsek mířící na Mars. Tam je jejich velín - a v něm to, co je všechny řídí."},
 	"orel": {"name": "Hvězdná loď Orel", "cost": 2500, "mk": 120, "days": 10.0, "needs": {"research": "signal"},
 		"desc": "Kondor s motorem na Moskovium 115 a trupem z vetřeleckých slitin. Doletí na Mars a zpátky. Odemkne poslední misi."},
+	"kondor": {"name": "Transportér Kondor", "cost": 500, "days": 5.0, "needs": {"research": "pitva"},
+		"desc": "Místo pomalého vrtulníku Čáp rychlý transportér s krátkými křídly a dvěma motory. Na misi doletí asi třikrát rychleji."},
 	"vesta": {"name": "Balistická vesta a štít", "cost": 200, "days": 3.0, "needs": {},
 		"desc": "Keramické pláty v látkové vestě a ruční štít s průzorem. Vesta: o 20 % menší zranění. Štít v levé ruce zastaví většinu střel zepředu."},
 	"pancir": {"name": "Slitinový pancíř", "cost": 500, "mk": 25, "days": 6.0, "needs": {"research": "slitiny"},
@@ -175,7 +179,7 @@ func new_campaign() -> void:
 		"stats": {"kills": 0, "captures": 0, "missions": 0, "won": 0},
 		"base": [], "log": ["Kampaň začala. Základna v rokli na Vysočině je v provozu."],
 		"flights": [], "sokol_ready": 0.0,
-		"lost": false, "cid": str(randi()),
+		"lost": false, "cid": str(randi()), "transport": "heli", "crafts": [],
 	}
 	var b := []
 	for i in GRID_W * GRID_H:
@@ -246,6 +250,9 @@ func advance(days: float) -> bool:
 			_log("Výzkum dokončen: " + RESEARCH[done]["name"])
 			if done == "orel":
 				_add_final()
+			if done == "kondor":
+				data["transport"] = "kondor"
+				_log("Kondor je v hangáru. Čáp jde do zálohy.")
 			research_done.emit(done)
 			stop = true
 	# construction
@@ -290,6 +297,8 @@ func advance(days: float) -> bool:
 			else:
 				_log("UFO opustilo dosah radaru.")
 			stop = true
+	if _move_crafts(days):
+		stop = true
 	# the radar finds something
 	data["next_mission"] = float(data["next_mission"]) - days
 	if float(data["next_mission"]) <= 0:
@@ -368,6 +377,152 @@ func _log(s: String) -> void:
 	if data["log"].size() > 40:
 		data["log"].pop_front()
 
+# ---- our craft on the globe: jets and the transport fly to the target in game time ---------------
+## degrees of arc per game day (1 degree is about 111 km)
+const CRAFT_SPEED := {"jet": 300.0, "heli": 60.0, "kondor": 160.0}
+const CRAFT_NAMES := {"jet": "Sokol", "heli": "vrtulník Čáp", "kondor": "Kondor"}
+
+## Older saves had the Kondor from the start.
+func transport() -> String:
+	return String(data.get("transport", "kondor"))
+
+func crafts() -> Array:
+	if not data.has("crafts"):
+		data["crafts"] = []
+	return data["crafts"]
+
+static func unit(lat: float, lon: float) -> Vector3:
+	var la := deg_to_rad(lat)
+	var lo := deg_to_rad(lon)
+	return Vector3(cos(la) * cos(lo), sin(la), cos(la) * sin(lo))
+
+static func arc_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+	return rad_to_deg(unit(lat1, lon1).angle_to(unit(lat2, lon2)))
+
+## hours a craft needs from the base to a place
+func eta_hours(kind: String, lat: float, lon: float) -> float:
+	return arc_deg(BASE_LAT, BASE_LON, lat, lon) / float(CRAFT_SPEED[kind]) * 24.0
+
+func transport_out() -> bool:
+	for c in crafts():
+		if c["kind"] != "jet":
+			return true
+	return false
+
+func jets_out() -> int:
+	var n := 0
+	for c in crafts():
+		if c["kind"] == "jet":
+			n += int(c.get("n", 1))
+		elif c.get("state", "") == "out":
+			n += int(c.get("escort", 0))
+	return n
+
+func _target_of(c: Dictionary) -> Dictionary:
+	var lst: Array = data.get("flights", []) if c["ttype"] == "flight" else data["missions"]
+	for x in lst:
+		if int(x["id"]) == int(c["target"]):
+			return x
+	return {}
+
+## Sends a craft from the base. Returns it.
+func launch_craft(kind: String, target: Dictionary, ttype: String, extra := {}) -> Dictionary:
+	var c := {"id": int(data["next_id"]), "kind": kind, "lat": BASE_LAT, "lon": BASE_LON, "target": int(target["id"]),
+		"ttype": ttype, "state": "out", "start": float(data["day"])}
+	data["next_id"] = int(data["next_id"]) + 1
+	for k in extra:
+		c[k] = extra[k]
+	# the way to a mission can be dangerous: once in a while small UFOs jump the transport
+	if kind != "jet" and float(data["day"]) > 3.0 and rng.randf() < 0.22:
+		c["ambush_at"] = rng.randf_range(0.3, 0.7)
+		c["dist0"] = arc_deg(BASE_LAT, BASE_LON, float(target["lat"]), float(target["lon"]))
+	crafts().append(c)
+	_log("%s vzlétl k cíli: %s (asi %d h letu)." % [CRAFT_NAMES[kind].capitalize() if kind != "jet" else ("%d× Sokol" % int(extra.get("n", 1))), target.get("place", nearest_place(float(target["lat"]), float(target["lon"]))), maxi(1, roundi(eta_hours(kind, float(target["lat"]), float(target["lon"]))))])
+	changed.emit()
+	return c
+
+## A craft comes home (after the fight, or when the target is gone).
+func recall_craft(c: Dictionary, why := "") -> void:
+	c["state"] = "back"
+	c.erase("ambush_at")
+	if why != "":
+		_log(why)
+
+## After the fight around the transport on the way. Returns the text for the globe.
+func escort_done(craft_id: int, outcome: String, tr_hp: float, lost_jets: int) -> String:
+	var c := craft_by_id(craft_id)
+	var txt := ""
+	for i in lost_jets:
+		_repair_jet(5.0)
+	if not c.is_empty():
+		c["escort"] = maxi(0, int(c.get("escort", 0)) - lost_jets)
+	if outcome == "transport_down":
+		if not c.is_empty():
+			crafts().erase(c)
+		data["kondor_ready"] = float(data["day"]) + 1.0
+		txt = "%s byl sestřelen cestou k cíli. Posádka nouzově přistála a tým se vrátil po zemi. Mise propadla, nový stroj bude v hangáru za 24 h." % CRAFT_NAMES.get(String(c.get("kind", transport())), "Transport").capitalize()
+		data["trust"] = clampi(int(data["trust"]) - 2, 0, 100)
+	else:
+		if not c.is_empty():
+			c["state"] = "out"
+		txt = ("Útok na transport odražen." if outcome == "repelled" else "UFO útok vzdala.") + " Let k cíli pokračuje."
+		if outcome == "repelled":
+			data["credits"] = int(data["credits"]) + 100
+			txt += " Za sestřelená UFO 100 kr."
+		if tr_hp < 50.0:
+			txt += " Transport je poškozený, ale letí."
+	if lost_jets > 0:
+		txt += " Ztraceno Sokolů: %d." % lost_jets
+	_log(txt)
+	save()
+	changed.emit()
+	return txt
+
+func craft_by_id(id: int) -> Dictionary:
+	for c in crafts():
+		if int(c["id"]) == id:
+			return c
+	return {}
+
+func _move_crafts(days: float) -> bool:
+	var stop := false
+	for c in crafts().duplicate():
+		var tl: float = BASE_LAT
+		var tn: float = BASE_LON
+		if c["state"] == "out":
+			var tg := _target_of(c)
+			if tg.is_empty():
+				recall_craft(c, "%s nedorazil včas - cíl zmizel. Vrací se na základnu." % CRAFT_NAMES[c["kind"]].capitalize())
+				stop = true
+				continue
+			tl = float(tg["lat"])
+			tn = float(tg["lon"])
+		elif c["state"] != "back":
+			continue        # waiting at the target (a fight or a mission is on)
+		var a := unit(float(c["lat"]), float(c["lon"]))
+		var b := unit(tl, tn)
+		var ang := a.angle_to(b)
+		var step := deg_to_rad(float(CRAFT_SPEED[c["kind"]]) * days)
+		var p := b if step >= ang else a.slerp(b, step / maxf(ang, 0.0001)).normalized()
+		c["lat"] = rad_to_deg(asin(clampf(p.y, -1.0, 1.0)))
+		c["lon"] = rad_to_deg(atan2(p.z, p.x))
+		var left := rad_to_deg(p.angle_to(b))
+		if c["state"] == "back":
+			if left < 0.3:
+				crafts().erase(c)
+				_log("%s je zpátky v hangáru." % CRAFT_NAMES[c["kind"]].capitalize())
+			continue
+		if c.has("ambush_at") and float(c.get("dist0", 0.0)) > 0.0 and 1.0 - left / float(c["dist0"]) >= float(c["ambush_at"]):
+			c.erase("ambush_at")
+			c["state"] = "ambush"
+			craft_ambushed.emit(c)
+			return true
+		if left < 0.6:
+			c["state"] = "arrived"
+			craft_arrived.emit(c)
+			return true
+	return stop
+
 # ---- UFOs in the air ---------------------------------------------------------------------------------
 const UFO_NAMES := {"scout": "Průzkumník (malé)", "raider": "Nájezdník (střední)", "harvester": "Sklízeč (velké)"}
 const UFO_ALIENS := {"scout": 0, "raider": 1, "harvester": 3}
@@ -403,7 +558,7 @@ func jets_ready() -> int:
 			busy += 1
 	if float(data.get("sokol_ready", 0.0)) > float(data["day"]):
 		busy += 1        # older saves
-	return maxi(0, jets() - busy)
+	return maxi(0, jets() - busy - jets_out())
 
 func buy_jet() -> bool:
 	if jets() >= MAX_JETS or int(data["credits"]) < JET_PRICE:
@@ -437,6 +592,11 @@ func intercept_done(id: int, outcome: String, kind: String, jet_hp: float, lost 
 	var lon: float = float(f.get("lon", BASE_LON))
 	var txt := ""
 	data["day"] = float(data["day"]) + 0.05
+	for c in crafts():
+		if c["kind"] == "jet" and int(c["target"]) == id:
+			c["state"] = "back"
+			c["lat"] = lat
+			c["lon"] = lon
 	match outcome:
 		"crashed":
 			# where it fell: the nearest land along its path
@@ -470,6 +630,11 @@ func intercept_done(id: int, outcome: String, kind: String, jet_hp: float, lost 
 	if lost < 0:
 		lost = 1 if outcome == "shot_down" else 0
 		damaged = 1 if jet_hp < 60 and outcome != "shot_down" else 0
+	for c in crafts().duplicate():
+		if c["kind"] == "jet" and int(c["target"]) == id:
+			c["n"] = int(c.get("n", 1)) - lost
+			if int(c["n"]) <= 0:
+				crafts().erase(c)
 	for i in lost:
 		_repair_jet(5.0)
 	for i in damaged:
@@ -590,6 +755,7 @@ func mission_params(m: Dictionary) -> Dictionary:
 	p["research"] = data["research"]["done"].duplicate()
 	p["cid"] = str(data.get("cid", ""))
 	p["day"] = float(data["day"])
+	p["transport"] = transport()
 	return p
 
 ## The base fell to a raid (lost defence or nobody went): money, a facility and gear are gone.
@@ -671,6 +837,13 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 	if m.is_empty():
 		return ""
 	data["missions"].erase(m)
+	# the transport (and its escort) fly home - unless the whole team fell and it is lost out there
+	for c in crafts().duplicate():
+		if c["kind"] != "jet" and int(c["target"]) == id:
+			if wiped and not success and m["type"] != "base":
+				crafts().erase(c)
+			else:
+				c["state"] = "back"
 	if m["type"] == "mars":
 		if success:
 			data["won"] = true
@@ -700,7 +873,7 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 	if m["type"] == "base" and not success:
 		txt += " " + _base_raided()
 	elif wiped and not success:
-		txt += _kondor_lost(kits)
+		txt += _kondor_lost(kits) if transport() != "heli" else _kondor_lost(kits).replace("Kondoru", "Čápa").replace("Kondor", "Čáp")
 	_log(txt)
 	save()
 	changed.emit()

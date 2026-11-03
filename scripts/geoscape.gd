@@ -59,6 +59,17 @@ func _ready() -> void:
 	Campaign.flight_found.connect(func(f): _alert("RADAR: UFO V LETU\n%s nad oblastí %s.\nVyber ho na glóbu a vyšli stíhačku Sokol, než zmizí." % [Campaign.UFO_NAMES[f["kind"]], Campaign.nearest_place(float(f["lat"]), float(f["lon"]))]); selected = int(f["id"]); _focus(f))
 	Campaign.research_done.connect(func(id): _alert("VÝZKUM DOKONČEN\n%s\n%s" % [Campaign.RESEARCH[id]["name"], Campaign.RESEARCH[id]["desc"]]))
 	Campaign.report.connect(func(txt): _alert(txt))
+	Campaign.craft_arrived.connect(_on_arrived)
+	Campaign.craft_ambushed.connect(_on_ambush)
+	# a craft that was waiting at the target when the game was saved
+	if not Campaign.viewer:
+		for c in Campaign.crafts():
+			if c.get("state", "") == "arrived":
+				(func(): _on_arrived(c)).call_deferred()
+				break
+			if c.get("state", "") == "ambush":
+				(func(): _on_ambush(c)).call_deferred()
+				break
 	if Net.last_result != "":
 		_alert("NÁVRAT Z MISE\n" + Net.last_result)
 		Net.last_result = ""
@@ -255,6 +266,13 @@ func _sync_markers() -> void:
 		_place(markers[id], float(f["lat"]), float(f["lon"]))
 		markers[id].visible = fmod(t * 3.0, 1.0) < 0.7 or id == selected
 		markers[id].scale = Vector3.ONE * (1.6 if id == selected else (1.3 if id == hover else 1.0))
+	for c in Campaign.crafts():
+		var cid := 900000 + int(c["id"])
+		ids[cid] = true
+		if not markers.has(cid):
+			markers[cid] = _marker(Color(0.55, 0.85, 1.0) if c["kind"] == "jet" else Color(1, 1, 1), 0.03 if c["kind"] == "jet" else 0.04)
+		_place(markers[cid], float(c["lat"]), float(c["lon"]))
+		markers[cid].visible = true
 	for id in markers.keys():
 		if not ids.has(id):
 			markers[id].queue_free()
@@ -399,6 +417,11 @@ func _update_text() -> void:
 	var co := ""
 	if Net.is_online():
 		co = "\nCo-op: %d hráčů, tvoje peníze %d kr" % [Net.roster.size(), Net.my_money()] if Campaign.viewer else "\nCo-op: %d hráčů připojeno" % Net.roster.size()
+	var air := []
+	for c in Campaign.crafts():
+		air.append("%s %s" % [("Sokol" if int(c.get("n", 1)) == 1 else "%d× Sokol" % int(c.get("n", 1))) if c["kind"] == "jet" else Campaign.CRAFT_NAMES[c["kind"]].capitalize(), "letí k cíli" if c["state"] == "out" else ("u cíle" if c["state"] in ["arrived", "ambush"] else "se vrací")])
+	if not air.is_empty():
+		co += "\nVe vzduchu: " + ", ".join(air)
 	status_lbl.text = "%s\nRozpočet: %d kr   Mk-115: %d g   Důvěra: %d %%\nVýzkum: %s   Rychlost: %s%s" % [Campaign.date_text(), int(d["credits"]), Campaign.moskovium(), int(d["trust"]), rs, SPEED_NAMES[speed], co]
 	var fl := _selected_flight()
 	if not fl.is_empty():
@@ -434,37 +457,185 @@ func _selected_mission() -> Dictionary:
 	return {}
 
 # ---- actions -------------------------------------------------------------------------------------
+## Who flies what (co-op): peer ids picked in the launch window.
+var _pick := {}
+
 func _launch() -> void:
 	var fl := _selected_flight()
 	if not fl.is_empty():
-		if not Campaign.sokol_ready():
-			_alert("Sokol je v opravě\nStíhačka zatím nemůže vzlétnout.")
-			return
-		Campaign.save()
-		var ip := Campaign.intercept_params(fl)
-		if Net.is_online():
-			# co-op: one Sokol per player while there are jets ready (the host flies first)
-			var pilots := [1]
-			for id in Net.roster:
-				if id != 1 and pilots.size() < Campaign.jets_ready():
-					pilots.append(id)
-			ip["pilots"] = pilots
-			Net.start_intercept(ip)
-		else:
-			Net.mission_params = ip
-			get_tree().change_scene_to_file("res://scenes/Intercept.tscn")
+		_launch_jets(fl)
 		return
 	var m := _selected_mission()
 	if m.is_empty():
 		_alert("Nejdřív vyber hlášení na glóbu.")
 		return
-	if not Campaign.kondor_ready() and m["type"] != "base":
-		_alert("Kondor je ztracen\nNáhradní Kondor dorazí do hangáru za %d h. Nech čas běžet." % Campaign.kondor_hours())
+	# the base and Mars: nobody has to fly anywhere first
+	if m["type"] in ["base", "mars"]:
+		_start_ground(m)
 		return
+	for c in Campaign.crafts():
+		if c["kind"] != "jet" and int(c["target"]) == int(m["id"]):
+			_alert("Transport už k cíli letí.")
+			return
+	if Campaign.transport_out():
+		_alert("Transport je ve vzduchu\n%s je na cestě. Počkej, až se vrátí do hangáru." % Campaign.CRAFT_NAMES[Campaign.transport()].capitalize())
+		return
+	if not Campaign.kondor_ready():
+		_alert("Transport je ztracen\nNáhradní stroj dorazí do hangáru za %d h. Nech čas běžet." % Campaign.kondor_hours())
+		return
+	_launch_transport(m)
+
+## Before a fight in the air: who sits in the Sokols.
+func _launch_jets(fl: Dictionary) -> void:
+	var ready := Campaign.jets_ready()
+	if ready <= 0:
+		_alert("Žádný Sokol není připraven\nStíhačky jsou v opravě nebo ve vzduchu.")
+		return
+	var eta := Campaign.eta_hours("jet", float(fl["lat"]), float(fl["lon"]))
+	var left: float = (float(fl["until"]) - float(Campaign.data["day"])) * 24.0
+	var box := _overlay("VYSLAT STÍHAČKY", 360)
+	_lbl(box, "%s nad oblastí %s.\nLet k UFO asi %.1f h, z radaru zmizí asi za %.1f h.%s" % [Campaign.UFO_NAMES[fl["kind"]], Campaign.nearest_place(float(fl["lat"]), float(fl["lon"])), eta, left,
+		"\nNEJSPÍŠ NESTIHNOU - UFO uletí dřív." if eta > left else ""], RED if eta > left else TEXT, 9)
+	if Net.is_online():
+		if _pick.is_empty():
+			_pick = {1: true}
+		_lbl(box, "Kdo usedne do Sokolů (připraveno %d):" % ready, ACCENT, 9)
+		for id in Net.roster:
+			var pid: int = id
+			var on: bool = _pick.get(pid, false)
+			_btn(box, ("[X] " if on else "[  ] ") + str(Net.roster[pid]["name"]), func():
+				if _pick.get(pid, false):
+					_pick.erase(pid)
+				elif _pick.size() < ready:
+					_pick[pid] = true
+				_launch_jets(fl), 9)
+	else:
+		_lbl(box, "Letíš sám (Sokolů připraveno: %d)." % ready, ACCENT, 9)
+	var row := HBoxContainer.new()
+	box.add_child(row)
+	_btn(row, "VZLÉTNOUT", func(): _go_jets(fl), 10)
+	_btn(row, "Zrušit", func(): _pick = {}; _close_popup(), 10)
+
+func _go_jets(fl: Dictionary) -> void:
+	var pilots: Array = [1]
+	if Net.is_online():
+		pilots = _pick.keys().filter(func(k): return k is int)
+		if pilots.is_empty():
+			return
+	_pick = {}
+	_close_popup()
+	Campaign.launch_craft("jet", fl, "flight", {"n": pilots.size(), "pilots": pilots})
+	_toast_say("Sokol vzlétl. Pusť čas - na místě začne souboj.")
+
+## Before a ground mission: the transport flies there; jets can go along as escort.
+var _escort := 0
+func _launch_transport(m: Dictionary) -> void:
+	var tk := Campaign.transport()
+	var eta := Campaign.eta_hours(tk, float(m["lat"]), float(m["lon"]))
+	var left: float = (float(m["expires"]) - float(Campaign.data["day"])) * 24.0
+	var ready := Campaign.jets_ready()
+	_escort = mini(_escort, ready)
+	var box := _overlay("VYSLAT TÝM", 380)
+	_lbl(box, "%s - %s\n%s poletí asi %.1f h, hlášení vydrží asi %.1f h.%s" % [Campaign.MTYPES[m["type"]]["name"], m["place"], Campaign.CRAFT_NAMES[tk].capitalize(), eta, left,
+		"\nNESTIHNE TO - než dorazí, vetřelci budou pryč." if eta > left else ""], RED if eta > left else TEXT, 9)
+	if tk == "heli":
+		_lbl(box, "Čáp je pomalý. Výzkum Transportér Kondor zkrátí lety asi na třetinu.", FRAME, 8)
+	_lbl(box, "Doprovod stíhaček (chrání transport, když ho cestou napadnou): %d / %d" % [_escort, ready], ACCENT, 9)
+	var er := HBoxContainer.new()
+	box.add_child(er)
+	_btn(er, " - ", func(): _escort = maxi(0, _escort - 1); _launch_transport(m), 9)
+	_btn(er, " + ", func(): _escort = mini(ready, _escort + 1); _launch_transport(m), 9)
+	if Net.is_online():
+		_lbl(box, "Kdo řídí transport (ostatní letí v doprovodu, pokud je Sokol):", FRAME, 8)
+		var drv: int = int(_pick.get("driver", 1))
+		var dr := HBoxContainer.new()
+		box.add_child(dr)
+		_btn(dr, ("> " if drv == 0 else "") + "AI pilot", func(): _pick["driver"] = 0; _launch_transport(m), 8)
+		for id in Net.roster:
+			var pid: int = id
+			_btn(dr, ("> " if drv == pid else "") + str(Net.roster[pid]["name"]), func(): _pick["driver"] = pid; _launch_transport(m), 8)
+	var row := HBoxContainer.new()
+	box.add_child(row)
+	_btn(row, "VZLÉTNOUT", func(): _go_transport(m, tk), 10)
+	_btn(row, "Zrušit", func(): _pick = {}; _close_popup(), 10)
+
+func _go_transport(m: Dictionary, tk: String) -> void:
+	var drv2: int = int(_pick.get("driver", 0 if not Net.is_online() else 1))
+	var pilots := []
+	if Net.is_online():
+		for id in Net.roster:
+			if id != drv2 and pilots.size() < _escort:
+				pilots.append(id)
+	elif _escort > 0:
+		pilots = [1]
+		drv2 = 0
+	_pick = {}
+	_close_popup()
+	Campaign.launch_craft(tk, m, "mission", {"escort": _escort, "pilots": pilots, "driver": drv2})
+	_toast_say("%s vzlétl. Pusť čas - u cíle začne mise." % Campaign.CRAFT_NAMES[tk].capitalize())
+
+func _toast_say(s: String) -> void:
+	if _toast:
+		_toast.text = s
+		_toast_t = 4.0
+
+## The craft is at the target: the fight or the mission begins.
+func _on_arrived(c: Dictionary) -> void:
+	speed = 0
+	if c["kind"] == "jet":
+		var fl := Campaign._target_of(c)
+		var box := _overlay("SOKOL U CÍLE", 320)
+		_lbl(box, "%s má UFO na radaru. Zbraně odjištěny." % ("Sokol" if int(c.get("n", 1)) == 1 else "%d Sokoly" % int(c.get("n", 1))), TEXT, 9)
+		_btn(box, "DO BOJE", func():
+			_close_popup()
+			_start_air(c, fl), 10)
+		return
+	var m := Campaign._target_of(c)
+	var box2 := _overlay("PŘISTÁNÍ", 320)
+	_lbl(box2, "%s dosedl u cíle: %s.\nRampa se otevře, až budete připraveni." % [Campaign.CRAFT_NAMES[c["kind"]].capitalize(), m.get("place", "?")], TEXT, 9)
+	_btn(box2, "ZAČÍT MISI", func(): _begin_landed(c, m), 10)
+
+func _begin_landed(c: Dictionary, m: Dictionary) -> void:
+	_close_popup()
+	if not _start_ground(m):
+		Campaign.recall_craft(c, "Mise nezačala - transport se vrací.")
+
+func _start_air(c: Dictionary, fl: Dictionary) -> void:
+	if fl.is_empty():
+		Campaign.recall_craft(c, "UFO zmizelo - Sokol se vrací.")
+		return
+	Campaign.save()
+	var ip := Campaign.intercept_params(fl)
+	if Net.is_online():
+		ip["pilots"] = c.get("pilots", [1])
+		Net.start_intercept(ip)
+	else:
+		Net.mission_params = ip
+		get_tree().change_scene_to_file("res://scenes/Intercept.tscn")
+
+func _start_ground(m: Dictionary) -> bool:
 	Campaign.save()
 	if not Net.is_online():
 		Net.play_solo()
-	Net.start_mission(Campaign.mission_params(m))
+	return Net.start_mission(Campaign.mission_params(m))
+
+## On the way, small UFOs jump the transport: the escort (and the transport pilot) fight it out.
+func _on_ambush(c: Dictionary) -> void:
+	speed = 0
+	var box := _overlay("TRANSPORT NAPADEN!", 340)
+	var esc := int(c.get("escort", 0))
+	_lbl(box, "Cestou k cíli se na %s vrhla malá UFO.\n%s" % [Campaign.CRAFT_NAMES[c["kind"]], ("Doprovod %d Sokolů se otáčí k obraně." % esc) if esc > 0 else "Bez doprovodu: pilot musí uniknout."], RED, 9)
+	_btn(box, "BRÁNIT TRANSPORT", func(): _begin_escort(c), 10)
+
+func _begin_escort(c: Dictionary) -> void:
+	_close_popup()
+	Campaign.save()
+	var ep := {"escort": true, "craft": int(c["id"]), "transport": c["kind"], "escort_n": int(c.get("escort", 0)), "pilots": c.get("pilots", []), "driver": int(c.get("driver", 0))}
+	if Net.is_online():
+		Net.start_escort(ep)
+	else:
+		Net.mission_params = ep
+		get_tree().change_scene_to_file("res://scenes/Escort.tscn")
 
 func _host() -> void:
 	if Net.is_online():
@@ -705,6 +876,20 @@ func _autotest() -> void:
 			await get_tree().create_timer(1.0).timeout
 			get_viewport().get_texture().get_image().save_png("user://26_flight.png")
 			_launch()
+			_go_jets(f)
+			speed = 2
+			var c0: Dictionary = Campaign.crafts()[-1]
+			while c0.get("state", "") == "out":
+				if popup:
+					_close_popup()
+				speed = 2
+				await get_tree().process_frame
+			print("[CAMPAIR] craft state=%s at %.1f,%.1f day=%.3f" % [c0["state"], float(c0["lat"]), float(c0["lon"]), float(Campaign.data["day"])])
+			if c0["state"] == "arrived":
+				_close_popup()
+				_start_air(c0, Campaign._target_of(c0))
+			else:
+				get_tree().quit()
 		else:
 			await get_tree().create_timer(1.0).timeout
 			get_viewport().get_texture().get_image().save_png("user://27_after_air.png")
@@ -721,8 +906,29 @@ func _autotest() -> void:
 				Campaign.data["missions"].append(Campaign.generate_mission())
 			if not Campaign.data["missions"].is_empty():
 				selected = int(Campaign.data["missions"][0]["id"])
-				print("[CAMP] launching ", Campaign.data["missions"][0]["type"], " ", Campaign.data["missions"][0]["biome"])
+				var m0: Dictionary = Campaign.data["missions"][0]
+				m0["expires"] = float(Campaign.data["day"]) + 3.0
+				print("[CAMP] launching ", m0["type"], " ", m0["biome"], " transport=", Campaign.transport(), " eta=%.1f h" % Campaign.eta_hours(Campaign.transport(), float(m0["lat"]), float(m0["lon"])))
 				_launch()
+				_go_transport(m0, Campaign.transport())
+				speed = 2
+				var c1: Dictionary = Campaign.crafts()[-1]
+				if Game.cmd_arg("ambush", "") != "":
+					c1["ambush_at"] = 0.2
+					c1["dist0"] = Campaign.arc_deg(Campaign.BASE_LAT, Campaign.BASE_LON, float(m0["lat"]), float(m0["lon"]))
+				while c1.get("state", "") == "out":
+					if popup and c1.get("state", "") == "out":
+						_close_popup()
+					speed = 2
+					await get_tree().process_frame
+				print("[CAMP] craft state=%s day=%.3f" % [c1["state"], float(Campaign.data["day"])])
+				if c1["state"] == "ambush":
+					get_viewport().get_texture().get_image().save_png("user://24_ambush.png")
+					print("[CAMP] ambush popup ok")
+					get_tree().quit()
+					return
+				_close_popup()
+				_begin_landed(c1, m0)
 		else:
 			await get_tree().create_timer(1.0).timeout
 			get_viewport().get_texture().get_image().save_png("user://25_return.png")

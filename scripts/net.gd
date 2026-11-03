@@ -112,18 +112,19 @@ var mission_params := {}   # campaign mission (type, biome, night, stash...) or 
 var last_result := ""      # shown on the globe when the team comes back
 
 ## Host: everybody into the mission (same seed = same random map everywhere).
-func start_mission(params := {}) -> void:
+func start_mission(params := {}) -> bool:
 	if not multiplayer.is_server():
-		return
+		return false
 	if params.has("cid"):
 		var sick := sick_in_team()
 		if not sick.is_empty():
 			blocked.emit("Na marodce: %s.\nZraněný žoldák nemůže na misi, dokud neuplyne doba léčení (herní čas). Hráč si může vybrat jiného ze svých žoldáků v \"Můj žoldák\"." % ", ".join(sick))
-			return
+			return false
 	var s := Game.seed_override if Game.seed_override >= 0 else randi() % 1000000
 	if params.has("seed") and Game.seed_override < 0:
 		s = int(params["seed"])
 	_start.rpc(s, Game.difficulty, params, Game.friendly_fire)
+	return true
 
 var friendly_fire := true
 @rpc("authority", "call_local", "reliable")
@@ -144,6 +145,16 @@ func start_intercept(params: Dictionary) -> void:
 func _start_intercept(params: Dictionary) -> void:
 	mission_params = params
 	get_tree().change_scene_to_file("res://scenes/Intercept.tscn")
+
+## Host: everybody into the escort fight (the transport was jumped on the way).
+func start_escort(params: Dictionary) -> void:
+	if multiplayer.is_server():
+		_start_escort.rpc(params)
+
+@rpc("authority", "call_local", "reliable")
+func _start_escort(params: Dictionary) -> void:
+	mission_params = params
+	get_tree().change_scene_to_file("res://scenes/Escort.tscn")
 
 func back_to_menu() -> void:
 	get_tree().change_scene_to_file("res://scenes/Main.tscn")

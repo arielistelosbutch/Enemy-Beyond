@@ -1594,9 +1594,18 @@ func _skyranger(o: Vector3) -> void:
 	_ground(o, "grass")
 	var c := o + Vector3(BLOCK / 2, 0, 5.0)
 	var m := Game.mat("skyranger", 0.5)
-	var ship := Game.model("dropship")
+	# the team's ride: the Kondor, or before its research the old twin-rotor Čáp
+	var heli := String(Net.mission_params.get("transport", "kondor")) == "heli"
+	var ship := Game.model("heli" if heli else "dropship")
 	root.add_child(ship)
 	ship.position = c
+	if heli:
+		for rn in ["RotorF", "RotorR"]:
+			var r: Node3D = ship.find_child(rn, true, false)
+			if r:
+				# idling blades: a slow, endless turn
+				var tw := (Engine.get_main_loop() as SceneTree).create_tween().bind_node(r).set_loops()
+				tw.tween_property(r, "rotation:y", TAU, 2.6 if rn == "RotorF" else 2.9).as_relative()
 	var first := root.get_child_count()
 	# fuselage pointing away from the map (nose at -z), ramp open towards +z
 	box(c + Vector3(-1.6, 1.4, 0), Vector3(0.3, 2.8, 8), m)

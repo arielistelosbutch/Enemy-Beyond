@@ -56,7 +56,7 @@ func me() -> Node:
 
 # ---- API used by player / mission -------------------------------------------------
 func message(text: String, secs := 3.0) -> void:
-	msg_label.text = text
+	msg_label.text = Game.shipify(text)
 	msg_time = secs
 
 func hitmarker() -> void:
@@ -129,7 +129,7 @@ func briefing(text: String) -> void:
 	_brief_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_brief_bg)
 	_brief_lbl = Label.new()
-	_brief_lbl.text = text
+	_brief_lbl.text = Game.shipify(text)
 	_brief_lbl.position = Vector2(60, 70)
 	_brief_lbl.size = Vector2(520, 220)
 	_brief_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -170,21 +170,11 @@ func _brief_tick(delta: float) -> void:
 		_brief_lbl.visible_characters = typed
 		if typed % 3 == 0 and _brief_lbl.text.substr(typed - 1, 1) != " ":
 			Game.play_ui(mission(), "step", -30)
-	# everyone confirms they are ready; the night starts for all at once
-	if _brief_t >= hold and _brief_fade < 0:
+	# the briefing is over: into the ship (Enter there = ready, the ramp opens when all are)
+	if _brief_t >= hold and _brief_fade < 0 and (key or _brief_t > hold + 2.5 or Game.autotest() != ""):
 		_brief_lbl.visible_characters = -1
-		if _ready_lbl == null:
-			_ready_lbl = Label.new()
-			_ready_lbl.position = Vector2(60, 300)
-			_ready_lbl.size = Vector2(520, 30)
-			_ready_lbl.add_theme_font_size_override("font_size", 11)
-			_ready_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
-			_brief_bg.add_child(_ready_lbl)
-			_ready_lbl.text = "Připraven? Mezerník / Enter / klik"
-		if (key or Game.autotest() != "") and not _ready_sent:
-			_ready_sent = true
-			_ready_lbl.text = "Připraven. Čekám na ostatní..."
-			mission().i_am_ready()
+		_brief_fade = 0.0
+		mission().brief_done()
 	if _brief_fade >= 0:
 		_brief_fade += delta
 		var a := 1.0 - _brief_fade / 2.5
@@ -198,15 +188,14 @@ func _brief_tick(delta: float) -> void:
 		if a < 0.6 and not paused and inv_panel and not inv_panel.visible:
 			inventory_open = false
 
-## Host's count of ready players (shown on the briefing screen).
+## Host's count of ready players (shown while the team waits in the ship).
+var ready_n := 0
+var ready_total := 1
 func ready_count(n: int, total: int) -> void:
-	if _ready_lbl and is_instance_valid(_ready_lbl) and total > 1:
-		_ready_lbl.text = ("Připraven. " if _ready_sent else "Připraven? Mezerník / Enter / klik   ") + "Připraveno %d/%d" % [n, total]
+	ready_n = n
+	ready_total = total
 
-## Everyone is ready: fade into the night.
 func brief_go() -> void:
-	if _brief_t >= 0 and _brief_fade < 0:
-		_brief_fade = 0.0
 	Game.play_music("tactical" if Game.tactical_music else "")
 
 func show_result(title: String, text: String) -> void:
@@ -369,18 +358,15 @@ func _draw_hud() -> void:
 		_text(c, Vector2(mid.x - 60, mid.y + 30), p.busy_text + "...", ACCENT, 10)
 	# evac
 	var ev: Vector3 = mission().map["evac"]
-	if p.global_position.distance_to(ev) < 3.5 and not p.downed:
-		_text(c, Vector2(mid.x - 120, 20), ("Drž E 2 s - odlet (všichni stojící musí být na palubě)" if not p.wants_evac else "Čekáme na ostatní..."), ACCENT, 10)
-		if p.evac_hold > 0 and not p.wants_evac:
-			c.draw_rect(Rect2(mid.x - 40, mid.y + 20, 80, 4), Color(0, 0, 0, 0.6))
-			c.draw_rect(Rect2(mid.x - 40, mid.y + 20, 80 * p.evac_hold / 2.0, 4), ACCENT)
+	if p.global_position.distance_to(ev) < 3.5 and not p.dead and mission().started():
+		_text(c, Vector2(mid.x - 120, 20), ("ENTER - připraven k odletu (musí všichni živí, i ranění)" if not p.wants_evac else "Připraven k odletu - čekáme na ostatní (Enter = ještě ne)"), ACCENT, 10)
 		_text(c, Vector2(mid.x - 120, 32), "Pokud posádka UFO žije, mise nebude splněna.", FRAME, 9)
 	# the objective of this mission, top centre; the beacon's direction for a rescue
-	var ot: String = mission().objective_text()
+	var ot: String = Game.shipify(mission().objective_text())
 	if ot != "":
 		_text(c, Vector2(mid.x - ot.length() * 2.4, 12), ot, ACCENT, 9)
 	if mission().done_banner:
-		var bt := "MISE SPLNĚNA - můžete odletět (drž E u rampy Kondoru)"
+		var bt := Game.shipify("MISE SPLNĚNA - můžete odletět (všichni živí Enter v Kondoru)")
 		c.draw_rect(Rect2(mid.x - 160, 16, 320, 16), Color(0, 0, 0, 0.55))
 		_text(c, Vector2(mid.x - bt.length() * 2.6, 28), bt, Color(0.5, 1.0, 0.55), 10)
 	var v: Node = mission().vip()
@@ -772,7 +758,8 @@ func _keys_text(p: Node) -> String:
 		"G granát %d   X kouř %d   B mina %d   7 světlice %d" % [p.inv.values().filter(func(it): return it["id"] == "grenade").size(), p.inv.values().filter(func(it): return it["id"] == "smoke_grenade").size(), p.inv.values().filter(func(it): return it["id"] == "mine").size(), p.inv.values().filter(func(it): return it["id"] == "flare").size()],
 		"Backspace  zahodit, co máš v ruce",
 		"H    lékárnička - do rukou, pak ošetří (%s)" % where.call("medkit"),
-		"E    táhnout padlého / sebrat / civilista / Kondor (drž)",
+		"E    táhnout padlého / sebrat / civilista",
+		"Enter  v lodi: připraven (start mise i odlet)",
 		"V    rána zblízka (%s)" % ("nemáš nůž ani obušek" if melee == "" else Game.ITEMS[p.inv[melee]["id"]]["short"]),
 		"F    svítilna na helmě",
 		"N / Caps Lock   mluvit (nahlas, kdo je blízko)",

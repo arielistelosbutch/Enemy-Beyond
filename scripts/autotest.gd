@@ -45,7 +45,7 @@ func _process(delta: float) -> void:
 			if p and m().go and step == 0:
 				step = 1
 				p.global_position = m().map["evac"] + Vector3(0, 0.3, 0)
-				Input.action_press("use")
+				p.wants_evac = true
 				out("at the Kondor, holding E")
 			if step == 1 and m().finished:
 				out("RESULT evac finished ok")
@@ -157,7 +157,7 @@ func _solo(p: Node) -> void:
 		Input.action_release("fire")
 		Input.action_release("aim")
 		p.global_position = m().map["evac"] + Vector3(0, 0.3, 0)
-		Input.action_press("use")
+		p.wants_evac = true      # Enter in the ship
 		step = 3
 	if step == 3 and m().finished and mode == "solo":
 		out("RESULT finished, kills %d merc missions %d" % [p.kills, Game.merc["missions"]])
@@ -620,6 +620,9 @@ func _pose(p: Node) -> void:
 	p.gun.visible = false
 	p.gun_l.visible = false
 	var shots := [["stand", false, false, false, false], ["crouch", true, false, false, false], ["prone", false, true, false, false]]
+	var only := Game.cmd_arg("only", "")
+	if only != "":
+		shots = []
 	for e in shots:
 		p.crouching = e[1]; p.prone = e[2]; p.downed = e[3]; p.dead = e[4]
 		for i in 40:
@@ -627,7 +630,7 @@ func _pose(p: Node) -> void:
 			await get_tree().process_frame
 		get_viewport().get_texture().get_image().save_png("user://pose_%s.png" % e[0])
 	p.prone = false
-	for id in Game.cmd_arg("items", "knife,radio").split(","):
+	for id in (Game.cmd_arg("items", "knife,shotgun").split(",") if only == "" else []):
 		p.inv["rh"] = {"id": id, "loaded": 5}
 		p.inv.erase("lh")
 		p._update_held()
@@ -653,6 +656,37 @@ func _pose(p: Node) -> void:
 		p._animate_body(1.0 / 30.0)
 		await get_tree().process_frame
 	get_viewport().get_texture().get_image().save_png("user://pose_item_zradio.png")
+	# emotes and idling (salute, at ease, hands on the hips), reloads seen from outside
+	p.held_l = ""
+	var fwd0: Vector3 = -p.merc_model.global_transform.basis.z.normalized()
+	cam.global_position = p.global_position + fwd0 * 2.4 + fwd0.cross(Vector3.UP) * 0.9 + Vector3(0, 1.2, 0)
+	cam.look_at(p.global_position + Vector3(0, 1.0, 0))
+	for em in [["zsalute", 1], ["zatease", 2], ["zhips", 0]]:
+		p.inv.erase("rh")
+		p._update_held()
+		p.emote = em[1]
+		p._idle_t = 0.0
+		if Game.cmd_arg("quick", "") != "" and em[0] != "zsalute":
+			pass
+		for i in (160 if em[1] == 0 else 30):
+			p._animate_body(1.0 / 30.0)
+			await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png("user://pose_%s.png" % em[0])
+	p.emote = 0
+	for rl in ["pistol", "shotgun", "rifle"]:
+		p.inv["rh"] = {"id": rl, "loaded": 1}
+		p._update_held()
+		p.act = 1
+		p._act_t = 0.0
+		for i in 12:
+			p._animate_body(1.0 / 30.0)
+			await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png("user://pose_zreload_%s.png" % rl)
+	p.act = 0
+	p.inv.erase("rh")
+	p._update_held()
+	cam.global_position = p.global_position + Vector3(2.2, 1.0, -1.6)
+	cam.look_at(p.global_position + Vector3(0, 0.75, 0))
 	# wounds through the armour + blood of a few races on the floor
 	p.held_l = ""
 	p._show_items("", "", p.held_back)

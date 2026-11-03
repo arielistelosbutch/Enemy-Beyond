@@ -73,9 +73,19 @@ func _pick_weather() -> void:
 var go := false
 var ready_ids := {}
 
-## Called by the local HUD when this player presses "ready".
+## Called when this player presses Enter in the ship.
+var _me_ready := false
 func i_am_ready() -> void:
+	if _me_ready:
+		return
+	_me_ready = true
 	_set_ready.rpc_id(1)
+
+## The local briefing has been read: into the ship (the ramp stays shut until all are ready).
+func brief_done() -> void:
+	go = true
+	if Game.autotest() != "":
+		i_am_ready()
 
 @rpc("any_peer", "call_local", "reliable")
 func _set_ready() -> void:
@@ -96,7 +106,8 @@ func _ready_state() -> void:
 ## After the briefing: a few seconds inside the Kondor with the ramp closed (check the gear),
 ## then the ramp drops and the night begins. The aliens wait for the ramp too.
 const PREP_TIME := 10.0
-var prep_left := PREP_TIME
+var prep_left := PREP_TIME      # > 0 = the ramp is shut (it opens when everyone pressed Enter)
+var _prep_note := 0.0
 var _door: Node3D
 
 func started() -> bool:
@@ -140,14 +151,14 @@ func _prep_tick(delta: float) -> void:
 	if not go or prep_left <= 0.0 and _door == null:
 		return
 	if prep_left > 0.0:
-		var before := ceili(prep_left)
-		prep_left -= delta
-		if ceili(prep_left) != before and hud:
-			if prep_left > 0.0:
-				hud.message("PŘÍPRAVA: rampa se otevře za %d s - zkontroluj výstroj (I), domluvte se." % ceili(prep_left), 1.2)
-			else:
-				hud.message("Rampa dole. Hodně štěstí.", 2.0)
-				Game.play_ui(self, "creak", -4)
+		if Input.is_action_just_pressed("ready") and not hud.inventory_open:
+			i_am_ready()
+			Game.play_ui(self, "clink", -10)
+		_prep_note -= delta
+		if _prep_note <= 0.0 and hud:
+			_prep_note = 1.0
+			var cnt := " (připraveno %d/%d)" % [hud.ready_n, hud.ready_total] if hud.ready_total > 1 else ""
+			hud.message(("PŘIPRAVEN - čeká se na ostatní%s." % cnt) if _me_ready else ("V LODI: vybav se (I), domluvte se. ENTER = připraven%s." % cnt), 1.3)
 		return
 	if _door:
 		# the ramp falls outwards and becomes the walkway
@@ -163,10 +174,13 @@ func _prep_tick(delta: float) -> void:
 func _ready_sync(n: int, total: int, all: bool) -> void:
 	if hud:
 		hud.ready_count(n, total)
-	if all and not go:
+	if all and prep_left > 0.0:
 		go = true
+		prep_left = 0.0
 		if hud:
 			hud.brief_go()
+			hud.message("Rampa dole. Hodně štěstí.", 2.0)
+		Game.play_ui(self, "creak", -4)
 
 ## How much louder footsteps are on this ground (snow crunches).
 func step_noise() -> float:
@@ -1354,12 +1368,15 @@ func _judge() -> void:
 	if ps.is_empty():
 		return
 	var standing := 0
+	var living := 0
 	var at_evac := 0
 	for p in ps:
-		if not p.downed and not p.dead:
-			standing += 1
+		if not p.dead:
+			living += 1
 			if p.global_position.distance_to(map["evac"]) < 3.5 and p.wants_evac:
 				at_evac += 1
+		if not p.downed and not p.dead:
+			standing += 1
 	if map.has("brain"):
 		for a in aliens():
 			if a.race == "mozek" and a.dead and not finished:
@@ -1376,7 +1393,7 @@ func _judge() -> void:
 		return
 	if standing == 0:
 		_end.rpc(false, "Celý tým padl." if mt != "base" else "Celý tým padl. Základna je v rukou vetřelců.")
-	elif at_evac == standing and mt != "base":
+	elif at_evac == living and mt != "base":
 		var won := alive_aliens() == 0
 		var why := "Posádka UFO zneškodněna." if won else "Tým se stáhl z mise."
 		match mt:
@@ -1429,8 +1446,12 @@ func _end(success: bool, why: String) -> void:
 		var purse := int(Game.merc.get("money", 0)) + pay
 		if pay > 0:
 			xp_text += "\nŽold: +%d kr (máš %d kr)%s" % [pay, purse, ("  - z toho nálezy %d kr" % me.salvage) if me.salvage > 0 else ""]
-		if me.dead or (me.downed and not me.global_position.distance_to(map["evac"]) < 3.5):
-			fate = "PADL - žoldák je mrtvý (úspory převzal nový žoldák)"
+		var aboard: bool = me.global_position.distance_to(map["evac"]) < 3.5
+		if me.dead or (me.downed and not aboard):
+			# the family is paid off: less when the body came home with the team
+			var cost := 80 if aboard else 250
+			purse = maxi(0, purse - cost)
+			fate = "PADL - žoldák je mrtvý (%s, odškodné rodině -%d kr; úspory převzal nový žoldák)" % ["tělo jste přivezli domů" if aboard else "tělo zůstalo na místě", cost]
 			Game.merc = Game.new_merc()      # the same slot gets a fresh recruit
 		else:
 			# experience: only the living learn
@@ -1439,11 +1460,16 @@ func _end(success: bool, why: String) -> void:
 			xp_text = "\nZkušenosti +%d  (%s)" % [xp, Game.rank_name(Game.merc)]
 			for g in gained:
 				xp_text += "\n" + g
-			if me.wounded or me.hp < me.max_hp - 0.5:
+			if me.wounded or me.downed or me.hp < me.max_hp - 0.5:
 				fate = "zraněn"
-				# campaign missions: off to the sick bay for some days of game time
+				# campaign missions: off to the sick bay for some days of game time; pulled out
+				# half-dead (carried aboard on the floor) means a long stay
 				if Net.mission_params.has("cid"):
-					var days := Game.wound(Game.merc, me.max_hp - me.hp, str(Net.mission_params["cid"]), float(Net.mission_params.get("day", 0.0)))
+					var lost_hp: float = me.max_hp * 0.8 if me.downed else me.max_hp - me.hp
+					var days := Game.wound(Game.merc, lost_hp, str(Net.mission_params["cid"]), float(Net.mission_params.get("day", 0.0)))
+					if me.downed:
+						Game.merc["heal_days"] = float(Game.merc.get("heal_days", 0.0)) + 3.0
+						days += 3.0
 					if days > 0.0:
 						fate = "zraněn - na marodce %d %s herního času (mezitím můžeš hrát za jiného žoldáka)" % [int(days), "den" if days < 2 else ("dny" if days < 5 else "dní")]
 		Game.merc["money"] = purse
@@ -1682,7 +1708,7 @@ func objective_text() -> String:
 			if v.dead:
 				return "%s je mrtvý." % vip_name
 			if v.saved:
-				return "%s je v Kondoru. Odlet: drž E u rampy." % vip_name
+				return "%s je v Kondoru. Odlet: všichni Enter v lodi." % vip_name
 			if v.st == v.C.FOLLOW:
 				return "%s jde za tebou (zdraví %d/3) - do Kondoru!" % [vip_name, v.vip_hp]
 			return "Najdi: %s (nouzový maják)" % vip_name

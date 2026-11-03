@@ -55,6 +55,7 @@ var fleeing := false
 var ufo_fire_cd := 2.0
 var weave := 0.0
 
+var speed_cap := 999.0         # the escort's transport flies slower than a jet
 var t := 0.0
 var outcome := ""
 var end_t := 0.0
@@ -258,7 +259,7 @@ func _fly(delta: float) -> void:
 	if Input.is_action_pressed("move_back"): throttle = max(0.25, throttle - delta * 0.6)
 	var boost := Input.is_action_pressed("sprint")
 	var target_speed := 50.0 + throttle * 60.0 + (40.0 if boost else 0.0)
-	speed = lerp(speed, target_speed, delta * 0.8)
+	speed = minf(lerp(speed, target_speed, delta * 0.8), speed_cap)
 	var roll_in := Input.get_axis("move_left", "move_right")
 	# A/D tap: hard break - throw the jet sideways and snap-roll (cooldown 1 s)
 	break_cd -= delta

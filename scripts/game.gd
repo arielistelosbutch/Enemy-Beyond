@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.26 prototyp"
-const VERSION_NUM := "0.26"
+const VERSION := "0.27 prototyp"
+const VERSION_NUM := "0.27"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -117,6 +117,12 @@ func buy_mod(weapon: String, mod: String) -> bool:
 	Net.update_merc()
 	return true
 
+## Texts say "Kondor"; before its research the team flies the old helicopter Čáp.
+func shipify(t: String) -> String:
+	if String(Net.mission_params.get("transport", "kondor")) != "heli" or not "Kondor" in t:
+		return t
+	return t.replace("v Kondoru", "v Čápu").replace("Kondoru", "Čápa").replace("Kondor", "Čáp")
+
 func two_handed(id: String) -> bool:
 	return ITEMS.get(id, {}).get("two", false)
 
@@ -203,7 +209,7 @@ func _setup_input() -> void:
 		"pause": [KEY_ESCAPE], "prone": [KEY_Z, KEY_Y], "melee": [KEY_V], "smoke": [KEY_X], "mine": [KEY_B],
 		"primary": [KEY_1], "secondary": [KEY_2],
 		"belt1": [KEY_3], "belt2": [KEY_4], "belt3": [KEY_5], "belt4": [KEY_6],
-		"talk": [KEY_CAPSLOCK, KEY_N], "radio_talk": [KEY_T, KEY_K], "mic_toggle": [KEY_TAB], "drop": [KEY_BACKSPACE],
+		"talk": [KEY_CAPSLOCK, KEY_N], "radio_talk": [KEY_T, KEY_K], "mic_toggle": [KEY_TAB], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
 	}
 	for action in keys:
 		if not InputMap.has_action(action):

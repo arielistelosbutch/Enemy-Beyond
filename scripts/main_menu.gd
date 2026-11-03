@@ -1030,6 +1030,9 @@ func _autotest() -> void:
 		"air":
 			Net.mission_params = {"intercept": true, "id": -1, "ufo": Game.cmd_arg("ufo", "raider")}
 			get_tree().change_scene_to_file("res://scenes/Intercept.tscn")
+		"escort":
+			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
+			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
 		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest":
 			Net.play_solo()
 			Campaign.active = false
