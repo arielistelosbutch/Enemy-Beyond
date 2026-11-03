@@ -1,4 +1,10 @@
 {
+ "0.31.1": [
+  "Moje první úpravy z Dílny jsou ve hře natrvalo: puška na zádech, pozdrav, pohov, ruce v bok, držení pušky a pistole.",
+  "Levá ruka se sama chytí zbraně (předpažbí pušky, pistole oběma rukama): posunu zbraň nebo pravou ruku a levá jde s ní. V Dílně se dá místo úchopu posunout (oranžová tečka).",
+  "Dílna: Kopírovat / Vložit (pózu do jiné pózy, umístění předmětu na jiný předmět), Zrcadlit levou a pravou stranu, Krok zpět (i Ctrl+Z), Zastavit pohyb.",
+  "Dílna už neukazuje starou krabičku skeneru v ruce - ve hře ji žoldáci nikdy neměli, byla to jen součást modelu."
+ ],
  "0.31": [
   "Dílna (tlačítko v hlavním menu): sám si posunu a natočím předměty v rukou - z očí i zvenku - a zbraň na zádech. U póz (držení zbraně, nabíjení, úder, pozdrav, pohov, ruce v bok, práce vetřelců) natočím kterokoli kloub; kloub se vybírá i kliknutím do obrázku.",
   "Úpravy se ukládají do souboru upravy.json vedle hry a platí hned v misi. Ten soubor pošlu Claudovi a ten je zapíše do hry natrvalo.",

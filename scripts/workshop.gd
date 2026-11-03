@@ -43,6 +43,12 @@ var item_sliders := {}       # "pos.x" -> HSlider
 var bone_sliders := {}       # "x" -> HSlider
 var status: Label
 var _syncing := false
+var grip_sliders := {}       # "x" -> HSlider (left hand on the gun)
+var _paused := false
+var _clip: Variant = null    # copied tweak (Dictionary) and what kind it was
+var _clip_kind := ""
+var _undo_stack := []
+var _undo_t := 0.0
 
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -132,6 +138,20 @@ func _ready() -> void:
 			Game.play_ui(self, "ui_deny", -6))
 	_btn(row, "Vynulovat", _reset_current)
 	_btn(row, "Zpět", func(): get_tree().change_scene_to_file("res://scenes/Main.tscn"))
+	var row2 := HBoxContainer.new()
+	panel_box.add_child(row2)
+	_btn(row2, "Kopírovat", _copy)
+	_btn(row2, "Vložit", _paste)
+	_btn(row2, "Zrcadlit L/P", _mirror)
+	_btn(row2, "Krok zpět", _undo)
+	var row3 := HBoxContainer.new()
+	panel_box.add_child(row3)
+	var pause := CheckBox.new()
+	pause.text = "Zastavit pohyb"
+	pause.add_theme_font_size_override("font_size", 8)
+	pause.toggled.connect(func(on): _paused = on)
+	row3.add_child(pause)
+	_lbl(row3, "Ctrl+Z = krok zpět", UiSkin.DIM)
 	_rebuild_panel()
 	if Game.autotest() == "workshop":
 		_selftest.call_deferred()
@@ -153,11 +173,14 @@ func _selftest() -> void:
 		if not item_sliders.is_empty():
 			item_sliders["pos.y"].value = 0.02
 			item_sliders["rot.z"].value = 10
-		if not bone_sliders.is_empty():
+		if not bone_sliders.is_empty() and mode != "tp":
 			bone_sliders["x"].value = 15
+		if mode == "tp":
+			yaw = PI * 0.5 + 0.2
+			pitch = -0.3
 		for f in 20:
 			await get_tree().process_frame
-		print("[WS] %s %s bone=%s tweaks=%s" % [mode, subject, bone, Game.tweaks.keys()])
+		print("[WS] %s %s bone=%s ik_err=%.3f" % [mode, subject, bone, _ik_err])
 		get_viewport().get_texture().get_image().save_png("user://ws_%s_%s.png" % [mode, subject])
 	Game.tweaks = keep
 	get_tree().quit()
@@ -222,6 +245,7 @@ func _rebuild_panel() -> void:
 		c.queue_free()
 	item_sliders.clear()
 	bone_sliders.clear()
+	grip_sliders.clear()
 	bone_opt = null
 	sub2 = ""
 	bone = ""
@@ -265,6 +289,12 @@ func _rebuild_panel() -> void:
 			var a: String = ax[0]
 			bone_sliders[a] = _slider(dyn, ax[1], -180, 180, 1, func(): _bone_changed())
 		_lbl(dyn, "Kost vybereš i kliknutím do obrázku.", UiSkin.DIM)
+	if mode == "tp":
+		_lbl(dyn, "LEVÁ RUKA NA ZBRANI (oranžová tečka)")
+		for ax in [["x", "do strany"], ["y", "nahoru"], ["z", "dopředu/zpět"]]:
+			var a2: String = ax[0]
+			grip_sliders[a2] = _slider(dyn, ax[1], -0.8, 0.8, 0.002, func(): _grip_changed())
+		_lbl(dyn, "Levá ruka se sama chytí zbraně - posuneš zbraň nebo pravou ruku a levá jde s ní.", UiSkin.DIM)
 	_lbl(dyn, "Myš: tažení otáčí pohled, kolečko přibližuje." if mode != "fp" else "Pohled je přesně z očí žoldáka.", UiSkin.DIM)
 	_fill_sub2()
 	_build_scene()
@@ -293,7 +323,86 @@ func _pose_key() -> String:
 		"alien": return "act/" + sub2
 	return ""
 
+func _grip_changed() -> void:
+	_push_undo()
+	Game.tweaks["grip/" + subject] = {"l": [grip_sliders["x"].value, grip_sliders["y"].value, grip_sliders["z"].value]}
+
+## Undo: a snapshot of all tweaks before a change (one per drag, not per pixel).
+func _push_undo() -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _undo_t > 0.7:
+		_undo_stack.append(Game.tweaks.duplicate(true))
+		if _undo_stack.size() > 60:
+			_undo_stack.pop_front()
+	_undo_t = now
+
+func _undo() -> void:
+	if _undo_stack.is_empty():
+		status.text = "Není co vracet."
+		return
+	Game.tweaks = _undo_stack.pop_back()
+	_undo_t = 0.0
+	_sync_sliders()
+	_place_item()
+	status.text = "Krok zpět."
+
+func _input(ev: InputEvent) -> void:
+	if ev is InputEventKey and ev.pressed and ev.keycode == KEY_Z and ev.ctrl_pressed:
+		_undo()
+		get_viewport().set_input_as_handled()
+
+## Copy / paste: an item placement onto another item, or a pose (all its bones) onto another pose.
+func _copy() -> void:
+	if not bone_sliders.is_empty() and Game.tweaks.has(_pose_key()):
+		_clip = Game.tweaks[_pose_key()].duplicate(true)
+		_clip_kind = "pose"
+		status.text = "Zkopírována póza (%d kostí). Vyber jinou pózu a dej Vložit." % _clip.size()
+	elif not item_sliders.is_empty() and Game.tweaks.has(_item_key()):
+		_clip = Game.tweaks[_item_key()].duplicate(true)
+		_clip_kind = "item"
+		status.text = "Zkopírováno umístění předmětu. Vyber jiný předmět a dej Vložit."
+	else:
+		status.text = "Tady zatím není žádná úprava ke zkopírování."
+
+func _paste() -> void:
+	if _clip == null:
+		status.text = "Nejdřív něco zkopíruj."
+		return
+	_push_undo()
+	_undo_t = 0.0
+	if _clip_kind == "pose" and not bone_sliders.is_empty():
+		Game.tweaks[_pose_key()] = _clip.duplicate(true)
+		status.text = "Póza vložena."
+	elif _clip_kind == "item" and not item_sliders.is_empty():
+		Game.tweaks[_item_key()] = _clip.duplicate(true)
+		status.text = "Umístění vloženo."
+	else:
+		status.text = "Tohle sem vložit nejde (póza jde jen do pózy, předmět do předmětu)."
+		return
+	_sync_sliders()
+	_place_item()
+
+## Mirror the pose: what the right arm does, the left does (and back), turned the other way.
+func _mirror() -> void:
+	if bone_sliders.is_empty():
+		status.text = "Zrcadlit jde jen póza."
+		return
+	_push_undo()
+	_undo_t = 0.0
+	var d: Dictionary = Game.tweaks.get(_pose_key(), {})
+	var out := {}
+	for b in d:
+		var o: String = b
+		if b.ends_with(".L"): o = b.trim_suffix(".L") + ".R"
+		elif b.ends_with(".R"): o = b.trim_suffix(".R") + ".L"
+		var v: Array = d[b]
+		out[o] = [v[0], -float(v[1]), -float(v[2])]
+	Game.tweaks[_pose_key()] = out
+	_sync_sliders()
+	status.text = "Póza zrcadlena (levá a pravá strana prohozené)."
+
 func _item_changed() -> void:
+	_push_undo()
 	var t2 := {"pos": [item_sliders["pos.x"].value, item_sliders["pos.y"].value, item_sliders["pos.z"].value],
 		"rot": [item_sliders["rot.x"].value, item_sliders["rot.y"].value, item_sliders["rot.z"].value], "scale": item_sliders["scale"].value}
 	Game.tweaks[_item_key()] = t2
@@ -302,6 +411,7 @@ func _item_changed() -> void:
 func _bone_changed() -> void:
 	if bone == "":
 		return
+	_push_undo()
 	var key := _pose_key()
 	var d: Dictionary = Game.tweaks.get(key, {}).duplicate()
 	var v := [bone_sliders["x"].value, bone_sliders["y"].value, bone_sliders["z"].value]
@@ -326,6 +436,10 @@ func _sync_sliders() -> void:
 	if not bone_sliders.is_empty():
 		var b: Array = Game.tweaks.get(_pose_key(), {}).get(bone, [0, 0, 0])
 		bone_sliders["x"].value = b[0]; bone_sliders["y"].value = b[1]; bone_sliders["z"].value = b[2]
+	if not grip_sliders.is_empty() and item_node:
+		var g := ArmIK.grips(subject, item_node)
+		var v: Vector3 = g.get("l", Vector3.ZERO)
+		grip_sliders["x"].value = v.x; grip_sliders["y"].value = v.y; grip_sliders["z"].value = v.z
 	_syncing = false
 
 func _reset_current() -> void:
@@ -333,6 +447,8 @@ func _reset_current() -> void:
 		Game.tweaks.erase(_item_key())
 	if mode in ["tp", "emote", "alien"]:
 		Game.tweaks.erase(_pose_key())
+	if mode == "tp":
+		Game.tweaks.erase("grip/" + subject)
 	_sync_sliders()
 	_build_scene()
 	status.text = "Vynulováno (ulož, ať to platí i v souboru)."
@@ -366,6 +482,10 @@ func _build_scene() -> void:
 			model = Game.model("merc")
 			world.add_child(model)
 			Game.apply_look(model, Game.merc.get("look", {}))
+			for gname in ["Gear_Scanner", "Gear_Plate", "Gear_Grenade", "Gear_Flare"]:
+				var gn := model.find_child(gname, true, false)
+				if gn:
+					gn.visible = false     # the old hand-held scanner and spare kit: not on show here
 			_setup_rig()
 			if mode in ["tp", "back"]:
 				holder = Node3D.new()
@@ -379,7 +499,7 @@ func _build_scene() -> void:
 				else:
 					holder.transform = rest.affine_inverse() * Transform3D(Basis.from_euler(Vector3(-PI / 2 + 0.3, 0, 0.6)), Vector3(0.0, 1.2, 0.2))
 			target = Vector3(0, 1.25 if mode != "back" else 1.2, 0)
-			dist = 1.6 if mode == "tp" else 2.2
+			dist = 2.0 if mode == "tp" else 2.2
 			yaw = PI + 0.6 if mode != "back" else 0.4
 		"alien":
 			model = Game.model(String(AlienScript.RACES[subject]["model"]))
@@ -441,9 +561,10 @@ static func _bone_cz(n: String) -> String:
 		"hand": "ruka", "thigh": "stehno", "shin": "lýtko", "jaw": "čelist", "tail": "ocas"}.get(base, base) + side
 
 func _process(delta: float) -> void:
-	t += delta
+	if not _paused:
+		t += delta
 	if anim:
-		anim.advance(delta)
+		anim.advance(0.0 if _paused else delta)
 	if sk:
 		var want := {}
 		var drop := 0.0
@@ -468,12 +589,52 @@ func _process(delta: float) -> void:
 		var ri := sk.find_bone("root")
 		if ri >= 0 and drop != 0.0:
 			sk.set_bone_pose_position(ri, sk.get_bone_rest(ri).origin + Vector3(0, drop, 0))
+		if mode == "tp" and holder and item_node:
+			# exactly as in the game: the gun sits in the right hand, the left hand takes hold of it
+			var hi := sk.find_bone("hand.R")
+			if hi >= 0:
+				var hand := sk.global_transform * sk.get_bone_global_pose(hi)
+				holder.global_position = hand.origin + hand.basis.y.normalized() * -0.05
+			var g := ArmIK.grips(subject, item_node) if Game.ITEMS.get(subject, {}).get("type", "") == "weapon" else {}
+			if g.has("l") and sub2 == "":
+				var wg: Vector3 = holder.global_transform * item_node.transform * g["l"]
+				var ie := sk.find_bone("forearm.L")
+				ArmIK.solve(sk, "L", wg, sk.global_transform * sk.get_bone_global_pose(ie).origin + Vector3.DOWN * 0.3)
+				_ik_err = (sk.global_transform * sk.get_bone_global_pose(sk.find_bone("hand.L")).origin).distance_to(wg)
+				if Game.autotest() == "workshop" and Engine.get_process_frames() % 30 == 0:
+					var sh := sk.global_transform * sk.get_bone_global_pose(sk.find_bone("upperarm.L")).origin
+					var hr := sk.global_transform * sk.get_bone_global_pose(sk.find_bone("hand.R")).origin
+					print("[IK] shoulder->grip %.2f  handR->grip %.2f grip=%s box=%s" % [sh.distance_to(wg), hr.distance_to(wg), g["l"], ArmIK._boxes.get(subject)])
+				_grip_marker(wg)
+			else:
+				_grip_marker(Vector3.INF)
+		else:
+			_grip_marker(Vector3.INF)
 		_highlight_bone()
 	if mode != "fp":
 		var dir := Vector3(sin(yaw) * cos(pitch), -sin(pitch), cos(yaw) * cos(pitch))
 		cam.position = target + dir * dist
 		cam.look_at(target, Vector3.UP)
 		cam.fov = 50.0
+
+var _gm: MeshInstance3D
+var _ik_err := -1.0
+func _grip_marker(at: Vector3) -> void:
+	if _gm == null:
+		_gm = MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.018
+		sm.height = 0.036
+		_gm.mesh = sm
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.albedo_color = Color(1.0, 0.55, 0.1)
+		m.no_depth_test = true
+		_gm.material_override = m
+		world.add_child(_gm)
+	_gm.visible = at != Vector3.INF
+	if _gm.visible:
+		_gm.global_position = at
 
 ## A small glowing marker on the chosen bone, so you see what you are turning.
 var _marker: MeshInstance3D

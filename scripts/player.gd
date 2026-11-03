@@ -499,11 +499,32 @@ func _animate_body(delta: float) -> void:
 	if _sk and _hand_r >= 0 and body_gun:
 		var hand := _sk.global_transform * _sk.get_bone_global_pose(_hand_r)
 		body_gun.global_position = hand.origin + hand.basis.y.normalized() * -0.05
+		if not (dead or downed or prone or sprinting) and emote == 0:
+			_left_hand_ik()
 	# fallen: the hands are empty (the gun lies by him), only the slung one stays on the back
 	if body_gun:
 		body_gun.visible = not (dead or downed or emote != 0)
 	if body_l:
 		body_l.visible = not (dead or downed)
+
+## The left hand takes hold of the gun's fore-end (or the pistol grip) wherever the gun is:
+## move the gun or the right arm and the left arm follows.
+func _left_hand_ik() -> void:
+	if act != 0 or held == "" or held_l != "" or body_gun.get_child_count() == 0:
+		return
+	var rule: Dictionary = Game.ITEMS.get(held, {})
+	if rule.get("type", "") != "weapon":
+		return
+	var m: Node3D = body_gun.get_child(0)
+	var g := ArmIK.grips(held, m)
+	if not g.has("l"):
+		return
+	var world_grip: Vector3 = body_gun.global_transform * m.transform * g["l"]
+	var ie := _bone("forearm.L")
+	if ie < 0:
+		return
+	var elbow := _sk.global_transform * _sk.get_bone_global_pose(ie).origin
+	ArmIK.solve(_sk, "L", world_grip, elbow + Vector3.DOWN * 0.3)
 
 # ---- how the others see you hold things: the arms are posed over the walk cycle -----------
 ## what the hands are doing right now (synced): 0 nothing special, 1 reloading, 2 striking
