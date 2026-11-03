@@ -204,6 +204,8 @@ const PATCH_COLORS := [Color(0.85, 0.65, 0.15), Color(0.2, 0.6, 0.95), Color(0.9
 ## The mercenary as others see him: a rigged model whose gear matches his inventory.
 func _build_body(data: Dictionary) -> void:
 	merc_model = Game.model("merc")
+	# the rig's ".R" arm is the model's anatomical left: mirrored, the gun hand is the right one
+	merc_model.scale = Vector3(-1, 1, 1)
 	body.add_child(merc_model)
 	body_anim = merc_model.find_child("AnimationPlayer", true, false)
 	if body_anim:

@@ -45,6 +45,7 @@ var status: Label
 var _syncing := false
 var grip_sliders := {}       # "x" -> HSlider (left hand on the gun)
 var _paused := false
+var _grip_on := true
 var _clip: Variant = null    # copied tweak (Dictionary) and what kind it was
 var _clip_kind := ""
 var _undo_stack := []
@@ -151,7 +152,19 @@ func _ready() -> void:
 	pause.add_theme_font_size_override("font_size", 8)
 	pause.toggled.connect(func(on): _paused = on)
 	row3.add_child(pause)
-	_lbl(row3, "Ctrl+Z = krok zpět", UiSkin.DIM)
+	var grip := CheckBox.new()
+	grip.text = "Levá drží zbraň"
+	grip.button_pressed = true
+	grip.add_theme_font_size_override("font_size", 8)
+	grip.toggled.connect(func(on): _grip_on = on)
+	row3.add_child(grip)
+	var row4 := HBoxContainer.new()
+	panel_box.add_child(row4)
+	for v in [["Zepředu", PI, 0.0], ["Z boku", PI * 0.5, 0.0], ["Shora", PI, -1.2], ["Zezadu", 0.0, -0.1]]:
+		var vy: float = v[1]
+		var vp: float = v[2]
+		_btn(row4, v[0], func(): yaw = vy; pitch = vp)
+	_lbl(panel_box, "Ctrl+Z = krok zpět. Při ladění polohy zbraně vypni „Levá drží zbraň“, ať se ti nehýbe ruka; pak ji zase zapni.", UiSkin.DIM)
 	_rebuild_panel()
 	if Game.autotest() == "workshop":
 		_selftest.call_deferred()
@@ -480,6 +493,7 @@ func _build_scene() -> void:
 				holder.add_child(Game.model("hand_l" if shield else "hand_r"))
 		"tp", "back", "emote":
 			model = Game.model("merc")
+			model.scale = Vector3(-1, 1, 1)     # as in the game: the gun hand is the right one
 			world.add_child(model)
 			Game.apply_look(model, Game.merc.get("look", {}))
 			for gname in ["Gear_Scanner", "Gear_Plate", "Gear_Grenade", "Gear_Flare"]:
@@ -596,7 +610,7 @@ func _process(delta: float) -> void:
 				var hand := sk.global_transform * sk.get_bone_global_pose(hi)
 				holder.global_position = hand.origin + hand.basis.y.normalized() * -0.05
 			var g := ArmIK.grips(subject, item_node) if Game.ITEMS.get(subject, {}).get("type", "") == "weapon" else {}
-			if g.has("l") and sub2 == "":
+			if g.has("l") and sub2 == "" and _grip_on:
 				var wg: Vector3 = holder.global_transform * item_node.transform * g["l"]
 				var ie := sk.find_bone("forearm.L")
 				ArmIK.solve(sk, "L", wg, sk.global_transform * sk.get_bone_global_pose(ie).origin + Vector3.DOWN * 0.3)

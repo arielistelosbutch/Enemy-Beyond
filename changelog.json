@@ -1,4 +1,8 @@
 {
+ "0.31.2": [
+  "Žoldáci drží zbraň konečně v pravé ruce: model byl zrcadlově obráceně (zbraňová ruka byla anatomicky levá). Teď salutují pravou, zbraň nosí v pravé - ve hře, v menu i v Dílně. Moje úpravy z Dílny se otočily s ním.",
+  "Dílna: přepínač „Levá drží zbraň“ - při ladění polohy zbraně ho vypnu, ať se mi nehýbe ruka. Tlačítka pohledu Zepředu / Z boku / Shora / Zezadu pro snadné vycentrování."
+ ],
  "0.31.1": [
   "Moje první úpravy z Dílny jsou ve hře natrvalo: puška na zádech, pozdrav, pohov, ruce v bok, držení pušky a pistole.",
   "Levá ruka se sama chytí zbraně (předpažbí pušky, pistole oběma rukama): posunu zbraň nebo pravou ruku a levá jde s ní. V Dílně se dá místo úchopu posunout (oranžová tečka).",

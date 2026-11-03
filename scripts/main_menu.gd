@@ -647,6 +647,7 @@ func _build_preview(parent: Node) -> void:
 	sun.rotation = Vector3(-0.6, 0.6, 0)
 	vp.add_child(sun)
 	_cr_model = Game.model("merc")
+	_cr_model.scale = Vector3(-1, 1, 1)     # same as in the game (gun hand = right)
 	vp.add_child(_cr_model)
 	for mi in _cr_model.find_children("Gear_*", "MeshInstance3D", true, false):
 		if not String(mi.name) in ["Gear_Helmet", "Gear_Cap", "Gear_Torch"]:
