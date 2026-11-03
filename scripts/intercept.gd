@@ -104,6 +104,12 @@ func _ready() -> void:
 	add_child(ufo)
 	ufo.scale = Vector3.ONE * float(k["scale"])
 	ufo.position = Vector3(randf_range(-150, 150), 920, -650)
+	var eng := AudioStreamPlayer3D.new()
+	eng.stream = Game.loop_stream("ufo_engine")
+	eng.unit_size = 40.0
+	eng.max_distance = 900.0
+	eng.autoplay = true
+	ufo.add_child(eng)
 	ufo_dir = Vector3(randf_range(-1, 1), 0, -1).normalized()
 	var ul := OmniLight3D.new()
 	ul.light_color = Color(0.6, 0.35, 1.0)

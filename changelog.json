@@ -1,4 +1,13 @@
 {
+ "0.28.2": [
+  "Hlavní menu: hraje už jen Ivova hudba, stará syntetická melodie (a ta z mise) je pryč.",
+  "Nové zvuky od Iva zapojené do hry: hlasy mimozemšťanů při spatření (šedí cvrlikají, velcí řvou, ostatní syčí), kyselinové plivnutí, vrčení, smrtelné výkřiky.",
+  "Žoldáci: zranění muž/žena, výkřik při pádu, vyděšený dech při velkém stresu, obvazování (i u kamaráda), zip a hrabání v batohu.",
+  "Smyčky: pulzující mozek a praskající štítový pylon jsou slyšet z dálky, diskoll dron má vlastní bzučení, přistálé UFO hučí, UFO ve vzdušném boji mají motor.",
+  "Skener při kontaktu blíž než 8 m varuje jiným, naléhavějším tónem. Laser se nabíjí vlastním zvukem.",
+  "Hlasitost zvuků srovnaná: zbraně, tvorové, hlasy a drobné zvuky (zásobníky, nábojnice, závěry) mají každá skupina stejnou úroveň.",
+  "Opraveno: smyčkové zvuky se ořezávaly (špatný konec smyčky u komprimovaných zvuků)."
+ ],
  "0.28.1": [
   "Nové zvuky zbraní od Iva: puška, pistole, magnum, brokovnice, autokanón, odstřelovačka (vlastní výstřel), laserové zbraně (blaster).",
   "Minigun: hlavně se roztočí, při střelbě běží plynulá smyčka, po puštění se dotočí. Ostatní hráči to slyší taky.",

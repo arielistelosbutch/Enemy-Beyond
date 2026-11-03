@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.28.1 prototyp"
-const VERSION_NUM := "0.28.1"
+const VERSION := "0.28.2 prototyp"
+const VERSION_NUM := "0.28.2"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -865,8 +865,16 @@ func apply_retro() -> void:
 		if m is ShaderMaterial:
 			m.set_shader_parameter("jitter", 1.0 if retro else 0.0)
 
+## A looping copy of a sound (for hums, engines, burning flares).
+func loop_stream(sname: String) -> AudioStream:
+	var st: AudioStreamWAV = (sound(sname) as AudioStreamWAV).duplicate()
+	st.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	st.loop_begin = 0
+	st.loop_end = int(st.get_length() * st.mix_rate)
+	return st
+
 ## Sounds with several takes (name_0..name_N-1): a random one each time.
-const VARIANTS := {"plasma_heavy": 10, "casing": 4}
+const VARIANTS := {"plasma_heavy": 10, "casing": 4, "step_heavy": 3}
 func sound(sname: String) -> AudioStream:
 	if VARIANTS.has(sname):
 		sname = "%s_%d" % [sname, randi() % int(VARIANTS[sname])]

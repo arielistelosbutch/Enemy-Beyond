@@ -100,8 +100,6 @@ def music(name, bars, tempo, prog, arp=True, drone=True):
     d = int(SR * beat * .75); ech = np.zeros_like(lp); ech[d:] = lp[:-d] * .35
     wav(name, (lp + ech)[:int(SR * total)] * .9)
 
-music("music_menu", 16, 84, [57, 57, 53, 55, 57, 57, 52, 52])
-music("music_mission", 16, 60, [45, 45, 46, 44], arp=False)
 
 # ---- horror ambience ---------------------------------------------------------------
 rng = np.random.default_rng(7)

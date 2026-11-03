@@ -23,7 +23,7 @@ func setup(data: Dictionary) -> void:
 func _ready() -> void:
 	super._ready()
 	hum = AudioStreamPlayer3D.new()
-	hum.stream = Game.sound("hum")
+	hum.stream = Game.loop_stream("drone_hover") if race == "diskoll" else Game.sound("hum")
 	hum.volume_db = -8.0 if race == "diskoll" else -4.0
 	hum.pitch_scale = 1.3 if race == "diskoll" else 0.7
 	hum.max_distance = 30.0

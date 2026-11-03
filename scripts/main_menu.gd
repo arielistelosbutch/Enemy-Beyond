@@ -12,7 +12,6 @@ var _box: VBoxContainer
 var _confirm_new := false
 var _confirm_fire := false
 var _status: Label
-var _music: AudioStreamPlayer
 
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -21,15 +20,6 @@ func _ready() -> void:
 	bg.color = BG
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
-	_music = AudioStreamPlayer.new()
-	var st: AudioStreamWAV = Game.sound("music_menu")
-	st.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	st.loop_end = st.data.size() / 2
-	_music.stream = st
-	_music.volume_db = -8
-	_music.bus = "Music"
-	add_child(_music)
-	_music.play()
 	Net.roster_changed.connect(_refresh_lobby)
 	Net.wallets_changed.connect(_refresh_lobby)
 	Net.note.connect(_on_note)

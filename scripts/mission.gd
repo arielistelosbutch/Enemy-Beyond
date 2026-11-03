@@ -254,6 +254,7 @@ func _ready() -> void:
 		if weather == "rain":
 			rain.amount = 380
 	_build_door()
+	_ufo_ambience()
 	_build_beacons()
 	if mtype() == "rescue":
 		var vr := RandomNumberGenerator.new()
@@ -275,11 +276,19 @@ func _ready() -> void:
 	else:
 		_client_ready.rpc_id(1)
 
+## The landed (or crashed) ship hums in the dark: you hear it before you see it.
+func _ufo_ambience() -> void:
+	if not map.has("ufo") or map["ufo"] == Vector3.ZERO or mtype() in ["base", "mars"]:
+		return
+	var ap := AudioStreamPlayer3D.new()
+	ap.unit_size = 5.0
+	ap.max_distance = 45.0
+	add_child(ap)
+	ap.global_position = map["ufo"] + Vector3(0, 1.5, 0)
+	_loop_player(ap, "ufo_hum", -6.0)
+
 func _loop_player(ap: Node, sname: String, db: float) -> void:
-	var st: AudioStreamWAV = Game.sound(sname).duplicate()
-	st.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	st.loop_end = st.data.size() / 2
-	ap.stream = st
+	ap.stream = Game.loop_stream(sname)
 	ap.volume_db = db
 	ap.bus = "Ambient"
 	if not ap.is_inside_tree():

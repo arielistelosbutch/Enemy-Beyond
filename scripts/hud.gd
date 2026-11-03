@@ -492,7 +492,7 @@ func _scanner_update(delta: float) -> void:
 		near = min(near, Vector2(b["pos"].x - p.global_position.x, b["pos"].z - p.global_position.z).length())
 	if near < SCAN_RANGE and _ping_t <= 0:
 		_ping_t = lerpf(0.22, 1.4, near / SCAN_RANGE)
-		Game.play_ui(mission(), "ping", -16 + (SCAN_RANGE - near) / 2.5)
+		Game.play_ui(mission(), "scanner_close" if near < 8.0 else "ping", -16 + (SCAN_RANGE - near) / 2.5)
 	if _scan_t > 0:
 		return
 	_scan_t = 0.5

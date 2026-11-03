@@ -176,6 +176,16 @@ func _unused_part(pos: Vector3, size: Vector3, m: Material) -> MeshInstance3D:
 
 func _ready() -> void:
 	mission = get_tree().current_scene
+	# the big brain pulses, the shield pylon crackles - you hear them from afar
+	if race in ["mozek", "pylon"]:
+		var lp := AudioStreamPlayer3D.new()
+		lp.stream = Game.loop_stream("brain_pulse" if race == "mozek" else "shield_pylon")
+		lp.unit_size = 6.0
+		lp.max_distance = 50.0
+		lp.bus = "Ambient"
+		add_child(lp)
+		lp.position = Vector3(0, 1.5, 0)
+		lp.autoplay = true
 	agent = NavigationAgent3D.new()
 	agent.path_desired_distance = 0.6
 	agent.target_desired_distance = 0.8
@@ -601,6 +611,23 @@ func _die() -> void:
 	collision_layer = 0
 	Game.play_at(mission, "death", global_position, -4)
 
+## It has seen you: a voice by race (greys chitter, the big ones roar, the rest hiss).
+var _voice_cd := 0.0
+@rpc("authority", "call_local", "unreliable")
+func _alert_voice() -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	if now < _voice_cd or mission == null:
+		return
+	_voice_cd = now + 8.0
+	var base := race.trim_suffix("_velitel")
+	var v := ""
+	match base:
+		"grey", "levit", "myslodej": v = "alien"
+		"bijec", "jestetan": v = "roar" if randf() < 0.5 else "hiss"
+		"lihnoun", "nador": v = "hiss"
+	if v != "":
+		Game.play_at(mission, v, global_position + Vector3.UP, -4)
+
 @rpc("authority", "call_local", "reliable")
 func _death_pool() -> void:
 	_bleed(0.9)
@@ -690,6 +717,7 @@ func _enter_combat(seen: Node) -> void:
 	if state != S.COMBAT:
 		state = S.COMBAT
 		phase = "shoot" if seen else "hide"
+		_alert_voice.rpc()
 		shots_left = rng.randi_range(R["shots"][0], R["shots"][1]) if R.has("shots") else 1
 		react = rng.randf_range(0.9, 1.6) * (0.65 if Game.veteran() else (1.4 if Game.easy() else 1.0)) * (0.7 if _rally_t > 0 else 1.0)   # the moment of surprise
 		hide_t = rng.randf_range(2.0, 4.0)
@@ -1044,7 +1072,7 @@ func _fire(p: Node) -> void:
 @rpc("authority", "call_local", "reliable")
 func _plasma(from: Vector3, dir: Vector3, power := 1.0, kind := "plasma") -> void:
 	# the big ones (and the drones) fire the heavy plasma, ten takes so it never repeats
-	Game.play_at(mission, ("plasma_heavy" if power >= 1.3 else "plasma") if kind == "plasma" else "lunge", from, -2 + (power - 1.0) * 2.0)
+	Game.play_at(mission, ("plasma_heavy" if power >= 1.3 else "plasma") if kind == "plasma" else ("acid_spit" if kind == "acid" else "lunge"), from, -2 + (power - 1.0) * 2.0)
 	var bolt := Node3D.new()
 	bolt.set_script(BoltScript)
 	bolt.power = power

@@ -81,6 +81,12 @@ func _ready() -> void:
 		var u := Game.model("ufo_scout")
 		add_child(u)
 		u.scale = Vector3.ONE * 1.6
+		var eng := AudioStreamPlayer3D.new()
+		eng.stream = Game.loop_stream("ufo_engine")
+		eng.unit_size = 40.0
+		eng.max_distance = 900.0
+		eng.autoplay = true
+		u.add_child(eng)
 		var a := -PI / 2 + (i - n / 2.0) * 0.5
 		u.position = Vector3(cos(a) * 700.0, 920 + randf_range(-40, 40), sin(a) * 700.0)
 		var ul := OmniLight3D.new()

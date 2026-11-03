@@ -854,6 +854,8 @@ func timed_move(a: String, b: String) -> bool:
 	t *= 0.65 if Game.has_talent(merc, "rychle_ruce") else 1.0
 	var dig := a.begins_with("p") or b.begins_with("p")
 	busy_stand = dig
+	if dig:
+		_pack_sounds()
 	_start_busy(t, ("Hrabu se v batohu" if dig else "Beru") + ": " + Game.ITEMS[ia["id"]]["short"], func():
 		busy_stand = false
 		if inv.get(a) != ia:
@@ -910,6 +912,8 @@ func draw_slot(src: String) -> void:
 	t *= 0.65 if Game.has_talent(merc, "rychle_ruce") else 1.0
 	var dig := src.begins_with("p") or put.begins_with("p")
 	busy_stand = dig
+	if dig:
+		_pack_sounds()
 	if src in ["back", "side", "b0", "b1", "b2", "b3"]:
 		it["home"] = src
 	_start_busy(t, ("Hrabu se v batohu" if dig else "Beru") + ": " + Game.ITEMS[it["id"]]["short"], func():
@@ -1179,7 +1183,7 @@ func _physics_process(delta: float) -> void:
 		_breath_snd -= delta
 		if _breath_snd <= 0:
 			_breath_snd = lerp(2.6, 1.1, breath)
-			Game.play_ui(self, "breath", -22 + breath * 12.0)
+			Game.play_ui(self, "breath_scared" if stress > 60.0 else "breath", -22 + breath * 12.0)
 	velocity.x = dir.x * speed
 	velocity.z = dir.z * speed
 	if not is_on_floor():
@@ -1634,7 +1638,7 @@ func _reload(wp: Dictionary, rule: Dictionary) -> void:
 			return
 		var unknown := Game.alien_unknown(wp["id"])
 		var ta: float = float(rule["reload"]) * (3.5 if unknown else 1.0) * (0.65 if Game.has_talent(merc, "rychle_prebiti") else 1.0)
-		Game.play_at(self, "hum", global_position, -10)
+		Game.play_at(self, "laser_charge", global_position, -8)
 		_start_busy(ta, "Zkouším, jak se to nabíjí" if unknown else "Nabíjím článek", func():
 			if not is_instance_valid(self) or dead:
 				return
@@ -1775,6 +1779,11 @@ func _reload_hand(carry: String) -> Node3D:
 			m.name = "Carry"
 			_rl_hand.add_child(m)
 	return _rl_hand
+
+## Zip open, then the hand rummages.
+func _pack_sounds() -> void:
+	Game.play_at(mission, "backpack_zip", global_position + Vector3.UP, -6)
+	get_tree().create_timer(0.5).timeout.connect(func(): if is_instance_valid(self) and busy > 0: Game.play_at(mission, "backpack_rummage", global_position + Vector3.UP, -6))
 
 ## The backpack swung round to the front while digging in it (first person).
 var _pack_node: Node3D
@@ -2137,7 +2146,7 @@ func hurt(dmg: float, from: Vector3) -> void:
 	stress = min(100.0, stress + dmg * (1.4 - float(merc.get("bravery", 40)) / 100.0) * 2.0)
 	if dmg > 6.0:
 		bleeding += 0.25
-	Game.play_ui(self, "hit", -4)
+	Game.play_ui(self, "hurt_female" if merc.get("look", {}).get("female", false) else "hurt_male", -4)
 	mission.hud.damage_flash(from)
 	if hp <= 0:
 		hp = 0
@@ -2146,7 +2155,7 @@ func hurt(dmg: float, from: Vector3) -> void:
 		crouching = true
 		light_on = false
 		mission.hud.message("PADL JSI! Krvácíš - spoluhráč tě musí ošetřit (E s lékárničkou) nebo odnést.", 6.0)
-		Game.play_ui(self, "death", -6)
+		Game.play_ui(self, "death_male", -6)
 
 func _bleed(delta: float) -> void:
 	if bleeding > 0 and not downed:
@@ -2235,6 +2244,7 @@ func _heal_self() -> void:
 		return
 	if hp >= max_hp and bleeding <= 0:
 		return
+	Game.play_ui(self, "bandage", -6)
 	_start_busy(3.0, "Ošetřuji se", func():
 		if not inv.has(slot): return
 		inv[slot]["uses"] = int(inv[slot]["uses"]) - 1
@@ -2281,6 +2291,7 @@ func _treat_teammate(slot: String) -> void:
 			heal_time *= 1.6     # cutting the seed out takes time
 		var verb := "Vyřezávám zárodek - %s" if best.infected else ("Ošetřuji %s" if best.downed else "Obvazuji %s")
 		target.being_healed.rpc_id(target.get_multiplayer_authority(), display_name, heal_time)
+		Game.play_at(mission, "bandage", global_position + Vector3.UP, -6)
 		_start_busy(heal_time, verb % best.display_name, func():
 			if not is_instance_valid(target) or target.dead:
 				return
