@@ -1011,32 +1011,45 @@ func _director(delta: float) -> void:
 			if prey and hunter:
 				hunter.stalk(prey)
 
-## Scripted beats that make the night feel like it has a story.
+## The mercenaries' part of a mission reward (split between them); the rest goes to the base.
+const MERC_SHARE := 0.4
+
+## Quiet beats (no radio chatter any more): a knock on the hull, a lure in the barn, the
+## power going out. And when the job is done, the banner at the top says so.
+var done_banner := false
+
 func _story(ps: Array) -> void:
-	if t > 12.0:
-		_radio_once("start", "Pilot: Kondor na zemi. Motory nechávám běžet. Ozvěte se, až budete mít posádku.", 6.0)
-	if t > 95.0:
-		_radio_once("knock", "Pilot: ...něco mi klepe na trup. Asi kroupy. Asi.", 5.0)
-		if _radio_done.has("knock") and not _radio_done.has("knock_snd"):
-			_radio_done["knock_snd"] = true
-			_knock.rpc()
-	if t > 150.0 and map["barn"] != Vector3.ZERO:
-		if not _radio_done.has("lure"):
-			_radio_once("lure", "...pro-sím... je tu někdo?... stodola... jsem ve sto...", 6.0)
-			# the voice was not the farmer's: one of them waits in the barn
-			for a in aliens():
-				if not a.dead and a.state == a.S.LURK:
-					a.lurk_at(map["barn"])
-					break
+	if t > 95.0 and not _radio_done.has("knock_snd"):
+		_radio_done["knock_snd"] = true
+		_knock.rpc()
+	if t > 150.0 and map["barn"] != Vector3.ZERO and not _radio_done.has("lure"):
+		_radio_done["lure"] = true
+		for a in aliens():
+			if not a.dead and a.state == a.S.LURK:
+				a.lurk_at(map["barn"])
+				break
 	if t > 210.0 and not _radio_done.has("power"):
 		_radio_done["power"] = true
 		_blackout.rpc()
-		_radio.rpc("Pilot: Přišli jste o světla na farmě? Mně taky zhasly přístroje. Pospěšte si.", 6.0)
-	if alive_aliens() == 0:
-		_radio_once("clear", "Pilot: Detektory jsou tiché. Vraťte se na palubu. Hned.", 6.0)
-	for p in ps:
-		if p.downed:
-			_radio_once("down_" + p.name, "Pilot: Ztrácím signál od %s! Někdo k němu běžte!" % p.display_name, 5.0)
+	if not done_banner and _objective_met():
+		_show_done.rpc()
+
+## Is the task of this mission fulfilled (the team may fly home with a success)?
+func _objective_met() -> bool:
+	match mtype():
+		"rescue":
+			var v := vip()
+			return v != null and v.saved
+		"sabotage":
+			return not beacons.is_empty() and beacons_left() == 0
+		"base", "mars":
+			return false
+	return _spawned and aliens_total > 0 and alive_aliens() == 0
+
+@rpc("authority", "call_local", "reliable")
+func _show_done() -> void:
+	done_banner = true
+	Game.play_ui(self, "ping", -6)
 
 # ---- rockets, explosions, smoke and mines --------------------------------------------------
 @rpc("any_peer", "call_local", "reliable")
@@ -1285,6 +1298,20 @@ func _add_pickup(pid: String, item: Dictionary, pos: Vector3) -> void:
 			gl.light_energy = 0.6
 			gl.omni_range = 1.6
 			n.add_child(gl)
+	elif item["id"] == "a_pack":
+		var pk := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.22; sm.height = 0.3; sm.radial_segments = 8; sm.rings = 4
+		pk.mesh = sm
+		pk.material_override = Game.color_mat(Color(0.18, 0.15, 0.2))
+		var clasp := MeshInstance3D.new()
+		var cb := BoxMesh.new()
+		cb.size = Vector3(0.1, 0.04, 0.06)
+		clasp.mesh = cb
+		clasp.material_override = Game.color_mat(Color(0.7, 0.4, 1.0), true)
+		pk.add_child(clasp)
+		clasp.position = Vector3(0, 0.12, 0.12)
+		n = pk
 	else:
 		var mi := MeshInstance3D.new()
 		var bm := BoxMesh.new()
@@ -1395,13 +1422,13 @@ func _end(success: bool, why: String) -> void:
 		Game.merc["missions"] = int(Game.merc.get("missions", 0)) + 1
 		Game.merc["kills"] = int(Game.merc.get("kills", 0)) + me.kills
 		Game.merc["captures"] = int(Game.merc.get("captures", 0)) + me.captures
-		# personal pay (the host's campaign money is the base treasury, so he gets none here)
-		var pay: int = (100 if success else 30) + me.kills * 30 + me.captures * 80 + me.revives * 25
-		if multiplayer.is_server() and not Net.mission_params.is_empty() and Campaign.active:
-			pay = 0
+		# personal pay: the share of the reward (the base keeps the rest), what he did, what he found
+		var pay: int = (100 if success else 30) + me.kills * 30 + me.captures * 80 + me.revives * 25 + me.salvage
+		if success and Campaign.active or (success and Net.mission_params.has("reward")):
+			pay += int(int(Net.mission_params.get("reward", 0)) * MERC_SHARE / maxi(1, players().size()))
 		var purse := int(Game.merc.get("money", 0)) + pay
 		if pay > 0:
-			xp_text += "\nŽold: +%d kr (máš %d kr)" % [pay, purse]
+			xp_text += "\nŽold: +%d kr (máš %d kr)%s" % [pay, purse, ("  - z toho nálezy %d kr" % me.salvage) if me.salvage > 0 else ""]
 		if me.dead or (me.downed and not me.global_position.distance_to(map["evac"]) < 3.5):
 			fate = "PADL - žoldák je mrtvý (úspory převzal nový žoldák)"
 			Game.merc = Game.new_merc()

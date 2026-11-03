@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.24 prototyp"
-const VERSION_NUM := "0.24"
+const VERSION := "0.25 prototyp"
+const VERSION_NUM := "0.25"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -45,6 +45,7 @@ const ITEMS := {
 		"cap": 20, "cells": 2, "damage": 50, "spread": 1.0, "rate": 0.22, "auto": true, "sound": "plasma", "noise": 30.0, "muzzle": 0.8, "kick": 0.6, "reload": 3.0},
 	"a_heavy": {"name": "Těžká plazma vetřelců", "short": "Cizí těžká", "weight": 11, "type": "weapon", "two": true, "heavy": 0.8, "ammo": "", "alien": true, "know": "laser_tezky",
 		"cap": 5, "cells": 2, "damage": 110, "splash": 2.2, "spread": 0.9, "rate": 0.9, "auto": false, "sound": "plasma", "noise": 45.0, "muzzle": 0.7, "kick": 2.0, "reload": 4.0},
+	"a_pack": {"name": "Batoh vetřelce", "short": "Batoh vetřelce", "weight": 0, "type": "salvage"},
 	"stit": {"name": "Balistický štít", "short": "Štít", "weight": 6, "type": "shield"},
 	"vesta": {"name": "Balistická vesta", "short": "Vesta", "weight": 4, "type": "armor", "protect": 0.8},
 	"pancir": {"name": "Slitinový pancíř", "short": "Pancíř", "weight": 7, "type": "armor", "protect": 0.62},
@@ -99,11 +100,7 @@ func purse() -> int:
 func spend(amount: int) -> bool:
 	if purse() < amount:
 		return false
-	if multiplayer.is_server() and Campaign.active:
-		Campaign.data["credits"] = int(Campaign.data["credits"]) - amount
-		Campaign.save()
-	else:
-		merc["money"] = int(merc.get("money", 0)) - amount
+	merc["money"] = int(merc.get("money", 0)) - amount
 	save_merc()
 	Net.update_merc()
 	return true
@@ -158,16 +155,27 @@ func _ready() -> void:
 	_setup_input()
 	load_merc()
 
+## Tab: the microphone stays open (talks whenever you speak) until Tab again.
+var mic_live := false
+signal mic_toggled(on: bool)
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("mic_toggle") and not event.is_echo():
+		var fo := get_viewport().gui_get_focus_owner()
+		if fo is LineEdit or fo is TextEdit:
+			return
+		mic_live = not mic_live
+		mic_toggled.emit(mic_live)
+
 func _setup_input() -> void:
 	var keys := {
 		"move_forward": [KEY_W, KEY_UP], "move_back": [KEY_S, KEY_DOWN],
 		"move_left": [KEY_A], "move_right": [KEY_D],
 		"sprint": [KEY_SHIFT], "crouch": [KEY_C, KEY_CTRL], "jump": [KEY_SPACE],
 		"reload": [KEY_R], "flashlight": [KEY_F], "use": [KEY_E], "heal": [KEY_H],
-		"grenade": [KEY_G], "flare": [KEY_T], "swap": [KEY_Q], "inventory": [KEY_I, KEY_TAB],
+		"grenade": [KEY_G], "flare": [KEY_5], "swap": [KEY_Q], "inventory": [KEY_I],
 		"pause": [KEY_ESCAPE], "prone": [KEY_Z, KEY_Y], "melee": [KEY_V], "smoke": [KEY_X], "mine": [KEY_B],
 		"belt1": [KEY_1], "belt2": [KEY_2], "belt3": [KEY_3], "belt4": [KEY_4],
-		"talk": [KEY_CAPSLOCK, KEY_N], "radio_talk": [KEY_K],
+		"talk": [KEY_CAPSLOCK, KEY_N], "radio_talk": [KEY_T, KEY_K], "mic_toggle": [KEY_TAB], "drop": [KEY_BACKSPACE],
 	}
 	for action in keys:
 		if not InputMap.has_action(action):
@@ -715,6 +723,72 @@ func sound(sname: String) -> AudioStream:
 
 ## Plays a positional sound once at @a pos (in @a world).
 const ALIEN_SOUNDS := ["skitter", "groan", "growl", "sniff", "alien", "swish", "lunge", "zap", "psi", "burst"]
+## A stain of blood on the ground under pos (alien blood glows faintly in the dark).
+## Kept to a few hundred - the oldest dry up and go.
+var _blood: Array = []
+var _blood_texs: Array = []
+## a ragged splash with droplets around it (a few variants, made once)
+func _blood_tex() -> Texture2D:
+	if _blood_texs.size() < 4:
+		var n := 32
+		var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+		var blobs := [[Vector2(16, 16), randf_range(7.0, 10.0)]]
+		for i in randi_range(3, 6):
+			var a := randf() * TAU
+			blobs.append([Vector2(16, 16) + Vector2.from_angle(a) * randf_range(6.0, 9.0), randf_range(2.5, 5.0)])
+		for i in randi_range(3, 7):
+			var a := randf() * TAU
+			blobs.append([Vector2(16, 16) + Vector2.from_angle(a) * randf_range(10.0, 14.5), randf_range(0.8, 1.8)])
+		for y in n:
+			for x in n:
+				var v := 0.0
+				for b in blobs:
+					var d: float = (Vector2(x + 0.5, y + 0.5) - b[0]).length() / float(b[1])
+					v = maxf(v, 1.0 - d)
+				var shade := 0.75 + 0.25 * clampf(v * 3.0, 0.0, 1.0)
+				img.set_pixel(x, y, Color(shade, shade, shade, 1.0 if v > 0.0 else 0.0))
+		_blood_texs.append(ImageTexture.create_from_image(img))
+		return _blood_texs[-1]
+	return _blood_texs[randi() % _blood_texs.size()]
+
+func blood_splat(world: Node, pos: Vector3, col: Color, size := 0.3, glow := false) -> void:
+	if world == null or not world.is_inside_tree():
+		return
+	var space := (world as Node3D).get_world_3d().direct_space_state if world is Node3D else null
+	var ground := pos
+	if space:
+		var q := PhysicsRayQueryParameters3D.create(pos + Vector3.UP * 0.3, pos + Vector3.DOWN * 3.0, 1)
+		var hit := space.intersect_ray(q)
+		if hit.is_empty():
+			return
+		ground = hit.position
+	var mi := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(size, size * randf_range(0.75, 1.0)) * 1.4
+	mi.mesh = pm
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var m := StandardMaterial3D.new()
+	m.albedo_color = col.darkened(0.55)
+	m.albedo_texture = _blood_tex()
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	m.alpha_scissor_threshold = 0.5
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	m.roughness = 0.2
+	if glow:
+		m.emission_enabled = true
+		m.emission = col
+		m.emission_energy_multiplier = 0.25
+		m.emission_texture = m.albedo_texture
+	mi.material_override = m
+	world.add_child(mi)
+	mi.global_position = ground + Vector3.UP * (0.012 + randf() * 0.006)
+	mi.rotation.y = randf() * TAU
+	_blood.append(mi)
+	while _blood.size() > 300:
+		var old = _blood.pop_front()
+		if is_instance_valid(old):
+			old.queue_free()
+
 func play_at(world: Node, sname: String, pos: Vector3, volume_db := 0.0) -> void:
 	if world == null or not world.is_inside_tree():
 		return

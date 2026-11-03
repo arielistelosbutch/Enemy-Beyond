@@ -398,7 +398,7 @@ func _update_text() -> void:
 	var co := ""
 	if Net.is_online():
 		co = "\nCo-op: %d hráčů, tvoje peníze %d kr" % [Net.roster.size(), Net.my_money()] if Campaign.viewer else "\nCo-op: %d hráčů připojeno" % Net.roster.size()
-	status_lbl.text = "%s\nKredity: %d   Mk-115: %d g   Důvěra: %d %%\nVýzkum: %s   Rychlost: %s%s" % [Campaign.date_text(), int(d["credits"]), Campaign.moskovium(), int(d["trust"]), rs, SPEED_NAMES[speed], co]
+	status_lbl.text = "%s\nRozpočet: %d kr   Mk-115: %d g   Důvěra: %d %%\nVýzkum: %s   Rychlost: %s%s" % [Campaign.date_text(), int(d["credits"]), Campaign.moskovium(), int(d["trust"]), rs, SPEED_NAMES[speed], co]
 	var fl := _selected_flight()
 	if not fl.is_empty():
 		var left2: float = (float(fl["until"]) - float(d["day"])) * 24.0

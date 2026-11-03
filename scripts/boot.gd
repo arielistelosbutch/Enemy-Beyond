@@ -8,7 +8,7 @@ extends Node
 const UPDATE_PCK := "user://update.pck"
 const UPDATE_INFO := "user://update.json"
 ## The version built into this .exe (the update must be newer to be used).
-const BUILD_VERSION := "0.24"
+const BUILD_VERSION := "0.25"
 
 var update_version := ""
 

@@ -1,4 +1,21 @@
 {
+ "0.25": [
+  "Nové ovládání: Shift sprint, C kleknout, Y (Z) lehnout, G granát, F baterka, 1-4 opasek, 5 světlice, Backspace zahodí věc z ruky. Přetažení věci z inventáře ven ji zahodí před tebe (ostatní ji můžou sebrat), v inventáři je i tlačítko Zahodit.",
+  "Q: vytáhne hlavní zbraň a ostatní z rukou uklidí. Druhé Q vrátí do rukou to, co jsi držel předtím (pokud to ještě máš).",
+  "T: vysílačka. Z opasku je v ruce hned, z batohu ji chvíli lovíš. S dvouruční zbraní ji voják sklopí v pravé ruce a po puštění T zase zvedne; jednoruční zbraň zůstává namířená.",
+  "Tab: zapne/vypne stále otevřený mikrofon (i v lobby).",
+  "Ostatní hráči vidí, co držíš: vysílačka u ucha, nůž u boku s bodnutím dopředu, obušek podél ruky s máchnutím, puška opřená o rameno, brokovnice u pasu s pumpováním, raketomet na rameni, rotační kulomet v obou rukách u pasu. Zbraň na zádech je vidět.",
+  "Zraněný (sražený) voják se plazí po čtyřech, mrtvý leží uvolněně na zádech. Padlým zmizí zbraň z rukou.",
+  "S těžkou zbraní se plazit nedá: při lehnutí ji voják hodí na záda (nebo odloží) a objeví se hláška.",
+  "Krev: vetřelci krvácí - šeďáci zelenou fosforeskující, levité fialovou, ještěřani žlutozelenou, bijci oranžovou, myslodějové tyrkysovou… Těžce zranění kapou, takže se dají stopovat. Ale ne každý krvácí stejně a někteří stopu nenechají. Stroje nekrvácí.",
+  "Zranění lidé: na hrudi, paži, stehně a obličeji se objeví krvavé skvrny (i přes zbroj), na zemi zůstane krev.",
+  "Plazma vetřelců teď létá jako dlouhé svítící čárky. Kuličky zůstávají jen pro velká děla.",
+  "Uprostřed mise už nejsou rádiové hlášky (klid a atmosféra). Když jsou všichni vetřelci mrtví nebo je splněn úkol, nahoře se objeví MISE SPLNĚNA - můžete odletět.",
+  "Batohy vetřelců: občas po smrti upustí batoh s materiálem nebo technikou. Kdo ho najde a donese, dostane víc kreditů.",
+  "Rozpočet základny: po misi jde část odměny do rozpočtu Projektu X, zbytek si rozdělí žoldáci (i hostitel). V menu Peníze můžeš do rozpočtu přispět.",
+  "Měsíční financování od zemí podle důvěry: vyšší důvěra = víc peněz. Údržba stojí podle počtu staveb a letadel, při nízké důvěře je dražší. Dva měsíce v dluhu = Projekt zkrachoval.",
+  "Helma a čepice jsou větší a sedí výš: nic jimi neprochází a oči jsou vidět."
+ ],
  "0.24": [
   "Zbraně vetřelců: po zabití nechá vetřelec svou zbraň ležet (slabě fialově svítí). E ji sebere. Nemá zásobníky, jen nabíjecí články (1-3); R článek vymění.",
   "Dokud zbraň nevyzkoumáš, voják neví, jak s ní zacházet: zraní jen asi o polovinu méně, rozptyl je víc než dvojnásobný a výměna článku trvá 3,5x déle. Po výzkumu (pistole: Laserové zbraně, puška: Plazmová puška, těžká: Laserový kanón) funguje naplno.",

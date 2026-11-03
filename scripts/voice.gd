@@ -147,9 +147,10 @@ func _capture(delta: float, me: Node) -> void:
 		Game.mic_level = _rms
 	var alive: bool = me != null and not me.dead
 	var want := false
-	if alive and Game.voice_mode != "off":
+	var vmode: String = "open" if Game.mic_live else Game.voice_mode
+	if alive and (vmode != "off" or Input.is_action_pressed("radio_talk")):
 		var ptt: bool = Input.is_action_pressed("talk") or Input.is_action_pressed("radio_talk") or me.radio_button
-		if Game.voice_mode == "ptt":
+		if vmode != "open":
 			want = ptt
 		else:
 			if _rms > Game.mic_gate or ptt:

@@ -354,6 +354,10 @@ func _draw_hud() -> void:
 		c.draw_rect(Rect2(mid.x - 20, mid.y + 14, 40 * p.spin, 3), Color(1, 0.6, 0.2))
 	_stance_icon(c, Vector2(132, sz.y - 36), p)
 	_eye_icon(c, Vector2(132, sz.y - 86), p)
+	if Game.mic_live:
+		_text(c, Vector2(10, sz.y - 62), "MIKROFON ZAPNUTÝ (Tab)", Color(0.5, 1.0, 0.5), 8)
+	if p.radio_up:
+		_text(c, Vector2(10, sz.y - 72), "VYSÍLAČKA (T)", ACCENT, 8)
 	if not p.light_on:
 		_text(c, right + Vector2(0, -12), "Svítilna vypnutá (F)", FRAME, 9)
 	# busy (reloading, healing...)
@@ -371,6 +375,10 @@ func _draw_hud() -> void:
 	var ot: String = mission().objective_text()
 	if ot != "":
 		_text(c, Vector2(mid.x - ot.length() * 2.4, 12), ot, ACCENT, 9)
+	if mission().done_banner:
+		var bt := "MISE SPLNĚNA - můžete odletět (drž E u rampy Kondoru)"
+		c.draw_rect(Rect2(mid.x - 160, 16, 320, 16), Color(0, 0, 0, 0.55))
+		_text(c, Vector2(mid.x - bt.length() * 2.6, 28), bt, Color(0.5, 1.0, 0.55), 10)
 	var v: Node = mission().vip()
 	if v and not v.dead and not v.saved and v.st != v.C.FOLLOW:
 		var to: Vector3 = v.global_position - p.global_position
@@ -435,7 +443,7 @@ func _belt_bar(c: Control, p: Node, sz: Vector2) -> void:
 			if p.inv[s]["id"] == id:
 				k += 1
 		return k
-	var extra := "   G %d  X %d  T %d  H %d" % [n.call("grenade"), n.call("smoke_grenade"), n.call("flare"), n.call("medkit")]
+	var extra := "   G %d  X %d  5 %d  H %d" % [n.call("grenade"), n.call("smoke_grenade"), n.call("flare"), n.call("medkit")]
 	_text(c, Vector2(222, sz.y - 6), "  ".join(parts) + extra + "   (I = výstroj)", FRAME, 7)
 
 func _hand_text(c: Control, p: Node, slot: String, at: Vector2) -> void:
@@ -718,7 +726,12 @@ func _build_inventory() -> void:
 			inv_buttons[slot] = _btn(row, "", func(): _slot_clicked(slot), Vector2(86 if g[1].size() == 4 else 116, 32))
 			inv_buttons[slot].tooltip_text = names.get(slot, "")
 	inv_info = _lbl(left, "", TEXT, 9)
-	var hint := _lbl(left, "Klikni na věc a pak na místo, kam ji dát. Z batohu to trvá a stojíš. Obouruční zbraň potřebuje volnou levou ruku. I / Tab zavře.", FRAME, 8)
+	var hint := _lbl(left, "Přetáhni věc (nebo klikni na ni a pak na místo), kam ji dát. Přetažení mimo okno ji zahodí před tebe. Z batohu to trvá a stojíš. I zavře.", FRAME, 8)
+	_btn(left, "Zahodit vybranou věc (Backspace = zahodit z ruky)", func():
+		var pp := me()
+		if pp and held_slot != "":
+			pp.drop_slot(held_slot)
+			held_slot = "", Vector2(360, 16))
 	hint.custom_minimum_size = Vector2(360, 0)
 	# right: every key and what it does with what you carry right now
 	var right := VBoxContainer.new()
@@ -747,19 +760,21 @@ func _keys_text(p: Node) -> String:
 		"LTM  pravá ruka / střelba: %s" % hand.call("rh"),
 		("PTM  mířit (obě ruce na zbrani)") if (Game.two_handed(p.item_in("rh").get("id", "")) or p.pistol_grip()) else ("PTM  levá ruka: %s" % hand.call("lh")),
 		"R    nabít zbraň",
-		"Q    dlouhá zbraň na záda / ze zad (%s)" % hand.call("back"),
+		"Q    hlavní zbraň do rukou / znovu Q: zpět, co jsi držel (%s)" % hand.call("back"),
 		"1-4  věc z opasku do ruky / nabít",
 		"G    granát (%s)" % where.call("grenade"),
 		"X    kouřový granát (%s)" % where.call("smoke_grenade"),
 		"B    mina (%s)" % where.call("mine"),
-		"T    světlice (%s)" % where.call("flare"),
+		"5    světlice (%s)" % where.call("flare"),
+		"Backspace  zahodit, co máš v ruce",
 		"H    lékárnička: do ruky, pak ošetří spoluhráče / tebe (%s)" % where.call("medkit"),
 		"E    táhnout padlého / sebrat / civilista / Kondor (drž)",
 		"V    rána zblízka (%s)" % ("nemáš nůž ani obušek" if melee == "" else Game.ITEMS[p.inv[melee]["id"]]["short"]),
 		"F    svítilna na helmě",
 		"N / Caps Lock   mluvit (nahlas, kdo je blízko)",
-		"K    mluvit do vysílačky (%s)" % ("helma" if Game.has_research("vysilacky") else where.call("radio")),
-		"C  přikrčit   Z/Y  lehnout   Shift  sprint",
+		"Tab  mikrofon stále zapnutý / vypnout (%s)" % ("ZAPNUTO" if Game.mic_live else "vypnuto"),
+		"T    držet = vysílačka (%s)" % ("helma" if Game.has_research("vysilacky") else where.call("radio")),
+		"C  kleknout   Y  lehnout   Shift  sprint",
 	]
 	return "\n".join(lines)
 
@@ -780,6 +795,9 @@ func _close_inventory() -> void:
 func _slot_clicked(slot: String) -> void:
 	var p := me()
 	if p == null: return
+	if _dragged:
+		_dragged = false
+		return
 	if held_slot == "":
 		if p.inv.has(slot):
 			held_slot = slot
@@ -787,6 +805,40 @@ func _slot_clicked(slot: String) -> void:
 	if held_slot != slot and p.busy <= 0:
 		p.timed_move(held_slot, slot)
 	held_slot = ""
+
+## Drag and drop in the inventory: press on a thing, let go over another place - or outside
+## the window, and the thing lands on the ground in front of you.
+var _drag_from := ""
+var _drag_start := Vector2.ZERO
+var _dragged := false
+func _input(event: InputEvent) -> void:
+	if not inventory_open or not (event is InputEventMouseButton) or event.button_index != MOUSE_BUTTON_LEFT:
+		return
+	var p := me()
+	if p == null:
+		return
+	var mp: Vector2 = event.position
+	if event.pressed:
+		_drag_from = ""
+		for sl in inv_buttons:
+			if (inv_buttons[sl] as Control).get_global_rect().has_point(mp) and p.inv.has(sl):
+				_drag_from = sl
+				_drag_start = mp
+		return
+	if _drag_from == "" or mp.distance_to(_drag_start) < 10.0:
+		_drag_from = ""
+		return
+	var target := ""
+	for sl in inv_buttons:
+		if (inv_buttons[sl] as Control).get_global_rect().has_point(mp):
+			target = sl
+	if target != "" and target != _drag_from and p.busy <= 0:
+		p.timed_move(_drag_from, target)
+		_dragged = true
+	elif target == "" and not inv_panel.get_global_rect().has_point(mp):
+		p.drop_slot(_drag_from)
+	held_slot = ""
+	_drag_from = ""
 
 func _refresh_inventory() -> void:
 	var p := me()

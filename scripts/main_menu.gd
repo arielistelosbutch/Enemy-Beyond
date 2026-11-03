@@ -844,7 +844,7 @@ func _show_lobby() -> void:
 	_button("Výstroj na misi", func(): _back_target = "lobby"; _show_loadout())
 	_button("Můj žoldák (talenty, vzhled)", func(): _back_target = "lobby"; _show_merc())
 	_button("Úpravy zbraní za peníze (svítilna, laser, tlumič...)", func(): _back_target = "lobby"; _show_mods())
-	_button("Poslat peníze spoluhráči", func(): _back_target = "lobby"; _show_money())
+	_button("Peníze: spoluhráčům a do rozpočtu základny", func(): _back_target = "lobby"; _show_money())
 	_button("Hlas a mikrofon (hlasitost spoluhráčů, test)", func():
 		_back_target = "lobby"
 		_panel("NASTAVENÍ")
@@ -874,7 +874,20 @@ var _gift_to := 0
 var _gift_amt := 100
 func _show_money() -> void:
 	_panel("PENÍZE V TÝMU")
-	_label("Máš: %d kr. Peníze dostáváš jako žold za mise (hostitel v kampani platí z pokladny základny)." % Net.my_money(), ACCENT, 9)
+	_label("Máš: %d kr. Žold dostává každý (i hostitel) - podíl z odměny, zabití, nálezy. Zbytek odměny jde do rozpočtu základny." % Net.my_money(), ACCENT, 9)
+	if Campaign.active or Campaign.viewer:
+		_label("Rozpočet základny: %d kr. Z něj se platí výzkum, stavby, zbraně a měsíční údržba." % int(Campaign.data.get("credits", 0)), FRAME, 9)
+		var rowd := HBoxContainer.new()
+		_box.add_child(rowd)
+		for a2 in [100, 250, 500, 1000]:
+			var amt2: int = a2
+			_small_btn(rowd, "Přispět %d kr" % amt2, func():
+				if Net.my_money() < amt2:
+					_show_main_msg("Tolik peněz nemáš.")
+					return
+				Net.donate(amt2)
+				await get_tree().create_timer(0.4).timeout
+				_show_money())
 	var others := []
 	for id in Net.roster:
 		if id != Net.my_id():

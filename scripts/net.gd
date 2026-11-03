@@ -170,19 +170,36 @@ func my_money() -> int:
 		return _host_purse()
 	return int(Game.merc.get("money", 0))
 
+## Everyone, the host too, has his own mercenary's money; the base has its own budget.
 func _host_purse() -> int:
-	return int(Campaign.data.get("credits", 0)) if Campaign.active else int(Game.merc.get("money", 0))
+	return int(Game.merc.get("money", 0))
 
 func _add_money(id: int, amount: int) -> void:
 	if id == 1:
-		if Campaign.active:
-			Campaign.data["credits"] = int(Campaign.data["credits"]) + amount
-			Campaign.save()
-			Campaign.changed.emit()
-		else:
-			Game.merc["money"] = int(Game.merc.get("money", 0)) + amount
-			Game.save_merc()
+		Game.merc["money"] = int(Game.merc.get("money", 0)) + amount
+		Game.save_merc()
 	wallets[id] = int(wallets.get(id, 0)) + amount
+
+## Put own money into the base budget (anyone, the host included).
+func donate(amount: int) -> void:
+	_req_donate.rpc_id(1, amount)
+
+@rpc("any_peer", "call_local", "reliable")
+func _req_donate(amount: int) -> void:
+	if not multiplayer.is_server() or not Campaign.active:
+		return
+	var from := multiplayer.get_remote_sender_id()
+	if from == 0:
+		from = 1
+	wallets[1] = _host_purse()
+	if amount <= 0 or int(wallets.get(from, 0)) < amount:
+		return
+	_add_money(from, -amount)
+	Campaign.data["credits"] = int(Campaign.data["credits"]) + amount
+	Campaign.save()
+	Campaign.changed.emit()
+	_note.rpc("%s přispěl do rozpočtu základny %d kr." % [roster.get(from, {}).get("name", "?"), amount])
+	broadcast_team()
 
 ## Host: refresh everybody's view of the purses (and of the base, if a campaign runs).
 func broadcast_team() -> void:

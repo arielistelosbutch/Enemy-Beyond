@@ -331,11 +331,26 @@ func advance(days: float) -> bool:
 	var month := int(float(data["day"]) / 30.0)
 	if month > int(data["month"]):
 		data["month"] = month
-		var funding := 500 + int(data["trust"]) * 12
-		data["credits"] = int(data["credits"]) + funding
-		var txt := "MĚSÍČNÍ HLÁŠENÍ\nSponzoři posílají %d kreditů. Důvěra: %d %%." % [funding, int(data["trust"])]
-		if int(data["trust"]) < 25:
-			txt += "\nVaruji: sponzoři ztrácejí trpělivost."
+		# the countries we protect pay by how much they trust us; the base costs money to run
+		var trust := int(data["trust"])
+		var funding := int(300 + trust * 10 + trust * trust * 0.08)
+		var built := 0
+		for c in data["base"]:
+			if float(c.get("days", 0)) <= 0 and c.get("type", "") != "":
+				built += 1
+		var upkeep := 150 + built * 50 + jets() * 80 + (250 if trust < 30 else 0)
+		data["credits"] = int(data["credits"]) + funding - upkeep
+		var txt := "MĚSÍČNÍ HLÁŠENÍ\nStáty posílají %d kr (důvěra %d %%). Údržba základny %d kr. Rozpočet: %d kr." % [funding, trust, upkeep, int(data["credits"])]
+		if trust < 30:
+			txt += "\nNízká důvěra: státy ubírají peníze a provoz se prodražuje."
+		if int(data["credits"]) < 0:
+			data["debt_months"] = int(data.get("debt_months", 0)) + 1
+			txt += "\nROZPOČET JE V MÍNUSU (%d. měsíc). Dva měsíce v mínusu = projekt zkrachuje. Přispějte z vlastních peněz!" % int(data["debt_months"])
+			if int(data["debt_months"]) >= 2:
+				data["lost"] = true
+				txt = "KONEC\nProjekt zkrachoval. Základna se zavírá, žoldáci jdou domů."
+		else:
+			data["debt_months"] = 0
 		_log(txt.replace("\n", " "))
 		report.emit(txt)
 		stop = true
@@ -659,7 +674,8 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 		else:
 			data["missions"].append(m)       # the Orel can fly again
 	var info: Dictionary = MTYPES[m["type"]]
-	var money := (int(m["reward"]) if success else 0) + kills * 40 + captures * 160 + civ_saved * 60
+	# the mercenaries take their share of the reward (paid to them after the mission)
+	var money := (int(int(m["reward"]) * 0.6) if success else 0) + kills * 40 + captures * 160 + civ_saved * 60
 	data["credits"] = int(data["credits"]) + money
 	var dt: int = (int(info["trust"]) if success else -6) + civ_saved * 2 - civ_dead
 	data["trust"] = clampi(int(data["trust"]) + dt, 0, 100)

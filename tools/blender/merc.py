@@ -144,16 +144,17 @@ hp("Look_Female", [box(lips, (0, 0.112, 1.597), (0.05, 0.008, 0.012), group="hea
                    box(boots, (-0.042, 0.111, 1.7), (0.044, 0.006, 0.006), group="head")])
 hp("Look_Jaw", [box(skin, (0, 0.04, 1.562), (0.174, 0.16, 0.045), group="head")])   # male: a heavier jaw
 # headgear variants
-hm = [sphere(helmet, (0, 0.0, 1.73), 0.13, seg=8, rings=5, scale=(1.05, 1.15, 0.85), group="head"),
-      box(helmet, (0, 0.0, 1.69), (0.25, 0.26, 0.04), group="head"),
-      box(metal, (0, 0.13, 1.79), (0.05, 0.03, 0.04), group="head")]
+# a dome that sits ON the head (over the hair), its rim above the brows so the eyes show
+hm = [sphere(helmet, (0, 0.005, 1.772), 0.132, seg=10, rings=6, scale=(1.18, 1.25, 0.78), group="head"),
+      box(helmet, (0, 0.005, 1.747), (0.318, 0.336, 0.03), group="head"),
+      box(metal, (0, 0.148, 1.79), (0.05, 0.02, 0.04), group="head")]
 piece("Gear_Helmet", hm)
-cap = [box(cloth, (0, 0.0, 1.79), (0.2, 0.22, 0.07), group="head"),
-       box(cloth, (0, 0.14, 1.765), (0.18, 0.1, 0.02), group="head")]
+cap = [box(cloth, (0, 0.005, 1.797), (0.232, 0.252, 0.078), group="head"),
+       box(cloth, (0, 0.158, 1.766), (0.2, 0.11, 0.02), group="head")]
 piece("Gear_Cap", cap)
 # helmet torch (on the left side)
-piece("Gear_Torch", [cyl(metal, (0.12, 0.05, 1.74), 0.022, 0.12, verts=6, rot=(math.pi / 2, 0, 0), group="head"),
-                     cyl(lens, (0.12, 0.112, 1.74), 0.02, 0.005, verts=6, rot=(math.pi / 2, 0, 0), group="head")])
+piece("Gear_Torch", [cyl(metal, (0.138, 0.05, 1.765), 0.022, 0.12, verts=6, rot=(math.pi / 2, 0, 0), group="head"),
+                     cyl(lens, (0.138, 0.112, 1.765), 0.02, 0.005, verts=6, rot=(math.pi / 2, 0, 0), group="head")])
 # belt pouches b0..b3
 for i, xx in enumerate((0.12, 0.04, -0.04, -0.12)):
     piece("Gear_Belt%d" % i, [box(webbing, (xx, 0.12, 0.97), (0.07, 0.05, 0.09), group="hips")])
@@ -243,6 +244,27 @@ action("crouch_walk", walk(36, 0.3, 0.02, crouch=True))
 down = {"thigh.L": (0.1, 0, 0.2), "thigh.R": (0.3, 0, -0.15), "shin.R": (-0.4, 0, 0),
         "upperarm.L": (0.2, 0, 0.6), "upperarm.R": (1.2, 0, -0.3), "forearm.R": (0.9, 0, 0), "head": (0.0, 0, 0.5)}
 action("downed", [(1, down, 0), (30, dict(down, spine=(0.04, 0, 0)), 0), (60, down, 0)])
+# wounded: on hands and knees, crawling slowly forward (the game keeps the model upright)
+ALL4 = {"spine": (-1.4, 0, 0), "head": (1.1, 0, 0), "thigh.L": (0.15, 0, 0.05), "thigh.R": (0.15, 0, -0.05),
+        "shin.L": (-1.6, 0, 0), "shin.R": (-1.6, 0, 0), "upperarm.L": (1.45, 0, 0.12), "upperarm.R": (1.45, 0, -0.12),
+        "forearm.L": (0.15, 0, 0), "forearm.R": (0.15, 0, 0)}
+def crawl_frames(n):
+    out = []
+    for i in range(5):
+        f = 1 + i * n // 4
+        sw = math.sin(i / 4 * 2 * math.pi)
+        r = dict(ALL4)
+        r.update({"thigh.L": (0.15 + sw * 0.28, 0, 0.05), "thigh.R": (0.15 - sw * 0.28, 0, -0.05),
+                  "upperarm.L": (1.45 - sw * 0.28, 0, 0.12), "upperarm.R": (1.45 + sw * 0.28, 0, -0.12),
+                  "spine": (-1.4, 0, sw * 0.06), "head": (1.1, 0, -sw * 0.08)})
+        out.append((f, r, -0.47))
+    return out
+action("crawl_hurt", crawl_frames(48))
+action("crawl_idle", [(1, ALL4, -0.47), (30, dict(ALL4, spine=(-1.2, 0, 0.03), head=(0.85, 0, 0.15)), -0.49), (60, ALL4, -0.47)])
+# dead: on the back, limbs loose and close to the body (the game lays the model down)
+DEAD = {"upperarm.L": (0.1, 0, 0.12), "upperarm.R": (0.1, 0, -0.12), "forearm.L": (0.35, 0, 0), "forearm.R": (0.2, 0, 0),
+        "thigh.L": (0.05, 0, 0.08), "thigh.R": (0.35, 0, -0.12), "shin.R": (-0.6, 0, 0), "head": (0.1, 0, 0.7)}
+action("dead", [(1, DEAD, 0), (10, DEAD, 0)])
 
 # sprint: weapon carried diagonally across the chest, arms pumping a little
 PORT = {"upperarm.R": (0.25, 0, -0.35), "forearm.R": (1.7, 0, 0.3), "upperarm.L": (0.55, 0, 0.5), "forearm.L": (1.2, 0, 0)}
@@ -282,6 +304,14 @@ if "--preview" in sys.argv:
     for o in meshes:
         if o.name == "Gear_Cap":
             o.hide_render = True
-    preview(sys.argv[i + 3], target=(0, 0, 1.0), dist=3.4, angle=float(sys.argv[i + 4]))
+    if "--head" in sys.argv:
+        for o in meshes:
+            if o.name.startswith("Look_") and o.name not in sys.argv[sys.argv.index("--head") + 1].split(","):
+                o.hide_render = True
+            if o.name in ("Gear_Cap", "Gear_Helmet"):
+                o.hide_render = o.name != sys.argv[sys.argv.index("--head") + 2]
+        preview(sys.argv[i + 3], target=(0, 0, 1.68), dist=0.75, angle=float(sys.argv[i + 4]), height=0.05)
+    else:
+        preview(sys.argv[i + 3], target=(0, 0, 1.0), dist=3.4, angle=float(sys.argv[i + 4]))
 else:
     export_glb(OUT, [rig] + meshes, animations=True)

@@ -42,7 +42,7 @@ func _want_mic() -> bool:
 		return false
 	if testing:
 		return true
-	if Game.voice_mode == "off" or (Game.autotest() != "" and not Game.autotest().begins_with("mic")):
+	if (Game.voice_mode == "off" and not Game.mic_live) or (Game.autotest() != "" and not Game.autotest().begins_with("mic")):
 		return false
 	return Net.is_online() or _in_mission()
 
@@ -108,7 +108,7 @@ func _process(delta: float) -> void:
 	if not Net.is_online():
 		return
 	var send := Input.is_action_pressed("talk")
-	if Game.voice_mode == "open":
+	if Game.voice_mode == "open" or Game.mic_live:
 		if Game.mic_level > Game.mic_gate:
 			_hold = 0.45
 		_hold -= delta

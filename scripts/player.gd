@@ -130,7 +130,7 @@ func setup(data: Dictionary) -> void:
 	var cfg := SceneReplicationConfig.new()
 	for prop in [":position", ":rotation", ":pitch", ":crouching", ":light_on", ":hp", ":downed", ":dead", ":wounded",
 			":bleed_left", ":carried_by", ":wants_evac", ":kills", ":held", ":panic", ":gear",
-			":held_l", ":held_back", ":prone", ":sprinting", ":captures", ":infected"]:
+			":held_l", ":held_back", ":prone", ":sprinting", ":captures", ":infected", ":act"]:
 		cfg.add_property(NodePath("." + prop))
 		cfg.property_set_replication_mode(NodePath("." + prop), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	sync.replication_config = cfg
@@ -202,7 +202,8 @@ func _build_body(data: Dictionary) -> void:
 	body_anim = merc_model.find_child("AnimationPlayer", true, false)
 	if body_anim:
 		for an in body_anim.get_animation_list():
-			body_anim.get_animation(an).loop_mode = Animation.LOOP_LINEAR
+			body_anim.get_animation(an).loop_mode = Animation.LOOP_NONE if an == "dead" else Animation.LOOP_LINEAR
+		body_anim.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 		body_anim.play("idle")
 	var idx: int = abs(int(data["peer"])) % 4 if int(data["peer"]) != 1 else 0
 	var h := display_name.hash()
@@ -294,6 +295,9 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 		# braced against the hip, pulled in and a bit to the centre
 		base = Vector3(base.x * 0.55, base.y - 0.03, base.z + 0.08)
 		rot = Vector3(0.0, 0.02, 0.0)
+	if _radio_lower > 0.01:
+		base = base.lerp(Vector3(0.2, -0.36, -0.34), _radio_lower)
+		rot = rot.lerp(Vector3(0.55, 0.45, 0.25), _radio_lower)
 	if sprinting:
 		# weapon swung low across the body, swinging with the stride
 		base = Vector3(0.12, -0.32, -0.32) + Vector3(sin(_vm_t) * 0.04, -abs(cos(_vm_t)) * 0.04, 0)
@@ -406,8 +410,11 @@ func _animate_body(delta: float) -> void:
 	_last_body_pos = global_position
 	_body_speed = lerp(_body_speed, moved.length() / max(delta, 0.001), 0.2)
 	var want := "idle"
-	if downed or dead:
-		want = "downed"
+	if dead:
+		want = "dead"
+	elif downed:
+		# wounded: on hands and knees, crawling when moving (or being dragged)
+		want = "crawl_hurt" if _body_speed > 0.15 else "crawl_idle"
 	elif prone:
 		want = "prone_crawl" if _body_speed > 0.2 else "prone"
 	elif sprinting:
@@ -418,20 +425,128 @@ func _animate_body(delta: float) -> void:
 		want = "run"
 	elif _body_speed > 0.3:
 		want = "walk"
+	if not body_anim.has_animation(want):
+		want = "downed" if dead or downed else "idle"
 	if body_anim.current_animation != want:
-		body_anim.play(want, 0.2)
-	if dead:
-		body_anim.pause()
-	# down / dead: on the back. prone: on the belly, head forward, arms and gun ahead.
-	var lying := downed or dead
-	var rx := PI / 2 if lying else (-PI / 2 if prone else 0.0)
+		body_anim.play(want, 0.25)
+	body_anim.advance(0.0 if dead and body_anim.current_animation_position > 0.3 else delta)
+	# dead: on the back. wounded: upright on all fours. prone: on the belly, arms ahead.
+	var rx := PI / 2 if dead else (-PI / 2 if prone and not downed else 0.0)
 	merc_model.rotation.x = lerp_angle(merc_model.rotation.x, rx, delta * 6.0)
-	merc_model.position.y = lerp(merc_model.position.y, 0.18 if (lying or prone) else 0.0, delta * 6.0)
-	merc_model.position.z = lerp(merc_model.position.z, -0.9 if lying else (0.9 if prone else 0.0), delta * 6.0)
+	merc_model.position.y = lerp(merc_model.position.y, 0.18 if (dead or (prone and not downed)) else 0.0, delta * 6.0)
+	merc_model.position.z = lerp(merc_model.position.z, -0.9 if dead else (0.9 if prone and not downed else 0.0), delta * 6.0)
+	if not (dead or downed or prone or sprinting):
+		_hold_pose(delta)
 	# the long gun sits in the right hand (follows the arms in every pose), not on the belly
 	if _sk and _hand_r >= 0 and body_gun:
 		var hand := _sk.global_transform * _sk.get_bone_global_pose(_hand_r)
 		body_gun.global_position = hand.origin + hand.basis.y.normalized() * -0.05
+	# fallen: the hands are empty (the gun lies by him), only the slung one stays on the back
+	if body_gun:
+		body_gun.visible = not (dead or downed)
+	if body_l:
+		body_l.visible = not (dead or downed)
+
+# ---- how the others see you hold things: the arms are posed over the walk cycle -----------
+## what the hands are doing right now (synced): 0 nothing special, 1 reloading, 2 striking
+var act := 0
+var _act_t := 0.0
+var _bone_ix := {}
+
+func _bone(n: String) -> int:
+	if not _bone_ix.has(n):
+		_bone_ix[n] = _sk.find_bone(n) if _sk else -1
+	return _bone_ix[n]
+
+## Arm poses (bone: euler as in the model's rig: +X swings a limb forward).
+const POSE_RIFLE := {"upperarm.R": Vector3(0.5, 0, -0.25), "forearm.R": Vector3(1.3, 0, 0), "upperarm.L": Vector3(0.95, 0, 0.45), "forearm.L": Vector3(0.75, 0, 0)}
+const POSE_HIP := {"upperarm.R": Vector3(0.2, 0, -0.25), "forearm.R": Vector3(1.05, 0, 0), "upperarm.L": Vector3(0.6, 0, 0.4), "forearm.L": Vector3(0.95, 0, 0)}
+const POSE_SHOULDER := {"upperarm.R": Vector3(1.0, 0, -0.55), "forearm.R": Vector3(1.9, 0, 0), "upperarm.L": Vector3(1.25, 0, 0.35), "forearm.L": Vector3(0.8, 0, 0)}
+const POSE_PISTOL := {"upperarm.R": Vector3(0.55, 0, -0.1), "forearm.R": Vector3(0.6, 0, 0)}
+const POSE_PISTOL2 := {"upperarm.R": Vector3(0.7, 0, -0.1), "forearm.R": Vector3(0.6, 0, 0), "upperarm.L": Vector3(0.9, 0, 0.45), "forearm.L": Vector3(0.75, 0, 0)}
+const POSE_SIDE_R := {"upperarm.R": Vector3(0.1, 0, -0.12), "forearm.R": Vector3(0.45, 0, 0)}
+const POSE_LOOSE_R := {"upperarm.R": Vector3(0.05, 0, -0.1), "forearm.R": Vector3(0.15, 0, 0)}
+const POSE_LOOSE_L := {"upperarm.L": Vector3(0.05, 0, 0.1), "forearm.L": Vector3(0.15, 0, 0)}
+const POSE_ITEM_R := {"upperarm.R": Vector3(0.35, 0, -0.1), "forearm.R": Vector3(1.0, 0, 0)}
+const POSE_ITEM_L := {"upperarm.L": Vector3(0.35, 0, 0.1), "forearm.L": Vector3(1.0, 0, 0)}
+const POSE_RADIO_L := {"upperarm.L": Vector3(0.9, 0, 0.55), "forearm.L": Vector3(2.1, 0, 0)}
+
+func _hold_pose(delta: float) -> void:
+	if _sk == null:
+		return
+	_act_t += delta
+	var want := {}
+	var r: String = held
+	var l: String = held_l
+	var rule: Dictionary = Game.ITEMS.get(r, {})
+	var two := Game.two_handed(r)
+	if r == "":
+		want.merge(POSE_LOOSE_R)
+	elif rule.get("type", "") == "weapon":
+		if r in ["shotgun"]:
+			want.merge(POSE_HIP)
+			if act == 1:
+				# racking the pump: the left hand slides back and forth
+				var k := sin(_act_t * 9.0)
+				want["upperarm.L"] = Vector3(0.6 - 0.25 * k, 0, 0.4)
+				want["forearm.L"] = Vector3(0.95 + 0.35 * k, 0, 0)
+		elif r in ["minigun", "autocannon", "a_heavy"]:
+			want.merge(POSE_HIP)
+			want["upperarm.R"] = Vector3(0.1, 0, -0.35)
+		elif r == "rocket_launcher":
+			want.merge(POSE_SHOULDER)
+		elif two:
+			want.merge(POSE_RIFLE)
+		elif l == "":
+			want.merge(POSE_PISTOL2)
+		else:
+			want.merge(POSE_PISTOL)
+	elif rule.get("type", "") == "melee":
+		if rule.get("blunt", false):
+			want.merge(POSE_LOOSE_R)       # the club hangs along the arm
+			if act == 2:
+				var ph := clampf(_act_t / 0.45, 0.0, 1.0)
+				var up := smoothstep(0.0, 0.35, ph) * (1.0 - smoothstep(0.35, 0.6, ph))
+				var dn := smoothstep(0.35, 0.6, ph) * (1.0 - smoothstep(0.75, 1.0, ph))
+				want["upperarm.R"] = Vector3(0.05 + 2.4 * up + 0.9 * dn, 0, -0.1 - 0.3 * up)
+				want["forearm.R"] = Vector3(0.15 + 0.9 * up + 0.1 * dn, 0, 0)
+		else:
+			want.merge(POSE_SIDE_R)        # knife low at the hip
+			if act == 2:
+				var ph2 := clampf(_act_t / 0.3, 0.0, 1.0)
+				var th := sin(ph2 * PI)
+				want["upperarm.R"] = Vector3(0.1 + 1.3 * th, 0, -0.12)
+				want["forearm.R"] = Vector3(0.45 - 0.35 * th, 0, 0)
+	else:
+		want.merge(POSE_ITEM_R)
+	if not two:
+		if l == "radio":
+			want.merge(POSE_RADIO_L, true)
+		elif l != "":
+			want.merge(POSE_ITEM_L, true)
+		elif not (rule.get("type", "") == "weapon" and l == "" and not two):
+			want.merge(POSE_LOOSE_L, true)
+	elif l == "radio":
+		# talking on the radio with a long gun: lowered in the right hand
+		want.merge(POSE_RADIO_L, true)
+		want["upperarm.R"] = Vector3(0.15, 0, -0.2)
+		want["forearm.R"] = Vector3(0.5, 0, 0)
+	for bn in want:
+		var i := _bone(bn)
+		if i >= 0:
+			var rest: Quaternion = _sk.get_bone_rest(i).basis.get_rotation_quaternion()
+			_sk.set_bone_pose_rotation(i, rest * Quaternion.from_euler(want[bn]))
+
+## Owner: what the hands are doing, for the others to see.
+func _act_tick() -> void:
+	var a := 0
+	if busy > 0 and busy_total > 0 and busy_text.begins_with("Přebíj"):
+		a = 1
+	elif _swing > 0.0:
+		a = 2
+	if a != act:
+		act = a
+		_act_t = 0.0
 
 func _build_viewmodel() -> void:
 	gun = Node3D.new()
@@ -475,7 +590,7 @@ func _show_items(r: String, l: String, back: String) -> void:
 					gun.add_child(both)
 		if body_gun:
 			body_gun.add_child(_held_model(r, true))
-	if l != "" and not two:
+	if l != "" and (not two or l == "radio"):
 		if gun_l:
 			var lm := _held_model(l)
 			if l == "stit":
@@ -591,6 +706,129 @@ func timed_move(a: String, b: String) -> bool:
 
 ## Where an item taken out by a shortcut came from (so Q can put it back there).
 var _came_from := {}
+## What the hands held before Q brought the main gun out (Q again brings it back).
+var _q_set := {}
+
+## Q: everything in the hands is put away and the main gun comes out; Q again puts the gun
+## away and brings back what the hands held before (whatever of it is still there).
+func _q_swap(two: bool) -> void:
+	var rh_id: String = item_in("rh").get("id", "")
+	var primary_out: bool = two or (rh_id != "" and _q_set.has("primary") and rh_id == String(_q_set["primary"]))
+	if primary_out:
+		var gun_now: Dictionary = inv["rh"]
+		var want := _q_set.duplicate()
+		_q_set = {}
+		var gun_to := "back" if two and not inv.has("back") else _free_slot([])
+		if gun_to == "":
+			mission.hud.message("Není kam zbraň dát.", 1.5)
+			return
+		_start_busy(0.8 if gun_to == "back" else Game.fetch_time(gun_now["id"], gun_to), "Dávám zbraň pryč", func():
+			if inv.get("rh") != gun_now:
+				return
+			inv.erase("rh")
+			inv[gun_to] = gun_now
+			# the old set back into the hands (from the belt quickly, from the pack it was there already)
+			for hand in ["rh", "lh"]:
+				var id: String = want.get(hand, "")
+				if id == "" or inv.has(hand):
+					continue
+				var from := ""
+				for s2 in ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
+					if item_in(s2).get("id", "") == id:
+						from = s2
+						break
+				if from != "" and not from in ["rh", "lh"]:
+					inv[hand] = inv[from]
+					inv.erase(from)
+			_update_held()
+			Game.play_ui(self, "reload", -16))
+		return
+	# bring the main gun out: the long one from the back, else the best gun on the belt / in the pack
+	var src := "back" if inv.has("back") else ""
+	if src == "":
+		for s3 in ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
+			var it3 := item_in(s3)
+			if not it3.is_empty() and Game.ITEMS[it3["id"]]["type"] == "weapon":
+				src = s3
+				break
+	if src == "":
+		mission.hud.message("Žádnou zbraň u sebe nemáš.", 1.5)
+		return
+	_q_set = {"rh": item_in("rh").get("id", ""), "lh": item_in("lh").get("id", ""), "primary": inv[src]["id"]}
+	if src == "back":
+		if inv.has("lh") or inv.has("rh"):
+			_stow_hands_take_back()
+		else:
+			timed_move("back", "rh")
+	else:
+		if inv.has("rh"):
+			var to := _free_slot([src])
+			if to == "":
+				mission.hud.message("Není kam uklidit, co máš v ruce.", 1.5)
+				return
+			timed_move("rh", to)
+			get_tree().create_timer(0.9).timeout.connect(func(): if is_instance_valid(self) and inv.has(src) and not inv.has("rh"): timed_move(src, "rh"))
+		else:
+			timed_move(src, "rh")
+
+func _free_slot(skip: Array) -> String:
+	for sl in ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
+		if not inv.has(sl) and not sl in skip:
+			return sl
+	return ""
+
+## Throws a thing from the inventory on the ground in front (anyone can pick it up).
+func drop_slot(slot: String) -> void:
+	if not inv.has(slot) or busy > 0:
+		return
+	var it: Dictionary = inv[slot]
+	inv.erase(slot)
+	_update_held()
+	mission.drop_item(it, global_position + Vector3(0, 0.3, 0) - global_transform.basis.z * 0.9)
+	mission.hud.message("Zahozeno: %s" % Game.ITEMS[it["id"]]["short"], 1.5)
+
+# ---- T: the radio. On the belt it is in the hand at once, from the pack it takes a moment.
+# A long gun is lowered in the right hand while you talk; a one-handed one stays up.
+var radio_up := false
+var _radio_fetch := 0.0
+var _radio_lower := 0.0
+
+func _radio_tick(delta: float) -> void:
+	var held_t := Input.is_action_pressed("radio_talk") and not downed and not dead
+	if not held_t:
+		if radio_up or _radio_fetch > 0.0:
+			radio_up = false
+			_radio_fetch = 0.0
+			_update_held()
+		_radio_lower = move_toward(_radio_lower, 0.0, delta * 4.0)
+		return
+	if Game.has_research("vysilacky"):
+		return     # in the helmet: no hands needed
+	if not radio_up:
+		var where := ""
+		for s in ["lh", "rh", "b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
+			if item_in(s).get("id", "") == "radio":
+				where = s
+				break
+		if where == "":
+			if Input.is_action_just_pressed("radio_talk"):
+				mission.hud.message("Nemáš vysílačku.", 1.5)
+			return
+		if where in ["lh", "rh"] or where.begins_with("b"):
+			radio_up = true
+		else:
+			if _radio_fetch <= 0.0:
+				_radio_fetch = 1.3
+				mission.hud.message("Lovím vysílačku z batohu...", 1.3)
+			_radio_fetch -= delta
+			if _radio_fetch <= 0.0:
+				radio_up = true
+			else:
+				return
+		if radio_up and item_in("lh").get("id", "") != "radio" and item_in("rh").get("id", "") != "radio":
+			held_l = "radio"
+			_show_items(held, "radio", held_back)
+	_radio_lower = move_toward(_radio_lower, 1.0 if Game.two_handed(held) else 0.0, delta * 4.0)
 
 ## Q with a long gun on the back and something in the hands: the hand items go back
 ## (where they came from, else the belt, else the backpack), then the gun comes off the shoulder.
@@ -686,6 +924,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_mouse += event.screen_relative
 
 func _physics_process(delta: float) -> void:
+	_blood_watch(delta)
 	if not is_multiplayer_authority():
 		_remote_visuals()
 		return
@@ -727,6 +966,16 @@ func _physics_process(delta: float) -> void:
 		prone = not prone
 		crouching = false
 		_start_busy(0.8, "Lehám si" if prone else "Vstávám", func(): pass)
+		var hv := item_in("rh")
+		if prone and not hv.is_empty() and Game.ITEMS[hv["id"]].has("heavy"):
+			# nobody crawls with an autocannon: it goes on the back (or down next to you)
+			if not inv.has("back"):
+				inv["back"] = hv
+			else:
+				mission.drop_item(hv, global_position + Vector3(0, 0.2, 0) - global_transform.basis.z * 0.6)
+			inv.erase("rh")
+			_update_held()
+			mission.hud.message("S těžkou zbraní se plazit nedá - %s jde %s." % [Game.ITEMS[hv["id"]]["short"], "na záda" if item_in("back") == hv else "k zemi"], 3.0)
 	head.position.y = lerp(head.position.y, 0.35 if prone else (1.0 if crouching else 1.6), delta * 6.0)
 	var rh := item_in("rh")
 	var two := not rh.is_empty() and Game.two_handed(rh["id"])
@@ -925,15 +1174,12 @@ func _actions(delta: float) -> void:
 				g = gun_in("lh"); slot = "lh"
 		if not g.is_empty():
 			_reload(g, Game.ITEMS[g["id"]])
-	if Input.is_action_just_pressed("swap"):
-		# long gun: hands <-> back
-		if two and not inv.has("back"):
-			timed_move("rh", "back")
-		elif inv.has("back"):
-			if inv.has("lh") or (inv.has("rh") and not two):
-				_stow_hands_take_back()
-			else:
-				timed_move("back", "rh")
+	if Input.is_action_just_pressed("swap") and busy <= 0:
+		_q_swap(two)
+	_radio_tick(delta)
+	_act_tick()
+	if Input.is_action_just_pressed("drop") and not mission.hud.inventory_open:
+		drop_slot("lh" if inv.has("lh") and not inv.has("rh") else "rh")
 	for i in 4:
 		if Input.is_action_just_pressed("belt%d" % (i + 1)):
 			_belt_key(i)
@@ -1791,9 +2037,11 @@ func radio_tx() -> bool:
 		return false
 	if Game.has_research("vysilacky"):
 		return true
-	for s in ["rh", "lh", "b0", "b1", "b2", "b3"]:
+	if radio_up:
+		return true
+	for s in ["rh", "lh"]:
 		if item_in(s).get("id", "") == "radio":
-			return true      # in a hand or clipped on the belt; from the backpack it cannot be reached
+			return true
 	return false
 
 ## E next to a frightened civilian: "come with me" - he follows you to the Kondor.
@@ -1951,9 +2199,20 @@ func _panic_tick(delta: float) -> void:
 		panic_cd = 25.0
 		mission.hud.message("Vzpamatoval ses.", 2.0)
 
+## Money for what the mercenary found (alien packs), paid with his share after the mission.
+var salvage := 0
+
 func _pick_up() -> void:
 	var it: Dictionary = mission.nearest_pickup(global_position)
 	if it.is_empty():
+		return
+	if Game.ITEMS[it["item"]["id"]]["type"] == "salvage":
+		# an alien's pack: tools, alloy offcuts, a strange device - worth money to the right people
+		mission.take_pickup.rpc(it["pid"])
+		var v := int(it["item"].get("value", 100))
+		salvage += v
+		mission.hud.message("Batoh vetřelce: %s. Za nález dostaneš +%d kr." % [it["item"].get("what", "cizí technologie"), v], 3.0)
+		Game.play_ui(self, "ping", -8)
 		return
 	var slot := ""
 	for s in ["rh"] + Game.SLOTS:
@@ -2029,7 +2288,70 @@ func _remote_steps() -> void:
 		var surf := Game.surface_at(self, global_position, mission.map)
 		Game.play_at(self, "step_%s%d" % [surf, randi() % 4], global_position, (-24 if prone else (-19 if crouching else -12)) + float(Game.STEP_DB.get(surf, 0.0)))
 
+var _act_seen := 0
+# ---- wounds the others can see: blood soaking through clothes and armour, cuts on the face ----
+## absolute rest positions of the model (front is -Z), size, health share below which it shows
+const WOUNDS := [
+	["spine", Vector3(-0.06, 1.3, -0.176), Vector3(0.11, 0.09, 0.01), 0.8],
+	["upperarm.R", Vector3(-0.215, 1.25, -0.062), Vector3(0.07, 0.08, 0.01), 0.65],
+	["head", Vector3(0.05, 1.655, -0.121), Vector3(0.032, 0.045, 0.008), 0.5],
+	["thigh.L", Vector3(0.1, 0.78, -0.082), Vector3(0.09, 0.12, 0.01), 0.4],
+	["spine", Vector3(0.07, 1.1, -0.176), Vector3(0.09, 0.1, 0.01), 0.25],
+	["head", Vector3(-0.02, 1.6, -0.118), Vector3(0.045, 0.025, 0.008), 0.15],
+]
+var _wound_nodes: Array = []
+func _wounds() -> void:
+	if _sk == null:
+		return
+	if _wound_nodes.is_empty():
+		var mat := Game.color_mat(Color(0.3, 0.015, 0.015))
+		for w in WOUNDS:
+			var bi := _sk.find_bone(w[0])
+			if bi < 0:
+				_wound_nodes.append(null)
+				continue
+			var att := BoneAttachment3D.new()
+			att.bone_name = w[0]
+			_sk.add_child(att)
+			var mi := MeshInstance3D.new()
+			var bm := BoxMesh.new()
+			bm.size = w[2]
+			mi.mesh = bm
+			mi.material_override = mat
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			att.add_child(mi)
+			mi.transform = _sk.get_bone_global_rest(bi).affine_inverse() * Transform3D(Basis(), w[1])
+			mi.visible = false
+			_wound_nodes.append(mi)
+	var f := hp / maxf(max_hp, 1.0)
+	for i in WOUNDS.size():
+		var n = _wound_nodes[i]
+		if n:
+			n.visible = dead or downed and i < 3 or f < float(WOUNDS[i][3])
+
+## When the health drops (seen on every machine, health is synced) a little red falls on the ground.
+var _blood_hp := -1.0
+var _blood_t := 0.0
+func _blood_watch(delta: float) -> void:
+	if mission == null:
+		return
+	if _blood_hp < 0.0:
+		_blood_hp = hp
+	if hp < _blood_hp - 0.5:
+		Game.blood_splat(mission, global_position + Vector3(randf_range(-0.25, 0.25), 0.6, randf_range(-0.25, 0.25)),
+			Color(0.35, 0.02, 0.02), clampf((_blood_hp - hp) * 0.05, 0.2, 0.6))
+	_blood_hp = hp
+	# badly hurt or down: a drop now and then
+	if (downed or hp < max_hp * 0.35) and not dead:
+		_blood_t -= delta
+		if _blood_t <= 0.0:
+			_blood_t = randf_range(0.6, 1.4)
+			Game.blood_splat(mission, global_position + Vector3(0, 0.5, 0), Color(0.3, 0.02, 0.02), randf_range(0.08, 0.15))
+
 func _remote_visuals() -> void:
+	if act != _act_seen:
+		_act_seen = act
+		_act_t = 0.0
 	_fit_body_shape()
 	_remote_steps()
 	_show_items(held, held_l, held_back)
@@ -2038,5 +2360,6 @@ func _remote_visuals() -> void:
 	_flicker(get_physics_process_delta_time())
 	_apply_gear()
 	_animate_body(get_physics_process_delta_time())
+	_wounds()
 	label.text = display_name + (" [!]" if downed else (" [PANIKA]" if panic != "" else ""))
 	label.modulate = Color(1, 0.4, 0.3) if downed else Color(0.6, 0.85, 1.0)

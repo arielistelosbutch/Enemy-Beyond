@@ -68,6 +68,7 @@ var lurking := true
 var striking := false     # melee races: the attack animation is playing
 var husk := false         # Nádor: "dead" on the ground - must be destroyed again or it comes back
 var race := "grey"
+var bleeding := false     # badly hurt: it drips as it goes - a trail to follow
 
 # ---- host only ----
 var hp := 70.0
@@ -157,7 +158,7 @@ func setup(data: Dictionary) -> void:
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"
 	var cfg := SceneReplicationConfig.new()
-	for prop in [":position", ":rotation", ":dead", ":alert", ":lurking", ":captured", ":striking", ":husk"]:
+	for prop in [":position", ":rotation", ":dead", ":alert", ":lurking", ":captured", ":striking", ":husk", ":bleeding"]:
 		cfg.add_property(NodePath("." + prop))
 	sync.replication_config = cfg
 	sync.root_path = NodePath("..")
@@ -188,6 +189,7 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	_eyeshine(delta)
+	_drip(delta)
 	if dead:
 		_death_anim(delta)
 		return
@@ -222,9 +224,44 @@ var _flinch_dir := Vector3.ZERO
 @rpc("authority", "call_local", "unreliable")
 func _flinch(from: Vector3) -> void:
 	_flinch_t = 0.35
+	_bleed(0.35 + randf() * 0.25)
 	var d := global_position - from
 	d.y = 0
 	_flinch_dir = (global_transform.basis.inverse() * d.normalized()) if d.length() > 0.1 else Vector3(0, 0, 1)
+
+## Blood by race - and not every one of them bleeds the same (some barely at all).
+const BLOOD := {"grey": Color(0.35, 1.0, 0.45), "levit": Color(0.5, 0.45, 1.0), "jestetan": Color(0.75, 0.95, 0.2),
+	"bijec": Color(1.0, 0.55, 0.12), "myslodej": Color(0.2, 0.95, 1.0), "lihnoun": Color(0.12, 0.55, 0.15),
+	"ohar": Color(0.62, 0.9, 0.2), "nador": Color(0.82, 1.0, 0.3), "zombie": Color(0.28, 0.04, 0.03)}
+var _blood_c := Color(0, 0, 0, 0)
+var _blood_done := false
+var _drip_t := 0.0
+func _blood_col() -> Color:
+	if not _blood_done:
+		_blood_done = true
+		var base := race.trim_suffix("_velitel")
+		if BLOOD.has(base):
+			var h := absi(String(name).hash())
+			if h % 7 != 0:   # about one in seven leaves no trail at all
+				_blood_c = BLOOD[base]
+				if h % 5 == 1 and base != "zombie":   # an odd one: a different blood
+					_blood_c.h = fposmod(_blood_c.h + 0.17, 1.0)
+	return _blood_c
+
+func _bleed(size: float) -> void:
+	var c := _blood_col()
+	if c.a <= 0.0 or mission == null:
+		return
+	var off := Vector3(randf_range(-0.3, 0.3), 0, randf_range(-0.3, 0.3))
+	Game.blood_splat(mission, global_position + off + Vector3.UP * 0.5, c, size, race.trim_suffix("_velitel") != "zombie")
+
+func _drip(delta: float) -> void:
+	if not bleeding or dead:
+		return
+	_drip_t -= delta
+	if _drip_t <= 0.0:
+		_drip_t = randf_range(0.35, 0.8)
+		_bleed(randf_range(0.08, 0.16))
 
 func _flinch_tick(delta: float) -> void:
 	if _flinch_t <= 0.0 or body == null:
@@ -485,11 +522,15 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 		return
 	if hp <= 0:
 		_die.rpc()
+		_death_pool.rpc()
 		_drop_gun()
+		_drop_pack()
 		if by and by.has_method("is_player"):
 			_credit.rpc_id(by.get_multiplayer_authority(), by.name)
 		return
 	# hurt: break contact at once and come back from somewhere else
+	if hp < float(R["hp"]) * 0.45:
+		bleeding = true
 	_flinch.rpc(from)
 	last_seen = from
 	_enter_combat(null)
@@ -528,6 +569,16 @@ func _credit_capture(player_name: String) -> void:
 		p.captures += 1
 		mission.hud.message("Vetřelec omráčen - zajat živý.", 2.5)
 
+## Host: now and then a dead alien carries a pack (material, a piece of technology).
+const PACK_FINDS := [["kus slitiny", 60, 110], ["cizí nástroje", 80, 140], ["krystal Moskovia", 120, 200], ["neznámé zařízení", 150, 260], ["mapové fólie", 90, 160]]
+func _drop_pack() -> void:
+	if not multiplayer.is_server() or R.has("hover") or race in ["mozek", "pylon", "zombie", "lihnoun", "ohar"]:
+		return
+	if randf() > 0.3:
+		return
+	var f: Array = PACK_FINDS[randi() % PACK_FINDS.size()]
+	mission.drop_item({"id": "a_pack", "what": f[0], "value": randi_range(int(f[1]), int(f[2]))}, global_position - global_transform.basis.x * 0.6)
+
 ## Host: the dead alien's gun lies next to it - anyone can pick it up (E).
 func _drop_gun() -> void:
 	var w: String = Campaign.RACE_WEAPON.get(race, "")
@@ -549,6 +600,11 @@ func _die() -> void:
 	lurking = false
 	collision_layer = 0
 	Game.play_at(mission, "death", global_position, -4)
+
+@rpc("authority", "call_local", "reliable")
+func _death_pool() -> void:
+	_bleed(0.9)
+	_bleed(0.5)
 
 @rpc("authority", "call_local", "reliable")
 func _credit(player_name: String) -> void:

@@ -26,7 +26,7 @@ func _process(delta: float) -> void:
 		for a in al:
 			states.append("%s%s" % ["x" if a.dead else ("!" if a.alert else "."), "" ])
 		out("blk=%s vet=%s players=%d aliens=%d alive=%d %s me=%s" % [m().hud.inventory_open, Game.veteran(), m().players().size(), al.size(), m().alive_aliens(), "".join(states),
-			("hp %.0f pos %s kills %d ammo %s busy %s" % [p.hp, p.global_position.snapped(Vector3.ONE * 0.1), p.kills, p.weapon().get("loaded", -1), p.busy_text if p.busy > 0 else ""]) if p else "-"])
+			("hp %.0f pos %s kills %d ammo %s busy %s rh %s lock %s inv %s spr %s" % [p.hp, p.global_position.snapped(Vector3.ONE * 0.1), p.kills, p.weapon().get("loaded", -1), p.busy_text if p.busy > 0 else "", p.item_in("rh").get("id", "-"), p._click_lock, m().hud.inventory_open, p.sprinting]) if p else "-"])
 	if Game.cmd_arg("healtest", "") == "1" and multiplayer.is_server() and p:
 		_heal_test(p)
 	if Game.cmd_arg("speak", "") == "1" and step < 900 and t > 5.0 and not has_meta("spoke"):
@@ -121,6 +121,7 @@ func _solo(p: Node) -> void:
 	if p == null: return
 	if step == 0 and t > 3.0:
 		step = 1
+		p._click_lock = false
 		out("teleport to the UFO, start the fight")
 	if step == 1:
 		var a := _nearest(p)
@@ -134,6 +135,10 @@ func _solo(p: Node) -> void:
 			dir.y = 0
 			p.global_position = a.global_position + dir.normalized() * 6.0 + Vector3(0, 0.3, 0)
 		_aim_at(p, a.global_position + Vector3(0, 0.9, 0))
+		if p._click_lock:
+			Input.action_release("fire")    # let go once, like a hand after closing a menu
+			Input.action_release("aim")
+			return
 		Input.action_press("fire")
 		Input.action_press("aim")
 		if p.weapon().is_empty() or int(p.weapon().get("loaded", 0)) == 0:
@@ -527,40 +532,100 @@ func _pose(p: Node) -> void:
 	_skip_brief()
 	await get_tree().create_timer(3.5).timeout
 	m().hud.inventory_open = false
-	p.global_position = m().map["ufo"] + Vector3(4, 0.3, 16)
+	m().hud.visible = false
+	m().set_process(false)          # no judging: a lone downed mercenary would end the mission
+	p.global_position = m().map["evac"] + Vector3(0, 40.3, 0)
+	var fl := MeshInstance3D.new()
+	var fm := BoxMesh.new()
+	fm.size = Vector3(10, 0.2, 10)
+	fl.mesh = fm
+	fl.material_override = Game.mat("grass", 0.5)
+	m().add_child(fl)
+	fl.global_position = p.global_position + Vector3(0, -0.4, 0)
+	var fsb := StaticBody3D.new()
+	var fcs := CollisionShape3D.new()
+	var fbs := BoxShape3D.new()
+	fbs.size = fm.size
+	fcs.shape = fbs
+	fsb.add_child(fcs)
+	fl.add_child(fsb)
 	p.body.visible = true
 	var cam := Camera3D.new()
 	m().add_child(cam)
-	cam.global_position = p.global_position + Vector3(2.6, 1.3, -0.6)
-	cam.look_at(p.global_position + Vector3(0, 0.7, -0.3))
+	cam.global_position = p.global_position + Vector3(2.2, 1.0, -1.6)
+	cam.look_at(p.global_position + Vector3(0, 0.75, 0))
 	cam.make_current()
 	var l := OmniLight3D.new()
 	l.light_energy = 4.0
 	l.omni_range = 8.0
 	m().add_child(l)
-	l.global_position = p.global_position + Vector3(2, 2.5, 1)
+	l.global_position = p.global_position + Vector3(2, 2.5, -1)
 	p.set_physics_process(false)
 	for a in m().aliens():
 		a.queue_free()
 	p.gun.visible = false
 	p.gun_l.visible = false
-	for e in [["stand", false, false, false], ["crouch", true, false, false], ["prone", false, true, false], ["downed", false, false, true]]:
-		p.crouching = e[1]
-		p.prone = e[2]
-		p.downed = e[3]
+	var shots := [["stand", false, false, false, false], ["crouch", true, false, false, false], ["prone", false, true, false, false]]
+	for e in shots:
+		p.crouching = e[1]; p.prone = e[2]; p.downed = e[3]; p.dead = e[4]
 		for i in 40:
 			p._animate_body(1.0 / 30.0)
 			await get_tree().process_frame
 		get_viewport().get_texture().get_image().save_png("user://pose_%s.png" % e[0])
-	p.downed = false
+	p.prone = false
 	for id in Game.cmd_arg("items", "knife,radio").split(","):
 		p.inv["rh"] = {"id": id, "loaded": 5}
 		p.inv.erase("lh")
 		p._update_held()
+		p.act = 0
 		for i in 20:
 			p._animate_body(1.0 / 30.0)
 			await get_tree().process_frame
 		get_viewport().get_texture().get_image().save_png("user://pose_item_%s.png" % id)
+		if Game.ITEMS[id]["type"] == "melee" or id == "shotgun":
+			p.act = 2 if id != "shotgun" else 1
+			p._act_t = 0.0
+			for i in 6:
+				p._animate_body(1.0 / 30.0)
+				await get_tree().process_frame
+			get_viewport().get_texture().get_image().save_png("user://pose_item_%s_act.png" % id)
+			p.act = 0
+	# talking on the radio with a long gun
+	p.inv["rh"] = {"id": "rifle", "loaded": 5}
+	p._update_held()
+	p.held_l = "radio"
+	p._show_items(p.held, "radio", p.held_back)
+	for i in 20:
+		p._animate_body(1.0 / 30.0)
+		await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png("user://pose_item_zradio.png")
+	# wounds through the armour + blood of a few races on the floor
+	p.held_l = ""
+	p._show_items("", "", p.held_back)
+	p.hp = p.max_hp * 0.1
+	p._wounds()
+	var cols := [Color(0.35, 1.0, 0.45), Color(0.5, 0.45, 1.0), Color(1.0, 0.55, 0.12), Color(0.2, 0.95, 1.0), Color(0.35, 0.02, 0.02)]
+	for k in cols.size():
+		Game.blood_splat(m(), p.global_position + Vector3(0.9 - k * 0.45, 0.5, -0.9), cols[k], 0.4, k < 4)
+	for i in 10:
+		p._animate_body(1.0 / 30.0)
+		await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png("user://pose_zwound.png")
+	var fwd: Vector3 = -p.merc_model.global_transform.basis.z.normalized()
+	cam.global_position = p.global_position + fwd * 0.8 + Vector3(0, 1.62, 0) + fwd.cross(Vector3.UP) * 0.25
+	cam.look_at(p.global_position + Vector3(0, 1.4, 0))
+	await get_tree().process_frame
+	await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png("user://pose_zwound_face.png")
+	cam.global_position = p.global_position + Vector3(2.2, 1.0, -1.6)
+	cam.look_at(p.global_position + Vector3(0, 0.75, 0))
+	for e2 in [["zdowned", true, false], ["zdead", false, true]]:
+		p.downed = e2[1]; p.dead = e2[2]
+		for i in 40:
+			p._last_body_pos -= Vector3(0, 0, 0.02)     # make the crawl move
+			p._animate_body(1.0 / 30.0)
+			await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png("user://pose_%s.png" % e2[0])
 	get_tree().quit()
 
 func _rlanim(p: Node) -> void:

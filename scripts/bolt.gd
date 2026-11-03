@@ -13,19 +13,29 @@ var power := 1.0             # heavy guns hit harder
 var kind := "plasma"         # plasma / acid (Nádor) / lava (Ohnivec): the spit falls in an arc
 var vel := Vector3.ZERO
 var mission: Node
+var streak := false
 
 func _ready() -> void:
 	var mi := MeshInstance3D.new()
-	var sm := SphereMesh.new()
-	sm.radius = 0.09; sm.height = 0.18; sm.radial_segments = 6; sm.rings = 3
-	mi.mesh = sm
 	var col := Color(0.4, 1.0, 0.45)
 	if kind == "acid": col = Color(0.65, 0.95, 0.15)
 	elif kind == "lava": col = Color(1.0, 0.4, 0.05)
+	streak = kind == "plasma" and power < 1.8
+	if streak:
+		# hand weapons: a long thin dash of light (the round balls are for ship cannons)
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.035, 0.035, 0.85 + power * 0.25)
+		mi.mesh = bm
+	else:
+		var sm := SphereMesh.new()
+		sm.radius = 0.09; sm.height = 0.18; sm.radial_segments = 6; sm.rings = 3
+		mi.mesh = sm
+		mi.scale = Vector3.ONE * (0.8 + power * 0.35) * (1.4 if kind != "plasma" else 1.0)
 	mi.material_override = Game.color_mat(col, true)
 	add_child(mi)
-	mi.scale = Vector3.ONE * (0.8 + power * 0.35) * (1.4 if kind != "plasma" else 1.0)
-	vel = dir * (SPEED if kind == "plasma" else 15.0)
+	vel = dir * ((SPEED * 1.5 if streak else SPEED) if kind == "plasma" else 15.0)
+	if streak and vel.length() > 0.1:
+		look_at(global_position + vel, Vector3.UP if absf(vel.normalized().y) < 0.95 else Vector3.RIGHT)
 	var l := OmniLight3D.new()
 	l.light_color = col
 	l.light_energy = 1.5
