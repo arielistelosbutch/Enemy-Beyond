@@ -761,6 +761,8 @@ func _show_loadout() -> void:
 	ab.reparent(body)
 	ab.custom_minimum_size = Vector2(160, 16)
 	ab.add_theme_font_size_override("font_size", 8)
+	if cur.has("armor"):
+		UiSkin.item_icon(ab, cur["armor"], 22)
 	for g in [["ZBRANĚ (primární je na začátku v rukou)", ["rh", "side", "lh"]], ["OPASEK (3-6)", ["b0", "b1", "b2", "b3"]], ["BATOH", ["p0", "p1", "p2", "p3", "p4", "p5"]]]:
 		var l := Label.new()
 		l.text = g[0]
@@ -779,8 +781,9 @@ func _show_loadout() -> void:
 					Game.save_settings()
 					_show_loadout())
 			b.reparent(grid)
-			b.custom_minimum_size = Vector2(52, 16)
-			b.add_theme_font_size_override("font_size", 8)
+			b.custom_minimum_size = Vector2(60, 28)
+			var has_it: bool = cur.has(sl) and cur[sl] != ""
+			UiSkin.item_tile(b, cur[sl] if has_it else "", txt, {"rh": "1", "side": "2", "b0": "3", "b1": "4", "b2": "5", "b3": "6"}.get(sl, ""))
 	# right: the base stores
 	var store_box := VBoxContainer.new()
 	row.add_child(store_box)
@@ -828,7 +831,8 @@ func _show_loadout() -> void:
 			_show_loadout())
 		b.reparent(store)
 		b.add_theme_font_size_override("font_size", 7)
-		b.custom_minimum_size = Vector2(98, 13)
+		b.custom_minimum_size = Vector2(98, 14)
+		UiSkin.item_icon(b, item, 26)
 		b.disabled = int(left[item]) <= 0
 	var cap := int(Game.merc.get("strength", 30))
 	_label("Váha %d / síla %d%s" % [weight, cap, "  PŘETÍŽEN - budeš pomalejší" if weight > cap else ""], Color(1, 0.5, 0.4) if weight > cap else TEXT, 9)

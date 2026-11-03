@@ -846,12 +846,11 @@ func _refresh_inventory() -> void:
 		var key: String = SLOT_KEY.get(s, "")
 		var two_h := Game.two_handed(p.item_in("rh").get("id", ""))
 		if s == "rh": key = "LTM"
-		var t: String = ("[%s] " % key if key != "" else "") + ("(prázdné)" if it.is_empty() else Game.ITEMS[it["id"]]["short"])
+		var cnt := ""
 		if not it.is_empty():
-			if it.has("loaded"): t += "\n%d / %d" % [int(it["loaded"]), Game.mag_size(it["id"])]
-			elif it.has("uses"): t += "\n%dx" % int(it["uses"])
-			elif Game.ITEMS[it["id"]]["type"] == "ammo": t += "\nnáboje"
-		b.text = t
+			if it.has("loaded"): cnt = "%d/%d" % [int(it["loaded"]), Game.mag_size(it["id"])]
+			elif it.has("uses"): cnt = "%dx" % int(it["uses"])
+		UiSkin.item_tile(b, it.get("id", ""), "(prázdné)" if it.is_empty() else Game.ITEMS[it["id"]]["short"], key, cnt)
 		b.modulate = Color(1.6, 1.4, 0.6) if s == held_slot else Color(1, 1, 1)
 	var w: int = p.carried_weight()
 	var cap := int(p.merc.get("strength", 30))

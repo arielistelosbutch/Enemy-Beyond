@@ -1,4 +1,9 @@
 {
+ "0.29.1": [
+  "Ikony věcí vyrenderované přímo z modelů ve hře: v inventáři, ve výstroji na misi, ve skladu i ve zbrojnici je vidět puška, granát, lékárnička... Políčka mají obrázek, pod ním název, vlevo nahoře klávesu a vpravo nahoře náboje nebo počet použití.",
+  "Zásobníky, náboje, vesty, pancíř, plazmový článek a batoh vetřelce mají vlastní obrázky (skládané z dílů, které ve hře jsou).",
+  "Na glóbu létají UFO jako obrázky svých lodí (průzkumník, nájezdník, sklízeč) a naše stroje taky: stíhačka Sokol, vrtulník Čáp a Kondor."
+ ],
  "0.29": [
   "Hra se teď jmenuje Operace X - Enemy Beyond (v menu, v titulku okna i v závěrečných titulcích). Uložené hry a nastavení zůstávají.",
   "Nový vzhled celého rozhraní: ocelově šedé panely se zkosenými rohy, nýty a azurovou linkou - vojenský terminál z konce devadesátek, pořád v duchu UFO.",

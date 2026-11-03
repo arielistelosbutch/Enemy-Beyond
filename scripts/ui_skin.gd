@@ -289,3 +289,98 @@ static func title(l: Label, size := 14) -> void:
 	l.add_theme_color_override("font_color", AMBER)
 	l.add_theme_stylebox_override("normal", header())
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+# ---- icons rendered from the game's models (tools/icons.gd) ------------------------------------
+static func icon(id: String) -> Texture2D:
+	var key := "icon_" + id
+	if not _cache.has(key):
+		var path := "res://assets/icons/%s.png" % id
+		_cache[key] = load(path) if ResourceLoader.exists(path) else null
+	return _cache[key]
+
+## The item's picture behind the button's text (inventory slots); text gets a dark outline.
+static func item_backdrop(b: Button, id: String, alpha := 0.85) -> void:
+	var tr: TextureRect = b.get_node_or_null("Ico")
+	if tr == null:
+		tr = TextureRect.new()
+		tr.name = "Ico"
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.set_anchors_preset(Control.PRESET_FULL_RECT)
+		tr.offset_left = 8
+		tr.offset_top = 2
+		tr.offset_right = -3
+		tr.offset_bottom = -2
+		tr.show_behind_parent = false
+		b.add_child(tr)
+		b.move_child(tr, 0)
+		b.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+		b.add_theme_constant_override("outline_size", 3)
+	tr.texture = icon(id) if id != "" else null
+	tr.modulate = Color(1, 1, 1, alpha)
+	tr.visible = tr.texture != null
+
+## An inventory tile in the UFO manner: the item's picture, its name under it, the key in the
+## top-left corner and the count (rounds, uses) in the top-right. The button's own text is not used.
+static func item_tile(b: Button, id: String, caption: String, key := "", count := "") -> void:
+	b.text = ""
+	var holder: Control = b.get_node_or_null("Tile")
+	if holder == null:
+		holder = Control.new()
+		holder.name = "Tile"
+		holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		holder.set_anchors_preset(Control.PRESET_FULL_RECT)
+		b.add_child(holder)
+		var tr := TextureRect.new()
+		tr.name = "Ico"
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.set_anchors_preset(Control.PRESET_FULL_RECT)
+		tr.offset_left = 8
+		tr.offset_top = 2
+		tr.offset_right = -3
+		tr.offset_bottom = -10
+		holder.add_child(tr)
+		for e in [["Cap", Control.PRESET_BOTTOM_WIDE, HORIZONTAL_ALIGNMENT_CENTER, Color(0.88, 0.92, 0.95)],
+				["Key", Control.PRESET_TOP_LEFT, HORIZONTAL_ALIGNMENT_LEFT, GLOW],
+				["Cnt", Control.PRESET_TOP_RIGHT, HORIZONTAL_ALIGNMENT_RIGHT, AMBER]]:
+			var l := Label.new()
+			l.name = e[0]
+			l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			l.add_theme_font_size_override("font_size", 7)
+			l.add_theme_color_override("font_color", e[3])
+			l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+			l.add_theme_constant_override("outline_size", 3)
+			l.horizontal_alignment = e[2]
+			l.clip_text = true
+			holder.add_child(l)
+			l.set_anchors_preset(e[1])
+			if e[0] == "Cap":
+				l.offset_top = -11
+				l.offset_bottom = 0
+				l.offset_left = 6
+				l.offset_right = -2
+			elif e[0] == "Key":
+				l.position = Vector2(8, 0)
+				l.size = Vector2(34, 10)
+				l.clip_text = false
+			else:
+				l.offset_left = -40
+				l.offset_right = -3
+				l.offset_top = 0
+				l.offset_bottom = 10
+	var ico: TextureRect = holder.get_node("Ico")
+	ico.texture = icon(id) if id != "" else null
+	(holder.get_node("Cap") as Label).text = caption
+	(holder.get_node("Key") as Label).text = key
+	(holder.get_node("Cnt") as Label).text = count
+	(holder.get_node("Cap") as Label).add_theme_color_override("font_color", Color(0.88, 0.92, 0.95) if id != "" else DIM)
+
+## A small picture at the left of a list button (stores, armoury).
+static func item_icon(b: Button, id: String, w := 30) -> void:
+	b.icon = icon(id)
+	b.expand_icon = true
+	b.add_theme_constant_override("icon_max_width", w)
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT

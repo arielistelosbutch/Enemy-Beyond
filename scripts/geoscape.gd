@@ -165,6 +165,22 @@ func _marker(c: Color, size: float) -> Node3D:
 	globe.add_child(n)
 	return n
 
+## A picture of the ship itself (rendered from its model) that always faces the camera.
+func _icon_marker(model: String, tint: Color, size: float) -> Node3D:
+	var tex := UiSkin.icon(model)
+	if tex == null:
+		return _marker(tint, size * 0.6)
+	var s := Sprite3D.new()
+	s.texture = tex
+	s.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	s.pixel_size = size / float(tex.get_width())
+	s.modulate = tint
+	s.shaded = false
+	s.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+	s.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
+	globe.add_child(s)
+	return s
+
 static func latlon_to_local(lat: float, lon: float, r := 1.0) -> Vector3:
 	var la := deg_to_rad(lat)
 	var lo := deg_to_rad(lon)
@@ -262,7 +278,7 @@ func _sync_markers() -> void:
 		var id := int(f["id"])
 		ids[id] = true
 		if not markers.has(id):
-			markers[id] = _marker(Color(0.4, 1.0, 0.5), 0.05)
+			markers[id] = _icon_marker("ufo_" + String(f["kind"]), Color(1.0, 0.75, 0.75), 0.11)
 		_place(markers[id], float(f["lat"]), float(f["lon"]))
 		markers[id].visible = fmod(t * 3.0, 1.0) < 0.7 or id == selected
 		markers[id].scale = Vector3.ONE * (1.6 if id == selected else (1.3 if id == hover else 1.0))
@@ -270,7 +286,7 @@ func _sync_markers() -> void:
 		var cid := 900000 + int(c["id"])
 		ids[cid] = true
 		if not markers.has(cid):
-			markers[cid] = _marker(Color(0.55, 0.85, 1.0) if c["kind"] == "jet" else Color(1, 1, 1), 0.03 if c["kind"] == "jet" else 0.04)
+			markers[cid] = _icon_marker({"jet": "sokol", "heli": "heli", "kondor": "dropship"}.get(String(c["kind"]), "dropship"), Color(0.8, 0.95, 1.0), 0.08 if c["kind"] == "jet" else 0.09)
 		_place(markers[cid], float(c["lat"]), float(c["lon"]))
 		markers[cid].visible = true
 	for id in markers.keys():
@@ -753,7 +769,8 @@ func _show_armory() -> void:
 				_show_armory()
 			elif Campaign.buy(key): _show_armory()
 			else: _alert("Nelze koupit\nNedostatek kreditů nebo Moskovia 115."), 8)
-		b.custom_minimum_size = Vector2(225, 14)
+		b.custom_minimum_size = Vector2(225, 16)
+		UiSkin.item_icon(b, key, 30)
 		b.disabled = not ok
 	_btn(box, "Zavřít", _close_popup)
 
@@ -837,6 +854,8 @@ func _autotest() -> void:
 		selected = int(Campaign.data["missions"][0]["id"])
 		await _ui_check("geo_mission")
 		selected = int(Campaign.data["flights"][0]["id"])
+		_focus(Campaign.data["flights"][0])
+		await get_tree().create_timer(0.6).timeout
 		await _ui_check("geo_flight")
 		for e in [["geo_research", _show_research], ["geo_base", _show_base], ["geo_armory", _show_armory],
 				["geo_archive", _show_archive], ["geo_log", _show_log], ["geo_build", func(): _build_menu(5)],
