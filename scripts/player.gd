@@ -97,6 +97,8 @@ func setup(data: Dictionary) -> void:
 	cs.shape = cap
 	cs.position.y = 0.9
 	add_child(cs)
+	_body_cs = cs
+	_body_cap = cap
 	head = Node3D.new()
 	head.position.y = 1.6
 	add_child(head)
@@ -178,6 +180,18 @@ var _body_speed := 0.0
 const GEAR_BITS := ["Gear_Belt0", "Gear_Belt1", "Gear_Belt2", "Gear_Belt3", "Gear_Backpack", "Gear_Grenade",
 	"Gear_Flare", "Gear_Medkit", "Gear_Holster", "Gear_Scanner", "Gear_Vest", "Gear_Plate"]
 var armor := ""        # worn armour id (vesta / pancir), from the loadout
+var _body_cs: CollisionShape3D
+var _body_cap: CapsuleShape3D
+
+## The body's hit and collision shape follows the stance on every machine: standing 1.8 m,
+## crouched 1.2 m, lying (prone, down, dead) a low 0.7 m - you can shoot over a fallen friend.
+func _fit_body_shape() -> void:
+	if _body_cap == null:
+		return
+	var h := 0.7 if (prone or downed or dead) else (1.25 if crouching else 1.8)
+	if absf(_body_cap.height - h) > 0.01:
+		_body_cap.height = h
+		_body_cs.position.y = h / 2.0
 const TEAM_COLORS := [Color(0.22, 0.24, 0.17), Color(0.18, 0.2, 0.24), Color(0.26, 0.22, 0.17), Color(0.17, 0.17, 0.17)]
 const PATCH_COLORS := [Color(0.85, 0.65, 0.15), Color(0.2, 0.6, 0.95), Color(0.9, 0.25, 0.2), Color(0.4, 0.9, 0.4)]
 
@@ -675,6 +689,7 @@ func _physics_process(delta: float) -> void:
 	if not is_multiplayer_authority():
 		_remote_visuals()
 		return
+	_fit_body_shape()
 	if dead or mission.finished:
 		velocity = Vector3.ZERO
 		return
@@ -989,7 +1004,7 @@ func current_spread() -> float:
 	if wp.is_empty():
 		return 3.0
 	var rule: Dictionary = Game.ITEMS[wp["id"]]
-	var s: float = rule["spread"] * (1.7 - float(merc.get("accuracy", 50)) / 100.0)
+	var s: float = rule["spread"] * (1.7 - float(merc.get("accuracy", 50)) / 100.0) * (2.2 if Game.alien_unknown(wp["id"]) else 1.0)
 	if prone: s *= 0.4
 	elif crouching: s *= 0.6
 	if aiming: s *= 0.5
@@ -1053,9 +1068,9 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 			to = hit.position
 			var c: Object = hit.collider
 			if c and c.has_method("is_alien"):
-				var dmg: float = rule["damage"] * randf_range(0.6, 1.4) * (1.15 if Game.has_research("pitva") else 1.0)
+				var dmg: float = rule["damage"] * randf_range(0.6, 1.4) * (1.15 if Game.has_research("pitva") else 1.0) * (0.45 if Game.alien_unknown(wp["id"]) else 1.0)
 				mission.hud.hitmarker()
-				_hit_alien.rpc_id(1, c.name, dmg, "plasma" if wp["id"] == "plasma_rifle" else ("laser" if Game.ITEMS[wp["id"]].get("laser", false) else "bullet"))
+				_hit_alien.rpc_id(1, c.name, dmg, "plasma" if wp["id"] == "plasma_rifle" or rule.get("alien", false) else ("laser" if Game.ITEMS[wp["id"]].get("laser", false) else "bullet"))
 			elif c and c.has_method("is_player") and not c.dead:
 				c.hurt.rpc_id(c.get_multiplayer_authority(), rule["damage"] * randf_range(0.5, 1.0), global_position)
 				c.shot_by.rpc_id(c.get_multiplayer_authority(), display_name)
@@ -1196,6 +1211,20 @@ func _reload(wp: Dictionary, rule: Dictionary) -> void:
 		return
 	if rule.get("laser", false):
 		mission.hud.message("Laser se dobíjí sám - chvíli nestřílej.", 1.5)
+		return
+	if rule.get("alien", false):
+		if int(wp.get("cells", 0)) <= 0:
+			mission.hud.message("%s: žádný článek už nezbývá. Odhoď ji (přetáhni v inventáři)." % rule["short"], 2.5)
+			return
+		var unknown := Game.alien_unknown(wp["id"])
+		var ta: float = float(rule["reload"]) * (3.5 if unknown else 1.0) * (0.65 if Game.has_talent(merc, "rychle_prebiti") else 1.0)
+		Game.play_at(self, "hum", global_position, -10)
+		_start_busy(ta, "Zkouším, jak se to nabíjí" if unknown else "Nabíjím článek", func():
+			if not is_instance_valid(self) or dead:
+				return
+			wp["cells"] = int(wp.get("cells", 0)) - 1
+			wp["loaded"] = Game.mag_size(wp["id"])
+			Game.play_ui(self, "ping", -12))
 		return
 	var slot := find_item(func(it): return it["id"] == rule["ammo"])
 	if slot == "" or slot == "rh" or slot == "lh":
@@ -2001,6 +2030,7 @@ func _remote_steps() -> void:
 		Game.play_at(self, "step_%s%d" % [surf, randi() % 4], global_position, (-24 if prone else (-19 if crouching else -12)) + float(Game.STEP_DB.get(surf, 0.0)))
 
 func _remote_visuals() -> void:
+	_fit_body_shape()
 	_remote_steps()
 	_show_items(held, held_l, held_back)
 	head.rotation.x = pitch

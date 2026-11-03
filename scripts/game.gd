@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.23 prototyp"
-const VERSION_NUM := "0.23"
+const VERSION := "0.24 prototyp"
+const VERSION_NUM := "0.24"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -37,6 +37,14 @@ const ITEMS := {
 	"mine": {"name": "Nášlapná mina", "short": "Mina", "weight": 3, "type": "grenade"},
 	"flare": {"name": "Světlice", "short": "Světlice", "weight": 1, "type": "flare"},
 	"medkit": {"name": "Lékárnička", "short": "Lékárnička", "weight": 3, "type": "medkit", "uses": 3},
+	# the aliens' own guns, picked up from the dead: no magazines - a charge cell that has to be
+	# re-primed (slow and clumsy until research explains how), weak in human hands at first
+	"a_pistol": {"name": "Plazmová pistole vetřelců", "short": "Cizí pistole", "weight": 3, "type": "weapon", "ammo": "", "alien": true, "know": "laser",
+		"cap": 8, "cells": 3, "damage": 42, "spread": 1.3, "rate": 0.35, "auto": false, "sound": "plasma", "noise": 25.0, "muzzle": 0.21, "kick": 0.4, "reload": 2.5},
+	"a_rifle": {"name": "Plazmová puška vetřelců", "short": "Cizí puška", "weight": 6, "type": "weapon", "two": true, "ammo": "", "alien": true, "know": "plazma",
+		"cap": 20, "cells": 2, "damage": 50, "spread": 1.0, "rate": 0.22, "auto": true, "sound": "plasma", "noise": 30.0, "muzzle": 0.8, "kick": 0.6, "reload": 3.0},
+	"a_heavy": {"name": "Těžká plazma vetřelců", "short": "Cizí těžká", "weight": 11, "type": "weapon", "two": true, "heavy": 0.8, "ammo": "", "alien": true, "know": "laser_tezky",
+		"cap": 5, "cells": 2, "damage": 110, "splash": 2.2, "spread": 0.9, "rate": 0.9, "auto": false, "sound": "plasma", "noise": 45.0, "muzzle": 0.7, "kick": 2.0, "reload": 4.0},
 	"stit": {"name": "Balistický štít", "short": "Štít", "weight": 6, "type": "shield"},
 	"vesta": {"name": "Balistická vesta", "short": "Vesta", "weight": 4, "type": "armor", "protect": 0.8},
 	"pancir": {"name": "Slitinový pancíř", "short": "Pancíř", "weight": 7, "type": "armor", "protect": 0.62},
@@ -45,6 +53,11 @@ const ITEMS := {
 }
 
 ## How many rounds the weapon itself holds.
+## An alien gun nobody has researched yet: weak, wild and slow to re-prime.
+func alien_unknown(id: String) -> bool:
+	var r: Dictionary = ITEMS.get(id, {})
+	return r.get("alien", false) and not has_research(String(r.get("know", "")))
+
 func mag_size(id: String) -> int:
 	var r: Dictionary = ITEMS[id]
 	var n: int = int(r["cap"]) if r.has("cap") else int(ITEMS[r["ammo"]]["rounds"])
@@ -661,7 +674,7 @@ func color_mat(c: Color, emission := false) -> ShaderMaterial:
 var _models := {}
 func model(mname: String) -> Node3D:
 	if not _models.has(mname):
-		var path := "res://assets/models/%s.glb" % mname
+		var path := "res://assets/models/%s.glb" % {"hands_a_rifle": "hands_plasma_rifle", "hands_a_heavy": "hands_plasma_rifle"}.get(mname, mname)
 		_models[mname] = load(path) if ResourceLoader.exists(path) else null
 	if _models[mname] == null:
 		# no model for this thing (should not happen): a small grey box instead of a crash

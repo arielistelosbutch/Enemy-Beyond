@@ -485,6 +485,7 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 		return
 	if hp <= 0:
 		_die.rpc()
+		_drop_gun()
 		if by and by.has_method("is_player"):
 			_credit.rpc_id(by.get_multiplayer_authority(), by.name)
 		return
@@ -526,6 +527,15 @@ func _credit_capture(player_name: String) -> void:
 	if p and p.is_multiplayer_authority():
 		p.captures += 1
 		mission.hud.message("Vetřelec omráčen - zajat živý.", 2.5)
+
+## Host: the dead alien's gun lies next to it - anyone can pick it up (E).
+func _drop_gun() -> void:
+	var w: String = Campaign.RACE_WEAPON.get(race, "")
+	if w == "" or not Game.ITEMS.has(w) or not multiplayer.is_server():
+		return
+	var r: Dictionary = Game.ITEMS[w]
+	var cells := randi_range(1, int(r["cells"]))
+	mission.drop_item({"id": w, "loaded": randi_range(int(r["cap"]) / 3, int(r["cap"])), "cells": cells}, global_position + global_transform.basis.x * 0.6)
 
 @rpc("authority", "call_local", "reliable")
 func _ambush_note(player_name: String) -> void:

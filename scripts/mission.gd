@@ -1274,11 +1274,24 @@ func drop_item(item: Dictionary, pos: Vector3) -> void:
 
 @rpc("any_peer", "call_local", "reliable")
 func _add_pickup(pid: String, item: Dictionary, pos: Vector3) -> void:
-	var n := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(0.12, 0.08, 0.55) if Game.ITEMS[item["id"]]["type"] == "weapon" else Vector3(0.18, 0.1, 0.18)
-	n.mesh = bm
-	n.material_override = Game.color_mat(Color(0.12, 0.12, 0.13))
+	var n: Node3D
+	if ResourceLoader.exists("res://assets/models/%s.glb" % item["id"]):
+		# the thing itself, lying on its side; alien guns still glow a little
+		n = Game.model(item["id"])
+		n.rotation.z = PI / 2
+		if Game.ITEMS[item["id"]].get("alien", false):
+			var gl := OmniLight3D.new()
+			gl.light_color = Color(0.7, 0.4, 1.0)
+			gl.light_energy = 0.6
+			gl.omni_range = 1.6
+			n.add_child(gl)
+	else:
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.12, 0.08, 0.55) if Game.ITEMS[item["id"]]["type"] == "weapon" else Vector3(0.18, 0.1, 0.18)
+		mi.mesh = bm
+		mi.material_override = Game.color_mat(Color(0.12, 0.12, 0.13))
+		n = mi
 	add_child(n)
 	var q := PhysicsRayQueryParameters3D.create(pos + Vector3(0, 0.5, 0), pos + Vector3(0, -3, 0), 1)
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)

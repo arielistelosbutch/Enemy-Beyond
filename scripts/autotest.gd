@@ -66,6 +66,7 @@ func _process(delta: float) -> void:
 		"mapshot": _mapshot(p)
 		"objtest": _objtest(p)
 		"breaktest": _breaktest(p)
+		"armstest": _armstest(p)
 		"terror": _terror(p)
 		"panic":
 			if p and step == 0 and t > 3:
@@ -897,6 +898,48 @@ func _breaktest(p: Node) -> void:
 		if not is_instance_valid(n):
 			broken += 1
 	out("BREAK broken pieces: %d" % broken)
+	get_tree().quit()
+
+## Alien guns: one dies, the gun lies there, the mercenary takes it, fires, re-primes.
+func _armstest(p: Node) -> void:
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	for a in m().aliens():
+		a.set_physics_process(false)
+	var target: Node = null
+	for a in m().aliens():
+		if Campaign.RACE_WEAPON.has(a.race):
+			target = a
+			break
+	if target == null:
+		out("ARMS no armed alien (crew %s)" % [m().aliens().map(func(x): return x.race)])
+		get_tree().quit()
+		return
+	p.inv.erase("rh")
+	p.inv.erase("back")
+	p._update_held()
+	target.damage(99999.0, target.global_position, p)
+	await get_tree().create_timer(0.5).timeout
+	out("ARMS pickups after the kill: %d" % m().pickups.size())
+	p.global_position = target.global_position + Vector3(0.5, 0.3, 0)
+	await get_tree().create_timer(0.3).timeout
+	p._pick_up()
+	var rh: Dictionary = p.item_in("rh")
+	out("ARMS in hand: %s unknown=%s" % [rh, Game.alien_unknown(rh.get("id", ""))])
+	if rh.is_empty():
+		get_tree().quit()
+		return
+	rh["loaded"] = 0
+	var t0 := t
+	p._reload(rh, Game.ITEMS[rh["id"]])
+	out("ARMS re-priming: %s (%.1f s)" % [p.busy_text, p.busy_total])
+	await get_tree().create_timer(p.busy_total + 0.5).timeout
+	out("ARMS after: loaded %d cells %d spread %.2f" % [int(rh["loaded"]), int(rh.get("cells", 0)), p.current_spread()])
+	# lying bodies are low: shots go over them
+	p.prone = true
+	await get_tree().create_timer(0.2).timeout
+	out("ARMS prone capsule height %.2f" % p._body_cap.height)
 	get_tree().quit()
 
 func _skip_brief() -> void:

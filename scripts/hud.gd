@@ -445,13 +445,15 @@ func _hand_text(c: Control, p: Node, slot: String, at: Vector2) -> void:
 		_text(c, at + Vector2(0, 12), label + "prázdná", FRAME, 9)
 		return
 	var rule: Dictionary = Game.ITEMS[it["id"]]
-	_text(c, at, label + rule["name"], TEXT, 9)
+	_text(c, at, label + ((rule["short"] + " (neznámá)") if Game.alien_unknown(it["id"]) else rule["name"]), TEXT, 9)
 	if rule["type"] == "weapon":
 		var spare := 0
 		for s in p.inv:
 			if p.inv[s]["id"] == rule["ammo"]:
 				spare += int(p.inv[s].get("left", Game.ITEMS[rule["ammo"]]["rounds"]))
-		if rule.get("laser", false):
+		if rule.get("alien", false):
+			_text(c, at + Vector2(0, 12), "%d / %d   články %d" % [int(it.get("loaded", 0)), Game.mag_size(it["id"]), int(it.get("cells", 0))], ACCENT, 10)
+		elif rule.get("laser", false):
 			_text(c, at + Vector2(0, 12), "%d / %d   dobíjí se samo" % [int(it.get("loaded", 0)), Game.mag_size(it["id"])], ACCENT, 10)
 		else:
 			_text(c, at + Vector2(0, 12), "%d / %d   náhradní %d" % [int(it.get("loaded", 0)), Game.mag_size(it["id"]), spare], ACCENT, 10)

@@ -1204,6 +1204,7 @@ func _fuel(o: Vector3) -> void:
 	lt.position = cp + Vector3(0, 4.0, 0)
 	lt.rotation.x = -PI / 2
 	lt.set_meta("base", 2.0)
+	lt.set_meta("lens", box(cp + Vector3(0, 4.0, 0), Vector3(2.0, 0.04, 0.3), Game.color_mat(Color(0.95, 0.97, 1.0), true), false))
 	info["elec_lights"].append(lt)
 	# the shop
 	var s := o + Vector3(8.0, 0, 1.0)
