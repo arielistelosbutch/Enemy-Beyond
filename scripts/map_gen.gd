@@ -931,7 +931,7 @@ func _ruin(o: Vector3) -> void:
 		fl.mesh = fq
 		root.add_child(fl)
 		fl.position = fp
-		info["sounds"].append({"name": "rain", "pos": fp, "db": -24.0})
+		info["sounds"].append({"name": "fire", "pos": fp, "db": -16.0})
 	if rng.randf() < 0.6:
 		# a burnt-out car in front
 		box(o + Vector3(rng.randf_range(3, 9), 0.6, 10.8), Vector3(4.2, 0.9, 1.8), Game.mat("scorch", 1.0), true, rng.randf_range(-0.3, 0.3))

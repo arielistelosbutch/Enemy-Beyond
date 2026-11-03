@@ -136,10 +136,7 @@ func _ready() -> void:
 	cl.add_child(hud)
 	add_child(cl)
 	var music := AudioStreamPlayer.new()
-	var st: AudioStreamWAV = Game.sound("wind").duplicate()
-	st.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	st.loop_end = st.data.size() / 2
-	music.stream = st
+	music.stream = Game.loop_stream("wind")
 	music.volume_db = -6
 	music.bus = "Wind"
 	add_child(music)

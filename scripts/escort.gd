@@ -113,10 +113,7 @@ func _ready() -> void:
 	cl.add_child(hud)
 	add_child(cl)
 	var wind := AudioStreamPlayer.new()
-	var st: AudioStreamWAV = Game.sound("wind").duplicate()
-	st.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	st.loop_end = st.data.size() / 2
-	wind.stream = st
+	wind.stream = Game.loop_stream("heli_flight" if String(Net.mission_params.get("transport", "")) == "heli" else "wind")
 	wind.volume_db = -6
 	wind.bus = "Wind"
 	add_child(wind)

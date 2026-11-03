@@ -1,4 +1,12 @@
 {
+ "0.28.3": [
+  "Nové kroky od Iva na všech površích (tráva, hlína, beton, dřevo, kov, sníh, písek) - každý soubor rozstříhaný na jednotlivé došlapy. Nově voda (potok) a vlastní kroky na podlaze UFO.",
+  "Vítr podle krajiny: les šumí, na sněhu polární vichr, v poušti tíživé ticho, na Marsu řídký vzduch, v horách vlastní vítr.",
+  "Pod větrem žije noc: cvrčci nad poli, vzdálené město, hučící továrna. Občas zaštěká pes, zahouká sova nebo zabučí kráva.",
+  "Bouřka má vlastní smyčku, nový déšť a hrom. Hořící domy praskají ohněm. Uvnitř UFO je slyšet jeho nitro.",
+  "Rozbité okno zní jako sklo, rozbité dřevo praská. Lehnutí, sebrání věci, cvaknutí vysílačky (zapnutí i vypnutí), při sprintu chrastí výstroj.",
+  "Tažené tělo je slyšet, jak drhne po zemi. Transportní vrtulník v letecké bitvě má zvuk rotorů."
+ ],
  "0.28.2": [
   "Hlavní menu: hraje už jen Ivova hudba, stará syntetická melodie (a ta z mise) je pryč.",
   "Nové zvuky od Iva zapojené do hry: hlasy mimozemšťanů při spatření (šedí cvrlikají, velcí řvou, ostatní syčí), kyselinové plivnutí, vrčení, smrtelné výkřiky.",

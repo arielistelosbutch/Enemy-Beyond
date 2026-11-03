@@ -997,8 +997,13 @@ var _radio_fetch := 0.0
 var _radio_lower := 0.0
 var _radio_have := false
 
+var _radio_snd := false
 func _radio_tick(delta: float) -> void:
 	var held_t := Input.is_action_pressed("radio_talk") and not downed and not dead
+	var on := held_t and (radio_up or Game.has_research("vysilacky"))
+	if on != _radio_snd:
+		_radio_snd = on
+		Game.play_at(mission, "radio_click", global_position + Vector3.UP * 1.5, -8)
 	if not held_t:
 		if radio_up or _radio_fetch > 0.0 or _radio_have:
 			radio_up = false
@@ -1072,6 +1077,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	_blood_watch(delta)
 	_mg_tick()
+	_drag_sound(delta)
 	if not is_multiplayer_authority():
 		_remote_visuals()
 		return
@@ -1112,6 +1118,7 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("prone") and not inv_open:
 		prone = not prone
 		crouching = false
+		Game.play_at(mission, "prone", global_position, -6 if prone else -10)
 		_start_busy(0.8, "Lehám si" if prone else "Vstávám", func(): pass)
 		var hv := item_in("rh")
 		if prone and not hv.is_empty() and Game.ITEMS[hv["id"]].has("heavy"):
@@ -1199,6 +1206,8 @@ func _physics_process(delta: float) -> void:
 			var quiet := 0.5 if Game.has_talent(merc, "kocici_krok") else 1.0
 			var surf := Game.surface_at(self, global_position, mission.map)
 			Game.play_at(self, "step_%s%d" % [surf, randi() % 4], global_position, (-24 if prone else (-19 if crouching else (-7 if sprint else -13))) + float(Game.STEP_DB.get(surf, 0.0)))
+			if sprint and randf() < 0.5:
+				Game.play_at(self, "gear", global_position + Vector3.UP, -12)   # the kit rattles when you run
 			mission.noise(global_position, (1.0 if prone else (2.0 if crouching else (14.0 if sprint else 6.0))) * quiet * mission.step_noise())
 	# actions
 	fire_cd -= delta
@@ -2533,6 +2542,7 @@ func _pick_up() -> void:
 		item["home"] = slot
 	_update_held()
 	mission.hud.message("Sebral jsi: %s" % Game.ITEMS[item["id"]]["name"], 1.5)
+	Game.play_ui(mission, "pickup", -6)
 
 ## How far an alien can spot this mercenary (light gives you away).
 ## 0 = nobody has noticed me, 1 = they have me (sent by the host, shown as the eye).
@@ -2574,6 +2584,28 @@ func _flicker(delta: float) -> void:
 		flash.light_energy = base_e * randf_range(0.0, 0.6)
 	else:
 		flash.light_energy = base_e
+
+## A downed body scraping over the ground while a teammate (or something else) drags it.
+var _drag_ap: AudioStreamPlayer3D
+var _drag_last := Vector3.INF
+func _drag_sound(delta: float) -> void:
+	var moving := false
+	if downed and carried_by != 0 and _drag_last != Vector3.INF and delta > 0.0:
+		moving = Vector2(global_position.x - _drag_last.x, global_position.z - _drag_last.z).length() / delta > 0.4
+	_drag_last = global_position
+	if moving and _drag_ap == null:
+		_drag_ap = AudioStreamPlayer3D.new()
+		_drag_ap.stream = Game.loop_stream("body_drag")
+		_drag_ap.volume_db = -6.0
+		_drag_ap.unit_size = 5.0
+		_drag_ap.max_distance = 40.0
+		_drag_ap.bus = "SFX"
+		add_child(_drag_ap)
+	if _drag_ap:
+		if moving and not _drag_ap.playing:
+			_drag_ap.play()
+		elif not moving and _drag_ap.playing:
+			_drag_ap.stop()
 
 # ---- others' view ------------------------------------------------------------------------------
 var _rs_last := Vector3.INF

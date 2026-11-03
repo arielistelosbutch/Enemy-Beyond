@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.28.2 prototyp"
-const VERSION_NUM := "0.28.2"
+const VERSION := "0.28.3 prototyp"
+const VERSION_NUM := "0.28.3"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -776,11 +776,11 @@ func mat(tex_name: String, scale := 0.5, emission := Color.BLACK) -> ShaderMater
 
 ## What a texture sounds like underfoot.
 const TEX_SURFACE := {"planks": "wood", "barn": "wood", "fence": "wood", "bark": "wood",
-	"metal": "metal", "skyranger": "metal", "ufo_floor": "metal", "ufo_hull": "metal", "ufo_wall": "metal", "gun": "metal",
+	"metal": "metal", "skyranger": "metal", "ufo_floor": "alien", "ufo_hull": "alien", "ufo_wall": "alien", "water": "water", "gun": "metal",
 	"plaster": "hard", "roof": "hard", "dirt": "dirt", "hay": "dirt", "scorch": "dirt", "mars": "dirt",
 	"snow": "snow", "sand": "sand", "grass": "grass", "wheat": "grass", "leaves": "grass",
 	"concrete": "hard", "asphalt": "hard", "brick": "hard", "rock": "hard", "tiles": "hard", "wallpaper": "wood",
-	"corrugated": "metal", "container_red": "metal", "container_blue": "metal", "container_green": "metal", "water": "dirt"}
+	"corrugated": "metal", "container_red": "metal", "container_blue": "metal", "container_green": "metal"}
 
 ## The surface under @a pos: a decal floor (road, path) first, then what the feet stand on.
 func surface_at(world: Node3D, pos: Vector3, map: Dictionary) -> String:
@@ -809,7 +809,7 @@ func surface_at(world: Node3D, pos: Vector3, map: Dictionary) -> String:
 		"mars": return "dirt"
 	return "grass"
 
-const STEP_DB := {"grass": -2.0, "dirt": 0.0, "hard": 0.0, "wood": 1.0, "metal": 2.0, "snow": 1.0, "sand": -3.0}
+const STEP_DB := {"grass": -1.0, "dirt": 0.0, "hard": 0.0, "wood": 0.0, "metal": 0.0, "snow": 0.0, "sand": -1.0, "water": 0.0, "alien": 0.0}
 
 func color_mat(c: Color, emission := false) -> ShaderMaterial:
 	var key := "c|%s|%s" % [c, emission]
@@ -874,7 +874,7 @@ func loop_stream(sname: String) -> AudioStream:
 	return st
 
 ## Sounds with several takes (name_0..name_N-1): a random one each time.
-const VARIANTS := {"plasma_heavy": 10, "casing": 4, "step_heavy": 3}
+const VARIANTS := {"plasma_heavy": 10, "casing": 4, "step_heavy": 3, "gear": 4}
 func sound(sname: String) -> AudioStream:
 	if VARIANTS.has(sname):
 		sname = "%s_%d" % [sname, randi() % int(VARIANTS[sname])]

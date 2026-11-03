@@ -214,16 +214,16 @@ func _ready() -> void:
 	add_child(voice)
 	# no music: wind, silence and what moves in it
 	music = AudioStreamPlayer.new()
-	var st: AudioStreamWAV = Game.sound("wind")
-	st.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	st.loop_end = st.data.size() / 2
-	music.stream = st
+	music.stream = Game.loop_stream(_wind_name())
 	music.volume_db = -12
 	music.bus = "Wind"
 	add_child(music)
 	music.play()
+	var bed := _ambient_bed()
+	if bed != "":
+		_loop_player(AudioStreamPlayer.new(), bed, -16.0)
 	if weather == "storm" or weather == "rain":
-		_loop_player(AudioStreamPlayer.new(), "rain", -17.0 if weather == "storm" else -20.0)
+		_loop_player(AudioStreamPlayer.new(), "storm" if weather == "storm" else "rain", -17.0 if weather == "storm" else -20.0)
 	for snd in map["sounds"]:
 		var ap := AudioStreamPlayer3D.new()
 		ap.unit_size = 2.0
@@ -276,6 +276,53 @@ func _ready() -> void:
 	else:
 		_client_ready.rpc_id(1)
 
+## Which wind blows here: forest rustle, polar gale, the thin Martian air...
+func _wind_name() -> String:
+	var biome := String(Net.mission_params.get("biome", "farm"))
+	match String(map.get("terrain", "")):
+		"snow": return "polar"
+		"mars": return "mars"
+		"desert": return "night_silence"
+	if biome == "forest":
+		return "wind_forest"
+	if biome == "mountain":
+		return "mountain"
+	return "wind"
+
+## What lives under the wind: crickets over the fields, a distant town, humming machines.
+func _ambient_bed() -> String:
+	if mtype() == "base":
+		return "ufo_interior"
+	if map.get("terrain", "") in ["mars", "snow"]:
+		return ""
+	match String(Net.mission_params.get("biome", "farm")):
+		"farm": return "night_field"
+		"town": return "town_night"
+		"industrial": return "industrial"
+		"base": return "base_interior"
+	return ""
+
+## Now and then something out there: a dog in the village, an owl, a cow in the barn.
+var _critter_t := 25.0
+func _critters(delta: float) -> void:
+	_critter_t -= delta
+	if _critter_t > 0.0:
+		return
+	_critter_t = randf_range(35.0, 80.0)
+	if map.get("terrain", "") == "mars" or mtype() == "base" or weather == "storm":
+		return
+	var biome := String(Net.mission_params.get("biome", "farm"))
+	var pool := ["owl"]
+	if biome in ["farm", "town"]:
+		pool += ["dog", "dog", "cow"]
+	if biome == "forest":
+		pool += ["owl"]
+	var s: String = pool[randi() % pool.size()]
+	var a := randf() * TAU
+	var me: Node3D = local_player()
+	var c: Vector3 = me.global_position if me else Vector3(map["size"] / 2.0, 0, map["size"] / 2.0)
+	Game.play_at(self, s, c + Vector3(cos(a), 0.2, sin(a)) * randf_range(30.0, 55.0), -6)
+
 ## The landed (or crashed) ship hums in the dark: you hear it before you see it.
 func _ufo_ambience() -> void:
 	if not map.has("ufo") or map["ufo"] == Vector3.ZERO or mtype() in ["base", "mars"]:
@@ -286,6 +333,13 @@ func _ufo_ambience() -> void:
 	add_child(ap)
 	ap.global_position = map["ufo"] + Vector3(0, 1.5, 0)
 	_loop_player(ap, "ufo_hum", -6.0)
+	# inside the hull it sounds different: a close, breathing machine
+	var ins := AudioStreamPlayer3D.new()
+	ins.unit_size = 2.0
+	ins.max_distance = 9.0
+	add_child(ins)
+	ins.global_position = map["ufo"] + Vector3(0, 1.2, 0)
+	_loop_player(ins, "ufo_interior", -4.0)
 
 func _loop_player(ap: Node, sname: String, db: float) -> void:
 	ap.stream = Game.loop_stream(sname)
@@ -746,6 +800,7 @@ func _process(delta: float) -> void:
 	_nav_tick(delta)
 	if started():
 		t += delta
+		_critters(delta)
 	for l in map.get("lights", []):
 		if is_instance_valid(l):
 			l.light_energy = 1.4 + sin(t * 13.0) * 0.25 + sin(t * 7.3) * 0.2
@@ -1188,7 +1243,7 @@ func _break(i: int) -> void:
 		add_child(rub)
 		rub.global_position = Vector3(at.x, 0.09 + (at.y - sz.y / 2 if at.y - sz.y / 2 > 0.5 else 0.0), at.z)
 		rub.rotation.y = n.global_rotation.y
-	Game.play_at(self, "creak" if kind == "wood" or kind == "crate" else ("hit" if kind == "glass" else "explosion"), at, -4 if kind != "brick" else -10)
+	Game.play_at(self, "wood_break" if kind == "wood" or kind == "crate" else ("glass_break" if kind == "glass" else "explosion"), at, -4 if kind != "brick" else -10)
 	n.queue_free()
 	_nav_dirty = 2.0
 
