@@ -629,7 +629,7 @@ func _bolt(from: Vector3, dir: Vector3) -> void:
 	add_child(n)
 	n.global_position = from
 	bolts.append({"node": n, "vel": dir * 300.0, "life": 4.0})
-	Game.play_ui(self, "plasma", -10)
+	Game.play_ui(self, "plasma_heavy", -8)
 
 func _puff(p: Vector3) -> void:
 	var n := MeshInstance3D.new()

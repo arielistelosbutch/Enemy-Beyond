@@ -11,6 +11,14 @@ var travelled := 0.0
 func _ready() -> void:
 	var m := Game.model("rocket")
 	add_child(m)
+	# the motor roars along with the rocket (and goes quiet when it bursts)
+	var snd := AudioStreamPlayer3D.new()
+	snd.stream = Game.sound("rocket_fly")
+	snd.unit_size = 8.0
+	snd.max_distance = 120.0
+	snd.bus = "SFX"
+	add_child(snd)
+	snd.play()
 	var l := OmniLight3D.new()
 	l.light_color = Color(1.0, 0.6, 0.25)
 	l.light_energy = 3.0

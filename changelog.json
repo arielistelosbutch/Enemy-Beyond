@@ -1,4 +1,11 @@
 {
+ "0.28.1": [
+  "Nové zvuky zbraní od Iva: puška, pistole, magnum, brokovnice, autokanón, odstřelovačka (vlastní výstřel), laserové zbraně (blaster).",
+  "Minigun: hlavně se roztočí, při střelbě běží plynulá smyčka, po puštění se dotočí. Ostatní hráči to slyší taky.",
+  "Brokovnice po výstřelu pumpuje, odstřelovačka natáhne závěr. Při nabíjení brokovnice je slyšet zasouvání nábojů a pumpa na konci. Prázdná zbraň cvakne naprázdno.",
+  "Raketomet: nový zvuk zážehu a motor rakety je slyšet, jak letí, dokud nevybuchne.",
+  "Přebíjení zásobníkových zbraní: zvuk vytažení a zasunutí zásobníku."
+ ],
  "0.28": [
   "Hudba je ve hře! Ivova vlastní hudba: hlavní menu, glóbus (dvě skladby), souboj stíhaček, briefing, briefing teroru, mise, debriefing, prohra, vítězství a poslední mise na Marsu.",
   "Poslední mise má vlastní hudbu od briefingu až do konce. Hudba během běžné mise je dál volitelná (Nastavení).",

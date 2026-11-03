@@ -1217,7 +1217,6 @@ const SMOKE_R := 4.5
 
 func add_smoke(p: Vector3) -> void:
 	smokes.append({"pos": p, "until": t + 28.0})
-	Game.play_at(self, "rustle", p, 0)
 	var c := CPUParticles3D.new()
 	c.amount = 90
 	c.lifetime = 6.0

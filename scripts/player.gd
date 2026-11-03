@@ -393,6 +393,39 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 		if b:
 			b.rotate_object_local(Vector3(0, 0, 1), spin * delta * 40.0)
 
+# ---- minigun sound: the barrels spin up, the gun roars in a loop, then winds down ---------
+var _mg_last := -10.0
+var _casing_n := 0
+var _mg_loop: AudioStreamPlayer3D
+var _mg_firing := false
+func _mg_tick() -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	var firing := now - _mg_last < 0.15
+	if firing and not _mg_firing:
+		if _mg_loop == null:
+			_mg_loop = AudioStreamPlayer3D.new()
+			var st: AudioStreamWAV = (Game.sound("minigun_fire") as AudioStreamWAV).duplicate()
+			st.loop_mode = AudioStreamWAV.LOOP_FORWARD
+			st.loop_begin = 0
+			st.loop_end = int(st.get_length() * st.mix_rate)
+			_mg_loop.stream = st
+			_mg_loop.unit_size = 6.0
+			_mg_loop.max_distance = 90.0
+			_mg_loop.bus = "SFX"
+			_mg_loop.volume_db = -1.0
+			add_child(_mg_loop)
+			_mg_loop.position = Vector3(0, 1.2, 0)
+		_mg_loop.play()
+	elif not firing and _mg_firing:
+		if _mg_loop:
+			_mg_loop.stop()
+		Game.play_at(mission, "minigun_stop", global_position + Vector3.UP, -2)
+	_mg_firing = firing
+
+@rpc("any_peer", "call_local", "unreliable")
+func _mg_spinup() -> void:
+	Game.play_at(mission, "minigun_spin", global_position + Vector3.UP, -2)
+
 ## Moves the swinging hand by @a off from where it would be (no drift frame to frame).
 var _swing_off := Vector3.ZERO
 var _swing_holder: Node3D
@@ -1034,6 +1067,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _physics_process(delta: float) -> void:
 	_blood_watch(delta)
+	_mg_tick()
 	if not is_multiplayer_authority():
 		_remote_visuals()
 		return
@@ -1323,6 +1357,8 @@ func _use_hand(slot: String, pressed: bool, just: bool, delta: float) -> void:
 		"weapon":
 			if rule.has("spinup"):
 				if pressed:
+					if spin <= 0.05 and not _mg_firing:
+						_mg_spinup.rpc()
 					spin = min(1.0, spin + delta / rule["spinup"] + delta * 0.8)
 				if spin < 1.0:
 					return
@@ -1331,7 +1367,7 @@ func _use_hand(slot: String, pressed: bool, just: bool, delta: float) -> void:
 				if int(it.get("loaded", 0)) > 0:
 					_shoot(slot, it, rule)
 				elif just:
-					Game.play_at(self, "reload", global_position, -14)
+					Game.play_at(self, "empty", global_position, -6)
 					mission.hud.message("Prázdná zbraň - R přebije", 1.5)
 		"melee":
 			if just and fire_cd <= 0:
@@ -1405,6 +1441,11 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 		mission.fire_rocket.rpc(muzzle, d, name)
 		Game.play_at(mission, rule["sound"], muzzle, 2)
 		return
+	if wp["id"] in ["rifle", "pistol", "sniper", "autocannon", "minigun"]:
+		_casing_n += 1
+		if not rule.get("auto", false) or _casing_n % 3 == 0:
+			var cpos := global_position + global_transform.basis.x * 0.4
+			get_tree().create_timer(randf_range(0.35, 0.6)).timeout.connect(func(): if is_instance_valid(self): Game.play_at(mission, "casing", cpos, -16))
 	var tracers := []
 	var pellets := int(rule.get("pellets", 1))
 	# shotgun: the mercenary's aim wanders a little, the pellets spread in a fixed cone around it
@@ -1495,6 +1536,7 @@ func _melee_hit(rule: Dictionary) -> void:
 			dmg = 999.0
 		var stun: float = float(rule.get("stun", 0.0)) * (1.5 if Game.has_talent(merc, "lovec_hlav") else 1.0)
 		mission.hud.hitmarker()
+		Game.play_at(mission, "baton_hit" if rule.get("blunt", false) else "knife_stab", hit.position, -2)
 		_melee_alien.rpc_id(1, a.name, dmg, stun)
 
 @rpc("any_peer", "call_local", "reliable")
@@ -1542,8 +1584,14 @@ func _hit_alien(alien_name: String, dmg: float, kind := "bullet") -> void:
 
 @rpc("any_peer", "call_local", "unreliable")
 func _shot_fx(from: Vector3, to: Vector3, snd: String) -> void:
-	if snd != "":
+	if snd == "minigun":
+		_mg_last = Time.get_ticks_msec() / 1000.0      # the firing loop runs while bullets fly
+	elif snd != "":
 		Game.play_at(mission, snd, from, -2)
+		if snd == "shotgun":
+			get_tree().create_timer(0.38).timeout.connect(func(): if is_instance_valid(self): Game.play_at(mission, "shotgun_pump", global_position + Vector3.UP, -6))
+		elif snd == "sniper":
+			get_tree().create_timer(0.55).timeout.connect(func(): if is_instance_valid(self): Game.play_at(mission, "sniper_bolt", global_position + Vector3.UP, -6))
 	if multiplayer.is_server() and mission and mission.started():
 		var dir := to - from
 		var L := dir.length()
@@ -1628,15 +1676,16 @@ func _reload(wp: Dictionary, rule: Dictionary) -> void:
 	if wp == item_in("rh") and inv.has("lh") and not Game.two_handed(wp["id"]):
 		t2 += 0.6      # the left hand has to put its thing away and take it back
 	busy_stand = dig
-	Game.play_at(self, "reload", global_position, -8)
-	# the empty magazine drops out at a quarter of the motion
+	# magazine out, (the hand fetches a new one), magazine in
+	Game.play_at(self, "mag_out", global_position + Vector3.UP, -4)
 	get_tree().create_timer(t2 * 0.25).timeout.connect(func(): _drop_mag())
+	get_tree().create_timer(t2 * 0.62).timeout.connect(func(): if is_instance_valid(self) and busy > 0: Game.play_at(mission, "mag_in", global_position + Vector3.UP, -4))
 	_start_busy(t2, "Přebíjím" + (" (z batohu)" if dig else ""), func():
 		busy_stand = false
 		if inv.has(slot):
 			inv.erase(slot)
 			wp["loaded"] = cap
-			Game.play_ui(self, "reload", -12))
+			Game.play_ui(self, "reload", -18))
 
 # ---- reload animations, after Ivo's videos ------------------------------------------------
 # Pistol: tilt the gun in, magazine drops out, the left hand brings a new one up and slaps it
@@ -1800,9 +1849,9 @@ func _reload_anim(delta: float, rid: String, reloading: bool) -> Array:
 				slide_back = 0.04 * smoothstep(0.7, 0.78, ph) * (1.0 - smoothstep(0.8, 0.82, ph))
 			# sounds on the beats of the video: magazine seated, slide released
 			if _rl_last < 0.52 and ph >= 0.52:
-				Game.play_ui(self, "reload", -10)
+				pass      # (the magazine sounds come from the reload itself)
 			if _rl_last < 0.8 and ph >= 0.8:
-				Game.play_ui(self, "clink", -8)
+				Game.play_ui(self, "pistol_slide", -4)
 			_rl_last = ph
 		elif mag:
 			mag.visible = true
@@ -1828,12 +1877,12 @@ func _reload_anim(delta: float, rid: String, reloading: bool) -> Array:
 			hand_rot = Vector3(0.9, -0.3, 1.0)
 			_reload_hand("shell" if ph < 0.65 else "")
 			if _rl_last < 0.55 and ph >= 0.55:
-				Game.play_ui(self, "clink", -14)
+				Game.play_ui(self, "shell_insert", -6)
 			_rl_last = ph
 			if ph < 0.05:
 				_rl_last = 0.0
 		elif _sg_was and not single2:
-			Game.play_ui(self, "reload", -8)     # the pump racked at the end
+			Game.play_ui(self, "shotgun_pump", -4)     # the pump racked at the end
 		_sg_was = single2
 	elif rid == "magnum":
 		var barrel := _vm_part("Barrel")
@@ -1847,7 +1896,7 @@ func _reload_anim(delta: float, rid: String, reloading: bool) -> Array:
 		elif _rev_was:
 			_rev_was = false
 			_rev_closing = 0.35
-			Game.play_ui(self, "clink", -6)      # snapped shut
+			Game.play_ui(self, "revolver_close", -2)      # snapped shut
 		if _rev_closing > 0.0:
 			_rev_closing -= delta
 			_rev_open = maxf(0.0, _rev_open - delta * 6.0)
@@ -1894,7 +1943,8 @@ func _eject_empties() -> void:
 	var barrel := _vm_part("Barrel")
 	if barrel == null or not is_inside_tree():
 		return
-	Game.play_at(mission, "clink", global_position, -12)
+	Game.play_at(mission, "revolver_open", global_position + Vector3.UP, -2)
+	get_tree().create_timer(0.25).timeout.connect(func(): if is_instance_valid(self): Game.play_at(mission, "casings", global_position, -6))
 	for i in 5:
 		var b := RigidBody3D.new()
 		b.collision_layer = 0
@@ -1980,6 +2030,7 @@ func _spawn_throwable(kind: String, from: Vector3, vel: Vector3, thrower: String
 		mi.material_override = Game.color_mat(Color(0.45, 0.46, 0.44))
 		get_tree().create_timer(1.5).timeout.connect(func():
 			if is_instance_valid(rb):
+				Game.play_at(mission, "smoke_pop", rb.global_position, -2)
 				mission.add_smoke(rb.global_position)
 				get_tree().create_timer(2.0).timeout.connect(rb.queue_free))
 		return
@@ -2001,6 +2052,20 @@ func _spawn_throwable(kind: String, from: Vector3, vel: Vector3, thrower: String
 		l.light_energy = 2.5
 		l.omni_range = 11.0
 		rb.add_child(l)
+		# struck, then it fizzes and burns as long as it lies there
+		Game.play_at(mission, "flare_strike", from, -4)
+		var burn := AudioStreamPlayer3D.new()
+		var bst: AudioStreamWAV = (Game.sound("flare_burn") as AudioStreamWAV).duplicate()
+		bst.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		bst.loop_begin = 0
+		bst.loop_end = int(bst.get_length() * bst.mix_rate)
+		burn.stream = bst
+		burn.unit_size = 3.0
+		burn.max_distance = 30.0
+		burn.volume_db = -8.0
+		burn.bus = "Ambient"
+		rb.add_child(burn)
+		get_tree().create_timer(1.2).timeout.connect(func(): if is_instance_valid(burn): burn.play())
 		get_tree().create_timer(60.0).timeout.connect(rb.queue_free)
 	else:
 		mi.material_override = Game.color_mat(Color(0.25, 0.3, 0.2))
@@ -2025,7 +2090,7 @@ func _spawn_throwable(kind: String, from: Vector3, vel: Vector3, thrower: String
 						pl.hurt.rpc_id(pl.get_multiplayer_authority(), 60.0 * (1.0 - d2 / 5.0), p))
 
 func _explosion_fx(p: Vector3) -> void:
-	Game.play_at(mission, "explosion", p, 4)
+	Game.play_at(mission, "explosion_big", p, 4)
 	var l := OmniLight3D.new()
 	l.light_color = Color(1.0, 0.6, 0.2)
 	l.light_energy = 8.0

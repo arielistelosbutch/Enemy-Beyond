@@ -1043,7 +1043,8 @@ func _fire(p: Node) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func _plasma(from: Vector3, dir: Vector3, power := 1.0, kind := "plasma") -> void:
-	Game.play_at(mission, "plasma" if kind == "plasma" else "lunge", from, -2 + (power - 1.0) * 4.0)
+	# the big ones (and the drones) fire the heavy plasma, ten takes so it never repeats
+	Game.play_at(mission, ("plasma_heavy" if power >= 1.3 else "plasma") if kind == "plasma" else "lunge", from, -2 + (power - 1.0) * 2.0)
 	var bolt := Node3D.new()
 	bolt.set_script(BoltScript)
 	bolt.power = power

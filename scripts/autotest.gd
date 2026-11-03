@@ -144,7 +144,11 @@ func _solo(p: Node) -> void:
 		Input.action_press("aim")
 		if p.weapon().is_empty() or int(p.weapon().get("loaded", 0)) == 0:
 			Input.action_release("fire")
-			Input.action_press("reload")
+			# tap R (a held key only counts once)
+			if Engine.get_physics_frames() % 4 < 2:
+				Input.action_press("reload")
+			else:
+				Input.action_release("reload")
 		else:
 			Input.action_release("reload")
 		if p.downed:
