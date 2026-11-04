@@ -32,9 +32,11 @@ var dbg_rx := PackedFloat32Array()
 func _ready() -> void:
 	name = "LobbyVoice"
 
+## In a real mission the mission's own Voice takes the microphone. A co-op client walking our
+## base alone (an offline copy) still talks to the team on the globe through the lobby voice.
 func _in_mission() -> bool:
 	var sc := get_tree().current_scene
-	return sc != null and sc.name == "Mission"
+	return sc != null and sc.name == "Mission" and not (sc.has_method("local") and sc.local())
 
 ## One reader of the microphone for the whole game (menu test, lobby, globe and the mission).
 func _want_mic() -> bool:
@@ -105,7 +107,7 @@ func _process(delta: float) -> void:
 		if _mission_feed.size() > Voice.RATE:      # nobody took it (no Voice node): keep a second at most
 			_mission_feed = _mission_feed.slice(_mission_feed.size() - Voice.RATE)
 		return
-	if not Net.is_online():
+	if not Net.is_online() or multiplayer.multiplayer_peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
 		return
 	var send := Input.is_action_pressed("talk")
 	if Game.voice_mode == "open" or Game.mic_live:

@@ -57,7 +57,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 			continue
 		_room(i % gw, i / gw, String(c["type"]), float(c.get("days", 0.0)) > 0.0, params)
 	# the earth all around: one slab under everything, one over it (seen through the lift shaft)
-	box(Vector3(gw * BLOCK / 2, -0.6, gh * BLOCK / 2), Vector3(gw * BLOCK + 4, 1.0, gh * BLOCK + 4), Game.mat("earth", 0.5))
+	box(Vector3(gw * BLOCK / 2, -0.6, gh * BLOCK / 2 - BLOCK / 2), Vector3(gw * BLOCK + 4, 1.0, gh * BLOCK + BLOCK + 4), Game.mat("earth", 0.5))    # (the hangar reaches one block north)
 	if attack:
 		# the team wakes in the quarters (or wherever the velín put them)
 		for i in cells.size():
@@ -89,6 +89,9 @@ func _room(gx: int, gz: int, kind: String, building: bool, params: Dictionary) -
 	var o := Vector3(gx * BLOCK, 0, gz * BLOCK)
 	var a := o + Vector3(IN, 0, IN)                 # inner corner
 	var w := BLOCK - IN * 2                        # 10 m inside
+	if kind == "hangar" and gz == 0 and not building:
+		_big_hangar(gx, params)
+		return
 	var h := H if kind != "hangar" else 7.0
 	var wall := Game.mat("base_wall", 0.5)
 	var floor_tex := "hangar_floor" if kind == "hangar" else "base_floor"
@@ -174,6 +177,104 @@ func _corridor(mid: Vector3, along_x: bool) -> void:
 	for k in [0.0, L - 0.3]:
 		var lp := mid + (Vector3(k, 0, 0) if along_x else Vector3(0, 0, k))
 		box(lp + Vector3(0, H - 0.3, 0) + (Vector3(0.15, 0, 0) if along_x else Vector3(0, 0, 0.15)), Vector3(0.3, 0.6, wd) if along_x else Vector3(wd, 0.6, 0.3), wall)
+
+## The hangar: a hall twice as deep as a room (it reaches north under the hill, out of the grid)
+## and 10 m high, so the transport stands in it at its real size.
+func _big_hangar(gx: int, params: Dictionary) -> void:
+	var gz := 0
+	var a := Vector3(gx * BLOCK + IN, 0, -BLOCK + IN)      # north-west inner corner
+	var w := BLOCK - IN * 2                                # 10 m wide
+	var dd := BLOCK * 2 - IN * 2                           # 22 m deep
+	var h := 10.0
+	var wall := Game.mat("base_wall", 0.5)
+	box(a + Vector3(w / 2, -0.05, dd / 2), Vector3(w + 0.5, 0.1, dd + 0.5), Game.mat("hangar_floor", 0.5))
+	var s := _built(gx, gz + 1)
+	var we := _built(gx - 1, gz)
+	var e := _built(gx + 1, gz)
+	# doors to the neighbours: in the south half (the part inside the grid)
+	var side_gap := [[BLOCK + DOOR[0] - IN, BLOCK + DOOR[1] - IN]]
+	_wall(a, w, true, h, wall, [])
+	_wall(a + Vector3(0, 0, dd), w, true, h, wall, [[DOOR[0] - IN, DOOR[1] - IN]] if s else [])
+	_wall(a, dd, false, h, wall, side_gap if we else [])
+	_wall(a + Vector3(w, 0, 0), dd, false, h, wall, side_gap if e else [])
+	box(a + Vector3(w / 2, h + 0.1, dd / 2), Vector3(w, 0.2, dd), wall)
+	# the low doorways need a lintel down to the corridors' height
+	var dm := (DOOR[0] + DOOR[1]) / 2.0 - IN
+	if s:
+		box(a + Vector3(dm, (h + H) / 2.0, dd), Vector3(DOOR[1] - DOOR[0], h - H, 0.25), wall)
+		if _ready(gx, gz + 1): info["passages"].append({"c": a + Vector3(dm, 0, dd), "n": Vector3(0, 0, -1)})
+	for sd in [[we, 0.0, Vector3(1, 0, 0), gx - 1], [e, w, Vector3(-1, 0, 0), gx + 1]]:
+		if sd[0]:
+			box(a + Vector3(sd[1], (h + H) / 2.0, BLOCK + dm), Vector3(0.25, h - H, DOOR[1] - DOOR[0]), wall)
+			if _ready(sd[3], gz): info["passages"].append({"c": a + Vector3(sd[1], 0, BLOCK + dm), "n": sd[2]})
+	if e:
+		_corridor(Vector3(gx * BLOCK, 0, 0) + Vector3(BLOCK - IN, 0, BLOCK / 2), true)
+	if s:
+		_corridor(Vector3(gx * BLOCK, 0, 0) + Vector3(BLOCK / 2, 0, BLOCK - IN), false)
+	# floodlights in rows
+	for lz in [0.2, 0.5, 0.8]:
+		for lx in [0.3, 0.7]:
+			var l := OmniLight3D.new()
+			l.light_color = Color(1.0, 0.95, 0.85)
+			l.light_energy = 1.6 if not attack else 0.0
+			l.omni_range = 11.0
+			l.omni_attenuation = 1.1
+			root.add_child(l)
+			l.position = a + Vector3(w * lx, h - 0.6, dd * lz)
+			box(a + Vector3(w * lx, h - 0.03, dd * lz), Vector3(1.8, 0.06, 0.6), Game.color_mat(Color(1.0, 0.95, 0.85), true) if not attack else _col(Color(0.25, 0.24, 0.22)), false)
+	_alarms(a, w, h)
+	_alarms(a + Vector3(0, 0, BLOCK), w, h)
+	_cables(a + Vector3(0, 0, BLOCK), w, h, "hangar")
+	# the floor: yellow centre line, a landing square, the lift platform under the roof hatch
+	for k in 18:
+		box(a + Vector3(w * 0.5, 0.01, 1.5 + k * 1.1), Vector3(0.12, 0.02, 0.55), Game.color_mat(Color(0.9, 0.8, 0.2)), false)
+	for sx in [-1, 1]:
+		box(a + Vector3(w * 0.5 + sx * 3.6, 0.01, dd / 2), Vector3(0.12, 0.02, dd - 3.0), Game.color_mat(Color(0.9, 0.85, 0.75)), false)
+	box(a + Vector3(w * 0.5, h - 0.05, dd * 0.45), Vector3(w * 0.7, 0.1, dd * 0.6), Game.mat("metal", 0.5), false)   # the roof hatch
+	# the transport at full size, nose to the north
+	var transport := String(params.get("transport", "heli"))
+	var model := "heli" if transport != "kondor" else "dropship"
+	var m: Node3D = Game.model(model)
+	root.add_child(m)
+	m.position = a + Vector3(w * 0.5, 0.0, dd * 0.47)
+	m.rotation.y = 0.0
+	# parked: the rotor blades folded along the body (as on a real carrier deck)
+	for rn in ["RotorF", "RotorR"]:
+		var r: Node3D = m.find_child(rn, true, false)
+		if r == null:
+			continue
+		var best_a := 0.0
+		var best_w := INF
+		for k in 8:
+			r.rotation.y = k * PI / 8.0
+			var wx := _aabb3(m).size.x
+			if wx < best_w:
+				best_w = wx
+				best_a = r.rotation.y
+		r.rotation.y = best_a
+	var bb := _aabb3(m)
+	var fit := minf(1.0, minf((w - 0.6) / maxf(bb.size.x, 0.1), (dd - 3.0) / maxf(bb.size.z, 0.1)))
+	m.scale = Vector3.ONE * fit
+	var ap: AnimationPlayer = m.find_child("AnimationPlayer", true, false)
+	if ap:
+		ap.stop()
+	var sb := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = Vector3(bb.size.x * fit * 0.55, 2.4, bb.size.z * fit * 0.8)
+	cs.shape = bs
+	sb.add_child(cs)
+	root.add_child(sb)
+	sb.position = m.position + Vector3(0, 1.2, 0)
+	if Game.autotest() != "": print("[BASE] hangar transport %s size %s fit %.2f" % [model, str(bb.size), fit])
+	# around it: barrels, a fuel cart, the loader, tool carts, cover
+	for p in [Vector3(0.8, 0, 1.0), Vector3(1.6, 0, 1.1), Vector3(0.9, 0, 2.0), Vector3(w - 0.8, 0, dd - 1.0), Vector3(w - 1.7, 0, dd - 0.9)]:
+		_barrel(a + p)
+	box(a + Vector3(w - 1.0, 1.0, 2.5), Vector3(1.4, 2.0, 2.2), _col(Color(0.2, 0.3, 0.75)))       # loader
+	_cabinet(a + Vector3(0.4, 0, dd - 3.0), PI / 2, Color(0.55, 0.45, 0.15))
+	_cabinet(a + Vector3(0.4, 0, dd - 4.0), PI / 2, Color(0.55, 0.45, 0.15))
+	info["entries"].append(a + Vector3(2.0, 0.3, 2.0))
+	_cover(a + Vector3(1.5, 0, 4.5)); _cover(a + Vector3(w - 1.5, 0, dd - 4.5)); _cover(a + Vector3(1.5, 0, dd - 6.0))
 
 # ---- furniture ----------------------------------------------------------------------------------
 func _col(c: Color) -> Material:

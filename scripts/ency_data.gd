@@ -57,6 +57,76 @@ const ITEM_TEXT := {
 	"a_heavy": "Těžká plazma Bijců. Výbuch při dopadu rozbije i zeď.",
 }
 
+## What each weapon is good and bad at (for choosing what to carry).
+const PROS_CONS := {
+	"pistol": ["lehká, rychle se tasí, slušně přesná", "slabá, na velké vetřelce málo"],
+	"rifle": ["dobrý dosah, dávka i jednotlivé rány, univerzální", "hlučná, těžší než pistole"],
+	"shotgun": ["zblízka smrtící, jedna rána zastaví i Ohaře", "na dálku broky rozprší, pomalé nabíjení po jednom"],
+	"magnum": ["obrovská rána do jedné ruky", "jen 6 ran, silný zpětný ráz, pomalé nabíjení"],
+	"sniper": ["přesná na velkou dálku, jedna rána často stačí", "od boku nepoužitelná, hlučná, pomalá kadence"],
+	"autocannon": ["prorazí zeď i pancíř, výbuch kolem zásahu", "velmi těžký a hlučný, malý zásobník, ze stoje nepřesný"],
+	"minigun": ["déšť olova, 150 ran v pásu", "musí se roztočit, nejtěžší zbraň, budí celou mapu"],
+	"rocket_launcher": ["zničí stroje, Ohnivce i úkryt za zdí", "jedna raketa, dlouhé nabíjení, nebezpečná zblízka i pro vás"],
+	"laser_pistol": ["žádné zásobníky, článek se dobíjí sám, tichá", "po vystřílení chvíli čekáš na dobití"],
+	"laser_rifle": ["přesná, tichá, bez zpětného rázu, nekonečná munice", "článek na 24 ran a pak pauza"],
+	"laser_cannon": ["silný na obrněné cíle a stroje", "těžký, krátký článek, chce oporu"],
+	"plasma_rifle": ["silná, přesná a tichá", "drahá: Moskovium a články"],
+	"knife": ["tichý, zezadu zabíjí", "musíš až k nim"],
+	"stun_baton": ["vetřelce omráčí živého pro výzkum", "skoro nezraní, musíš až k nim"],
+	"a_pistol": ["silná plazma", "bez výzkumu zlobí: dlouho se nabíjí a rozptyluje"],
+	"a_rifle": ["silná dávka plazmy", "bez výzkumu nepřesná a pomalá"],
+	"a_heavy": ["výbuch při dopadu rozbije i zeď", "těžká, bez výzkumu sotva ovladatelná"],
+	"vesta": ["o pětinu menší zranění", "4 kg navíc"],
+	"pancir": ["o 38 % menší zranění, plazmu vydrží", "7 kg navíc"],
+	"stit": ["zastaví většinu střel zepředu", "zabere ruku, 6 kg"],
+}
+
+static func _rate_word(v: float, steps: Array, words: Array) -> String:
+	for i in steps.size():
+		if v <= float(steps[i]):
+			return words[i]
+	return words[-1]
+
+## The numbers under a weapon's (or armour's) text: what it does, how often, how much, how loud.
+static func card(id: String) -> String:
+	var r: Dictionary = Game.ITEMS.get(id, {})
+	var t := String(r.get("type", ""))
+	var lines := []
+	if t == "weapon":
+		var dmg := "%d" % int(r.get("damage", 0))
+		if r.has("pellets"):
+			dmg = "%d × %d broků" % [int(r["pellets"]), int(r["damage"])]
+		if r.has("splash"):
+			dmg += " + výbuch %.1f m" % float(r["splash"])
+		lines.append("Poškození: " + dmg)
+		lines.append("Kadence: %d ran/min%s" % [int(60.0 / maxf(float(r.get("rate", 1.0)), 0.01)), " (dávka)" if r.get("auto", false) else ""])
+		if r.get("laser", false):
+			lines.append("Článek: %d ran, dobije se za %.1f s" % [int(r.get("cap", 0)), float(r.get("recharge", 0.0))])
+		elif r.has("cap") and r.get("alien", false):
+			lines.append("Náboje: %d, pak se dlouho nabíjí" % int(r["cap"]))
+		elif r.has("cap"):
+			lines.append("Náboje: %d (nabíjí se po jednom)" % int(r["cap"]))
+		elif String(r.get("ammo", "")) != "" and Game.ITEMS.has(r["ammo"]):
+			lines.append("Zásobník: %d ran (%s)" % [int(Game.ITEMS[r["ammo"]].get("rounds", 0)), Game.ITEMS[r["ammo"]]["short"]])
+		lines.append("Přesnost: " + _rate_word(float(r.get("spread", 2.0)), [0.5, 1.0, 1.5, 2.2, 3.0], ["vynikající", "vysoká", "dobrá", "střední", "nízká", "velmi nízká"]))
+		lines.append("Hluk: " + _rate_word(float(r.get("noise", 50.0)), [30.0, 45.0, 60.0, 75.0], ["tichá", "slyšet v okolí", "hlučná", "velmi hlučná", "slyší ji celá mapa"]))
+		lines.append("Váha: %d kg%s%s" % [int(r.get("weight", 0)), ", obouruční" if r.get("two", false) else ", do jedné ruky", ", chce oporu (ležet, opřít)" if r.get("brace", false) else ""])
+	elif t == "melee":
+		lines.append("Poškození: %d%s" % [int(r.get("damage", 0)), ("  zezadu ×%.0f" % float(r["backstab"])) if r.has("backstab") else ""])
+		if r.has("stun"):
+			lines.append("Omráčení: %d za ránu" % int(r["stun"]))
+		lines.append("Dosah: %.1f m   Váha: %d kg" % [float(r.get("reach", 0.0)), int(r.get("weight", 0))])
+	elif t == "armor":
+		lines.append("Zranění: −%d %%   Váha: %d kg" % [int(round((1.0 - float(r.get("protect", 1.0))) * 100.0)), int(r.get("weight", 0))])
+	elif t == "shield":
+		lines.append("Váha: %d kg" % int(r.get("weight", 0)))
+	if PROS_CONS.has(id):
+		lines.append("+ " + String(PROS_CONS[id][0]))
+		lines.append("− " + String(PROS_CONS[id][1]))
+	if lines.is_empty():
+		return ""
+	return "\n\n" + "\n".join(lines)
+
 const CRAFT := {
 	"heli": ["Čáp", "Starý dopravní vrtulník. Pomalý a hlučný, ale doveze tým kamkoli. Rampa vzadu, místo pro celý tým a jejich výbavu.", "start"],
 	"dropship": ["Kondor", "Transportér s krátkými křídly a slitinovým trupem. Startuje svisle, letí třikrát rychleji než Čáp.", "res:kondor"],
@@ -91,7 +161,7 @@ static func entries() -> Array:
 		out.append({"id": u, "cat": "Stroje a lodě vetřelců", "title": UFO[u][0], "text": UFO[u][1], "model": u, "view": "craft", "unlock": UFO[u][2], "icon": u})
 	for it in ITEM_TEXT:
 		var unlock: String = "loot:" + it if it.begins_with("a_") else ("res:" + Campaign.LOCKED_BY[it] if Campaign.LOCKED_BY.has(it) else "start")
-		out.append({"id": "item_" + it, "cat": "Zbraně a výbava", "title": Game.ITEMS[it]["name"], "text": ITEM_TEXT[it], "model": it, "view": "item", "unlock": unlock, "icon": it})
+		out.append({"id": "item_" + it, "cat": "Zbraně a výbava", "title": Game.ITEMS[it]["name"], "text": ITEM_TEXT[it] + card(it), "model": it, "view": "item", "unlock": unlock, "icon": it})
 	for c in CRAFT:
 		out.append({"id": "craft_" + c, "cat": "Naše letadla", "title": CRAFT[c][0], "text": CRAFT[c][1], "model": c if c != "orel" else "dropship", "view": "craft", "unlock": CRAFT[c][2], "icon": c if c != "orel" else "dropship"})
 	for k in LORE:

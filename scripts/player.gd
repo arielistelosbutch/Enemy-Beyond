@@ -131,7 +131,7 @@ func setup(data: Dictionary) -> void:
 	var cfg := SceneReplicationConfig.new()
 	for prop in [":position", ":rotation", ":pitch", ":crouching", ":light_on", ":hp", ":downed", ":dead", ":wounded",
 			":bleed_left", ":carried_by", ":wants_evac", ":kills", ":held", ":panic", ":gear",
-			":held_l", ":held_back", ":prone", ":sprinting", ":captures", ":infected", ":act", ":emote"]:
+			":held_l", ":held_back", ":prone", ":sprinting", ":captures", ":infected", ":act", ":emote", ":bleeding"]:
 		cfg.add_property(NodePath("." + prop))
 		cfg.property_set_replication_mode(NodePath("." + prop), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	sync.replication_config = cfg
@@ -223,7 +223,8 @@ func _build_body(data: Dictionary) -> void:
 		_gear_nodes[String(mi.name)] = mi
 		for i in mi.mesh.get_surface_count():
 			var src: Material = mi.mesh.surface_get_material(i)
-			if src and src.resource_name == "Uniform":
+			if src and src.resource_name == "Uniform" and Game.camo == "":
+				# (in camouflage everybody wears the pattern; the shoulder patch still tells who is who)
 				mi.set_surface_override_material(i, Game.color_mat(TEAM_COLORS[idx]))
 			elif src and src.resource_name == "Patch":
 				mi.set_surface_override_material(i, Game.color_mat(PATCH_COLORS[idx]))
@@ -1124,6 +1125,9 @@ func _physics_process(delta: float) -> void:
 	var shake := (0.25 + stress / 60.0) * (1.6 - float(merc.get("reactions", 45)) / 100.0)
 	if Game.has_talent(merc, "pevna_ruka"): shake *= 0.65
 	if prone: shake *= 0.5
+	var wid: String = weapon().get("id", "")
+	if aiming and Game.has_mod(wid, "optika", merc): shake *= 0.6      # the scope steadies the picture
+	if Game.has_mod(wid, "rukojet", merc): shake *= 0.8
 	_sway = _sway.lerp(Vector2(randf_range(-1, 1), randf_range(-1, 1)) * shake * 0.02, delta * 2.0)
 	# breathing after a run: the sights rise and fall, slower as it calms down
 	_breath_ph += delta * lerp(1.2, 3.2, breath)
@@ -1169,7 +1173,7 @@ func _physics_process(delta: float) -> void:
 	aiming = (two and not brace_w or pistol_grip()) and Input.is_action_pressed("aim") and not inv_open and not sprinting and busy <= 0
 	if cam:
 		var scoped: bool = aiming and Game.ITEMS[rh["id"]].get("scope", false)
-		var zoom := 0.2 if scoped else (0.5 if Game.has_mod(rh.get("id", ""), "optika", merc) else 0.7)
+		var zoom := 0.2 if scoped else (0.45 if Game.has_mod(rh.get("id", ""), "optika", merc) else 0.7)
 		cam.fov = lerp(cam.fov, Game.fov * zoom if aiming else Game.fov, delta * (14.0 if scoped else 8.0))
 		if gun:
 			gun.visible = not (scoped and cam.fov < Game.fov * 0.4)
@@ -1454,8 +1458,8 @@ func current_spread() -> float:
 	elif crouching: s *= 0.6
 	if aiming: s *= 0.5
 	elif rule.has("hip"): s *= float(rule["hip"])      # a scoped rifle from the hip goes anywhere
-	if not aiming and Game.has_mod(wp["id"], "laser", merc): s *= 0.75
-	if aiming and Game.has_mod(wp["id"], "optika", merc): s *= 0.8
+	if Game.has_mod(wp["id"], "laser", merc): s *= 0.55 if not aiming else 0.9
+	if aiming and Game.has_mod(wp["id"], "optika", merc): s *= 0.6
 	if bracing: s *= 0.55
 	if Vector2(velocity.x, velocity.z).length() > 0.5: s *= 1.8
 	if not gun_in("rh").is_empty() and not gun_in("lh").is_empty(): s *= 1.35    # two guns at once
@@ -1477,14 +1481,15 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 	_vm_kick = 1.0
 	kick_mult = float(rule.get("kick", 1.0))
 	var spread := deg_to_rad(current_spread())
-	if Game.has_mod(wp["id"], "rukojet", merc):
-		kick_mult *= 0.65
-	spread_bloom = min(5.0, spread_bloom + 0.7 * kick_mult)
+	var grip := Game.has_mod(wp["id"], "rukojet", merc)
+	if grip:
+		kick_mult *= 0.5
+	spread_bloom = min(5.0, spread_bloom + 0.7 * kick_mult * (0.6 if grip else 1.0))
 	pitch += (0.012 + randf() * 0.01) * kick_mult * (0.5 if prone else 1.0)
 	var from := cam.global_position
 	var basis_ := cam.global_transform.basis
 	var muzzle := _muzzle(slot, rule)
-	mission.noise(global_position, float(rule["noise"]) * (0.35 if Game.has_mod(wp["id"], "tlumic", merc) else 1.0))
+	mission.noise(global_position, float(rule["noise"]) * (0.2 if Game.has_mod(wp["id"], "tlumic", merc) else 1.0))
 	if rule.get("projectile", false):
 		var d := (-basis_.z).rotated(basis_.x, randf_range(-spread, spread) * 0.3).normalized()
 		mission.fire_rocket.rpc(muzzle, d, name)
@@ -2217,7 +2222,7 @@ func hurt(dmg: float, from: Vector3) -> void:
 		Game.play_ui(self, "death_female" if merc.get("look", {}).get("female", false) else "death_male", -6)
 
 func _bleed(delta: float) -> void:
-	if bleeding > 0 and not downed:
+	if bleeding > 0 and not downed and healed_t <= 0.0:      # (a hand pressing on the wound stops it)
 		hp -= bleeding * delta
 		if hp <= 0:
 			hurt(0.1, global_position)
@@ -2320,7 +2325,8 @@ func _heal_self() -> void:
 		inv[slot]["uses"] = int(inv[slot]["uses"]) - 1
 		if int(inv[slot]["uses"]) <= 0: inv.erase(slot)
 		hp = min(max_hp, hp + (20.0 if Game.has_talent(merc, "felcar") else 10.0))
-		bleeding = 0.0)
+		bleeding = 0.0
+		mission.hud.message("Obvázáno. Krvácení zastaveno.", 2.0))
 
 ## The teammate E would help right now: down (first) or hurt, within reach.
 func heal_target() -> Node:
@@ -2397,7 +2403,7 @@ func patched(by: String, amount: float) -> void:
 	hp = min(max_hp, hp + amount)
 	bleeding = 0.0
 	healed_t = 0.0
-	mission.hud.message("%s tě obvázal." % by, 2.5)
+	mission.hud.message("%s tě obvázal. Krvácení zastaveno." % by, 2.5)
 
 # ---- radio ------------------------------------------------------------------------------------
 ## Hears the radio: a handheld anywhere on you, or the helmet set (research).
@@ -2818,8 +2824,8 @@ func _blood_watch(delta: float) -> void:
 		Game.blood_splat(mission, global_position + Vector3(randf_range(-0.25, 0.25), 0.6, randf_range(-0.25, 0.25)),
 			Color(0.35, 0.02, 0.02), clampf((_blood_hp - hp) * 0.05, 0.2, 0.6))
 	_blood_hp = hp
-	# badly hurt or down: a drop now and then
-	if (downed or hp < max_hp * 0.35) and not dead:
+	# bleeding or down: a drop now and then (a bandaged wound does not drip, however bad)
+	if (downed or bleeding > 0.0) and not dead:
 		_blood_t -= delta
 		if _blood_t <= 0.0:
 			_blood_t = randf_range(0.6, 1.4)

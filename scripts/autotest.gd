@@ -57,10 +57,35 @@ func _process(delta: float) -> void:
 		"zoo": _zoo(p)
 		"tactics": _tactics(p)
 		"basewalk": _basewalk(p)
+		"coophealhost", "coophealclient": _coopheal(p)
+		"coopwipehost", "coopwipeclient":
+			_skip_brief()
+			if p and m().started() and step == 0:
+				step = 1
+				out("[WIPE] %s in mission, players %d" % [mode, m().players().size()])
+				if mode == "coopwipehost":
+					await get_tree().create_timer(3.0).timeout
+					for q in m().players():
+						q.hurt.rpc_id(q.get_multiplayer_authority(), 999.0, q.global_position + Vector3(0, 0, 2))
+					out("[WIPE] everybody shot down")
+		"lbhost", "lbclient":
+			_skip_brief()
+			if t > 2.0 and int(t) % 5 == 0 and int(t * 10) % 50 == 0:
+				out("[LB] %s t=%.0f scene mission local=%s go=%s players=%d p=%s" % [mode, t, m().local(), m().go, m().players().size(), p != null])
+			if p and m().started() and not m().local() and step == 0:
+				step = 1
+				var n0: int = m().players().size()
+				out("[LB] %s in the real mission: players %d, local %s" % [mode, n0, m().local()])
+				await get_tree().create_timer(6.0 if mode == "lbhost" else 2.0).timeout
+				out("RESULT lb %s players %d" % [mode, n0])
+				get_tree().quit()
 		"basepass": _passcheck(p)
 		"doorshot": _doorshot(p)
 		"passcheck": _passcheck(p)
 		"camoshot": _camoshot(p)
+		"soundcheck": _soundcheck(p)
+		"dronetest": _dronetest(p)
+		"airdeath": _airdeath(p)
 		"fireshot": _fireshot(p)
 		"abase": _abase(p)
 		"cloakshot": _cloakshot(p)
@@ -1458,6 +1483,170 @@ func _basewalk(p: Node) -> void:
 	out("RESULT basewalk %d rooms" % n)
 	get_tree().quit()
 
+## Co-op bandaging: the client is hit (bleeding), the host bandages him; then the host is hit
+## and treats himself. Both log their health for a while after: it must stop dropping.
+func _coopheal(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	for a in m().aliens():
+		a.set_physics_process(false)
+		a.global_position += Vector3(0, -200, 0)
+	var host := Game.autotest() == "coophealhost"
+	await get_tree().create_timer(2.0).timeout
+	if host:
+		var other: Node = null
+		for q in m().players():
+			if q != p:
+				other = q
+		if other == null:
+			out("RESULT coopheal no client"); get_tree().quit(); return
+		other.hurt.rpc_id(other.get_multiplayer_authority(), 9.0, other.global_position + Vector3(0, 0, 3))
+		other.hurt.rpc_id(other.get_multiplayer_authority(), 9.0, other.global_position + Vector3(0, 0, 3))
+		await get_tree().create_timer(1.5).timeout
+		p.global_position = other.global_position + Vector3(1.0, 0, 0)
+		p.inv["rh"] = {"id": "medkit", "uses": 4}
+		p._update_held()
+		await get_tree().create_timer(0.5).timeout
+		out("host treats: target %s" % (p.heal_target().display_name if p.heal_target() else "-"))
+		p._treat_teammate("rh")
+		await get_tree().create_timer(4.0).timeout
+		# now himself
+		p.hurt(9.0, p.global_position + Vector3(0, 0, 3))
+		p.hurt(9.0, p.global_position + Vector3(0, 0, 3))
+		out("host hurt: hp %.1f bleeding %.2f" % [p.hp, p.bleeding])
+		p.inv["rh"] = {"id": "medkit", "uses": 4}
+		p._heal_self()
+		await get_tree().create_timer(3.6).timeout
+		var h0: float = p.hp
+		await get_tree().create_timer(5.0).timeout
+		out("host after self-bandage: hp %.1f -> %.1f bleeding %.2f" % [h0, p.hp, p.bleeding])
+		out("RESULT coopheal host %s" % ("ok" if p.hp >= h0 - 0.05 else "PORAD KRVACI"))
+		await get_tree().create_timer(3.0).timeout
+		get_tree().quit()
+	else:
+		for k in 16:
+			await get_tree().create_timer(1.0).timeout
+			out("client t=%d hp %.1f bleeding %.2f healed_t %.1f" % [k, p.hp, p.bleeding, p.healed_t])
+		get_tree().quit()
+
+## A Levit shot out of the air falls to the ground (and does not hang up there).
+func _airdeath(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	p.set_physics_process(false)
+	p.hp = 5000.0
+	var lv: Node = null
+	for a in m().aliens():
+		if String(a.race).begins_with("levit"):
+			lv = a
+			break
+	if lv == null:
+		out("RESULT airdeath no levit"); get_tree().quit(); return
+	lv._jet_to(lv.global_position + Vector3(30, 0, 0))
+	await get_tree().create_timer(1.2).timeout
+	var y0: float = lv.global_position.y
+	lv.damage(9999.0, lv.global_position + Vector3(0, 0, 3), p)
+	for k in 8:
+		await get_tree().create_timer(0.5).timeout
+		out("  y %.2f vel %.2f floor %s flying %s airborne %s" % [lv.global_position.y, lv.velocity.y, lv.is_on_floor(), lv.flying, lv.airborne])
+	var q := PhysicsRayQueryParameters3D.create(lv.global_position + Vector3.UP * 0.5, lv.global_position + Vector3.DOWN * 40.0, 1)
+	var hit: Dictionary = lv.get_world_3d().direct_space_state.intersect_ray(q)
+	var gap: float = lv.global_position.y - (hit.position.y if not hit.is_empty() else 0.0)
+	out("levit died at y %.1f, 4 s later %.1f above the ground (dead %s)" % [y0, gap, lv.dead])
+	out("RESULT airdeath %s" % ("ok" if gap < 0.6 else "VISÍ"))
+	get_tree().quit()
+
+## Solo helper drone: it is there, it heals to half, it brings the man back once - and only once;
+## the aliens do not notice anybody by the ship in the first moments.
+func _dronetest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.inventory_open = false
+	for a in m().aliens():
+		a.set_physics_process(false)
+	await get_tree().create_timer(1.0).timeout
+	var d: Node = m().guard_drone
+	out("drone %s solo %s safe-at-ship %s" % [d != null, m().solo(), m().landing_safe(p)])
+	# a look at it from the side
+	var cam := Camera3D.new()
+	m().add_child(cam)
+	cam.global_position = p.global_position + p.global_transform.basis * Vector3(2.2, 2.3, -1.6)
+	cam.look_at(d.global_position if d else p.global_position + Vector3.UP * 2.0)
+	cam.make_current()
+	for f in 20: await get_tree().process_frame
+	if DisplayServer.get_name() != "headless":
+		get_viewport().get_texture().get_image().save_png("user://drone_0.png")
+	cam.queue_free()
+	p.cam.make_current()
+	p.hp = 3.0
+	await get_tree().create_timer(4.0).timeout
+	out("heal 3 -> %.1f (cap %.1f)" % [p.hp, p.max_hp * 0.5])
+	p.hp = 0.0
+	p.downed = true
+	await get_tree().create_timer(5.0).timeout
+	out("first fall: downed %s hp %.1f finished %s charge %d" % [p.downed, p.hp, m().finished, d.charge])
+	p.hp = 0.0
+	p.downed = true
+	await get_tree().create_timer(3.0).timeout
+	out("second fall: finished %s" % m().finished)
+	out("RESULT dronetest")
+	get_tree().quit()
+
+## The sound of every kind of place: what plays as wind, what as the bed, whether animals call.
+## Rules: indoors (our base, the alien base) no wind, no crickets, no owls; Mars and snow no
+## crickets; outdoor missions have their wind.
+func _soundcheck(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().go:
+		return
+	step = 1
+	var keep_params: Dictionary = Net.mission_params
+	var keep_terr = m().map.get("terrain", "")
+	var outdoor := ["wind", "wind_forest", "mountain", "polar", "mars", "night_silence", "night_field", "town_night", "industrial"]
+	var cases := [
+		["základna (procházka)", {"type": "home", "base": []}, "base"],
+		["útok na základnu", {"type": "base", "base": [], "biome": "base"}, "base"],
+		["obrana (rychlá mise)", {"type": "base", "biome": "base"}, "temperate"],
+		["základna vetřelců", {"type": "alienbase", "biome": "alienbase"}, "alienbase"],
+		["statek", {"type": "crash", "biome": "farm"}, "temperate"],
+		["městečko", {"type": "terror", "biome": "town"}, "temperate"],
+		["les", {"type": "landed", "biome": "forest"}, "temperate"],
+		["hory se sněhem", {"type": "rescue", "biome": "mountain"}, "snow"],
+		["průmysl", {"type": "sabotage", "biome": "industrial"}, "temperate"],
+		["poušť", {"type": "landed", "biome": "desert"}, "desert"],
+		["polár", {"type": "sabotage", "biome": "polar"}, "snow"],
+		["Mars", {"type": "mars", "biome": "mars"}, "mars"],
+	]
+	var bad := 0
+	for c in cases:
+		Net.mission_params = c[1]
+		m().map["terrain"] = c[2]
+		var wind: String = m()._wind_name()
+		var bed: String = m()._ambient_bed()
+		var crit: bool = m().critters_here()
+		var inside: bool = m().indoor() or String(c[1]["type"]) == "alienbase"
+		var errs := []
+		if inside and wind in outdoor and wind != "base_interior": errs.append("venkovní vítr uvnitř")
+		if inside and bed in ["night_field", "town_night"]: errs.append("cvrčci/město uvnitř")
+		if inside and crit: errs.append("zvířata uvnitř")
+		if c[2] in ["mars", "snow"] and bed == "night_field": errs.append("cvrčci na sněhu/Marsu")
+		if c[2] == "mars" and crit: errs.append("zvířata na Marsu")
+		if not inside and wind == "base_interior": errs.append("venku hučí základna")
+		for snd in [wind, bed]:
+			if snd != "" and not ResourceLoader.exists("res://assets/sounds/%s.wav" % snd): errs.append("chybí zvuk " + snd)
+		if not errs.is_empty(): bad += 1
+		out("[SND] %-22s vítr=%-14s podklad=%-14s zvířata=%s %s" % [c[0], wind, bed if bed != "" else "-", "ano" if crit else "ne", ("CHYBA: " + ", ".join(errs)) if not errs.is_empty() else "ok"])
+	Net.mission_params = keep_params
+	m().map["terrain"] = keep_terr
+	out("RESULT soundcheck %d chyb" % bad)
+	get_tree().quit()
+
 ## Camouflage: a mercenary in each pattern in front of the camera (and the hands in view).
 func _camoshot(p: Node) -> void:
 	_skip_brief()
@@ -1498,6 +1687,9 @@ func _passcheck(p: Node) -> void:
 	step = 1
 	p.set_physics_process(false)
 	p.global_position = Vector3(0, -50, 0)
+	for a in m().aliens():
+		a.set_physics_process(false)       # (nobody shoves a door while we measure)
+	await get_tree().create_timer(1.0).timeout
 	var ways: Array = []
 	for i in m().doors.size():
 		var d: Dictionary = m().doors[i]
@@ -1548,6 +1740,10 @@ func _passcheck(p: Node) -> void:
 		if not ok:
 			bad += 1
 			out("BLOCKED %s at %s: %s" % [wy["what"], str(snapped(c, Vector3(0.1, 0.1, 0.1))), hits.keys()])
+			if String(wy["what"]).begins_with("dveře"):
+				var di := int(String(wy["what"]).substr(6))
+				var dd: Dictionary = m().doors[di]
+				out("   door: base %.2f now %.2f pivot %s spec %s" % [float(dd["base"]), (dd["pivot"] as Node3D).rotation.y, str(snapped((dd["pivot"] as Node3D).global_position, Vector3(0.1, 0.1, 0.1))), str(m().map["doors"][di])])
 	out("RESULT passcheck %d ways, %d blocked" % [ways.size(), bad])
 	get_tree().quit()
 

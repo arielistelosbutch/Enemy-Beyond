@@ -410,7 +410,7 @@ func _draw_hud() -> void:
 		var it: Dictionary = mission().nearest_pickup(p.global_position)["item"]
 		_text(c, Vector2(mid.x - 60, mid.y + 44), "E - sebrat: " + Game.ITEMS[it["id"]]["name"], TEXT, 9)
 	if p.bleeding > 0:
-		_text(c, base + Vector2(0, -12), "KRVÁCÍŠ - H lékárnička (do ruky, pak H)", RED, 9)
+		_text(c, base + Vector2(0, -12), "KRVÁCÍŠ (-%.1f zdraví/s) - H lékárnička (do ruky, pak H)" % p.bleeding, RED, 9)
 	# hands, bottom: left hand on the left, right hand on the right
 	var right := Vector2(sz.x - 160, sz.y - 30)
 	_hand_text(c, p, "rh", right)

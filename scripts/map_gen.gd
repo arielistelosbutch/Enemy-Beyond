@@ -227,6 +227,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	_blood_trail()
 	if Game.autotest() != "": print("[MAP] trail done")
 	_borders()
+	_clear_doors()
 	nav.bake_navigation_mesh(false)
 	if Game.autotest() != "": print("[MAP] nav done %d ms" % (Time.get_ticks_msec() - _t0))
 	return info
@@ -385,11 +386,31 @@ func _grass(o: Vector3, count: int, kind := "grass", min_h := 0.6, max_h := 1.3,
 	root.add_child(mi)
 
 ## A village prop (model with its own collision) at p, turned by yaw; adds a cover point.
+## A wooden building's roof: when enough of the walls under it burn or break, it comes down.
+func _wood_roof(n: Node3D, c: Vector3, w: float, d: float) -> void:
+	if not info.has("wood_roofs"):
+		info["wood_roofs"] = []
+	info["wood_roofs"].append({"node": n, "rect": Rect2(c.x - 0.3, c.z - 0.3, w + 0.6, d + 0.6)})
+
+var _cars: Array = []
+## A parked car right in front of a door: towed away (the streets are laid before the houses).
+func _clear_doors() -> void:
+	for car in _cars:
+		if not is_instance_valid(car):
+			continue
+		for dd in info["doors"]:
+			var c: Vector3 = dd["c"]
+			if Vector2(car.position.x - c.x, car.position.z - c.z).length() < 4.0:
+				car.free()      # now, before the paths are baked
+				break
+
 func _prop(name: String, p: Vector3, yaw := 0.0, cover := true) -> Node3D:
 	var n: Node3D = Game.model("v_" + name)
 	root.add_child(n)
 	n.position = p
 	n.rotation.y = yaw
+	if name.begins_with("car"):
+		_cars.append(n)
 	if name == "house_roof":
 		# a pitched roof over the flat slab: the flier sits on the ridge instead (height found later)
 		info["roofs"] = info["roofs"].filter(func(r): return Vector2(r.x - p.x, r.z - p.z).length() > 5.5 or absf(r.y - p.y) > 0.6)
@@ -928,9 +949,11 @@ func _barn(o: Vector3) -> void:
 	_wall(c + Vector3(0, 0, d), w, true, h, m, [[4.0, 5.2]], "wood")
 	_wall(c, d, false, h, m, [], "wood")
 	_wall(c + Vector3(w, 0, 0), d, false, h, m, [[3.0, 4.2]], "wood")
-	box(c + Vector3(w / 2, h + 0.05, d / 2), Vector3(w, 0.1, d), Game.mat("planks", 0.5), false)
+	var bceil := box(c + Vector3(w / 2, h + 0.05, d / 2), Vector3(w, 0.1, d), Game.mat("planks", 0.5), false)
 	var br := _prop("house_roof", c + Vector3(w / 2, h, d / 2), 0.0, false)
 	br.scale = Vector3(w / 8.0, 1.2, d / 6.0)
+	_wood_roof(br, c, w, d)
+	_wood_roof(bceil, c, w, d)
 	if rng.randf() < 0.6:
 		_prop("tractor", c + Vector3(w + 2.4, 0, d - 0.6), rng.randf_range(-0.3, 0.3))    # off the side door
 	for i in 3:
@@ -1223,11 +1246,12 @@ func _cabin(o: Vector3) -> void:
 	var run := (h + 0.1) / 0.62
 	_stairs(c + Vector3(1.7, 0, d / 2 - 0.9), c + Vector3(1.7 + run, h + 0.1, d / 2 - 0.9), 1.7, Game.mat("planks", 1.0))
 	box(c + Vector3((1.7 + run + w) / 2, h - 0.05, d / 2 - 0.9), Vector3(w - 1.7 - run, 0.3, 1.8), Game.mat("planks", 0.5))
+	# a gable roof over the whole cabin (the loft sits under it) - it used to be a flat slab
+	# on half-height walls at the back, hanging over the front half with nothing under it
 	var up := c + Vector3(0, h, 0)
-	_wall(up + Vector3(0, 0, d), w, true, 1.6, m, [[3.0, 4.0, 0.4]], "wood")
-	_wall(up + Vector3(0, 0, d / 2), d / 2, false, 1.6, m, [], "wood")
-	_wall(up + Vector3(w, 0, d / 2), d / 2, false, 1.6, m, [], "wood")
-	box(up + Vector3(w / 2, 1.65, d / 2), Vector3(w + 0.8, 0.12, d + 0.8), Game.mat("roof", 1.0), false)
+	var cr := _prop("house_roof", c + Vector3(w / 2, h, d / 2), 0.0, false)
+	cr.scale = Vector3(w / 8.0, 1.0, d / 6.0)
+	_wood_roof(cr, c, w, d)
 	# porch
 	box(c + Vector3(w / 2, 0.15, -1.0), Vector3(w, 0.1, 1.8), Game.mat("planks", 1.0))
 	for px in [0.3, w - 0.3]:
@@ -1252,7 +1276,7 @@ func _warehouse(o: Vector3) -> void:
 	var m := Game.mat("corrugated", 0.5)
 	_wall(c, w, true, h, m, [[3.5, 7.5], [9.0, 10.0]], "metal")
 	_wall(c + Vector3(0, 0, d), w, true, h, m, [[1.0, 2.5]], "metal")
-	_wall(c, d, false, h, m, [[3.0, 4.2]], "metal")
+	_wall(c, d, false, h, m, [], "metal")      # (half a metre from the next block: a door here led into its wall)
 	_wall(c + Vector3(w, 0, 0), d, false, h, m, [[5.0, 6.0, 1.6]], "metal")
 	box(c + Vector3(w / 2, h + 0.05, d / 2), Vector3(w + 0.4, 0.1, d + 0.4), m, false)
 	_trusses(c, w, d, h)
@@ -1267,13 +1291,13 @@ func _warehouse(o: Vector3) -> void:
 	# crates, pallets, shelves
 	# crates on the left, a clear lane from the big door to the stairs on the right
 	for i in 6:
-		var p := c + Vector3(rng.randf_range(1.6, 3.2), 0, rng.randf_range(1.8, d - gd - 0.8))
+		var p := c + Vector3(rng.randf_range(2.3, 3.4), 0, rng.randf_range(1.8, d - gd - 0.8))    # clear of the side door
 		_crate(p, rng.randf_range(0.8, 1.2), rng.randf() * 0.5)
 		if rng.randf() < 0.4:
 			_crate(p + Vector3(0, 1.0, 0), 0.8)
 	for i in 3:
 		_crate(c + Vector3(rng.randf_range(4.5, 7.5), 0, rng.randf_range(3.5, 5.5)), 0.9, rng.randf() * 0.5)
-	box(c + Vector3(0.5, 1.4, 4.0), Vector3(0.7, 2.8, 3.6), Game.mat("metal", 0.5))
+	box(c + Vector3(0.5, 1.4, 6.6), Vector3(0.7, 2.8, 3.2), Game.mat("metal", 0.5))    # the shelf beside the side door, not in it
 	_crate(c + Vector3(0.7, gy + 0.06, d - 0.7), 0.8)
 	for lx in [3.0, 8.0]:
 		_lamp(c + Vector3(lx, h - 0.6, d / 2), 1.6, 9.0, Color(0.85, 0.9, 1.0))
@@ -1320,7 +1344,7 @@ func _tanks(o: Vector3) -> void:
 		cyl(p + Vector3(0, 6.1, 0), 0.6, 2.1, 0.4, Game.mat("metal", 0.4), false, 14)
 		box(p + Vector3(2.15, 3.0, 0), Vector3(0.1, 6.0, 0.4), Game.color_mat(Color(0.3, 0.3, 0.3)), false)   # ladder
 		_cover(p + Vector3(0, 0, 2.8)); _cover(p + Vector3(0, 0, -2.8))
-	box(o + Vector3(BLOCK / 2, 0.6, 7.5), Vector3(BLOCK - 1.0, 0.3, 0.3), Game.mat("metal", 0.5))
+	box(o + Vector3(3.75, 0.6, 7.5), Vector3(6.5, 0.3, 0.3), Game.mat("metal", 0.5))    # the pipe ends at the pump house wall, the door stays free
 	var ph := o + Vector3(7.0, 0, 8.5)
 	_wall(ph, 3.4, true, 2.5, Game.mat("concrete", 0.5), [[1.2, 2.1]], "brick")
 	_wall(ph + Vector3(0, 0, 2.8), 3.4, true, 2.5, Game.mat("concrete", 0.5), [], "brick")

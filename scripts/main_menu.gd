@@ -14,6 +14,7 @@ var _confirm_fire := false
 var _status: Label
 
 func _ready() -> void:
+	if Game.autotest() != "": print("[MENU] main menu ready")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	var bg := TextureRect.new()
@@ -956,9 +957,26 @@ func _show_join() -> void:
 		if err != "":
 			_show_main(err)
 		else:
-			_panel("PŘIPOJUJI...")
-			_label("Čekám na hostitele %s..." % ip.text))
+			_connecting(ip.text.strip_edges()))
 	_button("Zpět", _show_main)
+
+## Waiting for the host: a way out right away, and a word when he does not answer.
+var _join_try := 0
+func _connecting(ip: String) -> void:
+	_join_try += 1
+	var my_try := _join_try
+	_panel("PŘIPOJUJI...")
+	var st := _label("Čekám na hostitele %s..." % ip)
+	_button("Zrušit připojování", func():
+		_join_try += 1
+		Net.close()
+		_show_join())
+	await get_tree().create_timer(10.0).timeout
+	if my_try != _join_try or not is_instance_valid(st) or Net.roster.size() > 0:
+		return
+	st.text = "Hostitel %s neodpovídá. Zkontroluj IP adresu, jestli hostitel spustil hru a jestli ho nepouští firewall (port %d). Můžeš dál čekat nebo připojování zrušit." % [ip, Net.PORT]
+	st.add_theme_color_override("font_color", Color(1, 0.6, 0.4))
+	st.custom_minimum_size = Vector2(300, 0)
 
 func _show_lobby() -> void:
 	_panel("TÝM")
@@ -1074,6 +1092,9 @@ func _autotest() -> void:
 		"modeler":
 			get_tree().change_scene_to_file("res://scenes/Modeler.tscn")
 		"geo", "campaign", "campair", "uigeo":
+			# (the test machine's merc may still be on the sick bay from an earlier test run)
+			for k in ["heal_days", "injury", "sick", "heal_cid", "heal_seen"]:
+				Game.merc.erase(k)
 			if Game.cmd_arg("newcamp", "1") == "1":
 				Campaign.new_campaign()
 			else:
@@ -1113,7 +1134,7 @@ func _autotest() -> void:
 				["quick", _show_quick], ["campaign", func(): _show_campaign()], ["newcamp", _show_new_campaign], ["editor", _show_editor], ["merc", func(): Game.merc["created"] = true; _show_merc()],
 				["create", func(): _show_create(true)], ["look", func(): _show_create(false)],
 				["settings", _show_settings],
-				["loadout", _show_loadout], ["join", _show_join], ["news", _show_news], ["mods", _show_mods], ["money", _show_money], ["lobby", _show_lobby],
+				["loadout", _show_loadout], ["join", _show_join], ["connecting", func(): _connecting("192.168.0.99")], ["news", _show_news], ["mods", _show_mods], ["money", _show_money], ["lobby", _show_lobby],
 				["update", func(): Game.upd_state = "full"; Game.upd_version = "0.14"; _show_main()],
 				["ready", func(): Game.upd_state = "ready"; _show_main()]]
 			for e in shots:
@@ -1153,7 +1174,7 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "fireshot", "abase":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "soundcheck", "dronetest", "airdeath", "fireshot", "abase":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
@@ -1242,6 +1263,56 @@ func _autotest() -> void:
 			await get_tree().create_timer(2.5).timeout
 			print("[ECON] after gift my=%d wallets=%s" % [Net.my_money(), Net.wallets])
 			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+		"coopwipehost":
+			# co-op campaign mission that the team loses to the last man, then back to the globe
+			Campaign.new_campaign("normal")
+			for k in ["heal_days", "injury", "sick", "heal_cid", "heal_seen"]:
+				Game.merc.erase(k)
+			Game.merc["name"] = "Hostitel"
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			while Net.roster.size() < 2:
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(1.0).timeout
+			var mm: Dictionary = Campaign.generate_mission()
+			mm["type"] = "crash"
+			Campaign.data["missions"].append(mm)
+			print("[WIPE] host starts %s" % mm["type"])
+			Net.start_mission(Campaign.mission_params(mm))
+		"coopwipeclient":
+			for k in ["heal_days", "injury", "sick", "heal_cid", "heal_seen"]:
+				Game.merc.erase(k)
+			Game.merc["name"] = "Klient"
+			await get_tree().create_timer(1.0).timeout
+			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+		"lbhost":
+			# a campaign host; the client goes down to the base alone, then the host starts a mission
+			Campaign.new_campaign("normal")
+			Game.merc["name"] = "Hostitel"
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			while Net.roster.size() < 2:
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(9.0).timeout
+			print("[LB] host starts the mission")
+			Net.start_mission({"type": "crash", "biome": "farm", "night": false, "hour": 14.0, "place": "Test", "type_name": "Test", "id": -1})
+		"lbclient":
+			Game.merc["name"] = "Klient"
+			await get_tree().create_timer(1.0).timeout
+			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+			while not Campaign.viewer:
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(1.0).timeout
+			print("[LB] client goes down to the base alone")
+			Net.start_local_base({"type": "home", "type_name": "Základna", "base": Campaign.data["base"].duplicate(true), "grid_w": Campaign.GRID_W, "grid_h": Campaign.GRID_H, "transport": "heli", "live": [], "research": [], "night": false, "hour": 12.0, "blips": []})
+		"coophealhost":
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			while Net.roster.size() < 2:
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(0.5).timeout
+			Net.start_mission({"type": "crash", "biome": "farm", "night": false, "hour": 14.0, "place": "Test", "type_name": "Test", "id": -1})
+		"coophealclient":
+			Game.merc["name"] = "Klient"
+			await get_tree().create_timer(1.0).timeout
+			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
 		"host":
 			Game.seed_override = 4242
 			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))

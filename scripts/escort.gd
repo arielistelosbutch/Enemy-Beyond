@@ -45,6 +45,14 @@ func _ready() -> void:
 		var r := tr_node.find_child(rn, true, false)
 		if r:
 			_rotors.append(r)
+	# in the air the rear ramp is shut (it only drops on the ground)
+	var ramp := MeshInstance3D.new()
+	var rbm := BoxMesh.new()
+	rbm.size = Vector3(3.0, 2.7, 0.12)
+	ramp.mesh = rbm
+	ramp.material_override = Game.mat("skyranger", 0.5)
+	tr_node.add_child(ramp)
+	ramp.position = Vector3(0, 1.5, 4.0)
 	var tl := OmniLight3D.new()
 	tl.light_color = Color(1.0, 0.8, 0.5)
 	tl.light_energy = 2.0
@@ -535,6 +543,7 @@ func _draw_hud() -> void:
 	txt.call(Vector2(10, 42), "UFO: %d   vydržet ještě %d s" % [_alive().size(), int(maxf(0, limit - t))], Color(1, 0.8, 0.3), 9)
 
 # ---- test ------------------------------------------------------------------------------------------
+var _ramp_shot := false
 func _process(_d: float) -> void:
 	if Game.autotest() != "escort":
 		return
@@ -545,6 +554,18 @@ func _process(_d: float) -> void:
 		return
 	if int(t * 10) == 60:
 		get_viewport().get_texture().get_image().save_png("user://escort_6.png")
+	if t > 2.0 and not _ramp_shot and Game.cmd_arg("rampshot", "") == "1":
+		_ramp_shot = true
+		# a look at the transport's rear (the ramp must be shut in the air)
+		var c2 := Camera3D.new()
+		add_child(c2)
+		c2.global_position = tr_node.global_transform * Vector3(4.0, 3.0, 16.0)
+		c2.look_at(tr_node.global_transform * Vector3(0, 1.5, 3.0))
+		c2.make_current()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png("user://escort_ramp.png")
+		c2.queue_free()
 	if down or flying_transport or ufo == null:
 		return
 	var to := ufo.global_position - jet.global_position

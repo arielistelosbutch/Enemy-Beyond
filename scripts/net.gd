@@ -27,10 +27,27 @@ func _ready() -> void:
 	tm.wait_time = 2.0
 	tm.autostart = true
 	tm.timeout.connect(func():
+		_watch_link()
 		var sc := get_tree().current_scene
 		if multiplayer.is_server() and is_online() and Campaign.active and sc and sc.name != "Mission":
 			broadcast_team())
 	add_child(tm)
+
+## A client whose connection died without a word (a long load, a hiccup on the line): ENet stays
+## "not connected" and every message fails - thousands of errors and a broken game. Notice it and
+## go back to the menu properly.
+func _watch_link() -> void:
+	var peer := multiplayer.multiplayer_peer
+	if peer is ENetMultiplayerPeer and not multiplayer.is_server() and not roster.is_empty():
+		if peer.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED:
+			_on_server_gone()
+			back_to_menu()
+
+## Long scene loads (building a map, the first shaders) must not cut a friend off: generous timeouts.
+func _patient(peer: ENetMultiplayerPeer, id: int) -> void:
+	var p := peer.get_peer(id)
+	if p:
+		p.set_timeout(64, 30000, 90000)
 
 func is_online() -> bool:
 	return not (multiplayer.multiplayer_peer is OfflineMultiplayerPeer)
@@ -70,12 +87,15 @@ func close() -> void:
 		Campaign.data = {}
 
 func _on_connected() -> void:
+	if multiplayer.multiplayer_peer is ENetMultiplayerPeer:
+		_patient(multiplayer.multiplayer_peer, 1)
 	Game.merc["sick"] = Game.heal_days_left(Game.merc)
 	_register.rpc_id(1, Game.merc)
 	connected_ok.emit()
 
-func _on_peer_connected(_id: int) -> void:
-	pass
+func _on_peer_connected(id: int) -> void:
+	if multiplayer.is_server() and multiplayer.multiplayer_peer is ENetMultiplayerPeer:
+		_patient(multiplayer.multiplayer_peer, id)
 
 func _on_peer_disconnected(id: int) -> void:
 	if multiplayer.is_server() and roster.has(id):
@@ -137,12 +157,14 @@ func start_mission(params := {}) -> bool:
 	if params.has("seed") and Game.seed_override < 0:
 		s = int(params["seed"])
 	var diff: String = Campaign.difficulty() if Campaign.active and params.has("cid") else Game.difficulty
+	if Game.autotest() != "": print("[NET] start_mission -> _start.rpc to %s" % [multiplayer.get_peers()])
 	_start.rpc(s, diff, params, Game.friendly_fire)
 	return true
 
 var friendly_fire := true
 @rpc("authority", "call_local", "reliable")
 func _start(s: int, diff := "normal", params := {}, ff := true) -> void:
+	if Game.autotest() != "": print("[NET] _start received (server %s)" % multiplayer.is_server())
 	friendly_fire = ff
 	mission_seed = s
 	mission_difficulty = diff

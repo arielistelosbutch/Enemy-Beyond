@@ -292,11 +292,22 @@ func _show_model(name: String, view: String) -> void:
 		await get_tree().process_frame
 	else:
 		holder.rotation.y = PI           # face first
+	if view == "item":
+		# weapons stand upright (muzzle up): a long gun turning on the spot stays in the tall picture
+		var ib := _aabb(m)
+		if ib.size.z >= ib.size.x and ib.size.z > ib.size.y * 1.3:
+			m.rotation.x = PI / 2           # (muzzle up)
+		elif ib.size.x > ib.size.y * 1.3:
+			m.rotation.z = PI / 2
 	# centre and frame it
 	var box := _aabb(m)
 	m.position -= pivot.basis.inverse() * box.get_center()
 	var r := maxf(box.size.length() * 0.5, 0.05)
-	var dist := r / sin(deg_to_rad(cam.fov * 0.5)) * 1.0
+	# the view is taller than wide: the narrower (horizontal) angle decides, or a long gun
+	# turning on its stand pokes out of the picture
+	var vhalf := deg_to_rad(cam.fov * 0.5)
+	var hhalf := atan(tan(vhalf) * (202.0 / 276.0))
+	var dist := r / sin(minf(vhalf, hhalf)) * 1.05
 	match view:
 		"table":
 			cam.position = Vector3(0, dist, 0.001)

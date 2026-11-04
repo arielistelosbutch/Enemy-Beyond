@@ -192,11 +192,37 @@ func step_noise() -> float:
 func alien_db() -> float:
 	return {"rain": -7.0, "storm": -10.0, "snow": -3.0}.get(weather, 0.0)
 
+## Solo: the helper drone (made when the lone mercenary is on the ground).
+var guard_drone: Node = null
+func _guard_drone_tick() -> void:
+	if guard_drone != null or not solo() or home() or local() or finished:
+		return
+	if local_player() == null:
+		return
+	guard_drone = preload("res://scripts/guard_drone.gd").new()
+	guard_drone.mission = self
+	add_child(guard_drone)
+	guard_drone.global_position = local_player().global_position + Vector3(0, 2.0, 0)
+
+## The first moments after landing: nobody waits at the ramp. Aliens do not notice a man
+## near the ship for the first SAFE_LANDING seconds.
+const SAFE_LANDING := 45.0
+func landing_safe(p: Node3D) -> bool:
+	return t < SAFE_LANDING and map.get("evac", Vector3.ZERO) != Vector3.ZERO and p.global_position.distance_to(map["evac"]) < 25.0 and not mtype() in ["base", "home"]
+
+## Played alone (nobody to drag you back up): the aliens go a little easier. Co-op gets it all.
+func solo() -> bool:
+	return roster().size() <= 1
+
 func calm() -> bool:
 	return t < CALM_TIME
 
 func _ready() -> void:
 	name = "Mission"
+	_local = bool(Net.mission_params.get("local", false))
+	if not _local:
+		# (a left-over offline branch from a base walk must never swallow a real mission)
+		get_tree().set_multiplayer(null, get_path())
 	if local():
 		# a base walk of one's own while the host is busy on the globe: this branch runs offline
 		# (the connection to the host stays alive above it)
@@ -231,7 +257,7 @@ func _ready() -> void:
 	add_child(voice)
 	# no music: wind, silence and what moves in it
 	music = AudioStreamPlayer.new()
-	music.stream = Game.loop_stream(_wind_name() if not home() else "base_interior")
+	music.stream = Game.loop_stream(_wind_name())
 	music.volume_db = -12
 	music.bus = "Wind"
 	add_child(music)
@@ -302,9 +328,22 @@ func _ready() -> void:
 		_maybe_spawn()
 	else:
 		_client_ready.rpc_id(1)
+		# the host may still be loading (his Mission not there yet - the message is lost and he
+		# would wait for us forever: a black screen). Say it again until we are spawned.
+		var tm := Timer.new()
+		tm.wait_time = 1.0
+		tm.autostart = true
+		tm.timeout.connect(func():
+			if local_player() != null or finished:
+				tm.queue_free()
+				return
+			_client_ready.rpc_id(1))
+		add_child(tm)
 
 ## Which wind blows here: forest rustle, polar gale, the thin Martian air...
 func _wind_name() -> String:
+	if indoor():
+		return "base_interior"      # our base is under the ground: no wind, no night outside
 	var biome := String(Net.mission_params.get("biome", "farm"))
 	match String(map.get("terrain", "")):
 		"alienbase": return "cave_ambience"
@@ -319,6 +358,8 @@ func _wind_name() -> String:
 
 ## What lives under the wind: crickets over the fields, a distant town, humming machines.
 func _ambient_bed() -> String:
+	if indoor():
+		return ""                   # (the base's own hum is the bed already - no crickets in here)
 	if mtype() == "base":
 		return "base_interior" if indoor() else "ufo_interior"
 	if mtype() == "alienbase":
@@ -332,6 +373,10 @@ func _ambient_bed() -> String:
 		"base": return "base_interior"
 	return ""
 
+## Animals only outside on Earth: not under the ground, not inside a base, not on Mars.
+func critters_here() -> bool:
+	return not indoor() and not mtype() in ["base", "alienbase", "home", "mars"] and map.get("terrain", "") != "mars"
+
 ## Now and then something out there: a dog in the village, an owl, a cow in the barn.
 var _critter_t := 25.0
 func _critters(delta: float) -> void:
@@ -339,7 +384,7 @@ func _critters(delta: float) -> void:
 	if _critter_t > 0.0:
 		return
 	_critter_t = randf_range(35.0, 80.0)
-	if map.get("terrain", "") == "mars" or mtype() == "base" or weather == "storm":
+	if not critters_here() or weather == "storm":
 		return
 	var biome := String(Net.mission_params.get("biome", "farm"))
 	var pool := ["owl"]
@@ -612,10 +657,12 @@ func _maybe_spawn() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = Net.mission_seed + 99
 	var spawns: Array = map["alien_spawns"].duplicate()
-	var count := 2 + Net.roster.size() + (5 if String(map.get("ufo_kind", "")) in ["battleship", "supply"] else 0) + int(Net.mission_params.get("extra_aliens", 0)) + (1 if Game.veteran() else (-1 if Game.easy() else 0)) + int({"large": 1, "huge": 2, "colossal": 4}.get(Net.mission_params.get("size", ""), 0))
+	var count := (1 if roster().size() <= 1 else 2) + Net.roster.size() + (5 if String(map.get("ufo_kind", "")) in ["battleship", "supply"] else 0) + int(Net.mission_params.get("extra_aliens", 0)) + (1 if Game.veteran() else (-1 if Game.easy() else 0)) + int({"large": 1, "huge": 2, "colossal": 4}.get(Net.mission_params.get("size", ""), 0))
 	var crew := _crew(count, rng)
 	for k in crew.size():
 		var p: Vector3 = spawns[k % spawns.size()] + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
+		if map.get("evac", Vector3.ZERO) != Vector3.ZERO and p.distance_to(map["evac"]) < 35.0 and not mtype() in ["base", "home", "alienbase"]:
+			p = _far_point(rng, 35.0)      # nobody waits at the ramp
 		if crew[k] in ["lihnoun", "ohar", "nador", "ohnivec"]:
 			# these do not stay by the ship: somewhere out in the dark
 			var wp: Array = map["waypoints"]
@@ -908,6 +955,7 @@ func _process(delta: float) -> void:
 		t += delta
 		_critters(delta)
 		_drone_tick(delta)
+		_guard_drone_tick()
 	for l in map.get("lights", []):
 		if is_instance_valid(l):
 			l.light_energy = 1.4 + sin(t * 13.0) * 0.25 + sin(t * 7.3) * 0.2
@@ -1308,6 +1356,55 @@ func hit_breakable(i: int, dmg: float, kind: String) -> void:
 	if hp <= 0.0:
 		_break.rpc(i)
 
+## A wooden building whose walls are mostly gone loses its roof (it does not hang in the air).
+func _roofs_check() -> void:
+	var arr: Array = map.get("breakables", [])
+	for r in map.get("wood_roofs", []):
+		var n: Node3D = r["node"]
+		if not is_instance_valid(n) or n.has_meta("falling"):
+			continue
+		var rect: Rect2 = r["rect"]
+		var total := 0
+		var gone := 0
+		for b in arr:
+			if not is_instance_valid(b):
+				continue
+			if String(b.get_meta("break_kind", "")) != "wood":
+				continue
+			var bp: Vector3 = (b as Node3D).global_position
+			if bp.y > n.global_position.y + 0.5 or not rect.has_point(Vector2(bp.x, bp.z)):
+				continue
+			total += 1
+			if b.get_meta("broken", false):
+				gone += 1
+		if total > 0 and float(gone) / total >= 0.4:
+			n.set_meta("falling", true)
+			Game.play_at(self, "wood_collapse", n.global_position, 4)
+			var tw := create_tween()
+			tw.tween_property(n, "position:y", n.position.y - 2.4, 0.9).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+			tw.parallel().tween_property(n, "rotation:z", randf_range(-0.25, 0.25), 0.9)
+			tw.tween_interval(6.0)
+			tw.tween_callback(n.queue_free)
+			# dust and sparks where it hit
+			var parts := CPUParticles3D.new()
+			parts.one_shot = true
+			parts.amount = 40
+			parts.lifetime = 2.0
+			parts.explosiveness = 0.8
+			parts.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+			parts.emission_box_extents = Vector3(rect.size.x * 0.4, 0.3, rect.size.y * 0.4)
+			parts.direction = Vector3.UP
+			parts.initial_velocity_min = 1.0
+			parts.initial_velocity_max = 3.0
+			parts.color = Color(0.25, 0.22, 0.2)
+			var pm := BoxMesh.new()
+			pm.size = Vector3(0.15, 0.15, 0.15)
+			parts.mesh = pm
+			add_child(parts)
+			parts.global_position = Vector3(rect.get_center().x, n.global_position.y - 1.5, rect.get_center().y)
+			parts.emitting = true
+			get_tree().create_timer(3.0).timeout.connect(parts.queue_free)
+
 ## Host: a blast breaks what is around it.
 func blast_breakables(p: Vector3, radius: float, dmg: float) -> void:
 	if not multiplayer.is_server():
@@ -1376,6 +1473,8 @@ func _break(i: int) -> void:
 		rub.rotation.y = n.global_rotation.y
 	if kind == "wood" and fires.values().any(func(f): return (f["pos"] as Vector3).distance_to(at) < 5.0):
 		Game.play_at(self, "wood_collapse", at, 0)
+	if kind == "wood":
+		_roofs_check()
 	if n.has_meta("explode") or n == map.get("core"):
 		Game.play_at(self, "core_explode", at, 8)
 		for c in n.get_children():
@@ -1607,8 +1706,8 @@ func _fires_tick(delta: float) -> void:
 			var bp: Vector3 = (b as Node3D).global_position
 			var d := Vector2(bp.x - p.x, bp.z - p.z).length()
 			if d < 2.6:
-				hit_breakable(i, 6.0, "fire")
-			if kind != "glass" and d < 4.8 and d > 1.5 and randf() < 0.1:
+				hit_breakable(i, 3.5, "fire")       # (it burned through a wall in seconds - slower now)
+			if kind != "glass" and d < 4.8 and d > 1.5 and randf() < 0.05:
 				ignite(Vector3(bp.x, p.y, bp.z), clampf(float(f["size"]) * randf_range(0.8, 1.1), 0.7, 1.4))
 		if t > float(f["until"]):
 			_fire_off.rpc(id)
@@ -1745,8 +1844,8 @@ func _judge() -> void:
 			living += 1
 			if p.global_position.distance_to(map["evac"]) < 3.5 and p.wants_evac:
 				at_evac += 1
-		if not p.downed and not p.dead:
-			standing += 1
+		if not p.dead and (not p.downed or (guard_drone != null and guard_drone.can_rescue(p))):
+			standing += 1       # (the drone is about to bring him back)
 	if map.has("brain"):
 		for a in aliens():
 			if a.race == "mozek" and a.dead and not finished:
@@ -1891,6 +1990,7 @@ func _end(success: bool, why: String) -> void:
 	if campaign:
 		lines.append("Hodnocení mise: %s (odměny ×%.2f)" % [quality_name(q), q])
 	hud.show_result(("MISE SPLNĚNA" if success else "MISE NEÚSPĚŠNÁ"), why + "\n\n" + "\n".join(lines) + "\n\nTvůj žoldák: " + fate + xp_text + ("\n\n" + camp if camp != "" else ""))
+	if Game.autotest() != "": print("[END] result shown, leaving in a moment")
 	get_tree().create_timer(8.0 if Game.autotest() != "campaign" else 2.0).timeout.connect(func(): _leave(""))
 
 ## How well it went (the same on every machine: it is counted from what everybody sees):
@@ -1917,7 +2017,8 @@ static func quality_name(q: float) -> String:
 	return "špatně"
 
 func _leave(why: String) -> void:
-	if Game.autotest() != "" and Game.autotest() != "campaign":
+	if Game.autotest() != "": print("[END] leave '%s'" % why)
+	if Game.autotest() != "" and Game.autotest() != "campaign" and not Game.autotest().begins_with("coopwipe"):
 		return
 	if why != "":
 		Net.close()
@@ -1978,8 +2079,12 @@ func _underground_env() -> void:
 	moon.visible = false
 
 ## Our own copy of the base (a co-op client walking round while the host plays the globe).
+## A base walk of one's own (a co-op client while the host is on the globe): this mission runs
+## on its own offline branch. Remembered at the start - Net.mission_params is replaced the moment
+## the host starts a real mission, and the branch must still be taken down on the way out.
+var _local := false
 func local() -> bool:
-	return bool(Net.mission_params.get("local", false))
+	return _local
 
 var _local_roster := {}
 func roster() -> Dictionary:
@@ -1991,7 +2096,7 @@ func roster() -> Dictionary:
 	return _local_roster
 
 func _exit_tree() -> void:
-	if local():
+	if _local:
 		get_tree().set_multiplayer(null, get_path())
 
 ## Inside our base: walking round it, or defending it.
@@ -2193,10 +2298,13 @@ func _core_hums() -> void:
 func _swing(d: Dictionary, side: float, instant := false) -> void:
 	d["open"] = side != 0.0
 	var want: float = float(d["base"]) + side * 1.65
+	if d.has("tween") and (d["tween"] as Tween).is_valid():
+		(d["tween"] as Tween).kill()       # a new push wins over a swing still going
 	if instant:
 		(d["pivot"] as Node3D).rotation.y = want
 		return
 	var tw := create_tween()
+	d["tween"] = tw
 	tw.tween_property(d["pivot"], "rotation:y", want, 0.45).set_trans(Tween.TRANS_SINE)
 
 ## The door nearest to @a p (within reach), or -1.
@@ -2266,9 +2374,10 @@ func use_terminal(tm: Dictionary) -> void:
 	match String(tm["kind"]):
 		"globe":
 			if local():
+				# up the lift, straight to the host's globe (the co-op connection stayed alive)
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 				Net.mission_params = {}
-				get_tree().change_scene_to_file("res://scenes/Main.tscn")
+				get_tree().change_scene_to_file("res://scenes/Geoscape.tscn" if Campaign.viewer else "res://scenes/Main.tscn")
 				return
 			if not multiplayer.is_server():
 				hud.message("Velín ovládá hostitel.", 2.5)

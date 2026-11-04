@@ -32,7 +32,7 @@ const RACES := {
 	"levit": {"name": "Levit", "hp": 70.0, "tac": "levit", "walk": 2.4, "run": 5.2, "armor": 1.0, "model": "levit", "h": 0.8, "r": 0.35, "eye": 1.75,
 		"bolt": 1.0, "shots": [1, 3], "miss": 1.0, "hover": 1.1, "hide": 0.7},
 	"levit_velitel": {"name": "Levit velitel", "hp": 115.0, "tac": "levit", "walk": 3.0, "run": 6.6, "armor": 0.8, "model": "levit", "scale": 1.15, "h": 0.9, "r": 0.38, "eye": 1.95,
-		"bolt": 1.1, "shots": [2, 3], "miss": 0.8, "hover": 1.25, "hide": 0.4, "jet": 1.9, "rocket": true},
+		"bolt": 1.35, "shots": [2, 3], "miss": 0.8, "hover": 1.25, "hide": 0.4, "jet": 1.5},
 	"ohar": {"name": "Ohař", "hp": 160.0, "walk": 2.2, "run": 6.8, "armor": 0.8, "model": "ohar", "h": 1.1, "r": 0.5, "eye": 1.0,
 		"melee": [28.0, 40.0], "reach": 2.2, "strike_cd": 1.2, "dumb": true, "pounce": [11.0, 1.75]},
 	"jestetan": {"name": "Ještěřan", "hp": 140.0, "walk": 1.2, "run": 2.6, "armor": 0.7, "model": "jestetan", "h": 2.1, "r": 0.38, "eye": 2.0,
@@ -258,15 +258,17 @@ func _physics_process(delta: float) -> void:
 		_traps_tick(delta)
 	if dead:
 		_death_anim(delta)
-		if multiplayer.is_server() and (airborne or flying):
-			# shot out of the air / off the roof: it drops
+		if multiplayer.is_server() and _death_t < 8.0 and not _landed_dead:
+			# shot out of the air / off a roof: it drops. (The flight moves it without physics,
+			# so the "on the floor" flag is stale - move with gravity until it really lands.)
 			flying = false
 			_jet.clear()
-			if not is_on_floor():
-				velocity = Vector3(0, velocity.y - GRAVITY * delta, 0)
-				move_and_slide()
-			else:
+			velocity = Vector3(velocity.x * 0.98, velocity.y - GRAVITY * delta, velocity.z * 0.98)
+			move_and_slide()
+			if is_on_floor():
+				_landed_dead = true
 				airborne = false
+				velocity = Vector3.ZERO
 		return
 	if husk:
 		# fallen, twitching on the ground
@@ -461,6 +463,7 @@ func _death_setup() -> void:
 				var v: Vector3 = want[bn] * r.randf_range(0.7, 1.2)
 				_limp[i] = [_skel.get_bone_pose_rotation(i), _skel.get_bone_pose_rotation(i) * Quaternion.from_euler(v)]
 
+var _landed_dead := false
 func _death_anim(delta: float) -> void:
 	if _death_t < 0.0:
 		_death_setup()
@@ -781,6 +784,8 @@ var sus := {}          # player node name -> 0..1
 var _think_dt := 0.016
 
 func _sus_rate(p: Node) -> float:
+	if mission.landing_safe(p):
+		return 0.0                                   # the first moments by the ship: they have not noticed the landing yet
 	var head_pos: Vector3 = p.global_position + Vector3(0, 1.0 if p.crouching else 1.5, 0)
 	var d := eye().distance_to(head_pos)
 	if d < 3.5:
@@ -796,6 +801,8 @@ func _sus_rate(p: Node) -> float:
 		rate *= 1.35
 	elif Game.easy():
 		rate *= 0.7
+	if mission.solo():
+		rate *= 0.8                                  # one man alone: a moment longer to slip away
 	if alert:
 		rate *= 1.6                                  # already on edge
 	return rate
@@ -1542,7 +1549,7 @@ func _fly(delta: float) -> void:
 		return
 	var tgt: Vector3 = _jet[0]
 	var flat := Vector2(tgt.x - global_position.x, tgt.z - global_position.z).length()
-	var spd := (12.0 if flat > 0.3 else 8.0) * float(R.get("jet", 1.0))
+	var spd := (6.5 if flat > 0.3 else 4.5) * float(R.get("jet", 1.0))    # slow enough to be hit (it was 12)
 	global_position = global_position.move_toward(tgt, spd * delta)
 	if flat > 0.3:
 		_face(tgt, delta)

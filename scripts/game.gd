@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.43 prototyp"
-const VERSION_NUM := "0.43"
+const VERSION := "0.44 prototyp"
+const VERSION_NUM := "0.44"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -69,11 +69,11 @@ func mag_size(id: String) -> int:
 # ---- personal weapon upgrades (each mercenary his own, bought with his money) ---------------
 const MODS := {
 	"svitilna": {"name": "Zbraňová svítilna", "price": 120, "desc": "Silnější a delší kužel světla, když držíš zbraň."},
-	"laser": {"name": "Laserový zaměřovač", "price": 180, "desc": "Červená tečka: přesnější střelba od boku."},
-	"optika": {"name": "Optika 2x", "price": 220, "desc": "Při míření větší přiblížení a přesnost."},
-	"tlumic": {"name": "Tlumič", "price": 200, "desc": "Výstřel je mnohem tišší - vetřelci tě slyší méně."},
+	"laser": {"name": "Laserový zaměřovač", "price": 180, "desc": "Červená tečka: střelba od boku skoro o polovinu přesnější."},
+	"optika": {"name": "Optika 2x", "price": 220, "desc": "Při míření větší přiblížení, o 40 % přesnější a klidnější mířidla."},
+	"tlumic": {"name": "Tlumič", "price": 200, "desc": "Výstřel slyší vetřelci jen na pětinu vzdálenosti."},
 	"zasobnik": {"name": "Prodloužený zásobník", "price": 160, "desc": "O polovinu víc ran v zásobníku."},
-	"rukojet": {"name": "Přední rukojeť", "price": 140, "desc": "Menší zpětný ráz, zbraň se tolik nerozhazuje."},
+	"rukojet": {"name": "Přední rukojeť", "price": 140, "desc": "Poloviční zpětný ráz, rozptyl při dávce roste pomaleji, klidnější ruce."},
 }
 ## Which upgrade fits which weapon (not everything on everything).
 const MOD_FITS := {
@@ -1411,9 +1411,14 @@ func sharp_view(svc: SubViewportContainer) -> void:
 		return
 	var k: float = maxf(1.0, svc.get_viewport().get_final_transform().get_scale().x)
 	var want: Vector2 = (holder.size * k).floor()
-	if svc.size != want:
+	if svc.size != want or svc.stretch:
+		svc.stretch = false         # we size the view ourselves (stretch fights the scale)
 		svc.scale = Vector2.ONE / k
+		svc.position = Vector2.ZERO
 		svc.size = want
+		for c in svc.get_children():
+			if c is SubViewport:
+				(c as SubViewport).size = Vector2i(want)
 
 func models_dir() -> String:
 	if OS.has_feature("editor"):

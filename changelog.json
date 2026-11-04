@@ -1,4 +1,26 @@
 {
+ "0.44": [
+  "Dron Strážce, jen když hraješ sám: malý dron s červeným křížem nad tvým pravým ramenem. Pomalu tě léčí, ale nejvýš do půlky zdraví. Jednou za misi tě zvedne, když padneš, podruhé už ne. Pípne, když po tobě střílí něco, kam se nedíváš (vlevo, vpravo, za tebou). Nestřílí, horor zůstává.",
+  "Solo je o kousek mírnější: o jednoho vetřelce méně a vetřelci tě zpozorní asi o pětinu pomaleji. V co-op zůstává plná síla.",
+  "Bezpečné přistání: vetřelci se nerozmisťují blíž než 35 m od lodi a prvních 45 s si nikoho u rampy nevšimnou. Už žádní Levité hned při výstupu z Čápa.",
+  "Na základně už nehraje noční příroda (cvrčci, sovy, psi). Uvnitř je jen hukot základny a zvířata se ozývají jen venku na Zemi.",
+  "Průmysl a město: regál a bedny už nestojí ve dveřích skladu, trubka u nádrží nevede přes dveře čerpací stanice, sklad nemá dveře do zdi vedlejší budovy a auto zaparkované přede dveřmi se odtáhne.",
+  "Co-op: když někdo sešel na základnu sám a hostitel mezitím spustil misi, hra se zasekla na černé obrazovce. Kopie základny si nechala vlastní offline spojení a to pak spolklo i skutečnou misi. Klient navíc teď hlásí hostiteli opakovaně, že je připravený, takže pomalejší načítání u hostitele už nic nezasekne.",
+  "Mikrofon funguje i na základně: kdo chodí po základně sám, mluví s týmem na globu dál. Velínem se vyjede rovnou na glóbus.",
+  "Maskáče vidíš i na spoluhráčích. Barva týmu je přebíjela, kdo je kdo, poznáš teď podle nášivky.",
+  "Levité létají asi o polovinu pomaleji (velitel taky), dají se trefit.",
+  "Vetřelec zastřelený ve vzduchu spadne na zem. Dřív zůstal viset, protože si hra myslela, že stojí na zemi.",
+  "Vylepšení zbraní je znát: laser zpřesní střelbu od boku o 45 %, optika míření o 40 % (klidnější mířidla, větší zoom), rukojeť půlí zpětný ráz a tlumič zkrátí slyšitelnost výstřelu na pětinu.",
+  "Srub má sedlovou střechu přes celý dům. Dřív měl plochou desku, která nad přední půlkou visela ve vzduchu. Když shoří 40 % stěn dřevěné stavby, střecha se zřítí. Oheň hoří asi o polovinu pomaleji.",
+  "Krvácení: obvázaná rána už nekape, krev kape jen opravdu krvácejícímu. Při ošetření se krvácení hned zastaví, ukáže se Krvácení zastaveno a nápis KRVÁCÍŠ ukazuje, kolik zdraví za sekundu ubývá.",
+  "Transport ve vzduchu (přepadení cestou) má zavřenou rampu.",
+  "Hangár na základně je dvakrát hlubší (22 m) a 10 m vysoký. Čáp v něm stojí skoro v plné velikosti s listy rotorů složenými podél trupu.",
+  "Připojování ke hře jde zrušit tlačítkem Zrušit připojování. Když hostitel do 10 s neodpoví, hra napíše proč (IP adresa, spuštěná hra, firewall) a nechá tě vybrat, jestli čekat dál.",
+  "Levit velitel už nemá raketomet. Střílí z těžší plazmy (silnější rány než obyčejný Levit), ale celý tým jednou ranou z nebe nesmete.",
+  "Encyklopedie: každá zbraň má kartu s čísly (poškození, kadence, zásobník nebo článek, přesnost, hluk, váha, obouruční, opora) a s výhodou a nevýhodou, zbroje ukazují, o kolik ubírají zranění. Zbraně se v náhledu otáčejí nastojato hlavní nahoru, takže nevyjedou z obrazu, a náhled je ostrý a vycentrovaný.",
+  "Co-op spojení: delší trpělivost při dlouhém načítání (mapa, první shadery), aby kamaráda neodpojilo. Když spojení přesto tiše umře, hra to pozná a vrátí tě do menu se zprávou, místo aby sypala tisíce chyb a rozbila se. Hlas se během připojování neposílá.",
+  "Velký test před každým vydáním: 31 kontrol od skriptů přes texty, blikání a dveře na několika mapách, zvuky, drona a pád z výšky až po co-op ve dvou hrách najednou (mise, obvazování, základna během mise)."
+ ],
  "0.43": [
   "Oprava: okno Nová kampaň při výběru normální obtížnosti blikalo. Text se zalamoval jednou na jeden, jednou na dva řádky, okno se pokaždé přepočítalo a tak pořád dokola. Teď se ustálí a nový test hlídá, aby žádné okno menu takhle neblikalo.",
   "Oprava: panel Velín na globu se zase vejde celý, tlačítko Uložit a menu už není uříznuté. Podrobnosti o vybrané misi se teď dají posouvat kolečkem. Řádek s penězi se jmenuje Osobní majetek a test teď hlídá, aby panel nepřetékal."

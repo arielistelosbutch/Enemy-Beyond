@@ -35,6 +35,7 @@ var popup: PanelContainer
 var t := 0.0
 
 func _ready() -> void:
+	if Game.autotest() != "": print("[GEO] globe ready (viewer %s)" % Campaign.viewer)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	Net.blocked.connect(_alert)
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -917,7 +918,7 @@ func _autotest() -> void:
 		Campaign.data["research"]["progress"] = 2.0
 		Campaign.data["found"] = {"corpse_grey": 3, "corpse_levit": 1, "a_pistol": 2, "slitiny": 10}
 		for e2 in [["geo_tree", func(): _show_research()], ["geo_ency_autopsy", func(): _show_archive("autopsy_levit")],
-				["geo_ency_race", func(): _show_archive("race_bijec_velitel")], ["geo_ency_item", func(): _show_archive("item_a_pistol")],
+				["geo_ency_race", func(): _show_archive("race_bijec_velitel")], ["geo_ency_item", func(): _show_archive("item_a_pistol")], ["geo_ency_weapon", func(): _show_archive("item_autocannon")],
 				["geo_ency_craft", func(): _show_archive("ufo_scout")], ["geo_ency_grey", func(): _show_archive("autopsy_grey")]]:
 			e2[1].call()
 			await get_tree().create_timer(0.6).timeout
@@ -993,7 +994,8 @@ func _autotest() -> void:
 				_begin_landed(c1, m0)
 		else:
 			await get_tree().create_timer(1.0).timeout
-			get_viewport().get_texture().get_image().save_png("user://25_return.png")
+			if DisplayServer.get_name() != "headless":
+				get_viewport().get_texture().get_image().save_png("user://25_return.png")
 			print("[CAMP] back on globe. credits=%d trust=%d missions=%d log: %s" % [Campaign.data["credits"], Campaign.data["trust"], Campaign.data["stats"]["missions"], Campaign.data["log"][-1]])
 			get_tree().quit()
 		return
