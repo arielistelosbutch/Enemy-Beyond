@@ -65,7 +65,7 @@ func _pick_weather() -> void:
 		w = "snow"
 	elif Net.mission_params.get("terrain", "") == "desert" and (w == "rain" or w == "fog"):
 		w = "clear"
-	if Net.mission_params.get("type", "") == "mars":
+	if Net.mission_params.get("type", "") in ["mars", "home"]:
 		w = "clear"
 	weather = w
 
@@ -199,7 +199,9 @@ func _ready() -> void:
 	_pick_weather()
 	_environment()
 	_post_filter()
-	map = MapGen.new().build(self, Net.mission_seed, Net.mission_params)
+	map = (preload("res://scripts/base_gen.gd").new() if home() else MapGen.new()).build(self, Net.mission_seed, Net.mission_params)
+	if home():
+		_home_env()
 	actors = Node3D.new()
 	actors.name = "Actors"
 	add_child(actors)
@@ -214,7 +216,7 @@ func _ready() -> void:
 	add_child(voice)
 	# no music: wind, silence and what moves in it
 	music = AudioStreamPlayer.new()
-	music.stream = Game.loop_stream(_wind_name())
+	music.stream = Game.loop_stream(_wind_name() if not home() else "base_interior")
 	music.volume_db = -12
 	music.bus = "Wind"
 	add_child(music)
@@ -267,7 +269,10 @@ func _ready() -> void:
 		var vr := RandomNumberGenerator.new()
 		vr.seed = Net.mission_seed + 7
 		vip_name = VIP_NAMES[vr.randi() % VIP_NAMES.size()]
-	hud.briefing(_briefing_text() + "\nPočasí: " + WEATHER_NAMES[weather] + ".")
+	if home():
+		hud.briefing("Základna v rokli na Vysočině, pod zemí. Mezi misemi se tu dá chodit: ubikace, laboratoř, dílna, hangár s lodí.\n\nE u terminálu:\n  Velín - zpět ke globusu (mise, nákupy, stavby; ovládá hostitel)\n  Laboratoř - strom výzkumu, encyklopedie\n\nNikdo tu po vás nestřílí. Zatím.")
+	else:
+		hud.briefing(_briefing_text() + "\nPočasí: " + WEATHER_NAMES[weather] + ".")
 	multiplayer.peer_disconnected.connect(_on_peer_left)
 	Net.note.connect(_on_note)
 	multiplayer.server_disconnected.connect(func(): _leave("Spojení s hostitelem bylo ztraceno."))
@@ -561,6 +566,8 @@ func _maybe_spawn() -> void:
 		var sp: Vector3 = map["player_spawns"][i % map["player_spawns"].size()]
 		spawner.spawn({"kind": "player", "peer": id, "pos": sp, "yaw": float(map.get("spawn_yaw", PI)), "merc": Net.roster[id]["merc"], "name": Net.roster[id]["name"]})
 		i += 1
+	if home():
+		return          # nobody else down here
 	var rng := RandomNumberGenerator.new()
 	rng.seed = Net.mission_seed + 99
 	var spawns: Array = map["alien_spawns"].duplicate()
@@ -838,6 +845,10 @@ func _noise(pos: Vector3, radius: float) -> void:
 func _process(delta: float) -> void:
 	_prep_tick(delta)
 	_nav_tick(delta)
+	if home():
+		_home_tick(delta)
+		_mines_tick()
+		return
 	if started():
 		t += delta
 		_critters(delta)
@@ -1653,6 +1664,57 @@ var _wave_t := 0.0
 
 func mtype() -> String:
 	return String(Net.mission_params.get("type", ""))
+
+## Walking round our own base between missions (no aliens, no night - lights and terminals).
+func home() -> bool:
+	return mtype() == "home"
+
+func _home_env() -> void:
+	env.background_color = Color(0.02, 0.015, 0.01)
+	env.ambient_light_color = Color(0.6, 0.55, 0.5)
+	env.ambient_light_energy = 0.35
+	env.fog_density = 0.004
+	env.volumetric_fog_enabled = false
+	moon.light_energy = 0.0
+	moon.visible = false
+
+var _term_note := 0.0
+func _home_tick(delta: float) -> void:
+	for g in map.get("spinners", []):
+		if is_instance_valid(g):
+			g.rotation.y += delta * float(g.get_meta("spin", 0.2))
+	var me := local_player()
+	_term_note -= delta
+	if me and _term_note <= 0.0 and hud and not hud.inventory_open:
+		var tm := terminal_near(me.global_position)
+		if not tm.is_empty():
+			_term_note = 1.0
+			hud.message("E: " + String(tm["label"]), 1.1)
+
+func terminal_near(p: Vector3) -> Dictionary:
+	for tm in map.get("terminals", []):
+		if (tm["pos"] as Vector3).distance_to(p) < 1.6:
+			return tm
+	return {}
+
+## The local player pressed E at a terminal.
+func use_terminal(tm: Dictionary) -> void:
+	Game.play_ui(self, "ui_click", -6)
+	match String(tm["kind"]):
+		"globe":
+			if not multiplayer.is_server():
+				hud.message("Velín ovládá hostitel.", 2.5)
+				return
+			_go_home_globe.rpc()
+		"research":
+			hud.open_screen(ResearchScreen.open(hud))
+		"ency":
+			hud.open_screen(Encyclopedia.open(hud))
+
+@rpc("authority", "call_local", "reliable")
+func _go_home_globe() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	Net.after_mission()
 
 ## The person to rescue (a civilian marked as VIP), or null.
 func vip() -> Node:

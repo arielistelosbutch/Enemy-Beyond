@@ -1,4 +1,12 @@
 {
+ "0.36": [
+  "Základna se dá projít: na globu tlačítko \"Projít základnu (s týmem)\" - celý tým sjede výtahem dolů. Každé postavené zařízení je místnost 12 x 12 m vyhloubená v zemi a se sousedními ji spojuje krátká chodba (dveře jsou vždy uprostřed stěny, jen tam, kde soused je).",
+  "Místnosti podle toho, co je postavené: velín s výtahem, kulatým stolem a otáčejícím se globem, hangár s Čápem nebo Kondorem, ubikace s palandami, laboratoř s pitevním stolem, zbrojnice, ošetřovna, radar, sklad. Rozestavěná místnost je plná lešení a beden.",
+  "Terminály (E): ve velínu zpět ke globusu (jen hostitel), v laboratoři strom výzkumu a encyklopedie.",
+  "Nové zařízení Cela pro vetřelce: bez ní omráčený vetřelec cestu na základnu nepřežije, takže živé zajatce a výslechy jde mít jen s celou. Zajatci pak sedí v prosklených kójích a dá se na ně dojít podívat.",
+  "Nové zařízení Sklad: každý zlevní munici, granáty a lékárničky o 10 %.",
+  "Stavět jde jen vedle hotového zařízení, jako ve starém UFO - nikde nevznikne místnost, ke které nevede chodba."
+ ],
  "0.35": [
   "Výzkum je strom: projekty na sebe navazují v pěti větvích (biologie, výslechy a psionika, zbraně, materiály, lodě). Každý projekt je políčko s obrázkem, šipky ukazují, co z čeho vede. Zelené je hotové, oranžové probíhá, modré jde zahájit hned, šedé je zamčené - a vpravo je přesně vidět, co ještě chybí (✔/✘).",
   "Pitvy: na stůl musí tým přivézt tělo dané rasy (mrtví vetřelci se po vyhrané misi berou domů, omráčení jako živí zajatci). Každá pitva odhalí slabiny rasy - dostává o 20 % víc. Diskoll a Kolos se rozebírají jako vraky.",

@@ -310,6 +310,9 @@ func _process(delta: float) -> void:
 	if mission().finished:
 		canvas.queue_redraw()
 		return
+	if is_instance_valid(_screen):
+		canvas.queue_redraw()
+		return
 	if Input.is_action_just_pressed("inventory") and not paused:
 		if inventory_open: _close_inventory()
 		elif me() and not me().downed and not me().dead: _open_inventory()
@@ -1154,6 +1157,18 @@ static func _meter_fill() -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.3, 0.9, 0.4)
 	return sb
+
+## A full screen from a terminal (research, encyclopedia): blocks the mercenary, frees the mouse.
+var _screen: Control
+func open_screen(c: Control) -> void:
+	_screen = c
+	paused = true
+	inventory_open = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	c.set("on_close", func():
+		paused = false
+		inventory_open = false
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED)
 
 func _pause() -> void:
 	paused = true

@@ -1046,6 +1046,15 @@ func _autotest() -> void:
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
 				"hour": 14.0 if Game.cmd_arg("day", "0") == "1" else 23.0, "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "terrain": Game.cmd_arg("terrain", "temperate"), "size": Game.cmd_arg("size", "medium"), "ufo": Game.cmd_arg("ufo", ""), "group": Game.cmd_arg("group", "")})
+		"basewalk":
+			Net.play_solo()
+			var b := []
+			for i in 24:
+				b.append({"type": "", "days": 0.0})
+			var lay := {0: "velin", 1: "hangar", 6: "ubikace", 7: "laborator", 2: "dilna", 8: "cela", 13: "osetrovna", 3: "radar", 9: "sklad", 14: "laborator"}
+			for k in lay:
+				b[k] = {"type": lay[k], "days": 4.0 if k == 14 else 0.0}
+			Net.start_mission({"type": "home", "type_name": "Základna", "base": b, "grid_w": 6, "grid_h": 4, "transport": "heli", "live": ["grey", "levit"], "night": false})
 		"solo", "shot", "ai", "panic", "arsenal", "evac":
 			if Game.autotest() == "shot":
 				await get_tree().create_timer(1.5).timeout

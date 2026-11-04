@@ -280,7 +280,7 @@ func _req_buy(item: String) -> void:
 		Campaign.buy(item)
 		broadcast_team()
 		return
-	var price := Campaign.price(item)
+	var price: int = Campaign.price(item)
 	if not Campaign.unlocked(item) or int(wallets.get(from, 0)) < price or Campaign.moskovium() < int(Campaign.SHOP_MK.get(item, 0)):
 		return
 	_add_money(from, -price)

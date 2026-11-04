@@ -1382,7 +1382,10 @@ func _actions(delta: float) -> void:
 	if Input.is_action_just_pressed("heal"):
 		_medkit()
 	if Input.is_action_just_pressed("use"):
-		if not _use_teammate() and not _use_civilian():
+		var tm: Dictionary = mission.terminal_near(global_position) if mission.home() else {}
+		if not tm.is_empty():
+			mission.use_terminal(tm)
+		elif not _use_teammate() and not _use_civilian():
 			_pick_up()
 
 ## What a hand does with its item when its button is pressed.

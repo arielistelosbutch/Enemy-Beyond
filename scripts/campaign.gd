@@ -141,6 +141,8 @@ const FACILITIES := {
 	"dilna": {"name": "Zbrojnice", "cost": 400, "days": 5.0, "desc": "Každá zbrojnice zlevní nákupy o 15 %."},
 	"osetrovna": {"name": "Ošetřovna", "cost": 400, "days": 5.0, "desc": "Zranění se hojí dvakrát rychleji."},
 	"radar": {"name": "Radar", "cost": 600, "days": 7.0, "desc": "Mise se objevují častěji a déle vydrží."},
+	"cela": {"name": "Cela pro vetřelce", "cost": 450, "days": 5.0, "desc": "Prosklené kóje s poutacími křesly. Bez ní omráčený vetřelec cestu na základnu nepřežije - živé zajatce (a výslechy) jde mít jen s celou."},
+	"sklad": {"name": "Sklad", "cost": 250, "days": 3.0, "desc": "Regály a sudy. Každý sklad zlevní munici a granáty o 10 %."},
 }
 const GRID_W := 6
 const GRID_H := 4
@@ -241,6 +243,7 @@ func load_campaign() -> bool:
 	if not data.is_empty() and not data.has("bodies_v34"):
 		# older saves did not keep bodies: count every race met (with kills) as one brought home
 		data["bodies_v34"] = true
+		data["legacy_caps"] = int(data.get("stats", {}).get("captures", 0)) > 0
 		var found: Dictionary = data.get("found", {})
 		if int(data.get("stats", {}).get("kills", 0)) > 0:
 			for r in data.get("seen_races", []):
@@ -863,6 +866,14 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 	# what the team brought home: research needs it, Moskovium pays for alien tech
 	var found: Dictionary = data.get("found", {})
 	var got := []
+	if count("cela") == 0:
+		# nowhere to keep them: the captives do not survive the trip
+		for k in loot.keys():
+			if String(k).begins_with("live_") and int(loot[k]) > 0:
+				var ck := "corpse_" + String(k).substr(5)
+				loot[ck] = int(loot.get(ck, 0)) + int(loot[k])
+				loot[k] = 0
+				_log("Zajatec cestu nepřežil - základna nemá celu pro vetřelce.")
 	for k in loot:
 		if int(loot[k]) <= 0:
 			continue
@@ -956,7 +967,10 @@ func needs_list(id: String) -> Array:
 		var ok := false
 		var what := "živý zajatec"
 		if lv == "any":
-			ok = int(st.get("captures", 0)) > 0
+			ok = int(st.get("captures", 0)) > 0 and data.get("legacy_caps", false)
+			for k in found:
+				if String(k).begins_with("live_") and int(found[k]) > 0:
+					ok = true
 		elif lv == "officer":
 			what = "živý velitel (nebo Mysloděj)"
 			for k in found:
@@ -1027,10 +1041,24 @@ func count(ftype: String) -> int:
 			n += 1
 	return n
 
+## A facility can only go next to a finished one (the corridor has to lead somewhere).
+func can_build_at(index: int) -> bool:
+	var b: Array = data["base"]
+	if String(b[index]["type"]) != "":
+		return true
+	var x := index % GRID_W
+	var z := index / GRID_W
+	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var nx: int = x + d.x
+		var nz: int = z + d.y
+		if nx >= 0 and nz >= 0 and nx < GRID_W and nz < GRID_H and String(b[nz * GRID_W + nx]["type"]) != "":
+			return true
+	return false
+
 func build(index: int, ftype: String) -> bool:
 	var cell: Dictionary = data["base"][index]
 	var f: Dictionary = FACILITIES[ftype]
-	if cell["type"] != "" or int(data["credits"]) < int(f["cost"]):
+	if cell["type"] != "" or int(data["credits"]) < int(f["cost"]) or not can_build_at(index):
 		return false
 	data["credits"] = int(data["credits"]) - int(f["cost"])
 	data["base"][index] = {"type": ftype, "days": float(f["days"])}
@@ -1043,7 +1071,10 @@ func unlocked(item: String) -> bool:
 	return not LOCKED_BY.has(item) or researched(LOCKED_BY[item])
 
 func price(item: String) -> int:
-	return int(SHOP[item] * pow(0.85, count("dilna")))
+	var p: float = float(SHOP[item]) * pow(0.85, count("dilna"))
+	if String(Game.ITEMS.get(item, {}).get("type", "")) in ["ammo", "grenade", "flare", "medkit"]:
+		p *= pow(0.9, count("sklad"))
+	return int(p)
 
 func moskovium() -> int:
 	return int(data.get("moskovium", 0))

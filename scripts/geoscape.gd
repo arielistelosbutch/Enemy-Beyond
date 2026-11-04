@@ -409,6 +409,7 @@ func _build_side() -> void:
 		entries += [["Peníze v týmu", func(): _menu_screen("money")], ["Zpět do lobby", func(): get_tree().change_scene_to_file("res://scenes/Main.tscn")]]
 	else:
 		_btn(side, "VYSLAT (tým / stíhačku)", _launch, 10)
+		_btn(side, "Projít základnu (s týmem)", _go_base, 9)
 		entries += [["Co-op / peníze týmu", func():
 			if Net.is_online(): _menu_screen("money")
 			else: _host()], ["Uložit a menu", _quit]]
@@ -628,6 +629,19 @@ func _start_air(c: Dictionary, fl: Dictionary) -> void:
 		Net.mission_params = ip
 		get_tree().change_scene_to_file("res://scenes/Intercept.tscn")
 
+## Everyone down into the base: walk round it between missions (back up at the velín terminal).
+func _go_base() -> void:
+	Campaign.save()
+	if not Net.is_online():
+		Net.play_solo()
+	var live := []
+	for k in Campaign.data.get("found", {}):
+		if String(k).begins_with("live_") and int(Campaign.data["found"][k]) > 0:
+			for n in mini(int(Campaign.data["found"][k]), 2):
+				live.append(String(k).substr(5))
+	Net.start_mission({"type": "home", "type_name": "Základna", "base": Campaign.data["base"].duplicate(true), "grid_w": Campaign.GRID_W, "grid_h": Campaign.GRID_H,
+		"transport": Campaign.transport(), "live": live, "research": Campaign.data["research"]["done"].duplicate(), "night": false, "hour": 12.0})
+
 func _start_ground(m: Dictionary) -> bool:
 	Campaign.save()
 	if not Net.is_online():
@@ -761,7 +775,7 @@ func _show_armory() -> void:
 
 func _show_base() -> void:
 	var box := _overlay("ZÁKLADNA", 470)
-	_lbl(box, "Klikni na volné místo a postav zařízení. Kredity: %d. Stíhačky Sokol: %d (připraveno %d)." % [int(Campaign.data["credits"]), Campaign.jets(), Campaign.jets_ready()], FRAME, 8)
+	_lbl(box, "Stavět jde jen vedle hotového zařízení (vznikne mezi nimi chodba). Kredity: %d. Stíhačky Sokol: %d (připraveno %d)." % [int(Campaign.data["credits"]), Campaign.jets(), Campaign.jets_ready()], FRAME, 8)
 	if not Campaign.viewer and Campaign.jets() < Campaign.MAX_JETS:
 		_btn(box, "Koupit další stíhačku Sokol - %d kr (v co-op poletí víc hráčů)" % Campaign.JET_PRICE, func():
 			if Campaign.buy_jet(): _show_base()
@@ -772,11 +786,12 @@ func _show_base() -> void:
 	grid.add_theme_constant_override("v_separation", 3)
 	box.add_child(grid)
 	var colors := {"velin": Color(0.2, 0.35, 0.6), "hangar": Color(0.3, 0.3, 0.32), "ubikace": Color(0.3, 0.25, 0.18),
-		"laborator": Color(0.15, 0.4, 0.35), "dilna": Color(0.4, 0.3, 0.15), "osetrovna": Color(0.45, 0.15, 0.15), "radar": Color(0.2, 0.45, 0.2)}
+		"laborator": Color(0.15, 0.4, 0.35), "dilna": Color(0.4, 0.3, 0.15), "osetrovna": Color(0.45, 0.15, 0.15), "radar": Color(0.2, 0.45, 0.2),
+		"cela": Color(0.25, 0.3, 0.55), "sklad": Color(0.35, 0.33, 0.25)}
 	for i in Campaign.data["base"].size():
 		var cell: Dictionary = Campaign.data["base"][i]
 		var idx: int = i
-		var txt := "volno"
+		var txt := "volno" if Campaign.can_build_at(i) else "zemina"
 		if cell["type"] != "":
 			txt = Campaign.FACILITIES[cell["type"]]["name"]
 			if float(cell["days"]) > 0:
@@ -795,13 +810,18 @@ func _build_menu(idx: int) -> void:
 	if cell["type"] != "":
 		_alert("%s\n%s" % [Campaign.FACILITIES[cell["type"]]["name"], Campaign.FACILITIES[cell["type"]]["desc"]])
 		return
+	if not Campaign.can_build_at(idx):
+		_alert("Nelze stavět\nTady je zatím jen zemina: zařízení musí sousedit s hotovým (jinak by k němu nevedla chodba).")
+		return
 	var box := _overlay("STAVBA", 380)
-	for f in ["laborator", "dilna", "osetrovna", "radar"]:
+	for f in ["laborator", "dilna", "osetrovna", "radar", "cela", "sklad"]:
 		var key: String = f
 		var fi: Dictionary = Campaign.FACILITIES[f]
 		_btn(box, "%s - %d kr, %d dní: %s" % [fi["name"], fi["cost"], int(fi["days"]), fi["desc"]], func():
 			if Campaign.build(idx, key): _show_base()
 			else: _alert("Nelze stavět\nNedostatek kreditů."), 8)
+		if f == "cela" and Campaign.count("cela") > 0:
+			box.get_child(box.get_child_count() - 1).disabled = true
 	_btn(box, "Zpět", _show_base)
 
 # ---- tests -----------------------------------------------------------------------------------------

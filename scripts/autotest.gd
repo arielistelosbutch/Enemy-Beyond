@@ -56,6 +56,7 @@ func _process(delta: float) -> void:
 		"town": _town(p)
 		"zoo": _zoo(p)
 		"tactics": _tactics(p)
+		"basewalk": _basewalk(p)
 		"cloakshot": _cloakshot(p)
 		"voice": _voice_test(p)
 		"club": _club(p)
@@ -1398,4 +1399,31 @@ func _cloakshot(p: Node) -> void:
 			get_viewport().get_texture().get_image().save_png("user://cloak_%s_%d.png" % [a.race, int(k)])
 			shots += 1
 	out("RESULT cloakshot %d" % shots)
+	get_tree().quit()
+
+## Our base: a picture of every room (ghost walk), then the terminals answer.
+func _basewalk(p: Node) -> void:
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.inventory_open = false
+	p.set_physics_process(false)
+	var cells: Array = Net.mission_params["base"]
+	var gw := int(Net.mission_params["grid_w"])
+	var n := 0
+	for i in cells.size():
+		if String(cells[i]["type"]) == "":
+			continue
+		var o := Vector3((i % gw) * 12.0, 0, (i / gw) * 12.0)
+		p.global_position = o + Vector3(2.0, 0.3, 10.0)
+		_aim_at(p, o + Vector3(8.0, 1.2, 3.0))
+		for f in 10:
+			await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png("user://base_%d_%s.png" % [n, cells[i]["type"]])
+		n += 1
+	out("terminals %d: %s" % [m().map["terminals"].size(), m().map["terminals"].map(func(t): return t["kind"])])
+	var tm: Dictionary = m().map["terminals"][0]
+	p.global_position = tm["pos"] + Vector3(0, 0.3, 0)
+	out("near %s" % m().terminal_near(p.global_position).get("kind", "-"))
+	out("RESULT basewalk %d rooms" % n)
 	get_tree().quit()
