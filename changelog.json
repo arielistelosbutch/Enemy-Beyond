@@ -1,4 +1,8 @@
 {
+ "0.42": [
+  "Maskáče podle toho, kam letíme: lesní, pouštní, zimní, městský (města, průmysl, obrana základny), marťanský a noční pod zemí. Mají je uniforma, rukávy v pohledu z očí i potah helmy. Vzor je napsaný v briefingu, na základně se chodí v obyčejné uniformě.",
+  "Vetřelci napodobují hlasy hráčů mnohem častěji: poprvé už po 35-60 s mise, pak každých 25-50 s (na hardcore 18-35 s). Hlas si zapamatují i z tiššího mikrofonu a z kratších vět. Nejvíc to dělají Šeďáci: vybírají se třikrát častěji a zkouší to i uprostřed boje."
+ ],
  "0.41": [
   "Nové hlavní menu: Kampaň, Rychlá mise, Novinky, Nastavení, Ukončit.",
   "Kampaň: pokračovat, založit novou, nebo se připojit ke kamarádovi. Obtížnost se vybírá při založení a platí až do konce kampaně.",

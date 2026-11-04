@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.41 prototyp"
-const VERSION_NUM := "0.41"
+const VERSION := "0.42 prototyp"
+const VERSION_NUM := "0.42"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -938,10 +938,80 @@ func _restyle(n: Node) -> void:
 		for i in mi.mesh.get_surface_count():
 			var src := mi.mesh.surface_get_material(i)
 			if src is BaseMaterial3D:
+				if camo != "" and src.resource_name in CAMO_PARTS:
+					mi.set_surface_override_material(i, camo_mat(camo))
+					continue
 				var c: Color = src.albedo_color
 				mi.set_surface_override_material(i, color_mat(c, src.emission_enabled))
 	for c in n.get_children():
 		_restyle(c)
+
+# ---- camouflage: the uniform matches where the team flies ---------------------------------------
+## "" = plain uniform (menus, our own base). Set by the mission before anybody is spawned.
+var camo := ""
+const CAMO_PARTS := ["Uniform", "Sleeve", "Helmet"]
+const CAMO_COLORS := {
+	"woodland": [Color(0.33, 0.36, 0.22), Color(0.22, 0.27, 0.15), Color(0.36, 0.28, 0.17), Color(0.09, 0.09, 0.08)],
+	"desert": [Color(0.72, 0.63, 0.46), Color(0.60, 0.50, 0.34), Color(0.46, 0.37, 0.25), Color(0.80, 0.74, 0.60)],
+	"snow": [Color(0.86, 0.88, 0.90), Color(0.70, 0.73, 0.76), Color(0.52, 0.55, 0.58), Color(0.95, 0.95, 0.97)],
+	"urban": [Color(0.45, 0.46, 0.47), Color(0.30, 0.31, 0.33), Color(0.62, 0.62, 0.62), Color(0.12, 0.12, 0.13)],
+	"mars": [Color(0.55, 0.30, 0.20), Color(0.42, 0.22, 0.15), Color(0.30, 0.16, 0.12), Color(0.66, 0.43, 0.31)],
+	"night": [Color(0.16, 0.18, 0.21), Color(0.10, 0.11, 0.13), Color(0.23, 0.25, 0.28), Color(0.05, 0.05, 0.06)],
+}
+const CAMO_NAMES := {"woodland": "lesní", "desert": "pouštní", "snow": "zimní", "urban": "městský", "mars": "marťanský", "night": "noční"}
+
+## Which pattern for a mission: snow, desert, Mars, town and industry grey, underground black, else woodland.
+func camo_for(params: Dictionary) -> String:
+	var t := String(params.get("type", ""))
+	if t == "home" or params.is_empty():
+		return ""
+	if t == "alienbase":
+		return "night"
+	var terr := String(params.get("terrain", ""))
+	var biome := String(params.get("biome", ""))
+	if terr == "mars" or t == "mars":
+		return "mars"
+	if terr == "snow" or biome == "polar":
+		return "snow"
+	if terr == "desert" or biome == "desert":
+		return "desert"
+	if biome in ["town", "industrial", "base"] or t == "base":
+		return "urban"
+	return "woodland"
+
+var _camo_mats := {}
+func camo_mat(scheme: String) -> Material:
+	if _camo_mats.has(scheme):
+		return _camo_mats[scheme]
+	var cols: Array = CAMO_COLORS.get(scheme, CAMO_COLORS["woodland"])
+	var n1 := FastNoiseLite.new()
+	n1.seed = 7
+	n1.frequency = 0.09
+	var n2 := FastNoiseLite.new()
+	n2.seed = 31
+	n2.frequency = 0.13
+	var sz := 48
+	var img := Image.create(sz, sz, false, Image.FORMAT_RGB8)
+	for y in sz:
+		for x in sz:
+			# seamless: sample the noise on a torus
+			var ax := TAU * x / sz
+			var ay := TAU * y / sz
+			var a := n1.get_noise_3d(cos(ax) * 12.0, sin(ax) * 12.0, cos(ay) * 12.0 + sin(ay) * 7.0)
+			var b := n2.get_noise_3d(sin(ay) * 10.0, cos(ay) * 10.0, cos(ax) * 9.0 + sin(ax) * 5.0)
+			var c: Color = cols[0]
+			if a > 0.12: c = cols[1]
+			if b > 0.22: c = cols[2]
+			if a < -0.3 and b < 0.0: c = cols[3]
+			img.set_pixel(x, y, c)
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = ImageTexture.create_from_image(img)
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	m.uv1_triplanar = true
+	m.uv1_scale = Vector3(1.5, 1.5, 1.5)
+	m.roughness = 0.95
+	_camo_mats[scheme] = m
+	return m
 
 ## Turns the PS1 vertex jitter on/off on every material made so far.
 func apply_retro() -> void:

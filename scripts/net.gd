@@ -184,6 +184,7 @@ func back_to_menu() -> void:
 ## connected), clients go back to the lobby, quick missions to the menu.
 func after_mission() -> void:
 	Game.end_skirmish()       # a quick mission's merc goes back in the drawer
+	Game.camo = ""
 	var campaign := not mission_params.is_empty()
 	mission_params = {}
 	if campaign and multiplayer.is_server() and Campaign.active:

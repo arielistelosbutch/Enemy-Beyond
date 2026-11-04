@@ -45,7 +45,7 @@ func _ready() -> void:
 	name = "Voice"
 	mission = get_parent()
 	_buses()
-	mimic_t = randf_range(70.0, 110.0)
+	mimic_t = randf_range(35.0, 60.0)
 	# the microphone itself belongs to Net/LobbyVoice (one reader for the whole game);
 	# here we only take what it heard
 	pass
@@ -292,7 +292,7 @@ func _store(peer: int, bytes: PackedByteArray) -> void:
 	var e := 0.0
 	for v in smp:
 		e += v * v
-	var loud := sqrt(e / max(1, smp.size())) > 0.035
+	var loud := sqrt(e / max(1, smp.size())) > minf(0.02, Game.mic_gate * 0.8)
 	if not _cur.has(peer):
 		_cur[peer] = PackedByteArray()
 		_quiet[peer] = 0.0
@@ -306,7 +306,7 @@ func _store(peer: int, bytes: PackedByteArray) -> void:
 	_cur[peer] = cur
 	var secs := cur.size() / float(RATE)
 	if (cur.size() > 0 and float(_quiet[peer]) > 0.35) or secs > 4.5:
-		if secs > 0.7:
+		if secs > 0.5:
 			if not snippets.has(peer):
 				snippets[peer] = []
 			snippets[peer].append(cur)
@@ -321,18 +321,21 @@ func _mimic_tick(delta: float) -> void:
 	mimic_t -= delta
 	if mimic_t > 0 or mission.calm() or snippets.is_empty():
 		return
-	mimic_t = randf_range(30.0, 60.0) if Game.veteran() else randf_range(45.0, 90.0)
-	# a listener, and a hidden alien 8-30 m from him
+	mimic_t = randf_range(18.0, 35.0) if Game.veteran() else randf_range(25.0, 50.0)
+	# a listener, and a hidden alien 6-50 m from him. The Greys love it: they do it even in a
+	# fight and get picked three times as often (they are the clever, cruel ones)
 	var pairs := []
 	for p in mission.players():
 		if p.dead:
 			continue
 		for a in mission.aliens():
-			if a.dead or a.state == a.S.COMBAT:
+			var grey := String(a.get("race")).begins_with("grey")
+			if a.dead or (a.state == a.S.COMBAT and not grey):
 				continue
 			var d: float = a.global_position.distance_to(p.global_position)
-			if d > 8.0 and d < 40.0:
-				pairs.append([p, a])
+			if d > 6.0 and d < 50.0:
+				for k in (3 if grey else 1):
+					pairs.append([p, a])
 	if pairs.is_empty():
 		mimic_t = 8.0
 		return

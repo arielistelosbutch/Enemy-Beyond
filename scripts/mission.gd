@@ -204,6 +204,7 @@ func _ready() -> void:
 		api.multiplayer_peer = OfflineMultiplayerPeer.new()
 		get_tree().set_multiplayer(api, get_path())
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	Game.camo = Game.camo_for(Net.mission_params if not Net.mission_params.is_empty() else {"type": "crash"})
 	_pick_weather()
 	_environment()
 	_post_filter()
@@ -453,6 +454,8 @@ func _briefing_text() -> String:
 				learned += "\n%s pořád nosí %s." % [who, "; ".join(parts)]
 		if learned != "":
 			task += "\n\nVetřelci se učí:" + learned
+		if Game.camo != "":
+			task += "\n\nMaskáče: %s vzor." % Game.CAMO_NAMES.get(Game.camo, Game.camo)
 		return "%s\nOblast: %s, místní čas %02d:%02d (%s), mapa %s%s\n\n%s\n\n" % [
 			String(mp.get("type_name", "Mise")).to_upper(), mp.get("place", "?"), int(h), int(fmod(h, 1.0) * 60),
 			"noc" if mp.get("night", true) else "den", MapGen.SIZE_NAMES.get(mp.get("size", "medium"), "střední"), terr, flavor.get(mp.get("type", "crash"), "")] + task

@@ -60,6 +60,7 @@ func _process(delta: float) -> void:
 		"basepass": _passcheck(p)
 		"doorshot": _doorshot(p)
 		"passcheck": _passcheck(p)
+		"camoshot": _camoshot(p)
 		"fireshot": _fireshot(p)
 		"abase": _abase(p)
 		"cloakshot": _cloakshot(p)
@@ -1455,6 +1456,37 @@ func _basewalk(p: Node) -> void:
 	p.global_position = tm["pos"] + Vector3(0, 0.3, 0)
 	out("near %s" % m().terminal_near(p.global_position).get("kind", "-"))
 	out("RESULT basewalk %d rooms" % n)
+	get_tree().quit()
+
+## Camouflage: a mercenary in each pattern in front of the camera (and the hands in view).
+func _camoshot(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.inventory_open = false
+	p.set_physics_process(false)
+	p.hp = 5000.0
+	var cam: Camera3D = p.cam
+	for sch in ["woodland", "desert", "snow", "urban", "mars", "night"]:
+		Game.camo = sch
+		var row := Node3D.new()
+		m().add_child(row)
+		var fwd := -cam.global_transform.basis.z
+		fwd.y = 0
+		fwd = fwd.normalized()
+		var side := fwd.cross(Vector3.UP)
+		for k in 2:
+			var mm: Node3D = Game.model("merc")
+			Game.apply_look(mm, Game.merc.get("look", {}))
+			row.add_child(mm)
+			mm.global_position = p.global_position + fwd * 2.6 + side * (k - 0.5) * 1.1 - Vector3(0, 0.0, 0)
+			mm.look_at(p.global_position, Vector3.UP)
+			mm.rotate_y(PI if k == 0 else PI * 0.6)
+		for f in 12: await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png("user://camo_%s.png" % sch)
+		row.queue_free()
+	out("RESULT camoshot")
 	get_tree().quit()
 
 ## Can a man walk through? Every door opened, every base doorway: a player-sized capsule swept
