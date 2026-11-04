@@ -89,7 +89,7 @@ func setup(data: Dictionary) -> void:
 	position = data["pos"]
 	rotation.y = float(data.get("yaw", PI))     # out of the Kondor, down the ramp
 	collision_layer = 2
-	collision_mask = 1 | 2
+	collision_mask = 1 | 2 | 64 | 128
 	var cs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.35
@@ -1315,7 +1315,7 @@ func _laser_dot() -> void:
 		return
 	var from := cam.global_position
 	var to := from - cam.global_transform.basis.z * 60.0
-	var q := PhysicsRayQueryParameters3D.create(from, to, 1 | 4)
+	var q := PhysicsRayQueryParameters3D.create(from, to, Game.WORLD | 4 | Game.GLASS)
 	q.exclude = [get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	_dot.visible = not hit.is_empty()
@@ -1389,7 +1389,11 @@ func _actions(delta: float) -> void:
 		var tm: Dictionary = mission.terminal_near(global_position) if mission.home() else {}
 		if not tm.is_empty():
 			mission.use_terminal(tm)
-		elif not _use_teammate() and not _use_civilian():
+		elif _use_teammate() or _use_civilian():
+			pass
+		elif mission.door_near(global_position) >= 0 and mission.nearest_pickup(global_position).is_empty():
+			mission.use_door.rpc_id(1, mission.door_near(global_position), global_position)
+		else:
 			_pick_up()
 
 ## What a hand does with its item when its button is pressed.
@@ -1506,7 +1510,7 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 		var dir := aim_dir.rotated(basis_.x, sin(a1) * r1).rotated(basis_.y, cos(a1) * r1).normalized() if pellets > 1 \
 			else aim_dir.rotated(basis_.x, randf_range(-spread, spread)).rotated(basis_.y, randf_range(-spread, spread)).normalized()
 		# friendly fire (host's setting): your bullets do not know who is who
-		var q := PhysicsRayQueryParameters3D.create(from, from + dir * 120.0, (1 | 4 | 2 | 8) if (Net.friendly_fire or Game.veteran()) else (1 | 4))
+		var q := PhysicsRayQueryParameters3D.create(from, from + dir * 120.0, (Game.WORLD | Game.GLASS | 4 | 2 | 8) if (Net.friendly_fire or Game.veteran()) else (Game.WORLD | Game.GLASS | 4))
 		q.exclude = [get_rid()]
 		var hit := get_world_3d().direct_space_state.intersect_ray(q)
 		var to := from + dir * 120.0
@@ -1566,7 +1570,7 @@ func _melee_hit(rule: Dictionary) -> void:
 	Game.play_at(self, rule.get("sound", "swish"), global_position + Vector3.UP, -6)
 	var from := cam.global_position
 	var dir := -cam.global_transform.basis.z
-	var q := PhysicsRayQueryParameters3D.create(from, from + dir * float(rule["reach"]), 1 | 4)
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * float(rule["reach"]), Game.WORLD | Game.GLASS | 4)
 	q.exclude = [get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if not (Game.has_talent(merc, "tichy_zabijak") and rule.has("backstab")):

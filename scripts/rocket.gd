@@ -49,7 +49,7 @@ func _ready() -> void:
 
 func _physics_process(dt: float) -> void:
 	var nxt := global_position + dir * SPEED * dt
-	var q := PhysicsRayQueryParameters3D.create(global_position, nxt, 1 | 4)
+	var q := PhysicsRayQueryParameters3D.create(global_position, nxt, Game.WORLD | Game.GLASS | 4)
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if hit or travelled > 120.0:
 		var p: Vector3 = hit.position if hit else global_position

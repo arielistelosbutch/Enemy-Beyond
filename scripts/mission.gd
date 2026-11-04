@@ -208,6 +208,7 @@ func _ready() -> void:
 	map = (preload("res://scripts/base_gen.gd").new() if indoor() else MapGen.new()).build(self, Net.mission_seed, Net.mission_params)
 	if indoor():
 		_home_env()
+	_hang_doors()
 	actors = Node3D.new()
 	actors.name = "Actors"
 	add_child(actors)
@@ -865,10 +866,12 @@ func _process(delta: float) -> void:
 		if is_instance_valid(l):
 			l.light_energy = 1.4 + sin(t * 13.0) * 0.25 + sin(t * 7.3) * 0.2
 	_electric(delta)
+	_fires_tick(delta)
 	_mines_tick()
 	_storm_fx(delta)
 	_hallucinate(delta)
 	if multiplayer.is_server() and _spawned and not finished:
+		_doors_tick(delta)
 		_watch_tick(delta)
 		_objectives_tick(delta)
 		_judge()
@@ -1208,6 +1211,9 @@ func explode(p: Vector3, radius: float, dmg: float, by: String, big: bool) -> vo
 	_boom.rpc(p, big)
 	noise(p, 50.0 if big else 30.0)
 	blast_breakables(p, radius, dmg)
+	# a blast near anything that burns may set it alight
+	if randf() < (0.75 if _flammable_near(p, radius + 1.0) else 0.12):
+		ignite(p)
 	var shooter: Node = actors.get_node_or_null(by)
 	for a in aliens():
 		var d: float = a.global_position.distance_to(p)
@@ -1226,7 +1232,8 @@ const BREAK_MULT := {
 	"bullet": {"wood": 1.0, "crate": 1.0, "glass": 1.0, "brick": 0.0, "metal": 0.0},
 	"melee": {"wood": 0.5, "crate": 1.0, "glass": 1.0, "brick": 0.0, "metal": 0.0},
 	"plasma": {"wood": 2.5, "crate": 2.5, "glass": 1.0, "brick": 0.6, "metal": 0.4},
-	"explosion": {"wood": 3.0, "crate": 3.0, "glass": 1.0, "brick": 1.0, "metal": 0.7}}
+	"explosion": {"wood": 3.0, "crate": 3.0, "glass": 1.0, "brick": 1.0, "metal": 0.7},
+	"fire": {"wood": 1.0, "crate": 1.2, "glass": 0.6, "brick": 0.0, "metal": 0.0}}
 var _nav_dirty := 0.0
 
 @rpc("any_peer", "call_local", "reliable")
@@ -1367,6 +1374,175 @@ func add_smoke(p: Vector3) -> void:
 	c.global_position = p + Vector3(0, 1.2, 0)
 	get_tree().create_timer(28.0).timeout.connect(func(): c.emitting = false)
 	get_tree().create_timer(35.0).timeout.connect(c.queue_free)
+
+# ---- fire: it spreads over wood and crates, burns buildings down, hurts, and smokes ------------
+## Host decides; every machine shows the flames, the light, the roar and the black smoke column
+## (the smoke is a wall for the eyes - the aliens' and ours).
+var fires := {}            # id -> {pos, node, light, sound, until, size}
+var _fire_id := 0
+var _fire_t := 0.0
+const FIRE_MAX := 24
+
+func _flammable_near(p: Vector3, r: float) -> bool:
+	for b in map.get("breakables", []):
+		if is_instance_valid(b) and not b.get_meta("broken", false) and String(b.get_meta("break_kind", "")) in ["wood", "crate"] \
+				and (b as Node3D).global_position.distance_to(p) < r:
+			return true
+	return false
+
+## Host: sets a fire at @a p (if none burns right there yet).
+func ignite(p: Vector3, size := 1.0) -> void:
+	if not multiplayer.is_server() or fires.size() >= FIRE_MAX:
+		return
+	for f in fires.values():
+		if (f["pos"] as Vector3).distance_to(p) < 2.2:
+			return
+	_fire_id += 1
+	var gp := p
+	var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 0.5, 0), p + Vector3(0, -3.0, 0), 1)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if not hit.is_empty():
+		gp = hit.position
+	_fire_on.rpc(_fire_id, gp, size, randf_range(35.0, 60.0))
+
+@rpc("authority", "call_local", "reliable")
+func _fire_on(id: int, p: Vector3, size: float, life: float) -> void:
+	var n := Node3D.new()
+	add_child(n)
+	n.global_position = p
+	var fl := CPUParticles3D.new()
+	fl.amount = int(36 * size)
+	fl.lifetime = 0.9
+	fl.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	fl.emission_box_extents = Vector3(0.7, 0.1, 0.7) * size
+	fl.direction = Vector3(0, 1, 0)
+	fl.spread = 12.0
+	fl.gravity = Vector3(0, 2.5, 0)
+	fl.initial_velocity_min = 0.6
+	fl.initial_velocity_max = 1.6
+	fl.scale_amount_min = 0.6
+	fl.scale_amount_max = 1.4
+	var grad := Gradient.new()
+	grad.set_color(0, Color(1.0, 0.85, 0.3, 1.0))
+	grad.set_color(1, Color(0.7, 0.1, 0.02, 0.0))
+	grad.add_point(0.4, Color(1.0, 0.45, 0.08, 0.9))
+	fl.color_ramp = grad
+	var qm := QuadMesh.new()
+	qm.size = Vector2(0.55, 0.75) * size
+	var fm := StandardMaterial3D.new()
+	fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fm.vertex_color_use_as_albedo = true
+	fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	fm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	qm.material = fm
+	fl.mesh = qm
+	n.add_child(fl)
+	# black smoke: a tall, wide column
+	var sm := CPUParticles3D.new()
+	sm.amount = 50
+	sm.lifetime = 7.0
+	sm.preprocess = 3.0
+	sm.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	sm.emission_sphere_radius = 1.2 * size
+	sm.direction = Vector3(0, 1, 0)
+	sm.spread = 25.0
+	sm.gravity = Vector3(0.3, 0.6, 0)
+	sm.initial_velocity_min = 0.6
+	sm.initial_velocity_max = 1.2
+	sm.scale_amount_min = 2.5
+	sm.scale_amount_max = 5.0
+	var sq := QuadMesh.new()
+	sq.size = Vector2(1.8, 1.8)
+	var smat := StandardMaterial3D.new()
+	smat.albedo_color = Color(0.09, 0.085, 0.08, 0.6)
+	smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	smat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	smat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	sq.material = smat
+	sm.mesh = sq
+	n.add_child(sm)
+	sm.position = Vector3(0, 1.6, 0)
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.5, 0.15)
+	l.light_energy = 2.5
+	l.omni_range = 9.0 * size
+	l.shadow_enabled = true
+	n.add_child(l)
+	l.position = Vector3(0, 1.0, 0)
+	var snd := AudioStreamPlayer3D.new()
+	snd.stream = Game.loop_stream("fire")
+	snd.unit_size = 4.0
+	snd.max_distance = 40.0
+	snd.volume_db = -4.0
+	snd.bus = "SFX"
+	n.add_child(snd)
+	snd.play()
+	fires[id] = {"pos": p, "node": n, "light": l, "until": t + life, "size": size, "flames": fl, "smoke": sm}
+	# the smoke blocks sight like a smoke grenade, a little above the flames
+	smokes.append({"pos": p + Vector3(0, 0.6, 0), "until": t + life + 8.0})
+
+@rpc("authority", "call_local", "reliable")
+func _fire_off(id: int) -> void:
+	if not fires.has(id):
+		return
+	var f: Dictionary = fires[id]
+	fires.erase(id)
+	(f["flames"] as CPUParticles3D).emitting = false
+	(f["smoke"] as CPUParticles3D).emitting = false
+	(f["light"] as OmniLight3D).queue_free()
+	var n: Node3D = f["node"]
+	get_tree().create_timer(8.0).timeout.connect(func(): if is_instance_valid(n): n.queue_free())
+	# a black scorch where it burned
+	var sc := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 1.4 * float(f["size"]); cm.bottom_radius = cm.top_radius; cm.height = 0.01
+	sc.mesh = cm
+	sc.material_override = Game.color_mat(Color(0.05, 0.045, 0.04))
+	add_child(sc)
+	sc.global_position = (f["pos"] as Vector3) + Vector3(0, 0.02, 0)
+
+## Every machine: the flames flicker. The host: burns, spreads, ends.
+func _fires_tick(delta: float) -> void:
+	for f in fires.values():
+		var l: OmniLight3D = f["light"]
+		if is_instance_valid(l):
+			l.light_energy = 2.0 + randf() * 1.4
+	if not multiplayer.is_server() or fires.is_empty():
+		return
+	_fire_t -= delta
+	if _fire_t > 0.0:
+		return
+	_fire_t = 0.5
+	for id in fires.keys():
+		var f: Dictionary = fires[id]
+		var p: Vector3 = f["pos"]
+		var r: float = 1.4 * float(f["size"])
+		for pl in players():
+			if not pl.dead and pl.global_position.distance_to(p) < r:
+				pl.hurt.rpc_id(pl.get_multiplayer_authority(), 4.0, p)
+		for a in aliens():
+			if not a.dead and a.race != "ohnivec" and a.global_position.distance_to(p) < r:
+				hit_kind = "fire"
+				a.damage(5.0, p, null)
+				hit_kind = ""
+		# wood and crates nearby char and give way; the fire creeps onto them
+		var arr: Array = map.get("breakables", [])
+		for i in arr.size():
+			var b = arr[i]
+			if not is_instance_valid(b) or b.get_meta("broken", false):
+				continue
+			var kind := String(b.get_meta("break_kind", ""))
+			if not kind in ["wood", "crate", "glass"]:
+				continue
+			var bp: Vector3 = (b as Node3D).global_position
+			var d := Vector2(bp.x - p.x, bp.z - p.z).length()
+			if d < 2.6:
+				hit_breakable(i, 6.0, "fire")
+			if kind != "glass" and d < 4.8 and d > 1.5 and randf() < 0.1:
+				ignite(Vector3(bp.x, p.y, bp.z), clampf(float(f["size"]) * randf_range(0.8, 1.1), 0.7, 1.4))
+		if t > float(f["until"]):
+			_fire_off.rpc(id)
 
 ## True when a line of sight crosses a smoke cloud.
 func smoke_blocks(a: Vector3, b: Vector3) -> bool:
@@ -1814,6 +1990,114 @@ func _workers_tick(delta: float) -> void:
 				if not wk.has("y0"):
 					wk["y0"] = node.position.y
 		_work_t[wk] = t
+
+# ---- doors: E opens and shuts them; the aliens shove them open; a shot or a blast breaks them ----
+var doors: Array = []        # [{pivot, body, open, spec}]
+func _hang_doors() -> void:
+	for spec in map.get("doors", []):
+		var c: Vector3 = spec["c"]
+		var w: float = spec["w"]
+		var h: float = spec["h"]
+		var ax := Vector3(1, 0, 0) if spec["along_x"] else Vector3(0, 0, 1)
+		var pivot := Node3D.new()
+		add_child(pivot)
+		pivot.global_position = c - ax * (w / 2.0)
+		pivot.rotation.y = 0.0 if spec["along_x"] else -PI / 2
+		var sb := StaticBody3D.new()
+		sb.collision_layer = 64
+		sb.collision_mask = 0
+		var cs := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = Vector3(w - 0.04, h, 0.06)
+		cs.shape = bs
+		sb.add_child(cs)
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = bs.size
+		mi.mesh = bm
+		mi.material_override = Game.mat("planks", 1.0)
+		sb.add_child(mi)
+		var knob := MeshInstance3D.new()
+		var km := SphereMesh.new()
+		km.radius = 0.035; km.height = 0.07
+		knob.mesh = km
+		knob.material_override = Game.color_mat(Color(0.7, 0.6, 0.3))
+		sb.add_child(knob)
+		knob.position = Vector3(w / 2 - 0.12, -h / 2 + 1.0, 0.05)
+		pivot.add_child(sb)
+		sb.position = Vector3(w / 2, h / 2, 0)
+		# it breaks like a plank wall
+		sb.set_meta("break", map["breakables"].size())
+		sb.set_meta("break_kind", "wood")
+		sb.set_meta("hp", 120.0)
+		map["breakables"].append(sb)
+		var d := {"pivot": pivot, "body": sb, "open": false, "c": c, "base": pivot.rotation.y}
+		doors.append(d)
+		if spec.get("open", false):
+			_swing(d, 1.0, true)
+
+func _swing(d: Dictionary, side: float, instant := false) -> void:
+	d["open"] = side != 0.0
+	var want: float = float(d["base"]) + side * 1.65
+	if instant:
+		(d["pivot"] as Node3D).rotation.y = want
+		return
+	var tw := create_tween()
+	tw.tween_property(d["pivot"], "rotation:y", want, 0.45).set_trans(Tween.TRANS_SINE)
+
+## The door nearest to @a p (within reach), or -1.
+func door_near(p: Vector3, reach := 1.8) -> int:
+	var best := -1
+	var bd := reach
+	for i in doors.size():
+		var d: Dictionary = doors[i]
+		if not is_instance_valid(d["body"]):
+			continue
+		var dd: float = (d["c"] as Vector3).distance_to(Vector3(p.x, (d["c"] as Vector3).y, p.z))
+		if dd < bd:
+			bd = dd
+			best = i
+	return best
+
+@rpc("any_peer", "call_local", "reliable")
+func use_door(i: int, from: Vector3) -> void:
+	if not multiplayer.is_server() or i < 0 or i >= doors.size():
+		return
+	var d: Dictionary = doors[i]
+	if not is_instance_valid(d["body"]):
+		return
+	var side := 0.0
+	if not d["open"]:
+		# it opens away from whoever pushes it
+		var normal := Vector3(0, 0, 1).rotated(Vector3.UP, float(d["base"]))
+		side = 1.0 if normal.dot(from - (d["c"] as Vector3)) > 0.0 else -1.0
+	_door_state.rpc(i, side, false)
+	noise(d["c"], 7.0)
+
+@rpc("authority", "call_local", "reliable")
+func _door_state(i: int, side: float, slam: bool) -> void:
+	var d: Dictionary = doors[i]
+	if not is_instance_valid(d["body"]):
+		return
+	_swing(d, side)
+	Game.play_at(self, "door_creak", d["c"] + Vector3(0, 1.2, 0), -4 if not slam else 0)
+	if slam:
+		Game.play_at(self, "knock", d["c"] + Vector3(0, 1.2, 0), 0)
+
+## Host: an alien at a shut door shoves it open (loudly).
+var _door_t := 0.0
+func _doors_tick(delta: float) -> void:
+	_door_t -= delta
+	if _door_t > 0.0 or doors.is_empty():
+		return
+	_door_t = 0.3
+	for a in aliens():
+		if a.dead or a.husk:
+			continue
+		var i := door_near(a.global_position, 1.4)
+		if i >= 0 and not doors[i]["open"]:
+			var normal := Vector3(0, 0, 1).rotated(Vector3.UP, float(doors[i]["base"]))
+			_door_state.rpc(i, 1.0 if normal.dot(a.global_position - (doors[i]["c"] as Vector3)) > 0.0 else -1.0, true)
 
 func terminal_near(p: Vector3) -> Dictionary:
 	for tm in map.get("terminals", []):

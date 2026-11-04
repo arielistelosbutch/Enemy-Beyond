@@ -47,7 +47,7 @@ func setup(data: Dictionary) -> void:
 	if vip:
 		model_name = "civ_a" if Net.mission_seed % 2 == 0 else "civ_b"
 	collision_layer = 8
-	collision_mask = 1
+	collision_mask = 1 | 64 | 128
 	var cs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.28
@@ -152,7 +152,7 @@ func _danger() -> Node:
 			continue
 		var d: float = a.global_position.distance_to(global_position)
 		if d < 14.0:
-			var q := PhysicsRayQueryParameters3D.create(global_position + Vector3(0, 1.5, 0), a.global_position + Vector3(0, 1.0, 0), 1)
+			var q := PhysicsRayQueryParameters3D.create(global_position + Vector3(0, 1.5, 0), a.global_position + Vector3(0, 1.0, 0), Game.WORLD)
 			if d < 4.0 or get_world_3d().direct_space_state.intersect_ray(q).is_empty():
 				return a
 	return null

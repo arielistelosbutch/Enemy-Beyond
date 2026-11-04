@@ -1,4 +1,10 @@
 {
+ "0.38": [
+  "Dveře: v domech visí dveře, E je otevře nebo zavře (od sebe, se zavrzáním). Vetřelec u zavřených dveří je rozrazí. Kulky a výbuchy dveře rozbijí.",
+  "Okna mají sklo: je přes něj vidět (i vetřelcům), ale kulka, plazma nebo výbuch ho roztříští. Kdo střílí přes okno, nejdřív rozbije sklo.",
+  "Oheň: výbuch u dřeva, beden nebo lávová slina Ohnivce zapálí, co hoří. Oheň se šíří po dřevěných stěnách a bednách, ty ohoří a padnou - dřevěné budovy můžou vyhořet. Kdo stojí v plamenech, hoří (vetřelci taky, Ohnivec ne). Po ohni zůstane spálenina.",
+  "Z ohně stoupá hustý černý dým: přes sloup dýmu nevidí hráči ani vetřelci, stejně jako přes kouřový granát."
+ ],
  "0.37": [
   "Na základnu můžou i hráči bez hostitele: v co-op na globu tlačítko \"Na základnu (sám)\" - vlastní kopie základny, zatímco hostitel zkoumá a staví. Zpět přes terminál ve velínu.",
   "Na základně mají vojáci zbraň na zádech a volné ruce (1 nebo Q ji sundá).",

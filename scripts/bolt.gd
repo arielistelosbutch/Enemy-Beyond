@@ -76,7 +76,7 @@ func _physics_process(dt: float) -> void:
 	if kind != "plasma" and kind != "rocket":
 		vel.y -= 7.0 * dt
 	var nxt := global_position + vel * dt
-	var q := PhysicsRayQueryParameters3D.create(global_position, nxt, 1 | 2)
+	var q := PhysicsRayQueryParameters3D.create(global_position, nxt, Game.WORLD | Game.GLASS | 2)
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if hit and kind == "rocket":
 		if multiplayer.is_server():
@@ -93,6 +93,8 @@ func _physics_process(dt: float) -> void:
 		if kind == "plasma" and power >= 1.9 and multiplayer.is_server():
 			# the plasma cannon: the bolt bursts - through a wall, if need be
 			mission.explode(hit.position, 2.6, 30.0 * power / 2.0, "-", false)
+		if kind == "lava" and multiplayer.is_server() and randf() < 0.45:
+			mission.ignite(hit.position)        # molten rock sets things alight
 		if kind != "plasma":
 			# a splash of acid / molten rock: hurts whoever stands close
 			if multiplayer.is_server():

@@ -57,6 +57,8 @@ func _process(delta: float) -> void:
 		"zoo": _zoo(p)
 		"tactics": _tactics(p)
 		"basewalk": _basewalk(p)
+		"doorshot": _doorshot(p)
+		"fireshot": _fireshot(p)
 		"cloakshot": _cloakshot(p)
 		"voice": _voice_test(p)
 		"club": _club(p)
@@ -1439,4 +1441,92 @@ func _basewalk(p: Node) -> void:
 	p.global_position = tm["pos"] + Vector3(0, 0.3, 0)
 	out("near %s" % m().terminal_near(p.global_position).get("kind", "-"))
 	out("RESULT basewalk %d rooms" % n)
+	get_tree().quit()
+
+## Doors and glass: a closed door, the same door opened by E, a window before and after a shot.
+func _doorshot(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.inventory_open = false
+	p.set_meta("ghost", true)
+	p.hp = 5000.0
+	p.set_physics_process(false)
+	p.light_on = true
+	m().env.ambient_light_energy = 1.0
+	out("doors %d glass %d" % [m().doors.size(), m().map["breakables"].filter(func(b): return is_instance_valid(b) and String(b.get_meta("break_kind", "")) == "glass").size()])
+	if m().doors.is_empty():
+		out("RESULT doorshot no doors"); get_tree().quit(); return
+	var d: Dictionary = m().doors[0]
+	for dd in m().doors:
+		if not dd["open"]:
+			d = dd
+			break
+	var c: Vector3 = d["c"]
+	var nrm := Vector3(0, 0, 1).rotated(Vector3.UP, float(d["base"]))
+	p.global_position = c + nrm * 2.5 + Vector3(0, 0.3, 0)
+	_aim_at(p, c + Vector3(0, 1.1, 0))
+	for f in 20: await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png("user://door_0.png")
+	m().use_door(m().doors.find(d), p.global_position)
+	await get_tree().create_timer(0.8).timeout
+	get_viewport().get_texture().get_image().save_png("user://door_1.png")
+	out("door open %s" % d["open"])
+	var panes: Array = m().map["breakables"].filter(func(b): return is_instance_valid(b) and String(b.get_meta("break_kind", "")) == "glass")
+	if not panes.is_empty():
+		var g: Node3D = panes[0]
+		var gn := Vector3(1, 0, 0) if absf(g.global_transform.basis.x.x) < 0.5 else Vector3(0, 0, 1)
+		var sz: Vector3 = (g.get_child(0).shape as BoxShape3D).size
+		gn = Vector3(1, 0, 0) if sz.x < sz.z else Vector3(0, 0, 1)
+		p.global_position = g.global_position + gn * 3.0 - Vector3(0, g.global_position.y - 0.3, 0)
+		_aim_at(p, g.global_position)
+		for f in 20: await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png("user://glass_0.png")
+		m().hit_breakable(int(g.get_meta("break")), 30.0, "bullet")
+		await get_tree().create_timer(0.6).timeout
+		get_viewport().get_texture().get_image().save_png("user://glass_1.png")
+		out("glass broken %s" % (not is_instance_valid(g)))
+	out("RESULT doorshot")
+	get_tree().quit()
+
+## Fire: light a wooden building, watch it spread and smoke, count what burned.
+func _fireshot(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.inventory_open = false
+	p.set_meta("ghost", true)
+	p.hp = 5000.0
+	p.set_physics_process(false)
+	var woods: Array = m().map["breakables"].filter(func(b): return is_instance_valid(b) and String(b.get_meta("break_kind", "")) == "wood")
+	out("wood pieces %d" % woods.size())
+	if woods.is_empty():
+		out("RESULT fireshot no wood"); get_tree().quit(); return
+	# the wooden piece with the most wood around it
+	var best: Node3D = woods[0]
+	var bn := 0
+	for w in woods:
+		var n := 0
+		for w2 in woods:
+			if (w as Node3D).global_position.distance_to(w2.global_position) < 5.0:
+				n += 1
+		if n > bn:
+			bn = n
+			best = w
+	var at := best.global_position
+	m().explode(at + Vector3(0, 0.5, 0), 3.0, 40.0, "-", false)
+	m().ignite(at)
+	var before := woods.size()
+	p.global_position = at + Vector3(9, 0.3, 9)
+	_aim_at(p, at + Vector3(0, 1.5, 0))
+	Engine.time_scale = 3.0
+	for k in 3:
+		await get_tree().create_timer(15.0).timeout
+		get_viewport().get_texture().get_image().save_png("user://fire_%d.png" % k)
+		var left: int = m().map["breakables"].filter(func(b): return is_instance_valid(b) and String(b.get_meta("break_kind", "")) == "wood").size()
+		out("t%d fires %d wood left %d of %d smoke-blocks %s" % [k, m().fires.size(), left, before, m().smoke_blocks(p.global_position + Vector3(0, 1.5, 0), at + Vector3(0, 1.0, 0))])
+	Engine.time_scale = 1.0
+	out("RESULT fireshot")
 	get_tree().quit()

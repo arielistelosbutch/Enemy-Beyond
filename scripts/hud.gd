@@ -597,7 +597,7 @@ func _sting_check(p: Node) -> void:
 		var to: Vector3 = a.global_position + Vector3(0, 0.9, 0)
 		if to.distance_to(p.cam.global_position) > 26.0 or not p.cam.is_position_in_frustum(to):
 			continue
-		var q := PhysicsRayQueryParameters3D.create(p.cam.global_position, to, 1)
+		var q := PhysicsRayQueryParameters3D.create(p.cam.global_position, to, Game.WORLD)
 		if p.get_world_3d().direct_space_state.intersect_ray(q).is_empty():
 			_sting_cd = 45.0
 			Game.play_ui(mission(), "sting", -4)

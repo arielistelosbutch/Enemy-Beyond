@@ -16,7 +16,7 @@ var info := {
 	"player_spawns": [], "alien_spawns": [], "waypoints": [], "cover": [],
 	"evac": Vector3.ZERO, "ufo": Vector3.ZERO, "lights": [], "surfaces": [], "size": BLOCK * N,
 	"elec_lights": [], "sounds": [], "barn": Vector3.ZERO, "house": Vector3.ZERO,
-	"windows": [], "roofs": [], "cows": [], "circle": Vector3.ZERO, "truck": Vector3.ZERO, "breakables": [], "landmarks": [], "vip_spots": [],
+	"windows": [], "roofs": [], "doors": [], "cows": [], "circle": Vector3.ZERO, "truck": Vector3.ZERO, "breakables": [], "landmarks": [], "vip_spots": [],
 }
 var _circle_done := false
 var _truck_done := false
@@ -62,6 +62,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	nm.cell_size = 0.2
 	nm.cell_height = 0.2
 	nm.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
+	nm.geometry_collision_mask = 0xFFFFFFFF & ~(64 | 128)     # doors open, glass breaks: not walls for the paths
 	nav.navigation_mesh = nm
 	parent.add_child(nav)
 	var nmap: RID = parent.get_world_3d().navigation_map
@@ -715,6 +716,25 @@ func _wall(start: Vector3, length: float, along_x: bool, h: float, material: Mat
 			var mid := a + pw * (k + 0.5)
 			var pos := start + (Vector3(mid, h / 2, 0) if along_x else Vector3(0, h / 2, mid))
 			out.append(box(pos, Vector3(pw, h, 0.25) if along_x else Vector3(0.25, h, pw), material))
+	# doors in the doorways of houses (the mission hangs them after the paths are baked)
+	if kind != "":
+		for g in gaps:
+			if g.size() == 2 and g[1] - g[0] <= 1.65 and rng.randf() < 0.8:
+				var md: float = (g[0] + g[1]) / 2.0
+				info["doors"].append({"c": start + (Vector3(md, 0, 0) if along_x else Vector3(0, 0, md)), "along_x": along_x,
+					"w": float(g[1] - g[0]), "h": minf(2.15, h - 0.05), "open": rng.randf() < 0.3})
+	# glass in the windows of houses: sight goes through, a shot or a stone breaks it
+	if kind != "":
+		for g in gaps:
+			if g.size() > 2:
+				var mg: float = (g[0] + g[1]) / 2.0
+				var gw2: float = g[1] - g[0]
+				var top := minf(2.0, h - 0.05)
+				var gp := start + (Vector3(mg, (g[2] + top) / 2.0, 0) if along_x else Vector3(0, (g[2] + top) / 2.0, mg))
+				if rng.randf() < 0.85:
+					var pane := box(gp, Vector3(gw2, top - g[2], 0.04) if along_x else Vector3(0.04, top - g[2], gw2), _glass_mat())
+					pane.collision_layer = 128
+					_breakable(pane, "glass")
 	# windows: firing positions for the aliens (both sides), and cover beside them
 	for g in gaps:
 		if g.size() > 2 and g[1] - g[0] >= 0.7:
@@ -743,6 +763,16 @@ func _wall(start: Vector3, length: float, along_x: bool, h: float, material: Mat
 		for b in out:
 			_breakable(b, kind)
 	return out
+
+static var _glass: StandardMaterial3D
+func _glass_mat() -> Material:
+	if _glass == null:
+		_glass = StandardMaterial3D.new()
+		_glass.albedo_color = Color(0.55, 0.7, 0.8, 0.22)
+		_glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_glass.roughness = 0.05
+		_glass.metallic_specular = 0.9
+	return _glass
 
 ## Something that shots or blasts can break (see Mission.hit_breakable). The map is the same
 ## on every machine, so the index is the same too.

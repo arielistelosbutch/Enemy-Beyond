@@ -153,7 +153,7 @@ func setup(data: Dictionary) -> void:
 	var day := float(Net.mission_params.get("day", 0.0))
 	can_cloak = R.has("cloak") and (race.ends_with("_velitel") or day >= (30.0 if Game.veteran() else 45.0) or Game.cmd_arg("cloak", "") == "1")
 	collision_layer = 4
-	collision_mask = 1
+	collision_mask = 1 | 64 | 128
 	var cs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = float(R["r"])
@@ -393,7 +393,7 @@ func _eyeshine(delta: float) -> void:
 		var to := eye()
 		var d := from.distance_to(to)
 		if d < 24.0 and (-p.cam.global_transform.basis.z).dot((to - from).normalized()) > 0.965:
-			var q := PhysicsRayQueryParameters3D.create(from, to, 1)
+			var q := PhysicsRayQueryParameters3D.create(from, to, Game.WORLD)
 			if get_world_3d().direct_space_state.intersect_ray(q).is_empty():
 				if glint_t < -0.6:
 					glint_t = 0.3
@@ -523,7 +523,7 @@ func eye() -> Vector3:
 	return global_position + Vector3(0, e, 0)
 
 func _los(to: Vector3) -> bool:
-	var q := PhysicsRayQueryParameters3D.create(eye(), to, 1)
+	var q := PhysicsRayQueryParameters3D.create(eye(), to, Game.WORLD)
 	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 
 ## Can this alien see @a p right now? (used by the players' fear too)
@@ -1117,7 +1117,7 @@ func _relocate(from: Vector3) -> void:
 		var d: float = global_position.distance_to(c)
 		if d > 16.0 or d < 2.0:
 			continue
-		var q := PhysicsRayQueryParameters3D.create(c + Vector3(0, 0.8, 0), from + Vector3(0, 1.0, 0), 1)
+		var q := PhysicsRayQueryParameters3D.create(c + Vector3(0, 0.8, 0), from + Vector3(0, 1.0, 0), Game.WORLD)
 		if get_world_3d().direct_space_state.intersect_ray(q).is_empty():
 			continue
 		var dir: Vector3 = (c - global_position)
@@ -1281,7 +1281,7 @@ func _advance(at: Vector3) -> bool:
 		var d: float = global_position.distance_to(c)
 		if d > 20.0 or d < 3.0 or c.distance_to(at) > my_d - 5.0:
 			continue
-		var q := PhysicsRayQueryParameters3D.create(c + Vector3(0, 0.9, 0), at + Vector3(0, 1.2, 0), 1)
+		var q := PhysicsRayQueryParameters3D.create(c + Vector3(0, 0.9, 0), at + Vector3(0, 1.2, 0), Game.WORLD)
 		if get_world_3d().direct_space_state.intersect_ray(q).is_empty():
 			continue
 		var sc: float = c.distance_to(at) + d * 0.5 + rng.randf() * 3.0
@@ -1303,7 +1303,7 @@ func _keep_away(at: Vector3) -> void:
 		var d: float = global_position.distance_to(c)
 		if dd < 16.0 or dd > 28.0 or d > 25.0:
 			continue
-		var q := PhysicsRayQueryParameters3D.create(c + Vector3(0, 1.0, 0), at + Vector3(0, 1.2, 0), 1)
+		var q := PhysicsRayQueryParameters3D.create(c + Vector3(0, 1.0, 0), at + Vector3(0, 1.2, 0), Game.WORLD)
 		if get_world_3d().direct_space_state.intersect_ray(q).is_empty():
 			continue
 		var sc: float = d + rng.randf() * 4.0
@@ -1332,7 +1332,7 @@ func _window_spot(at: Vector3, high_only := false) -> Vector3:
 		var sd := -1.0 if n.dot(at - c) > 0.0 else 1.0
 		var spot := c + n * 0.6 * sd
 		var eh := maxf(float(R["eye"]) + float(R.get("hover", 0.0)) * 0.3, float(w["sill"]) + 0.35)
-		var q := PhysicsRayQueryParameters3D.create(spot + Vector3(0, eh, 0), at + Vector3(0, 1.2, 0), 1)
+		var q := PhysicsRayQueryParameters3D.create(spot + Vector3(0, eh, 0), at + Vector3(0, 1.2, 0), Game.WORLD)
 		if not ss.intersect_ray(q).is_empty():
 			continue
 		if not high_only:
@@ -1444,7 +1444,7 @@ func _levit_hop(at: Vector3, away: bool) -> bool:
 		var r: Vector3 = roofs[i]
 		if r.y < -50.0:
 			# a pitched roof: find its ridge once
-			var q0 := PhysicsRayQueryParameters3D.create(Vector3(r.x, r.y + 140.0, r.z), Vector3(r.x, r.y + 99.0, r.z), 1)
+			var q0 := PhysicsRayQueryParameters3D.create(Vector3(r.x, r.y + 140.0, r.z), Vector3(r.x, r.y + 99.0, r.z), Game.WORLD)
 			var h0 := ss.intersect_ray(q0)
 			r = Vector3(r.x, h0.position.y if not h0.is_empty() else -999.0, r.z)
 			roofs[i] = r
@@ -1454,7 +1454,7 @@ func _levit_hop(at: Vector3, away: bool) -> bool:
 		var dt := r.distance_to(at)
 		if dm > 40.0 or dm < 4.0 or dt > 45.0 or dt < 7.0:
 			continue
-		var q := PhysicsRayQueryParameters3D.create(r + Vector3(0, 1.9, 0), at + Vector3(0, 1.2, 0), 1)
+		var q := PhysicsRayQueryParameters3D.create(r + Vector3(0, 1.9, 0), at + Vector3(0, 1.2, 0), Game.WORLD)
 		var open := ss.intersect_ray(q).is_empty()
 		if open == away:
 			continue
@@ -1471,7 +1471,7 @@ func _levit_hop(at: Vector3, away: bool) -> bool:
 			var n: Vector3 = w["n"]
 			var sd := -1.0 if n.dot(at - c) > 0.0 else 1.0
 			var inside := c + n * 0.8 * sd
-			var q2 := PhysicsRayQueryParameters3D.create(inside + Vector3(0, 1.8, 0), at + Vector3(0, 1.2, 0), 1)
+			var q2 := PhysicsRayQueryParameters3D.create(inside + Vector3(0, 1.8, 0), at + Vector3(0, 1.2, 0), Game.WORLD)
 			if not ss.intersect_ray(q2).is_empty():
 				continue
 			var sc2 := Vector2(c.x - global_position.x, c.z - global_position.z).length() * 0.4 - c.y * 1.2 - 2.0 + rng.randf() * 6.0
@@ -1708,7 +1708,7 @@ func _trap_go(id: String, p: Vector3) -> void:
 	if me and not me.dead and me.cam:
 		var d: float = me.cam.global_position.distance_to(p)
 		if d < 12.0:
-			var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 0.4, 0), me.cam.global_position, 1)
+			var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 0.4, 0), me.cam.global_position, Game.WORLD)
 			if get_world_3d().direct_space_state.intersect_ray(q).is_empty():
 				mission.hud.blind_flash(clampf(1.4 - d / 12.0, 0.3, 1.0))
 				me.stress = minf(100.0, me.stress + 25.0)
@@ -1934,10 +1934,10 @@ func _fire(p: Node) -> void:
 	tgt += pv * clampf(dist / bolt_v, 0.0, 1.5) * (0.85 if not Game.easy() else 0.4)
 	tgt += Vector3(rng.randf_range(-miss, miss), rng.randf_range(-miss, miss) * 0.6, rng.randf_range(-miss, miss))
 	# the gun is low (behind a sill, a wall): lift it to the eyes, which do see him
-	var q := PhysicsRayQueryParameters3D.create(from, tgt, 1)
+	var q := PhysicsRayQueryParameters3D.create(from, tgt, Game.WORLD)
 	if not get_world_3d().direct_space_state.intersect_ray(q).is_empty():
 		var e := eye() + Vector3(0, -0.08, 0) + (-global_transform.basis.z) * 0.35
-		var q2 := PhysicsRayQueryParameters3D.create(e, tgt, 1)
+		var q2 := PhysicsRayQueryParameters3D.create(e, tgt, Game.WORLD)
 		if get_world_3d().direct_space_state.intersect_ray(q2).is_empty():
 			from = e
 	var d := (tgt - from)

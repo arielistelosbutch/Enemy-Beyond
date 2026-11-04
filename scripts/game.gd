@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.37 prototyp"
-const VERSION_NUM := "0.37"
+const VERSION := "0.38 prototyp"
+const VERSION_NUM := "0.38"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -781,6 +781,11 @@ func mat(tex_name: String, scale := 0.5, emission := Color.BLACK) -> ShaderMater
 	return m
 
 ## What a texture sounds like underfoot.
+## Collision layers: 1 the world, 64 doors (not in the nav mesh: they open), 128 window glass
+## (sight passes through it, bullets and bodies do not).
+const WORLD := 1 | 64
+const GLASS := 128
+
 const TEX_SURFACE := {"planks": "wood", "barn": "wood", "fence": "wood", "bark": "wood",
 	"metal": "metal", "skyranger": "metal", "ufo_floor": "alien", "ufo_hull": "alien", "ufo_wall": "alien", "water": "water", "gun": "metal",
 	"plaster": "hard", "roof": "hard", "dirt": "dirt", "hay": "dirt", "scorch": "dirt", "mars": "dirt",
