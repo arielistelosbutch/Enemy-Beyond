@@ -95,6 +95,12 @@ func _register(merc: Dictionary) -> void:
 		return
 	var id := multiplayer.get_remote_sender_id()
 	var fresh := not roster.has(id)
+	if Campaign.active:
+		# the campaign's mercenaries are kept by the host: an older copy on the client is replaced
+		var kept := Campaign.keep_merc(merc)
+		if kept != merc:
+			merc = kept
+			_adopt_merc.rpc_id(id, merc)
 	roster[id] = {"name": str(merc.get("name", "Žoldák")), "merc": merc}
 	if fresh:
 		_note.rpc("%s se připojil ke hře (%d/%d)." % [roster[id]["name"], roster.size(), MAX_PLAYERS])
@@ -102,6 +108,13 @@ func _register(merc: Dictionary) -> void:
 	_set_roster.rpc(roster)
 	roster_changed.emit()
 	broadcast_team()
+
+## Client: the host's campaign has a newer record of this mercenary - play that one.
+@rpc("authority", "reliable")
+func _adopt_merc(m: Dictionary) -> void:
+	Game.merc = m
+	Game.save_merc()
+	note.emit("Hostitel má v kampani novější záznam o žoldákovi %s - používáš ten." % str(m.get("name", "?")))
 
 @rpc("authority", "call_local", "reliable")
 func _set_roster(r: Dictionary) -> void:
@@ -123,7 +136,8 @@ func start_mission(params := {}) -> bool:
 	var s := Game.seed_override if Game.seed_override >= 0 else randi() % 1000000
 	if params.has("seed") and Game.seed_override < 0:
 		s = int(params["seed"])
-	_start.rpc(s, Game.difficulty, params, Game.friendly_fire)
+	var diff: String = Campaign.difficulty() if Campaign.active and params.has("cid") else Game.difficulty
+	_start.rpc(s, diff, params, Game.friendly_fire)
 	return true
 
 var friendly_fire := true
@@ -169,6 +183,7 @@ func back_to_menu() -> void:
 ## After a mission: the campaign host returns to the globe (co-op stays
 ## connected), clients go back to the lobby, quick missions to the menu.
 func after_mission() -> void:
+	Game.end_skirmish()       # a quick mission's merc goes back in the drawer
 	var campaign := not mission_params.is_empty()
 	mission_params = {}
 	if campaign and multiplayer.is_server() and Campaign.active:
@@ -249,6 +264,8 @@ func _wallets(w: Dictionary) -> void:
 func _base_snapshot(d: Dictionary) -> void:
 	Campaign.data = d
 	Campaign.viewer = true
+	if d.has("difficulty"):
+		Game.difficulty = String(d["difficulty"])     # the host's campaign decides
 	# days passed on the host's globe: our wounds heal - tell him when we are fit again
 	var was := float(Game.merc.get("sick", 0.0))
 	if was > 0.0 and Game.heal_days_left(Game.merc) <= 0.0:

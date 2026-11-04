@@ -57,6 +57,12 @@ func _back() -> void:
 	elif _back_target == "geo":
 		_back_target = ""
 		get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+	elif _back_target == "quick":
+		_back_target = ""
+		_show_quick()
+	elif _back_target == "campaign":
+		_back_target = ""
+		_show_campaign()
 	else:
 		_show_main()
 
@@ -167,28 +173,70 @@ const QUICK := [
 var quick_pick := 0
 
 static var quick_size := ""     # "" = by mission type; or small / medium / large / huge
+static var quick_group := ""    # "" = by the scenario; else a group from Mission.GROUPS
+static var quick_map := 0       # index into QUICK_MAPS (0 = by the scenario)
+static var quick_night := true
+static var quick_merc := "copy"
+## Maps for a quick mission: name, biome, terrain ("" = keep).
+const QUICK_MAPS := [["podle scénáře", "", ""], ["statek", "farm", "temperate"], ["městečko", "town", "temperate"],
+	["les", "forest", "temperate"], ["hory se sněhem", "mountain", "snow"], ["průmysl", "industrial", "temperate"],
+	["poušť", "desert", "desert"], ["polární stanice", "polar", "snow"]]
 static func quick_params(i: int) -> Dictionary:
 	var pp: Dictionary = QUICK[i][1].duplicate()
 	if not pp.is_empty():
-		pp["night"] = true
-		pp["hour"] = 23.5
+		pp["night"] = quick_night
+		pp["hour"] = 23.5 if quick_night else 14.0
 		pp["id"] = -1
 		if quick_size != "":
 			pp["size"] = quick_size
+		# a base defence and Mars keep their own place
+		if not String(pp.get("type", "")) in ["base", "mars"]:
+			if quick_group != "":
+				pp["group"] = quick_group
+			if quick_map > 0:
+				pp["biome"] = QUICK_MAPS[quick_map][1]
+				pp["terrain"] = QUICK_MAPS[quick_map][2]
 	return pp
 
 func _show_quick() -> void:
 	_panel("RYCHLÁ MISE")
-	for i in QUICK.size():
-		var k := i
-		_button(QUICK[i][0], func():
-			quick_pick = k
-			Campaign.active = false
-			Net.play_solo()
-			Net.start_mission(quick_params(k)))
+	_label("Zkouška nanečisto: vezmi si, co chceš. Žoldák je jen na jedno použití - žold, zkušenosti, zranění ani smrt se do kampaně nepočítají.", FRAME, 8).custom_minimum_size = Vector2(300, 0)
+	var names := []
+	for q in QUICK:
+		names.append(q[0])
+	_cycle(_box, "Scénář", names, quick_pick, func(i): quick_pick = i)
+	var gk := ["", "sedaci", "jestetani", "levite", "bijci", "myslodejove"]
+	var gn := ["podle scénáře", "Šeďáci", "Ještěřani", "Levité", "Bijci", "Myslodějové"]
+	_cycle(_box, "Nepřítel", gn, gk.find(quick_group), func(i): quick_group = gk[i])
+	var mn := []
+	for m in QUICK_MAPS:
+		mn.append(m[0])
+	_cycle(_box, "Mapa", mn, quick_map, func(i): quick_map = i)
+	var sizes := ["", "small", "medium", "large", "huge", "colossal"]
+	var sn := ["podle mise"]
+	for k in sizes.slice(1):
+		sn.append(MapGen.SIZE_NAMES[k])
+	_cycle(_box, "Velikost", sn, sizes.find(quick_size), func(i): quick_size = sizes[i])
+	_cycle(_box, "Čas", ["noc", "den"], 0 if quick_night else 1, func(i): quick_night = i == 0)
+	var dk := ["easy", "normal", "veteran"]
+	_cycle(_box, "Obtížnost", [Game.DIFF_NAMES["easy"], Game.DIFF_NAMES["normal"], "HARDCORE"], maxi(0, dk.find(Game.difficulty)), func(i): Game.difficulty = dk[i]; Game.save_settings())
+	var mk := Game.SKIRMISH_KINDS.keys()
+	_cycle(_box, "Žoldák", Game.SKIRMISH_KINDS.values(), maxi(0, mk.find(quick_merc)), func(i): quick_merc = mk[i])
+	_button("Výstroj (celý arzenál)", func(): _back_target = "quick"; _show_loadout())
+	_button("HRÁT SÁM", func():
+		Campaign.active = false
+		Game.begin_skirmish(quick_merc)
+		Net.play_solo()
+		Net.start_mission(quick_params(quick_pick)))
+	_button("Hostovat pro kamarády (2-4 hráči)", func():
+		Campaign.active = false
+		Game.begin_skirmish(quick_merc)
+		_host())
+	_button("Připojit se ke hře", _show_join)
 	_button("Zpět", _show_main)
 
 func _show_main(msg := "") -> void:
+	Game.end_skirmish()
 	_panel("OPERACE X - Enemy Beyond")
 	_label("Pocta UFO: Enemy Unknown  -  %s" % Game.VERSION, FRAME, 9).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# started straight from the zip (Windows unpacks it into a temporary folder):
@@ -202,41 +250,75 @@ func _show_main(msg := "") -> void:
 	_upd_label.custom_minimum_size = Vector2(300, 0)
 	_upd_btn = _button("Restartovat a hrát novou verzi", func(): Game.restart_game())
 	_upd_refresh()
-	if not Game.merc.get("created", true):
-		_label("Nemáš vlastního žoldáka - vytvoř si ho v \"Můj žoldák\".", Color(1.0, 0.75, 0.4), 9).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	if Campaign.has_save():
-		_button("KAMPAŇ - pokračovat", func(): Campaign.load_campaign(); get_tree().change_scene_to_file("res://scenes/Geoscape.tscn"))
-	_button("KAMPAŇ - nová", func():
-		if Campaign.has_save() and not _confirm_new:
-			_confirm_new = true
-			_show_main("Opravdu? Stará kampaň bude přepsána. Klikni znovu.")
-			return
-		Campaign.new_campaign()
-		get_tree().change_scene_to_file("res://scenes/Geoscape.tscn"))
-	_button("Rychlá mise (bez kampaně)", _show_quick)
-	_button("Hostovat hru (2-4 hráči)", _host)
+	_button("KAMPAŇ", _show_campaign)
+	_button("Rychlá mise", _show_quick)
 	_button("Novinky", _show_news)
-	_button("Připojit ke hře", _show_join)
-	_button("Můj žoldák", _show_merc)
-	_button("Výstroj na misi", _show_loadout)
-	_button("Nastavení ovládání", func():
-		_panel("NASTAVENÍ")
-		preload("res://scripts/hud.gd").settings_ui(_box)
-		_label("Totéž najdeš ve hře v pauze (Esc).", FRAME, 8)
-		_button("Zpět", _show_main))
-	_button("Dílna (zbraně v rukou a pózy)", func(): get_tree().change_scene_to_file("res://scenes/Workshop.tscn"))
-	_button("Modelář (kostky modelů)", func(): get_tree().change_scene_to_file("res://scenes/Modeler.tscn"))
-	_button("Obtížnost: " + Game.DIFF_NAMES.get(Game.difficulty, "normální"), func():
-		Game.next_difficulty()
-		Game.save_settings()
-		_show_main())
-	if Game.difficulty == "veteran":
-		_label("Veterán: plazma zabíjí na 1-2 zásahy, panika, palba do vlastních, zranění se hojí déle (herní dny), jen jeden náhradní zásobník.", Color(1, 0.55, 0.4), 8)
-	elif Game.difficulty == "easy":
-		_label("Snadná: slabší, pomalejší a méně přesní vetřelci, o jednoho méně, zranění bolí méně.", Color(0.6, 1.0, 0.6), 8)
+	_button("Nastavení", _show_settings)
+	if OS.has_feature("editor"):
+		_button("Editor (jen v Godotu)", _show_editor)
 	_button("Ukončit", func(): get_tree().quit())
 	if msg != "":
 		_label(msg, Color(1, 0.5, 0.4), 10)
+
+## The campaign: carry on, found a new one (its difficulty is fixed until it ends), or join a friend's.
+func _show_campaign(msg := "") -> void:
+	_panel("KAMPAŇ")
+	var save := _peek_campaign()
+	if not save.is_empty():
+		var diff := String(save.get("difficulty", Game.difficulty))
+		_label("Uložená kampaň: den %d, obtížnost %s, rozpočet %d kr." % [int(float(save.get("day", 0.0))), Game.DIFF_NAMES.get(diff, diff), int(save.get("credits", 0))], FRAME, 9)
+		_button("Pokračovat v kampani", func(): Campaign.load_campaign(); get_tree().change_scene_to_file("res://scenes/Geoscape.tscn"))
+	_button("Založit novou kampaň", _show_new_campaign)
+	_button("Připojit se ke hře (kampaň kamaráda)", _show_join)
+	_button("Moji žoldáci", func(): _back_target = "campaign"; _show_merc())
+	if not Game.merc.get("created", true):
+		_label("Nemáš vlastního žoldáka - vytvoř si ho v \"Moji žoldáci\".", Color(1.0, 0.75, 0.4), 9)
+	_label("Žoldáci rostou jen v kampani: mise, žold, zranění i smrt. Co-op kampaň si pamatuje hostitel - hraje se s jeho záznamem o každém žoldákovi.", FRAME, 8).custom_minimum_size = Vector2(300, 0)
+	_button("Zpět", _show_main)
+	if msg != "":
+		_label(msg, Color(1, 0.5, 0.4), 10)
+
+func _peek_campaign() -> Dictionary:
+	var cf := ConfigFile.new()
+	if cf.load("user://campaign.cfg") != OK:
+		return {}
+	return cf.get_value("campaign", "data", {})
+
+var _new_diff := "normal"
+func _show_new_campaign() -> void:
+	_panel("NOVÁ KAMPAŇ")
+	_label("Obtížnost platí po celou kampaň a změnit ji nejde.", ACCENT, 9)
+	var info := {
+		"easy": "Snadná: slabší a pomalejší vetřelci, ceny a doby výzkumu i staveb základní, 1500 kr na začátek. Oko ukazuje, jestli tě vidí.",
+		"normal": "Normální: ceny o třetinu vyšší, výzkum a stavby o čtvrtinu delší, 1200 kr na začátek.",
+		"veteran": "HARDCORE: plazma zabíjí na 1-2 zásahy, panika, palba do vlastních, zranění se hojí dlouho. Ceny +60 %, výzkum a stavby o polovinu delší, 1000 kr na začátek.",
+	}
+	for d in ["easy", "normal", "veteran"]:
+		var dd: String = d
+		_button(("> " if _new_diff == dd else "") + Game.DIFF_NAMES[dd], func(): _new_diff = dd; _show_new_campaign())
+	_label(info[_new_diff], Color(1, 0.55, 0.4) if _new_diff == "veteran" else TEXT, 8).custom_minimum_size = Vector2(300, 0)
+	if Campaign.has_save():
+		_label("Pozor: stará kampaň bude přepsána.", Color(1, 0.5, 0.4), 9)
+	_button("ZAČÍT KAMPAŇ", func():
+		Campaign.new_campaign(_new_diff)
+		get_tree().change_scene_to_file("res://scenes/Geoscape.tscn"))
+	_button("Zpět", _show_campaign)
+
+func _show_settings() -> void:
+	_panel("NASTAVENÍ")
+	_label("Ovládání, zvuk, grafika, hlas. Totéž najdeš ve hře v pauze (Esc).", FRAME, 8)
+	preload("res://scripts/hud.gd").settings_ui(_box)
+	_button("Zpět", _back)
+
+## One place for the tools (only when running from the Godot editor, never in a released build).
+func _show_editor() -> void:
+	_panel("EDITOR")
+	_label("Nástroje pro tvorbu hry. Ve vydané verzi nejsou.", FRAME, 8)
+	_button("Dílna - zbraně v rukou a pózy", func(): get_tree().change_scene_to_file("res://scenes/Workshop.tscn"))
+	_button("Modelář - kostky modelů", func(): get_tree().change_scene_to_file("res://scenes/Modeler.tscn"))
+	var md := _button("Mapové díly (připravuje se)", func(): pass)
+	md.disabled = true
+	_button("Zpět", _show_main)
 
 func _show_merc() -> void:
 	if not Game.merc.get("created", true) and Game.mercs.size() <= 1:
@@ -319,7 +401,7 @@ func _show_mods() -> void:
 		for m in Game.MOD_FITS[wid]:
 			var mid: String = m
 			var has := Game.has_mod(wid, mid)
-			var b := _small_btn(grid, ("[máš] " if has else "") + "%s%s" % [Game.MODS[mid]["name"], "" if has else " - %d kr" % int(Game.MODS[mid]["price"])], func():
+			var b := _small_btn(grid, ("[máš] " if has else "") + "%s%s" % [Game.MODS[mid]["name"], "" if has else " - %d kr" % Game.mod_price(mid)], func():
 				if Game.buy_mod(wid, mid):
 					_show_mods()
 				else:
@@ -877,7 +959,7 @@ func _show_lobby() -> void:
 	_status = _label("")
 	if multiplayer.is_server():
 		_label("Kamarádi se připojí na tvou IP adresu, port %d (TCP/UDP). Po internetu přes Radmin VPN / ZeroTier." % Net.PORT, FRAME, 9)
-		_label("Obtížnost mise: " + Game.DIFF_NAMES.get(Game.difficulty, "normální") + " (mění se v hlavním menu)", ACCENT, 9)
+		_label("Obtížnost: " + Game.DIFF_NAMES.get(Campaign.difficulty() if Campaign.active else Game.difficulty, "normální") + (" (daná kampaní)" if Campaign.active else " (mění se v Rychlé misi)"), ACCENT, 9)
 		_button("ZAČÍT MISI: " + QUICK[quick_pick][0], func(): Net.start_mission(quick_params(quick_pick)))
 		_button("Změnit typ mise", func(): quick_pick = (quick_pick + 1) % QUICK.size(); _show_lobby())
 		_button("Palba do vlastních: " + ("ZAPNUTÁ" if Game.friendly_fire else "vypnutá"), func(): Game.friendly_fire = not Game.friendly_fire; Game.save_settings(); _show_lobby())
@@ -908,7 +990,7 @@ func _refresh_lobby() -> void:
 	for id in Net.roster:
 		var money := ""
 		if Net.wallets.has(id):
-			money = "  -  %d kr%s" % [int(Net.wallets[id]), " (pokladna základny)" if id == 1 and (Campaign.active or Campaign.viewer) else ""]
+			money = "  -  %d kr" % int(Net.wallets[id])
 		var lv: Node = Net.get_node_or_null("LobbyVoice")
 		var talk := "   <<< MLUVÍ" if lv and lv.speaking(id) else ""
 		var sick_m: Dictionary = Game.merc if id == Net.my_id() else Net.roster[id].get("merc", {})
@@ -994,13 +1076,9 @@ func _autotest() -> void:
 		"ui":
 			# every menu screen, checked for text sticking out of the screen
 			var shots := [["main", func(): _show_main("Tohle je dlouhá zpráva hlavního menu, která by se měla zalomit a nevylézt z okna ven.")],
-				["quick", _show_quick], ["merc", func(): Game.merc["created"] = true; _show_merc()],
+				["quick", _show_quick], ["campaign", func(): _show_campaign()], ["newcamp", _show_new_campaign], ["editor", _show_editor], ["merc", func(): Game.merc["created"] = true; _show_merc()],
 				["create", func(): _show_create(true)], ["look", func(): _show_create(false)],
-				["settings", func():
-					_panel("NASTAVENÍ")
-					preload("res://scripts/hud.gd").settings_ui(_box)
-					_label("Totéž najdeš ve hře v pauze (Esc).", FRAME, 8)
-					_button("Zpět", _show_main)],
+				["settings", _show_settings],
 				["loadout", _show_loadout], ["join", _show_join], ["news", _show_news], ["mods", _show_mods], ["money", _show_money], ["lobby", _show_lobby],
 				["update", func(): Game.upd_state = "full"; Game.upd_version = "0.14"; _show_main()],
 				["ready", func(): Game.upd_state = "ready"; _show_main()]]

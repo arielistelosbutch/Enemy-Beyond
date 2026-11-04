@@ -201,8 +201,8 @@ func refresh() -> void:
 	var r: Dictionary = Campaign.data["research"]
 	var cur := String(r["current"])
 	head_lbl.text = "Kredity: %d   Moskovium: %d g   Laboratoře: %d   Probíhá: %s" % [int(Campaign.data["credits"]), Campaign.moskovium(), Campaign.count("laborator"),
-		(Campaign.RESEARCH[cur]["name"] + " %d %%" % int(float(r["progress"]) / float(Campaign.RESEARCH[cur]["days"]) * 100)) if cur != "" else "nic - vyber projekt"]
-	bar.value = float(r["progress"]) / float(Campaign.RESEARCH[cur]["days"]) * 100.0 if cur != "" else 0.0
+		(Campaign.RESEARCH[cur]["name"] + " %d %%" % int(float(r["progress"]) / Campaign.research_days(cur) * 100)) if cur != "" else "nic - vyber projekt"]
+	bar.value = float(r["progress"]) / Campaign.research_days(cur) * 100.0 if cur != "" else 0.0
 	for id in nodes:
 		var b: Button = nodes[id]
 		var st := _state(id)
@@ -242,7 +242,7 @@ func _select(id: String) -> void:
 	UiSkin.title(tl, 10)
 	_lbl(detail, {"done": "HOTOVO", "current": "PROBÍHÁ", "open": "LZE ZAHÁJIT", "locked": "ZAMČENO"}[st], _col(st), 8)
 	_lbl(detail, String(rr["desc"]), TEXT, 8)
-	_lbl(detail, "Cena: %d kr%s   Doba: %d dní" % [int(rr["cost"]), (" + %d g Moskovia" % int(rr["mk"])) if rr.has("mk") else "", int(rr["days"])], FRAME, 8)
+	_lbl(detail, "Cena: %d kr%s   Doba: %d dní" % [Campaign.research_cost(id), (" + %d g Moskovia" % int(rr["mk"])) if rr.has("mk") else "", ceili(Campaign.research_days(id))], FRAME, 8)
 	var nl := Campaign.needs_list(id)
 	if not nl.is_empty():
 		_lbl(detail, "Vyžaduje:", FRAME, 8)

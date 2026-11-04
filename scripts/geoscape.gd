@@ -425,10 +425,10 @@ func _update_text() -> void:
 	var rs := "nic"
 	if r["current"] != "":
 		var rr: Dictionary = Campaign.RESEARCH[r["current"]]
-		rs = "%s %d %%" % [rr["name"], int(float(r["progress"]) / float(rr["days"]) * 100)]
+		rs = "%s %d %%" % [rr["name"], int(float(r["progress"]) / Campaign.research_days(r["current"]) * 100)]
 	if not Campaign.kondor_ready():
 		rs += "   Kondor za %d h" % Campaign.kondor_hours()
-	var co := ""
+	var co := "" if Campaign.viewer else "\nTvoje peníze: %d kr (žold, jen pro tebe)" % Net.my_money()
 	if Net.is_online():
 		co = "\nCo-op: %d hráčů, tvoje peníze %d kr" % [Net.roster.size(), Net.my_money()] if Campaign.viewer else "\nCo-op: %d hráčů připojeno" % Net.roster.size()
 	var air := []
@@ -436,7 +436,7 @@ func _update_text() -> void:
 		air.append("%s %s" % [("Sokol" if int(c.get("n", 1)) == 1 else "%d× Sokol" % int(c.get("n", 1))) if c["kind"] == "jet" else Campaign.CRAFT_NAMES[c["kind"]].capitalize(), "letí k cíli" if c["state"] == "out" else ("u cíle" if c["state"] in ["arrived", "ambush"] else "se vrací")])
 	if not air.is_empty():
 		co += "\nVe vzduchu: " + ", ".join(air)
-	status_lbl.text = "%s\nRozpočet: %d kr   Mk-115: %d g   Důvěra: %d %%\nVýzkum: %s   Rychlost: %s%s" % [Campaign.date_text(), int(d["credits"]), Campaign.moskovium(), int(d["trust"]), rs, SPEED_NAMES[speed], co]
+	status_lbl.text = "%s\nRozpočet základny: %d kr   Mk-115: %d g   Důvěra: %d %%\nVýzkum: %s   Rychlost: %s%s" % [Campaign.date_text(), int(d["credits"]), Campaign.moskovium(), int(d["trust"]), rs, SPEED_NAMES[speed], co]
 	var fl := _selected_flight()
 	if not fl.is_empty():
 		var left2: float = (float(fl["until"]) - float(d["day"])) * 24.0
@@ -750,40 +750,53 @@ func _show_research() -> void:
 	rs.on_close = func(): _update_text()
 
 func _show_armory() -> void:
-	var box := _overlay("ZBROJNICE - NÁKUP", 470)
-	var who := ("Platíš ze svých peněz: %d kr." % Net.my_money()) if Campaign.viewer else ("Kredity: %d." % int(Campaign.data["credits"]))
-	_lbl(box, "Koupené kusy trvale zvětší výbavu, kterou si každý žoldák může vzít na misi. %s Moskovium 115: %d g" % [who, Campaign.moskovium()], FRAME, 8)
+	var box := _overlay("ZBROJNICE - NÁKUP", 500)
+	var base_pay := "ze svých peněz" if Campaign.viewer else "z rozpočtu základny (%d kr)" % int(Campaign.data["credits"])
+	_lbl(box, "DO SKLADU = pro celý tým natrvalo, platí se %s. SOBĚ = jen do tvé skříňky, ze tvých peněz (%d kr). Mimozemskou techniku (Moskovium %d g) kupuje jen základna." % [base_pay, Net.my_money(), Campaign.moskovium()], FRAME, 8).custom_minimum_size = Vector2(480, 0)
 	var grid := GridContainer.new()
 	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 8)
 	_scroll(box, 250).add_child(grid)
 	var stash := Campaign.stash()
+	var locker: Dictionary = Game.merc.get("locker", {})
 	for id in Campaign.SHOP:
 		if not Game.ITEMS.has(id):
 			continue
 		var key: String = id
 		var ok := Campaign.unlocked(id)
 		var mk := int(Campaign.SHOP_MK.get(id, 0))
-		var cost := ("%d kr" % Campaign.price(id) + (" + %d g Mk" % mk if mk > 0 else "")) if ok else "zamčeno"
-		var b := _btn(grid, "%s (%d) %s" % [Game.ITEMS[id]["short"], int(stash.get(id, 0)), cost], func():
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 2)
+		grid.add_child(row)
+		var cost := ("%d kr" % Campaign.price(id) + (" + %d g" % mk if mk > 0 else "")) if ok else "zamčeno"
+		var name_b := _btn(row, "%s  %s\nsklad %d, tvoje %d" % [Game.ITEMS[id]["short"], cost, int(stash.get(id, 0)), int(locker.get(id, 0))], func(): pass, 8)
+		name_b.custom_minimum_size = Vector2(150, 24)
+		name_b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		UiSkin.item_icon(name_b, key, 30)
+		var bb := _btn(row, "Sklad", func():
 			if Campaign.viewer:
-				if Net.my_money() < Campaign.price(key) or Campaign.moskovium() < int(Campaign.SHOP_MK.get(key, 0)):
+				if Net.my_money() < Campaign.price(key) or Campaign.moskovium() < mk:
 					_alert("Nelze koupit\nNemáš dost peněz (nebo základna nemá Moskovium 115).")
 					return
 				Net.buy_for_base(key)
 				await get_tree().create_timer(0.5).timeout
 				_show_armory()
 			elif Campaign.buy(key): Game.play_ui(self, "money", -10); _show_armory()
-			else: _alert("Nelze koupit\nNedostatek kreditů nebo Moskovia 115."), 8)
-		b.custom_minimum_size = Vector2(225, 16)
-		UiSkin.item_icon(b, key, 30)
-		b.disabled = not ok
+			else: _alert("Nelze koupit\nV rozpočtu základny není dost kreditů nebo Moskovia 115."), 8)
+		bb.custom_minimum_size = Vector2(38, 24)
+		bb.disabled = not ok
+		var mb := _btn(row, "Sobě", func():
+			if Game.buy_for_me(key): Game.play_ui(self, "money", -10); _show_armory()
+			else: _alert("Nelze koupit\nNemáš dost vlastních peněz."), 8)
+		mb.custom_minimum_size = Vector2(38, 24)
+		mb.disabled = not ok or mk > 0
 	_btn(box, "Zavřít", _close_popup)
 
 func _show_base() -> void:
 	var box := _overlay("ZÁKLADNA", 470)
 	_lbl(box, "Stavět jde jen vedle hotového zařízení (vznikne mezi nimi chodba). Kredity: %d. Stíhačky Sokol: %d (připraveno %d)." % [int(Campaign.data["credits"]), Campaign.jets(), Campaign.jets_ready()], FRAME, 8)
 	if not Campaign.viewer and Campaign.jets() < Campaign.MAX_JETS:
-		_btn(box, "Koupit další stíhačku Sokol - %d kr (v co-op poletí víc hráčů)" % Campaign.JET_PRICE, func():
+		_btn(box, "Koupit další stíhačku Sokol - %d kr (v co-op poletí víc hráčů)" % Campaign.jet_price(), func():
 			if Campaign.buy_jet(): _show_base()
 			else: _alert("Nelze koupit\nNedostatek kreditů."), 8)
 	var grid := GridContainer.new()
@@ -828,7 +841,7 @@ func _build_menu(idx: int) -> void:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 6)
 		list.add_child(row)
-		var b := _btn(row, "%s\n%d kr, %d dní" % [fi["name"], fi["cost"], int(fi["days"])], func():
+		var b := _btn(row, "%s\n%d kr, %d dní" % [fi["name"], Campaign.facility_cost(f), int(Campaign.facility_days(f))], func():
 			if Campaign.build(idx, key): _show_base()
 			else: _alert("Nelze stavět\nNedostatek kreditů."), 8)
 		b.custom_minimum_size = Vector2(118, 30)

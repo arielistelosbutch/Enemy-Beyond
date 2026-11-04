@@ -1811,17 +1811,23 @@ func _end(success: bool, why: String) -> void:
 	var me := local_player()
 	var fate := "zdráv"
 	var xp_text := ""
-	if me:
+	var q := quality(success)
+	var campaign := Net.mission_params.has("cid")
+	if me and not campaign:
+		# a quick mission: a try-out, nothing is kept (pay, experience, wounds, death)
+		fate = "rychlá mise - nic se nepočítá, tvůj žoldák z kampaně zůstal doma beze změny"
+	elif me:
 		Game.merc["missions"] = int(Game.merc.get("missions", 0)) + 1
 		Game.merc["kills"] = int(Game.merc.get("kills", 0)) + me.kills
 		Game.merc["captures"] = int(Game.merc.get("captures", 0)) + me.captures
 		# personal pay: the share of the reward (the base keeps the rest), what he did, what he found
-		var pay: int = (100 if success else 30) + me.kills * 30 + me.captures * 80 + me.revives * 25 + me.salvage
-		if success and Campaign.active or (success and Net.mission_params.has("reward")):
+		var pay: int = (100 if success else 30) + me.kills * 30 + me.captures * 80 + me.revives * 25
+		if success:
 			pay += int(int(Net.mission_params.get("reward", 0)) * MERC_SHARE / maxi(1, players().size()))
+		pay = int(pay * q) + me.salvage
 		var purse := int(Game.merc.get("money", 0)) + pay
 		if pay > 0:
-			xp_text += "\nŽold: +%d kr (máš %d kr)%s" % [pay, purse, ("  - z toho nálezy %d kr" % me.salvage) if me.salvage > 0 else ""]
+			xp_text += "\nTvůj žold: +%d kr (máš %d kr)%s" % [pay, purse, ("  - z toho nálezy %d kr" % me.salvage) if me.salvage > 0 else ""]
 		var aboard: bool = me.global_position.distance_to(map["evac"]) < 3.5
 		if me.dead or (me.downed and not aboard):
 			# the family is paid off: less when the body came home with the team
@@ -1850,6 +1856,11 @@ func _end(success: bool, why: String) -> void:
 						fate = "zraněn - na marodce %d %s herního času (mezitím můžeš hrát za jiného žoldáka)" % [int(days), "den" if days < 2 else ("dny" if days < 5 else "dní")]
 		Game.merc["money"] = purse
 		Game.save_merc()
+		# the campaign record lives with the host
+		if multiplayer.is_server() and Campaign.active:
+			Campaign.keep_merc(Game.merc)
+		else:
+			Net.update_merc()
 	var lines := []
 	for p in players():
 		lines.append("%s - zabití %d, zajato %d - %s" % [p.display_name, p.kills, p.captures, "mrtev" if p.dead else ("v bezvědomí" if p.downed else ("zraněn" if p.wounded else "v pořádku"))])
@@ -1872,10 +1883,35 @@ func _end(success: bool, why: String) -> void:
 			tc += p.captures
 			if p.dead or (p.downed and p.global_position.distance_to(map["evac"]) >= 3.5):
 				lost += 1
-		camp = Campaign.mission_done(int(Net.mission_params.get("id", -1)), success, tk, tc, lost, civ_saved, civ_dead, crew_names, _loot(success), lost >= players().size(), kits)
+		camp = Campaign.mission_done(int(Net.mission_params.get("id", -1)), success, tk, tc, lost, civ_saved, civ_dead, crew_names, _loot(success), lost >= players().size(), kits, q)
 		Net.last_result = camp
+	if campaign:
+		lines.append("Hodnocení mise: %s (odměny ×%.2f)" % [quality_name(q), q])
 	hud.show_result(("MISE SPLNĚNA" if success else "MISE NEÚSPĚŠNÁ"), why + "\n\n" + "\n".join(lines) + "\n\nTvůj žoldák: " + fate + xp_text + ("\n\n" + camp if camp != "" else ""))
 	get_tree().create_timer(8.0 if Game.autotest() != "campaign" else 2.0).timeout.connect(func(): _leave(""))
+
+## How well it went (the same on every machine: it is counted from what everybody sees):
+## success, civilians saved or lost, mercenaries lost, aliens taken alive. Scales all rewards.
+func quality(success: bool) -> float:
+	var q := 1.0 if success else 0.35
+	var lost := 0
+	var caps := 0
+	for p in players():
+		caps += p.captures
+		if p.dead or (p.downed and p.global_position.distance_to(map["evac"]) >= 3.5):
+			lost += 1
+	q -= 0.25 * float(lost) / maxf(1.0, float(players().size()))
+	for c in civilians():
+		if c.saved: q += 0.06
+		elif c.dead: q -= 0.05
+	q += 0.08 * mini(caps, 3)
+	return clampf(q, 0.25, 1.5)
+
+static func quality_name(q: float) -> String:
+	if q >= 1.25: return "VÝBORNĚ"
+	if q >= 0.95: return "dobře"
+	if q >= 0.6: return "ucházející"
+	return "špatně"
 
 func _leave(why: String) -> void:
 	if Game.autotest() != "" and Game.autotest() != "campaign":

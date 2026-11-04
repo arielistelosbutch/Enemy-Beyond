@@ -17,6 +17,7 @@ var title_lbl: Label
 var text_lbl: Label
 var cat_box: HBoxContainer
 var sv: SubViewport
+var svc: SubViewportContainer
 var holder: Node3D
 var cam: Camera3D
 var plate: Control
@@ -108,12 +109,17 @@ func build() -> void:
 	plate = Plate.new()
 	plate.custom_minimum_size = Vector2(222, 296)
 	body.add_child(plate)
-	var svc := SubViewportContainer.new()
+	var vhold := Control.new()
+	vhold.position = Vector2(10, 10)
+	vhold.size = Vector2(202, 276)
+	vhold.clip_contents = true
+	vhold.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	plate.add_child(vhold)
+	svc = SubViewportContainer.new()
 	svc.stretch = true
-	svc.position = Vector2(10, 10)
-	svc.size = Vector2(202, 276)
+	svc.size = vhold.size
 	svc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	plate.add_child(svc)
+	vhold.add_child(svc)
 	sv = SubViewport.new()
 	sv.transparent_bg = true
 	sv.own_world_3d = true
@@ -377,6 +383,7 @@ func _aabb(n: Node) -> AABB:
 	return box
 
 func _process(delta: float) -> void:
+	Game.sharp_view(svc)
 	if holder == null:
 		return
 	if _view == "table":

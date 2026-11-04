@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.40 prototyp"
-const VERSION_NUM := "0.40"
+const VERSION := "0.41 prototyp"
+const VERSION_NUM := "0.41"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -105,8 +105,26 @@ func spend(amount: int) -> bool:
 	Net.update_merc()
 	return true
 
+func mod_price(mod: String) -> int:
+	var k: float = Campaign.econ() if (Campaign.active or Campaign.viewer) and not skirmish else 1.0
+	return int(round(float(MODS[mod]["price"]) * k / 5.0) * 5)
+
+## Buy an item for yourself (own money): it goes into your own locker - only you take it on missions.
+func buy_for_me(item: String) -> bool:
+	var p := Campaign.price(item)
+	if not Campaign.unlocked(item) or Campaign.SHOP_MK.has(item):
+		return false      # alien tech (Moskovium) belongs to the base, not to one man
+	if not spend(p):
+		return false
+	var lk: Dictionary = merc.get("locker", {})
+	lk[item] = int(lk.get(item, 0)) + 1
+	merc["locker"] = lk
+	save_merc()
+	Net.update_merc()
+	return true
+
 func buy_mod(weapon: String, mod: String) -> bool:
-	if has_mod(weapon, mod) or not mod in MOD_FITS.get(weapon, []) or not spend(int(MODS[mod]["price"])):
+	if has_mod(weapon, mod) or not mod in MOD_FITS.get(weapon, []) or not spend(mod_price(mod)):
 		return false
 	var mods: Dictionary = merc.get("mods", {})
 	var l: Array = mods.get(weapon, [])
@@ -455,7 +473,51 @@ func load_merc() -> void:
 			m.erase("injury")
 	save_merc()
 
+# ---- quick missions (skirmish): a mercenary for one use only ---------------------------------
+## In a quick mission nothing counts: the merc is a copy (or a made-up one), his pay, experience,
+## wounds and death are thrown away afterwards. Only the campaign shapes a mercenary.
+var skirmish := false
+var _real_merc := {}
+const SKIRMISH_KINDS := {"copy": "Kopie mého žoldáka", "rookie": "Nováček", "veteran": "Ostřílený veterán", "elite": "Elitní žoldák"}
+func begin_skirmish(kind := "copy") -> void:
+	if skirmish:
+		end_skirmish()
+	_real_merc = merc
+	var m: Dictionary = merc.duplicate(true)
+	m.erase("injury"); m.erase("heal_days"); m.erase("sick")
+	var bonus: int = int({"copy": 0, "rookie": -1, "veteran": 2, "elite": 4}.get(kind, 0))
+	if kind != "copy":
+		var lv: Dictionary = (m.get("levels", {}) as Dictionary).duplicate()
+		for st in STAT_ORDER:
+			var l := clampi((5 if kind != "rookie" else 3) + bonus, 0, LEVEL_MAX)
+			lv[st] = l
+			m[st] = stat_value(st, l)
+		m["levels"] = lv
+		m["xp"] = {"rookie": 0, "veteran": 1500, "elite": 4000}.get(kind, 0)
+	skirmish = true
+	merc = m
+
+func end_skirmish() -> void:
+	if not skirmish:
+		return
+	skirmish = false
+	if not _real_merc.is_empty():
+		merc = _real_merc
+	_real_merc = {}
+
+## Quick missions: the whole arsenal, as much as you like (it is only a try-out).
+func free_stash() -> Dictionary:
+	var out := {}
+	for k in STASH:
+		out[k] = 6
+	for k in Campaign.SHOP:
+		if ITEMS.has(k):
+			out[k] = 6
+	return out
+
 func save_merc() -> void:
+	if skirmish:
+		return      # a quick mission's merc is never saved
 	if active < mercs.size():
 		mercs[active] = merc
 	var cf := ConfigFile.new()
@@ -643,9 +705,18 @@ var loadout := {}    # slot -> item id
 
 func stash_for(vet: bool) -> Dictionary:
 	if not Net.mission_params.is_empty() and Net.mission_params.has("stash"):
-		return Net.mission_params["stash"]
+		var ms: Dictionary = (Net.mission_params["stash"] as Dictionary).duplicate()
+		for k in merc.get("locker", {}):
+			ms[k] = int(ms.get(k, 0)) + int(merc["locker"][k])
+		return ms
 	if Campaign.active or Campaign.viewer:
-		return Campaign.stash()      # what the (host's) base has: nobody can take what it does not
+		# what the (host's) base has, plus what this merc bought for himself
+		var st: Dictionary = Campaign.stash().duplicate()
+		for k in merc.get("locker", {}):
+			st[k] = int(st.get(k, 0)) + int(merc["locker"][k])
+		return st
+	if skirmish or not Net.mission_params.has("cid"):
+		return free_stash()
 	return STASH_VETERAN if vet else STASH
 
 ## Research done in the running campaign mission (host's campaign).
@@ -1258,6 +1329,21 @@ func tweak_path() -> String:
 
 ## Block-modeller changes per model (res://modely/<model>.json bundled, then modely/ next to the game).
 var model_mods := {}
+
+## A 3D preview in a SubViewportContainer: the game draws its menus at 640x360 and stretches them,
+## so a stretched preview would be rendered at that low size and look blurry. Render it at the
+## window's real pixel size instead and draw it scaled down into its holder.
+func sharp_view(svc: SubViewportContainer) -> void:
+	if svc == null or not is_instance_valid(svc):
+		return
+	var holder := svc.get_parent() as Control
+	if holder == null:
+		return
+	var k: float = maxf(1.0, svc.get_viewport().get_final_transform().get_scale().x)
+	var want: Vector2 = (holder.size * k).floor()
+	if svc.size != want:
+		svc.scale = Vector2.ONE / k
+		svc.size = want
 
 func models_dir() -> String:
 	if OS.has_feature("editor"):

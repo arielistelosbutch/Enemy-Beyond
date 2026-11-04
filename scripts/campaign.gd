@@ -215,9 +215,40 @@ func is_land(lat: float, lon: float) -> bool:
 func has_save() -> bool:
 	return FileAccess.file_exists("user://campaign.cfg")
 
-func new_campaign() -> void:
+## The campaign's difficulty: chosen when it is founded, fixed until it ends.
+func difficulty() -> String:
+	return String(data.get("difficulty", Game.difficulty))
+
+## How dear things are: prices of research, buildings, weapons, the Sokol (by difficulty).
+func econ() -> float:
+	return float({"easy": 1.0, "normal": 1.3, "veteran": 1.6}.get(difficulty(), 1.3))
+
+## How long things take: research and construction (by difficulty).
+func time_k() -> float:
+	return float({"easy": 1.0, "normal": 1.25, "veteran": 1.5}.get(difficulty(), 1.25))
+
+func research_cost(id: String) -> int:
+	return int(round(float(RESEARCH[id]["cost"]) * econ() / 10.0) * 10)
+
+func research_days(id: String) -> float:
+	return float(RESEARCH[id]["days"]) * time_k()
+
+func facility_cost(ft: String) -> int:
+	return int(round(float(FACILITIES[ft]["cost"]) * econ() / 10.0) * 10)
+
+func facility_days(ft: String) -> float:
+	return ceilf(float(FACILITIES[ft]["days"]) * time_k())
+
+func jet_price() -> int:
+	return int(round(JET_PRICE * econ() / 10.0) * 10)
+
+func new_campaign(diff := "") -> void:
+	if diff == "":
+		diff = Game.difficulty
+	Game.difficulty = diff
 	data = {
-		"day": 0.0, "credits": 1200, "trust": 60, "month": 0,
+		"difficulty": diff, "mercs": {},
+		"day": 0.0, "credits": {"easy": 1500, "normal": 1200, "veteran": 1000}.get(diff, 1200), "trust": 60, "month": 0,
 		"research": {"done": [], "current": "", "progress": 0.0}, "bodies_v34": true,
 		"armory": {}, "missions": [], "next_mission": 0.15, "next_id": 1,
 		"stats": {"kills": 0, "captures": 0, "missions": 0, "won": 0},
@@ -252,8 +283,31 @@ func load_campaign() -> bool:
 			for r in data.get("seen_races", []):
 				found["corpse_" + String(r)] = maxi(1, int(found.get("corpse_" + String(r), 0)))
 		data["found"] = found
+	if not data.is_empty():
+		if not data.has("difficulty"):
+			data["difficulty"] = Game.difficulty     # older saves: what was set when it was loaded
+		if not data.has("mercs"):
+			data["mercs"] = {}
+		Game.difficulty = String(data["difficulty"])
 	active = not data.is_empty()
 	return active
+
+## The host keeps every campaign mercenary (his own and the players'): name -> record.
+## Returns the record to play with: the kept one when it is further along, else the given one (stored).
+func keep_merc(m: Dictionary) -> Dictionary:
+	if data.is_empty():
+		return m
+	var key := str(m.get("name", ""))
+	if key == "":
+		return m
+	var mercs: Dictionary = data.get("mercs", {})
+	var old: Dictionary = mercs.get(key, {})
+	if not old.is_empty() and (int(old.get("missions", 0)) > int(m.get("missions", 0)) or (int(old.get("missions", 0)) == int(m.get("missions", 0)) and int(old.get("xp", 0)) > int(m.get("xp", 0)))):
+		return old
+	mercs[key] = m.duplicate(true)
+	data["mercs"] = mercs
+	save()
+	return m
 
 func save() -> void:
 	var cf := ConfigFile.new()
@@ -295,7 +349,7 @@ func advance(days: float) -> bool:
 	var r: Dictionary = data["research"]
 	if r["current"] != "":
 		r["progress"] = float(r["progress"]) + days * (1.0 + 0.5 * (count("laborator") - 1))
-		if float(r["progress"]) >= RESEARCH[r["current"]]["days"]:
+		if float(r["progress"]) >= research_days(r["current"]):
 			var done: String = r["current"]
 			r["done"].append(done)
 			r["current"] = ""
@@ -616,9 +670,9 @@ func jets_ready() -> int:
 	return maxi(0, jets() - busy - jets_out())
 
 func buy_jet() -> bool:
-	if jets() >= MAX_JETS or int(data["credits"]) < JET_PRICE:
+	if jets() >= MAX_JETS or int(data["credits"]) < jet_price():
 		return false
-	data["credits"] = int(data["credits"]) - JET_PRICE
+	data["credits"] = int(data["credits"]) - jet_price()
 	data["jets"] = jets() + 1
 	_log("Do hangáru přibyla stíhačka Sokol (%d celkem)." % jets())
 	save()
@@ -887,8 +941,8 @@ func _base_raided() -> String:
 	if not built.is_empty():
 		var i2: int = built[rng.randi() % built.size()]
 		var ft: String = data["base"][i2]["type"]
-		data["base"][i2]["days"] = float(FACILITIES[ft]["days"]) * 0.5
-		txt += ", %s poničena (oprava %.0f dní)" % [FACILITIES[ft]["name"], float(FACILITIES[ft]["days"]) * 0.5]
+		data["base"][i2]["days"] = facility_days(ft) * 0.5
+		txt += ", %s poničena (oprava %.0f dní)" % [FACILITIES[ft]["name"], facility_days(ft) * 0.5]
 	for k in data["armory"].keys():
 		data["armory"][k] = int(int(data["armory"][k]) / 2)
 	txt += ", polovina skladu zbraní je pryč."
@@ -911,7 +965,7 @@ func _kondor_lost(kits: Dictionary) -> String:
 	for peer in kits:
 		for it in kits[peer]:
 			carried[it] = int(carried.get(it, 0)) + 1
-	var base: Dictionary = Game.STASH_VETERAN if Game.difficulty == "veteran" else Game.STASH
+	var base: Dictionary = Game.STASH_VETERAN if difficulty() == "veteran" else Game.STASH
 	var crew := maxi(1, kits.size())
 	var lost := []
 	for it in carried:
@@ -928,7 +982,7 @@ func _kondor_lost(kits: Dictionary) -> String:
 	txt += " Náhradní Kondor dorazí do hangáru za 24 hodin."
 	return txt
 
-func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs: int, civ_saved := 0, civ_dead := 0, races := [], loot := {}, wiped := false, kits := {}) -> String:
+func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs: int, civ_saved := 0, civ_dead := 0, races := [], loot := {}, wiped := false, kits := {}, q := 1.0) -> String:
 	# what the team brought home: research needs it, Moskovium pays for alien tech
 	var found: Dictionary = data.get("found", {})
 	var got := []
@@ -977,7 +1031,8 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 			data["missions"].append(m)       # the Orel can fly again
 	var info: Dictionary = MTYPES[m["type"]]
 	# the mercenaries take their share of the reward (paid to them after the mission)
-	var money := (int(int(m["reward"]) * 0.6) if success else 0) + kills * 40 + captures * 160 + civ_saved * 60
+	# the base's part of the reward (the mercenaries' pay goes to them, see the mission's end)
+	var money := int(((int(int(m["reward"]) * 0.6) if success else 0) + kills * 40 + captures * 160 + civ_saved * 60) * q)
 	data["credits"] = int(data["credits"]) + money
 	var dt: int = (int(info["trust"]) if success else -6) + civ_saved * 2 - civ_dead
 	data["trust"] = clampi(int(data["trust"]) + dt, 0, 100)
@@ -988,7 +1043,7 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 	if success:
 		st["won"] = int(st["won"]) + 1
 	data["day"] = float(data["day"]) + 0.12   # flight home
-	var txt := "%s (%s): %s. Odměna %d kr, důvěra %+d." % [info["name"], m["place"], "úspěch" if success else "neúspěch", money, dt]
+	var txt := "%s (%s): %s. Do rozpočtu základny +%d kr, důvěra %+d." % [info["name"], m["place"], "úspěch" if success else "neúspěch", money, dt]
 	if lost_mercs > 0:
 		txt += " Padlí: %d." % lost_mercs
 	if civ_saved + civ_dead > 0:
@@ -1088,7 +1143,7 @@ func loot_name(k: String) -> String:
 func start_research(id: String) -> bool:
 	if not research_available(id) or data["research"]["current"] != "":
 		return false
-	var cost: int = RESEARCH[id]["cost"]
+	var cost: int = research_cost(id)
 	var mk := int(RESEARCH[id].get("mk", 0))
 	if int(data["credits"]) < cost or moskovium() < mk:
 		return false
@@ -1125,10 +1180,10 @@ func can_build_at(index: int) -> bool:
 func build(index: int, ftype: String) -> bool:
 	var cell: Dictionary = data["base"][index]
 	var f: Dictionary = FACILITIES[ftype]
-	if cell["type"] != "" or int(data["credits"]) < int(f["cost"]) or not can_build_at(index):
+	if cell["type"] != "" or int(data["credits"]) < facility_cost(ftype) or not can_build_at(index):
 		return false
-	data["credits"] = int(data["credits"]) - int(f["cost"])
-	data["base"][index] = {"type": ftype, "days": float(f["days"])}
+	data["credits"] = int(data["credits"]) - facility_cost(ftype)
+	data["base"][index] = {"type": ftype, "days": facility_days(ftype)}
 	_log("Stavba zahájena: " + f["name"])
 	save()
 	changed.emit()
@@ -1138,7 +1193,7 @@ func unlocked(item: String) -> bool:
 	return not LOCKED_BY.has(item) or researched(LOCKED_BY[item])
 
 func price(item: String) -> int:
-	var p: float = float(SHOP[item]) * pow(0.85, count("dilna"))
+	var p: float = float(SHOP[item]) * econ() * pow(0.85, count("dilna"))
 	if String(Game.ITEMS.get(item, {}).get("type", "")) in ["ammo", "grenade", "flare", "medkit"]:
 		p *= pow(0.9, count("sklad"))
 	return int(p)
@@ -1159,7 +1214,7 @@ func buy(item: String) -> bool:
 ## What one mercenary may take on a mission: the base allotment (minus what
 ## research has not unlocked yet) plus everything bought.
 func stash() -> Dictionary:
-	var vet := Game.difficulty == "veteran"
+	var vet := difficulty() == "veteran"
 	var base: Dictionary = (Game.STASH_VETERAN if vet else Game.STASH).duplicate()
 	var out := {}
 	for k in base:

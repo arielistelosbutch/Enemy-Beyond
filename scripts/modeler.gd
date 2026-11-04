@@ -54,9 +54,13 @@ func _ready() -> void:
 	add_child(frame)
 	svc = SubViewportContainer.new()
 	svc.stretch = true
-	svc.custom_minimum_size = Vector2(378, 342)
 	svc.gui_input.connect(_view_input)
-	frame.add_child(svc)
+	# a holder at the frame's size; the view inside renders at the screen's real resolution
+	var holder := Control.new()
+	holder.custom_minimum_size = Vector2(378, 342)
+	holder.clip_contents = true
+	frame.add_child(holder)
+	holder.add_child(svc)
 	view = SubViewport.new()
 	view.own_world_3d = true
 	view.msaa_3d = Viewport.MSAA_4X
@@ -493,6 +497,7 @@ func _save() -> void:
 
 # ---- the view ------------------------------------------------------------------------------------
 func _process(_d: float) -> void:
+	Game.sharp_view(svc)
 	var dir := Vector3(sin(yaw) * cos(pitch), -sin(pitch), cos(yaw) * cos(pitch))
 	cam.position = target + dir * dist
 	cam.look_at(target, Vector3.UP)

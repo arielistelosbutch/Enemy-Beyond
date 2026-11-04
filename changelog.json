@@ -1,4 +1,15 @@
 {
+ "0.41": [
+  "Nové hlavní menu: Kampaň, Rychlá mise, Novinky, Nastavení, Ukončit.",
+  "Kampaň: pokračovat, založit novou, nebo se připojit ke kamarádovi. Obtížnost se vybírá při založení a platí až do konce kampaně.",
+  "Rychlá mise je zkouška nanečisto: vybereš scénář, nepřítele, mapu, velikost, den nebo noc, obtížnost a žoldáka (kopie mého, nováček, veterán, elita) a k tomu celý arzenál. Nic z ní se nepočítá: žold, zkušenosti, zranění ani smrt. Žoldáci rostou jen v kampani.",
+  "Co-op kampaň si žoldáky pamatuje u hostitele. Když se připojíš se starší kopií, hraješ s hostitelovým záznamem.",
+  "Peníze jsou rozdělené: rozpočet základny platí výzkum, stavby a sklad pro celý tým, tvoje peníze (žold) jsou jen tvoje. Ve Zbrojnici kupuješ buď do skladu základny, nebo sobě do skříňky, a věci ze skříňky si bereš na misi jen ty. Mimozemskou techniku kupuje jen základna. Na globu vidíš rozpočet základny i svoje peníze zvlášť.",
+  "Hodnocení mise (výborně, dobře, ucházející, špatně) podle úspěchu, zachráněných a mrtvých civilistů, padlých žoldáků a zajatců. Násobí odměnu základny i žold.",
+  "Balanc: na normální obtížnosti stojí výzkum, stavby, zbraně, zbroje, úpravy i Sokol o třetinu víc a výzkum se stavbami trvají o čtvrtinu déle. Na hardcore +60 % a o polovinu déle. Snadná zůstává levná.",
+  "Nové modely z Modeláře: civilisté, kráva, Kondor, Čáp, Sokol, velitelství na Marsu, náboj, Sklízeč, Nájezdník, auta, kurník, traktor, okno a dříví.",
+  "Dílna a Modelář jsou teď pod jedním tlačítkem Editor, které je jen v Godotu. Ve vydané hře není. Náhled modelu v editoru i v encyklopedii se kreslí v plném rozlišení a už není rozmazaný."
+ ],
  "0.40": [
   "Nové zvuky ode mě: dveře (otevřít, zavřít, vyrazit), oheň (vzplanutí, praskání, hroutící se dřevo), plazmový kanón, minigun vetřelců, pípání plazmového granátu, záblesková past, zapnutí a vypnutí maskování, válečný řev Bijce, výpady Ohaře a Líhnouna, omráčení úderem, Diskollův sken, psi iluze, tryskový batoh Levitů, hukot a výbuch jádra, siréna a vyhozené pojistky na základně, svářečka, kladivo, sbíječka a ruch stavby, jeskyně základny vetřelců a dunění obří lodi.",
   "Líhnoun čas od času zařve tak, že je to slyšet přes celou mapu. Víš, že tam někde je.",

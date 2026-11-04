@@ -21,6 +21,7 @@ var subject := ""            # item id / emote / alien race
 var sub2 := ""               # tp: act, alien: job
 var bone := ""
 var view: SubViewport
+var svc: SubViewportContainer
 var world: Node3D
 var cam: Camera3D
 var model: Node3D            # what is shown (merc, alien, or the first-person hands)
@@ -66,11 +67,15 @@ func _ready() -> void:
 	frame.position = Vector2(6, 6)
 	frame.size = Vector2(384, 348)
 	add_child(frame)
-	var svc := SubViewportContainer.new()
+	svc = SubViewportContainer.new()
 	svc.stretch = true
-	svc.custom_minimum_size = Vector2(378, 342)
 	svc.gui_input.connect(_view_input)
-	frame.add_child(svc)
+	# a holder at the frame's size; the view inside renders at the screen's real resolution
+	var holder := Control.new()
+	holder.custom_minimum_size = Vector2(378, 342)
+	holder.clip_contents = true
+	frame.add_child(holder)
+	holder.add_child(svc)
 	view = SubViewport.new()
 	view.own_world_3d = true
 	view.msaa_3d = Viewport.MSAA_4X
@@ -576,6 +581,7 @@ static func _bone_cz(n: String) -> String:
 		"hand": "ruka", "thigh": "stehno", "shin": "lýtko", "jaw": "čelist", "tail": "ocas"}.get(base, base) + side
 
 func _process(delta: float) -> void:
+	Game.sharp_view(svc)
 	if not _paused:
 		t += delta
 	if anim:
