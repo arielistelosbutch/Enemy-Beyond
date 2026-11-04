@@ -1408,6 +1408,13 @@ func _basewalk(p: Node) -> void:
 	step = 1
 	m().hud.inventory_open = false
 	p.set_physics_process(false)
+	p.set_meta("ghost", true)
+	p.hp = 5000.0
+	if Game.cmd_arg("attack", "") == "1":
+		p.light_on = true
+		await get_tree().create_timer(1.0).timeout
+	if m().home():
+		m()._radar_alarm("RADAR: test")
 	var cells: Array = Net.mission_params["base"]
 	var gw := int(Net.mission_params["grid_w"])
 	var n := 0
@@ -1419,8 +1426,14 @@ func _basewalk(p: Node) -> void:
 		_aim_at(p, o + Vector3(8.0, 1.2, 3.0))
 		for f in 10:
 			await get_tree().process_frame
-		get_viewport().get_texture().get_image().save_png("user://base_%d_%s.png" % [n, cells[i]["type"]])
+		get_viewport().get_texture().get_image().save_png("user://base%s_%d_%s.png" % ["A" if not m().home() else "", n, cells[i]["type"]])
 		n += 1
+	# the room still being built (cell 14), seen from the infirmary next door
+	p.global_position = Vector3(24.0 - 3.0, 0.3, 24.0 + 6.2)
+	_aim_at(p, Vector3(24.0 + 3.0, 1.2, 24.0 + 6.0))
+	for f in 40:
+		await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png("user://base%s_build.png" % ["A" if not m().home() else ""])
 	out("terminals %d: %s" % [m().map["terminals"].size(), m().map["terminals"].map(func(t): return t["kind"])])
 	var tm: Dictionary = m().map["terminals"][0]
 	p.global_position = tm["pos"] + Vector3(0, 0.3, 0)

@@ -142,6 +142,7 @@ const FACILITIES := {
 	"osetrovna": {"name": "Ošetřovna", "cost": 400, "days": 5.0, "desc": "Zranění se hojí dvakrát rychleji."},
 	"radar": {"name": "Radar", "cost": 600, "days": 7.0, "desc": "Mise se objevují častěji a déle vydrží."},
 	"cela": {"name": "Cela pro vetřelce", "cost": 450, "days": 5.0, "desc": "Prosklené kóje s poutacími křesly. Bez ní omráčený vetřelec cestu na základnu nepřežije - živé zajatce (a výslechy) jde mít jen s celou."},
+	"strelnice": {"name": "Střelnice", "cost": 300, "days": 3.0, "desc": "Čtyři stanoviště, terče, bedna s municí. Na zkoušení zbraní mezi misemi."},
 	"sklad": {"name": "Sklad", "cost": 250, "days": 3.0, "desc": "Regály a sudy. Každý sklad zlevní munici a granáty o 10 %."},
 }
 const GRID_W := 6
@@ -806,6 +807,12 @@ func mission_params(m: Dictionary) -> Dictionary:
 	p["cid"] = str(data.get("cid", ""))
 	p["day"] = float(data["day"])
 	p["transport"] = transport()
+	if String(m.get("type", "")) == "base":
+		# the defence happens inside our own base
+		p["base"] = data["base"].duplicate(true)
+		p["grid_w"] = GRID_W
+		p["grid_h"] = GRID_H
+		p["attack"] = true
 	return p
 
 ## The base fell to a raid (lost defence or nobody went): money, a facility and gear are gone.

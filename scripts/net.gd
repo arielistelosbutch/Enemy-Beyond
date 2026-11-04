@@ -156,6 +156,13 @@ func _start_escort(params: Dictionary) -> void:
 	mission_params = params
 	get_tree().change_scene_to_file("res://scenes/Escort.tscn")
 
+## A co-op client: down into the base alone (own copy, offline branch) while the host is on the globe.
+func start_local_base(params: Dictionary) -> void:
+	mission_params = params.duplicate()
+	mission_params["local"] = true
+	mission_seed = randi() % 100000
+	get_tree().change_scene_to_file("res://scenes/Mission.tscn")
+
 func back_to_menu() -> void:
 	get_tree().change_scene_to_file("res://scenes/Main.tscn")
 

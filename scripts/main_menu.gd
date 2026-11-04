@@ -1051,10 +1051,12 @@ func _autotest() -> void:
 			var b := []
 			for i in 24:
 				b.append({"type": "", "days": 0.0})
-			var lay := {0: "velin", 1: "hangar", 6: "ubikace", 7: "laborator", 2: "dilna", 8: "cela", 13: "osetrovna", 3: "radar", 9: "sklad", 14: "laborator"}
+			var lay := {0: "velin", 1: "hangar", 6: "ubikace", 7: "laborator", 2: "dilna", 8: "cela", 13: "osetrovna", 3: "radar", 9: "sklad", 14: "laborator", 12: "strelnice"}
 			for k in lay:
 				b[k] = {"type": lay[k], "days": 4.0 if k == 14 else 0.0}
-			Net.start_mission({"type": "home", "type_name": "Základna", "base": b, "grid_w": 6, "grid_h": 4, "transport": "heli", "live": ["grey", "levit"], "night": false})
+			var atk := Game.cmd_arg("attack", "") == "1"
+			Net.start_mission({"type": "base" if atk else "home", "type_name": "Útok na základnu" if atk else "Základna", "base": b, "grid_w": 6, "grid_h": 4, "transport": "heli",
+				"live": ["grey", "levit"], "night": false, "attack": atk, "blips": [[50.0, 15.0], [40.0, -3.0], [10.0, 30.0]], "group": "sedaci"})
 		"solo", "shot", "ai", "panic", "arsenal", "evac":
 			if Game.autotest() == "shot":
 				await get_tree().create_timer(1.5).timeout

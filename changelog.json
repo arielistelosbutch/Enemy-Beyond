@@ -1,4 +1,13 @@
 {
+ "0.37": [
+  "Na základnu můžou i hráči bez hostitele: v co-op na globu tlačítko \"Na základnu (sám)\" - vlastní kopie základny, zatímco hostitel zkoumá a staví. Zpět přes terminál ve velínu.",
+  "Na základně mají vojáci zbraň na zádech a volné ruce (1 nebo Q ji sundá).",
+  "Nové zařízení Střelnice: čtyři stanoviště, terče, bedna s municí (E u bedny = zásobníky do zbraní, které máš).",
+  "Kabely po stěnách a u konzolí, monitory s otáčejícím se globem a červenými tečkami toho, co radar vidí (velín, radar, laboratoř).",
+  "Když hostitel chodí po základně, čas kampaně běží pomalu dál. Zachytí-li radar UFO nebo novou misi, rozblikají se oranžové otočné majáky a houká siréna. Hlásí se i dokončený výzkum.",
+  "Útok na základnu se teď odehrává přímo v ní: vetřelci vyřadili pojistky, hlavní světla nesvítí, jen rudé nouzové lampy blikají v intervalech. Lezou dovnitř hangárem a šachtou výtahu, tým začíná v ubikacích.",
+  "Rozestavěná místnost: ve dveřích ocelová vrata s cedulí STAVÍ SE, žlutočerná páska, projít se nedá. Za ní dělníci v přilbách a reflexních vestách - jeden svařuje (jiskry, modré záblesky), druhý tluče kladivem, třetí jede sbíječkou. Po dokončení stavby je tam hotová místnost."
+ ],
  "0.36": [
   "Základna se dá projít: na globu tlačítko \"Projít základnu (s týmem)\" - celý tým sjede výtahem dolů. Každé postavené zařízení je místnost 12 x 12 m vyhloubená v zemi a se sousedními ji spojuje krátká chodba (dveře jsou vždy uprostřed stěny, jen tam, kde soused je).",
   "Místnosti podle toho, co je postavené: velín s výtahem, kulatým stolem a otáčejícím se globem, hangár s Čápem nebo Kondorem, ubikace s palandami, laboratoř s pitevním stolem, zbrojnice, ošetřovna, radar, sklad. Rozestavěná místnost je plná lešení a beden.",

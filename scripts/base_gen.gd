@@ -10,6 +10,9 @@ const IN := 1.0           # wall inset from the cell edge (the earth between two
 const DOOR := [4.8, 7.2]  # doorway in the middle of a side
 
 var cells: Array = []     # [{type, days}]
+var attack := false       # they are coming: the fuses are out, only the red emergency lamps blink
+var blips: Array = []     # [lat, lon] of what the radar sees (red dots on the globe screens)
+var _globe_tex: Texture2D
 var gw := 6
 var gh := 4
 
@@ -28,6 +31,12 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	info["size"] = BLOCK * N
 	info["terrain"] = "base"
 	info["terminals"] = []
+	info["alarm_red"] = []
+	info["alarm_orange"] = []
+	info["entries"] = []
+	info["spinners"] = []
+	attack = bool(params.get("attack", false))
+	blips = params.get("blips", [])
 	info["home"] = true
 	nav = NavigationRegion3D.new()
 	nav.name = "Nav"
@@ -48,6 +57,15 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 		_room(i % gw, i / gw, String(c["type"]), float(c.get("days", 0.0)) > 0.0, params)
 	# the earth all around: one slab under everything, one over it (seen through the lift shaft)
 	box(Vector3(gw * BLOCK / 2, -0.6, gh * BLOCK / 2), Vector3(gw * BLOCK + 4, 1.0, gh * BLOCK + 4), Game.mat("earth", 0.5))
+	if attack:
+		# the team wakes in the quarters (or wherever the velín put them)
+		for i in cells.size():
+			if String(cells[i].get("type", "")) == "ubikace" and float(cells[i].get("days", 0.0)) <= 0.0:
+				var o := Vector3((i % gw) * BLOCK + IN, 0, (i / gw) * BLOCK + IN)
+				info["player_spawns"] = [o + Vector3(1.5, 0.3, 3.0), o + Vector3(4.6, 0.3, 3.0), o + Vector3(7.8, 0.3, 3.0), o + Vector3(1.5, 0.3, 6.4)]
+				info["spawn_yaw"] = PI
+				break
+		info["alien_spawns"] = info["entries"].duplicate()
 	if info["player_spawns"].is_empty():
 		info["player_spawns"].append(Vector3(6, 0.3, 6))
 	info["evac"] = Vector3.ZERO
@@ -97,14 +115,23 @@ func _room(gx: int, gz: int, kind: String, building: bool, params: Dictionary) -
 	for lp in ([Vector3(w * 0.3, 0, w * 0.5), Vector3(w * 0.7, 0, w * 0.5)] if kind != "hangar" else [Vector3(w * 0.25, 0, w * 0.25), Vector3(w * 0.75, 0, w * 0.25), Vector3(w * 0.25, 0, w * 0.75), Vector3(w * 0.75, 0, w * 0.75)]):
 		var l := OmniLight3D.new()
 		l.light_color = lc
-		l.light_energy = 1.3 if not building else 0.6
+		l.light_energy = (1.3 if not building else 0.6) if not attack else 0.0
 		l.omni_range = 8.0 if kind != "hangar" else 11.0
 		l.omni_attenuation = 1.2
 		root.add_child(l)
 		l.position = a + lp + Vector3(0, h - 0.4, 0)
-		box(a + lp + Vector3(0, h - 0.02, 0), Vector3(1.6, 0.05, 0.5), Game.color_mat(lc, true), false)
+		box(a + lp + Vector3(0, h - 0.02, 0), Vector3(1.6, 0.05, 0.5), Game.color_mat(lc, true) if not attack else _col(Color(0.25, 0.24, 0.22)), false)
+	_alarms(a, w, h)
+	_cables(a, w, h, kind)
 	if building:
 		_construction(a, w, h)
+		# every way in is shut: a steel door half across, the tape, the sign; nobody gets past
+		var mid := (DOOR[0] + DOOR[1]) / 2.0 - IN
+		if n: _blockade(a + Vector3(mid, 0, 0), true, 1.0)
+		if s: _blockade(a + Vector3(mid, 0, w), true, -1.0)
+		if we: _blockade(a + Vector3(0, 0, mid), false, 1.0)
+		if e: _blockade(a + Vector3(w, 0, mid), false, -1.0)
+		_workers(a, w)
 		return
 	match kind:
 		"velin": _velin(a, w, h)
@@ -116,6 +143,7 @@ func _room(gx: int, gz: int, kind: String, building: bool, params: Dictionary) -
 		"radar": _radar_room(a, w, h)
 		"cela": _containment(a, w, params.get("live", []))
 		"sklad": _stores(a, w)
+		"strelnice": _range(a, w)
 	_cover(a + Vector3(1.0, 0, 1.0)); _cover(a + Vector3(w - 1.0, 0, w - 1.0))
 
 ## A short corridor through the earth between two rooms (2.4 m wide, low ceiling, lamp strip).
@@ -231,6 +259,7 @@ func _velin(a: Vector3, w: float, h: float) -> void:
 	shaft.position = lp + Vector3(0, h + 2.0, 0)
 	for i in 4:
 		info["player_spawns"].append(lp + Vector3((i % 2) * 0.9 - 0.45, 0.3, (i / 2) * 0.9 - 0.45))
+	info["entries"].append(lp + Vector3(0, 0.3, 0))
 	info["spawn_yaw"] = PI * 0.75
 	# the command table in the middle: a round console, chairs, the globe projected above it
 	var c := a + Vector3(w * 0.55, 0, w * 0.55)
@@ -255,6 +284,7 @@ func _velin(a: Vector3, w: float, h: float) -> void:
 		_chair(c + Vector3(cos(ang), 0, sin(ang)) * 1.9, -ang + PI / 2 + PI)
 	# wall consoles: the radar, the reports - and the main terminal (back to the globe)
 	_terminal(a + Vector3(w * 0.55, 0, 0.45), 0.0, "globe", "Velín: globus, mise, nákupy a stavby")
+	_monitor_wall(a + Vector3(w - 0.08, 0, w * 0.5), -PI / 2, 3)
 	_console(a + Vector3(w - 0.45, 0, w * 0.35), -PI / 2)
 	_console(a + Vector3(w - 0.45, 0, w * 0.7), -PI / 2, Color(1.0, 0.75, 0.3))
 	_console(a + Vector3(w * 0.4, 0, w - 0.45), PI, Color(0.3, 0.8, 1.0))
@@ -289,6 +319,7 @@ func _hangar_hall(a: Vector3, w: float, h: float, transport: String) -> void:
 		_barrel(a + p)
 	box(a + Vector3(w - 1.0, 1.0, 1.4), Vector3(1.4, 2.0, 2.2), _col(Color(0.2, 0.3, 0.75)))       # loader
 	box(a + Vector3(w * 0.5, h - 0.05, w * 0.5), Vector3(w * 0.6, 0.1, w * 0.6), Game.mat("metal", 0.5), false)   # the roof hatch
+	info["entries"].append(a + Vector3(2.0, 0.3, w - 2.0))
 	_cover(a + Vector3(1.5, 0, 2.5)); _cover(a + Vector3(w - 1.5, 0, w - 2.5))
 
 func _quarters(a: Vector3, w: float) -> void:
@@ -300,6 +331,7 @@ func _quarters(a: Vector3, w: float) -> void:
 
 func _lab(a: Vector3, w: float) -> void:
 	_terminal(a + Vector3(w * 0.5, 0, 0.45), 0.0, "research", "Laboratoř: strom výzkumu", Color(0.4, 1.0, 0.6))
+	_monitor_wall(a + Vector3(w * 0.5, 0, 0.08), 0.0, 1, 2.6)
 	_terminal(a + Vector3(0.45, 0, w * 0.5), PI / 2, "ency", "Encyklopedie", Color(0.6, 0.85, 1.0))
 	for k in 3:
 		_cabinet(a + Vector3(w - 0.4, 0, 1.0 + k * 1.0), -PI / 2, Color(0.3, 0.5, 0.85) if k != 1 else Color(0.2, 0.22, 0.25))
@@ -362,6 +394,7 @@ func _radar_room(a: Vector3, w: float, h: float) -> void:
 	root.add_child(scr)
 	scr.position = a + Vector3(w / 2, 1.8, 0.27)
 	scr.rotation.x = PI / 2
+	_monitor_wall(a + Vector3(0.08, 0, w * 0.5), PI / 2, 2)
 	for k in 4:
 		_console(a + Vector3(1.8 + k * 2.2, 0, 3.0), PI)
 		_chair(a + Vector3(1.8 + k * 2.2, 0, 3.8), 0.0)
@@ -412,6 +445,252 @@ func _construction(a: Vector3, w: float, h: float) -> void:
 	for k in 5:
 		_crate(a + Vector3(rng.randf_range(2, w - 2), 0, rng.randf_range(3, w - 2)), rng.randf_range(0.85, 1.1), rng.randf() * TAU)
 	box(a + Vector3(w / 2, 0.01, w - 1.5), Vector3(4.0, 0.02, 0.3), Game.color_mat(Color(0.9, 0.75, 0.1)), false)
+
+# ---- alarms, cables, the globe on the screens, the range ----------------------------------------
+## Each room: an orange rotating beacon (radar alarm, off until the radar sees something) and a red
+## emergency lamp (blinks when the base is attacked and the fuses are gone).
+func _alarms(a: Vector3, w: float, h: float) -> void:
+	for corner in [Vector3(0.35, 0, 0.35), Vector3(w - 0.35, 0, w - 0.35)]:
+		var p: Vector3 = a + corner + Vector3(0, h - 0.35, 0)
+		cyl(p, 0.12, 0.14, 0.22, Game.color_mat(Color(1.0, 0.55, 0.1), true), false, 8)
+		var beam := SpotLight3D.new()
+		beam.light_color = Color(1.0, 0.55, 0.1)
+		beam.light_energy = 0.0
+		beam.spot_range = 9.0
+		beam.spot_angle = 28.0
+		root.add_child(beam)
+		beam.position = p
+		info["alarm_orange"].append(beam)
+		var red := OmniLight3D.new()
+		red.light_color = Color(1.0, 0.08, 0.05)
+		red.light_energy = 0.0
+		red.omni_range = 7.0
+		root.add_child(red)
+		red.position = p - Vector3(0, 0.4, 0)
+		box(red.position, Vector3(0.25, 0.12, 0.08), Game.color_mat(Color(0.6, 0.05, 0.03), true), false)
+		info["alarm_red"].append(red)
+
+## Cable runs along the tops of the walls and bundles down to the consoles.
+func _cables(a: Vector3, w: float, h: float, kind: String) -> void:
+	var cols := [Color(0.08, 0.08, 0.09), Color(0.15, 0.15, 0.2), Color(0.35, 0.12, 0.1), Color(0.12, 0.25, 0.12)]
+	for k in 3:
+		var y := h - 0.25 - k * 0.07
+		var m := _col(cols[k % cols.size()])
+		box(a + Vector3(w / 2, y, 0.16 + k * 0.05), Vector3(w - 0.4, 0.04, 0.04), m, false)
+		box(a + Vector3(0.16 + k * 0.05, y, w / 2), Vector3(0.04, 0.04, w - 0.4), m, false)
+	# a bundle dropping down in a corner, clamped every metre
+	for k in 4:
+		box(a + Vector3(w - 0.2 - k * 0.06, h / 2, 0.2), Vector3(0.04, h, 0.04), _col(cols[k]), false)
+	for y in range(1, int(h)):
+		box(a + Vector3(w - 0.29, y, 0.2), Vector3(0.3, 0.05, 0.1), _col(Color(0.5, 0.5, 0.52)), false)
+	if kind in ["velin", "radar", "laborator"]:
+		for k in 5:
+			var x := 1.2 + k * 1.9
+			box(a + Vector3(x, 0.03, w * 0.35), Vector3(0.06, 0.04, w * 0.6), _col(cols[k % 4]), false)
+
+## The globe as the radar sees it: one small picture (a turning Earth, red dots for what is out
+## there) shown on every screen in the base.
+func _globe_texture() -> Texture2D:
+	if _globe_tex:
+		return _globe_tex
+	var vp := SubViewport.new()
+	vp.size = Vector2i(192, 108)
+	vp.own_world_3d = true
+	vp.transparent_bg = false
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	root.add_child(vp)
+	var w3 := Node3D.new()
+	vp.add_child(w3)
+	var env := WorldEnvironment.new()
+	var e := Environment.new()
+	e.background_mode = Environment.BG_COLOR
+	e.background_color = Color(0.0, 0.04, 0.03)
+	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	e.ambient_light_color = Color(1, 1, 1)
+	env.environment = e
+	w3.add_child(env)
+	var cam := Camera3D.new()
+	cam.position = Vector3(0, 0.2, 2.6)
+	w3.add_child(cam)
+	var earth := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 1.0; sm.height = 2.0
+	earth.mesh = sm
+	var gm := StandardMaterial3D.new()
+	gm.albedo_texture = load("res://assets/textures/earth_day.png")
+	gm.albedo_color = Color(0.4, 1.0, 0.6)
+	gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	earth.material_override = gm
+	w3.add_child(earth)
+	earth.set_meta("spin", 0.25)
+	info["spinners"].append(earth)
+	for b in blips:
+		var lat := deg_to_rad(float(b[0]))
+		var lon := deg_to_rad(float(b[1]))
+		var dot := MeshInstance3D.new()
+		var ds := SphereMesh.new()
+		ds.radius = 0.045; ds.height = 0.09
+		dot.mesh = ds
+		dot.material_override = Game.color_mat(Color(1.0, 0.15, 0.1), true)
+		earth.add_child(dot)
+		dot.position = Vector3(cos(lat) * sin(lon), sin(lat), cos(lat) * cos(lon)) * 1.01
+	# a scan line over it
+	var ln := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(4.0, 0.015, 0.01)
+	ln.mesh = bm
+	ln.material_override = Game.color_mat(Color(0.5, 1.0, 0.6), true)
+	w3.add_child(ln)
+	ln.position = Vector3(0, 0, 1.3)
+	ln.set_meta("scan", true)
+	info["spinners"].append(ln)
+	_globe_tex = vp.get_texture()
+	return _globe_tex
+
+## A row of monitors on a wall, each showing the globe; cables hanging under them.
+func _monitor_wall(p: Vector3, yaw: float, n: int, y := 2.0) -> void:
+	var side := Vector3(cos(yaw), 0, -sin(yaw))
+	var out := Vector3(sin(yaw), 0, cos(yaw))
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = _globe_texture()
+	mat.emission_enabled = true
+	mat.emission_texture = mat.albedo_texture
+	mat.emission_energy_multiplier = 1.2
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	for k in n:
+		var c := p + side * (k - (n - 1) / 2.0) * 1.35 + Vector3(0, y, 0)
+		box(c, Vector3(1.25, 0.75, 0.08) if absf(sin(yaw)) < 0.5 else Vector3(0.08, 0.75, 1.25), _col(Color(0.2, 0.2, 0.22)), false)
+		var q := MeshInstance3D.new()
+		var qm := QuadMesh.new()
+		qm.size = Vector2(1.12, 0.63)
+		q.mesh = qm
+		q.material_override = mat
+		root.add_child(q)
+		q.position = c + out * 0.05
+		q.rotation.y = yaw
+		for j in 2:
+			box(c + side * (j - 0.5) * 0.4 + Vector3(0, -0.9, 0) + out * 0.03, Vector3(0.03, 1.1, 0.03), _col(Color(0.08, 0.08, 0.09)), false)
+
+## The range: booths on a firing line, man-shaped boards down the lanes, sandbags at the back,
+## an ammo locker (E: magazines for whatever you hold).
+func _range(a: Vector3, w: float) -> void:
+	for k in 4:
+		var z := 1.3 + k * 2.4
+		# booth partitions and the counter
+		box(a + Vector3(1.6, 0.55, z), Vector3(0.5, 0.08, 1.8), _col(Color(0.45, 0.4, 0.33)))
+		box(a + Vector3(1.6, 0.8, z + 1.2), Vector3(1.4, 1.6, 0.06), _col(Color(0.5, 0.52, 0.56)), false)
+		# the target
+		var t := a + Vector3(w - 1.4 - (k % 2) * 2.0, 0, z)
+		box(t + Vector3(0, 0.6, 0), Vector3(0.06, 1.2, 0.06), _col(Color(0.3, 0.3, 0.32)), false)
+		var board := box(t + Vector3(0, 1.4, 0), Vector3(0.05, 1.0, 0.6), _col(Color(0.92, 0.9, 0.82)))
+		board.set_meta("target", true)
+		box(t + Vector3(-0.03, 1.55, 0), Vector3(0.02, 0.5, 0.36), _col(Color(0.15, 0.15, 0.15)), false)
+		box(t + Vector3(-0.03, 1.95, 0), Vector3(0.02, 0.24, 0.2), _col(Color(0.15, 0.15, 0.15)), false)
+		box(t + Vector3(-0.04, 1.55, 0), Vector3(0.02, 0.08, 0.08), _col(Color(0.8, 0.1, 0.1)), false)
+	for k in 10:
+		box(a + Vector3(w - 0.4, 0.2 + (k % 2) * 0.4, 0.6 + k * 1.0), Vector3(0.6, 0.4, 0.95), _col(Color(0.45, 0.4, 0.28)))
+	box(a + Vector3(1.0, 0.01, w / 2), Vector3(0.1, 0.02, w - 1.0), Game.color_mat(Color(0.9, 0.75, 0.1)), false)    # the firing line
+	_cabinet(a + Vector3(0.4, 0, w - 0.8), PI / 2, Color(0.25, 0.35, 0.2))
+	info["terminals"].append({"pos": a + Vector3(1.1, 0, w - 0.8), "kind": "ammo", "label": "Bedna s municí: zásobníky do toho, co držíš"})
+
+## A doorway into a room still being built: the steel door slid two thirds across, yellow-black tape,
+## a sign; an invisible wall so nobody walks in. @a inward: which way is inside (+1/-1 on the axis).
+func _blockade(c: Vector3, along_x: bool, inward: float) -> void:
+	var wd := DOOR[1] - DOOR[0]
+	var steel := Game.mat("metal", 0.5)
+	var door_off := Vector3(-wd * 0.18, 0, 0) if along_x else Vector3(0, 0, -wd * 0.18)
+	box(c + door_off + Vector3(0, 1.3, 0), Vector3(wd * 0.65, 2.6, 0.1) if along_x else Vector3(0.1, 2.6, wd * 0.65), steel, false)
+	# the sign on the door
+	var lbl := Label3D.new()
+	lbl.text = "STAVÍ SE\nVSTUP ZAKÁZÁN"
+	lbl.font_size = 40
+	lbl.pixel_size = 0.004
+	lbl.modulate = Color(0.1, 0.08, 0.05)
+	lbl.outline_size = 0
+	var plate := box(c + door_off + Vector3(0, 1.6, 0) + (Vector3(0, 0, -inward * 0.07) if along_x else Vector3(-inward * 0.07, 0, 0)),
+		Vector3(0.9, 0.45, 0.02) if along_x else Vector3(0.02, 0.45, 0.9), Game.color_mat(Color(0.95, 0.78, 0.1)), false)
+	root.add_child(lbl)
+	lbl.position = plate.position + (Vector3(0, 0, -inward * 0.02) if along_x else Vector3(-inward * 0.02, 0, 0))
+	lbl.rotation.y = (0.0 if inward < 0 else PI) if along_x else (PI / 2 if inward < 0 else -PI / 2)
+	# tape: diagonal-ish bands of yellow and black across the opening (on the corridor side)
+	for y in [0.9, 1.3]:
+		for k in 8:
+			var t := (k + 0.5) / 8.0 - 0.5
+			var p := c + (Vector3(t * wd, y + (k % 2) * 0.02, -inward * 0.18) if along_x else Vector3(-inward * 0.18, y + (k % 2) * 0.02, t * wd))
+			box(p, Vector3(wd / 8.0, 0.08, 0.01) if along_x else Vector3(0.01, 0.08, wd / 8.0), Game.color_mat(Color(0.95, 0.8, 0.1) if k % 2 == 0 else Color(0.08, 0.08, 0.08)), false)
+	# the invisible wall
+	var sb := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = Vector3(wd, 3.0, 0.3) if along_x else Vector3(0.3, 3.0, wd)
+	cs.shape = bs
+	sb.add_child(cs)
+	root.add_child(sb)
+	sb.position = c + Vector3(0, 1.5, 0)
+
+## The builders: hard hats, one welding (sparks, blue flicker), one hammering, one on a jackhammer.
+## Only scenery behind the tape; the mission plays their noises.
+func _workers(a: Vector3, w: float) -> void:
+	var jobs := [["weld", Vector3(w * 0.3, 0, w * 0.35), PI * 0.5], ["hammer", Vector3(w * 0.65, 0, w * 0.4), -PI * 0.3], ["drill", Vector3(w * 0.5, 0, w * 0.7), PI]]
+	for j in jobs:
+		var m: Node3D = Game.model("civ_a" if j[0] != "hammer" else "civ_b")
+		root.add_child(m)
+		m.position = a + (j[1] as Vector3)
+		m.rotation.y = float(j[2])
+		var ap: AnimationPlayer = m.find_child("AnimationPlayer", true, false)
+		if ap and ap.has_animation("idle"):
+			ap.get_animation("idle").loop_mode = Animation.LOOP_LINEAR
+			ap.play("idle")
+		var bb := _aabb3(m)
+		# hard hat and a hi-vis vest
+		var hat := MeshInstance3D.new()
+		var hm := SphereMesh.new()
+		hm.radius = 0.15; hm.height = 0.18; hm.is_hemisphere = true
+		hat.mesh = hm
+		hat.material_override = Game.color_mat(Color(1.0, 0.8, 0.1))
+		m.add_child(hat)
+		hat.position = Vector3(0, bb.end.y - 0.08, 0)
+		var vest := MeshInstance3D.new()
+		var vm := BoxMesh.new()
+		vm.size = Vector3(0.42, 0.45, 0.26)
+		vest.mesh = vm
+		vest.material_override = Game.color_mat(Color(1.0, 0.55, 0.05))
+		m.add_child(vest)
+		vest.position = Vector3(0, bb.end.y * 0.68, 0)
+		var fwd := Vector3(-sin(float(j[2])), 0, -cos(float(j[2])))
+		var tool_at: Vector3 = m.position + fwd * 0.55 + Vector3(0, 0.9 if j[0] == "weld" else (1.0 if j[0] == "hammer" else 0.1), 0)
+		var fx := {"kind": j[0], "pos": tool_at, "node": m}
+		match j[0]:
+			"weld":
+				var l := OmniLight3D.new()
+				l.light_color = Color(0.55, 0.75, 1.0)
+				l.omni_range = 4.0
+				root.add_child(l)
+				l.position = tool_at
+				fx["light"] = l
+				var sp := CPUParticles3D.new()
+				sp.amount = 24
+				sp.lifetime = 0.5
+				sp.direction = Vector3(0, 1, 0)
+				sp.spread = 70.0
+				sp.initial_velocity_min = 1.0
+				sp.initial_velocity_max = 2.5
+				sp.gravity = Vector3(0, -9, 0)
+				sp.scale_amount_min = 0.5
+				var qm := SphereMesh.new()
+				qm.radius = 0.012; qm.height = 0.024
+				qm.material = Game.color_mat(Color(1.0, 0.8, 0.4), true)
+				sp.mesh = qm
+				root.add_child(sp)
+				sp.position = tool_at
+				fx["sparks"] = sp
+				box(tool_at + fwd * 0.3 + Vector3(0, -0.4, 0), Vector3(0.8, 0.8, 0.8), Game.mat("metal", 0.5), false)    # the beam being welded
+			"drill":
+				box(tool_at + Vector3(0, 0.45, 0), Vector3(0.12, 0.8, 0.12), _col(Color(0.8, 0.15, 0.1)), false)
+				box(tool_at + Vector3(0, 0.85, 0), Vector3(0.5, 0.06, 0.06), _col(Color(0.2, 0.2, 0.2)), false)
+			"hammer":
+				box(tool_at + fwd * 0.25 + Vector3(0, -0.2, 0), Vector3(0.6, 1.4, 0.6), Game.mat("concrete", 0.5), false)
+		info.get_or_add("workers", []).append(fx)
 
 func _aabb3(n: Node3D) -> AABB:
 	var box_ := AABB()

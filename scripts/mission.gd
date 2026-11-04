@@ -65,7 +65,7 @@ func _pick_weather() -> void:
 		w = "snow"
 	elif Net.mission_params.get("terrain", "") == "desert" and (w == "rain" or w == "fog"):
 		w = "clear"
-	if Net.mission_params.get("type", "") in ["mars", "home"]:
+	if Net.mission_params.get("type", "") in ["mars", "home"] or Net.mission_params.has("base"):
 		w = "clear"
 	weather = w
 
@@ -96,7 +96,7 @@ func _set_ready() -> void:
 	_ready_state()
 
 func _ready_state() -> void:
-	var need: Array = Net.roster.keys() if not Net.roster.is_empty() else [1]
+	var need: Array = roster().keys() if not roster().is_empty() else [1]
 	var n := 0
 	for id in need:
 		if ready_ids.has(id):
@@ -195,12 +195,18 @@ func calm() -> bool:
 
 func _ready() -> void:
 	name = "Mission"
+	if local():
+		# a base walk of one's own while the host is busy on the globe: this branch runs offline
+		# (the connection to the host stays alive above it)
+		var api := SceneMultiplayer.new()
+		api.multiplayer_peer = OfflineMultiplayerPeer.new()
+		get_tree().set_multiplayer(api, get_path())
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_pick_weather()
 	_environment()
 	_post_filter()
-	map = (preload("res://scripts/base_gen.gd").new() if home() else MapGen.new()).build(self, Net.mission_seed, Net.mission_params)
-	if home():
+	map = (preload("res://scripts/base_gen.gd").new() if indoor() else MapGen.new()).build(self, Net.mission_seed, Net.mission_params)
+	if indoor():
 		_home_env()
 	actors = Node3D.new()
 	actors.name = "Actors"
@@ -304,7 +310,7 @@ func _wind_name() -> String:
 ## What lives under the wind: crickets over the fields, a distant town, humming machines.
 func _ambient_bed() -> String:
 	if mtype() == "base":
-		return "ufo_interior"
+		return "base_interior" if indoor() else "ufo_interior"
 	if map.get("terrain", "") in ["mars", "snow"]:
 		return ""
 	match String(Net.mission_params.get("biome", "farm")):
@@ -405,7 +411,7 @@ func _briefing_text() -> String:
 			"mars": "Orel přistál na rudé pláni. Před vámi je tunel do jejich velína a za ním Velký mozek - to, co je všechny řídí. Chrání ho štít ze tří pylonů. Zničte pylony, pak mozek. Myslí na vás. Uslyšíte ho.",
 			"rescue": "Nouzový maják vysílá z oblasti, kam dosedlo UFO. Někdo tam přežil a vetřelci po něm jdou. Signál ukazuje směr a vzdálenost (nahoře na obrazovce).",
 			"sabotage": "Tři cizí majáky v krajině vysílají k jejich lodím. Dokud stojí, přicházejí další. Každý maják: drž u něj E 3 sekundy, nálož bouchne za 8 sekund.",
-			"base": "Vetřelci přistáli u základny v rokli. Kondor stojí na ploše a nikam se neletí. Útočí ve vlnách od okraje rokle. Vydržet a zabít všechny.",
+			"base": "Vetřelci přistáli nad základnou. Vyřadili pojistky - hlavní světla zhasla, svítí jen rudé nouzové lampy. Lezou dovnitř hangárem a šachtou výtahu, ve vlnách. Vydržet a zabít všechny. Znáte tu každou chodbu - oni ne." if Net.mission_params.has("base") else "Vetřelci přistáli u základny v rokli. Kondor stojí na ploše a nikam se neletí. Útočí ve vlnách od okraje rokle. Vydržet a zabít všechny.",
 			"terror": "Vetřelci vtrhli do městečka. Spojení s místními je přerušeno. Poslední hovor na tísňovou linku: \"Je to černé, je to rychlé, a ti, co to zabilo, zase vstávají.\"\nZachraň, koho můžeš (E u vyděšeného civilisty - půjde za tebou do Kondoru).",
 		}
 		var terr: String = {"snow": "\nTerén: sníh - každý krok je slyšet.", "desert": "\nTerén: poušť - málo úkrytů."}.get(mp.get("terrain", ""), "")
@@ -557,14 +563,14 @@ func _client_ready() -> void:
 func _maybe_spawn() -> void:
 	if _spawned:
 		return
-	for id in Net.roster:
+	for id in roster():
 		if not _ready_peers.has(id):
 			return
 	_spawned = true
 	var i := 0
-	for id in Net.roster:
+	for id in roster():
 		var sp: Vector3 = map["player_spawns"][i % map["player_spawns"].size()]
-		spawner.spawn({"kind": "player", "peer": id, "pos": sp, "yaw": float(map.get("spawn_yaw", PI)), "merc": Net.roster[id]["merc"], "name": Net.roster[id]["name"]})
+		spawner.spawn({"kind": "player", "peer": id, "pos": sp, "yaw": float(map.get("spawn_yaw", PI)), "merc": roster()[id]["merc"], "name": roster()[id]["name"]})
 		i += 1
 	if home():
 		return          # nobody else down here
@@ -849,6 +855,8 @@ func _process(delta: float) -> void:
 		_home_tick(delta)
 		_mines_tick()
 		return
+	if indoor():
+		_home_tick(delta)
 	if started():
 		t += delta
 		_critters(delta)
@@ -1669,6 +1677,27 @@ func mtype() -> String:
 func home() -> bool:
 	return mtype() == "home"
 
+## Our own copy of the base (a co-op client walking round while the host plays the globe).
+func local() -> bool:
+	return bool(Net.mission_params.get("local", false))
+
+var _local_roster := {}
+func roster() -> Dictionary:
+	if not local():
+		return Net.roster
+	if _local_roster.is_empty():
+		var me: Dictionary = Net.roster.get(Net.multiplayer.get_unique_id(), {}) if Net.is_online() else {}
+		_local_roster = {1: {"merc": me.get("merc", Game.merc), "name": me.get("name", String(Game.merc.get("name", "Žoldák")))}}
+	return _local_roster
+
+func _exit_tree() -> void:
+	if local():
+		get_tree().set_multiplayer(null, get_path())
+
+## Inside our base: walking round it, or defending it.
+func indoor() -> bool:
+	return home() or (mtype() == "base" and Net.mission_params.has("base"))
+
 func _home_env() -> void:
 	env.background_color = Color(0.02, 0.015, 0.01)
 	env.ambient_light_color = Color(0.6, 0.55, 0.5)
@@ -1677,12 +1706,29 @@ func _home_env() -> void:
 	env.volumetric_fog_enabled = false
 	moon.light_energy = 0.0
 	moon.visible = false
+	if not home():
+		# under attack: the fuses are gone - darkness and the red emergency lamps
+		env.ambient_light_energy = 0.06
+		env.ambient_light_color = Color(0.5, 0.35, 0.35)
 
 var _term_note := 0.0
 func _home_tick(delta: float) -> void:
 	for g in map.get("spinners", []):
 		if is_instance_valid(g):
-			g.rotation.y += delta * float(g.get_meta("spin", 0.2))
+			if g.has_meta("scan"):
+				g.position.y = fmod(Time.get_ticks_msec() * 0.0008, 2.4) - 1.2
+			else:
+				g.rotation.y += delta * float(g.get_meta("spin", 0.2))
+	_alarm_tick(delta)
+	_workers_tick(delta)
+	if not home():
+		return
+	# the campaign clock keeps going down here (slowly): the radar may see something
+	if multiplayer.is_server() and Campaign.active and started():
+		_clock_t += delta
+		if _clock_t >= 1.0:
+			_clock_t = 0.0
+			Campaign.advance(5.0 / 1440.0)
 	var me := local_player()
 	_term_note -= delta
 	if me and _term_note <= 0.0 and hud and not hud.inventory_open:
@@ -1690,6 +1736,84 @@ func _home_tick(delta: float) -> void:
 		if not tm.is_empty():
 			_term_note = 1.0
 			hud.message("E: " + String(tm["label"]), 1.1)
+
+# ---- alarms: orange beacons and a siren when the radar sees a UFO; red blinking when attacked ----
+var _clock_t := 0.0
+var _orange_t := 0.0
+var _siren: AudioStreamPlayer
+var _red_t := 0.0
+var _home_hooked := false
+
+func _hook_radar() -> void:
+	if _home_hooked or not home() or not multiplayer.is_server() or not Campaign.active:
+		return
+	_home_hooked = true
+	Campaign.flight_found.connect(func(f): _radar_alarm.rpc("RADAR: neznámý objekt nad %s. Do velínu!" % Campaign.nearest_place(float(f.get("lat", 0)), float(f.get("lon", 0)))))
+	Campaign.mission_found.connect(func(m): _radar_alarm.rpc("RADAR: %s - %s. Do velínu!" % [String(Campaign.MTYPES[m["type"]]["name"]), String(m.get("place", ""))]))
+	Campaign.research_done.connect(func(id): hud_note.rpc("Laboratoř hlásí: dokončen výzkum %s." % Campaign.RESEARCH[id]["name"]))
+
+@rpc("authority", "call_local", "reliable")
+func _radar_alarm(text: String) -> void:
+	_orange_t = 25.0
+	hud.message(text, 6.0)
+	if _siren == null:
+		_siren = AudioStreamPlayer.new()
+		_siren.stream = Game.loop_stream("warning_alarm")
+		_siren.volume_db = -10.0
+		_siren.bus = "SFX"
+		add_child(_siren)
+	_siren.play()
+
+func _alarm_tick(delta: float) -> void:
+	_hook_radar()
+	if _orange_t > 0.0:
+		_orange_t -= delta
+		var k := 1.0 if _orange_t > 1.0 else _orange_t
+		for b in map.get("alarm_orange", []):
+			if is_instance_valid(b):
+				b.light_energy = 3.0 * k
+				b.rotation = Vector3(-0.5, Time.get_ticks_msec() * 0.006, 0)
+		if _orange_t <= 0.0 and _siren:
+			_siren.stop()
+	if not home():
+		# the base under attack: red lamps blink - on for a moment, then darkness again
+		_red_t += delta
+		var on := fmod(_red_t, 2.4) < 0.7
+		for r in map.get("alarm_red", []):
+			if is_instance_valid(r):
+				r.light_energy = move_toward(r.light_energy, 2.2 if on else 0.0, delta * 9.0)
+
+## The builders behind the tape: welding flicker and crackle, hammer blows, the jackhammer's rattle.
+var _work_t := {}
+func _workers_tick(delta: float) -> void:
+	for wk in map.get("workers", []):
+		var k := String(wk["kind"])
+		var t: float = _work_t.get(wk, 0.0) - delta
+		var node: Node3D = wk["node"]
+		match k:
+			"weld":
+				var on := fmod(Time.get_ticks_msec() * 0.001 + 0.3, 4.0) < 2.6
+				var l: OmniLight3D = wk["light"]
+				l.light_energy = (randf_range(0.6, 2.4) if on else 0.0)
+				(wk["sparks"] as CPUParticles3D).emitting = on
+				if on and t <= 0.0:
+					t = randf_range(0.25, 0.5)
+					Game.play_at(self, "zap", wk["pos"], -14)
+			"hammer":
+				if t <= 0.0:
+					t = 0.7 if randf() < 0.8 else 2.5
+					Game.play_at(self, "knock", wk["pos"], -8)
+					node.rotation.x = 0.12
+				node.rotation.x = move_toward(node.rotation.x, 0.0, delta * 0.6)
+			"drill":
+				var burst := fmod(Time.get_ticks_msec() * 0.001, 5.0) < 2.2
+				if burst and t <= 0.0:
+					t = 0.075
+					Game.play_at(self, "knock", wk["pos"], -12)
+				node.position.y = (randf_range(0.0, 0.025) if burst else 0.0) + float(wk.get("y0", node.position.y if not wk.has("y0") else wk["y0"]))
+				if not wk.has("y0"):
+					wk["y0"] = node.position.y
+		_work_t[wk] = t
 
 func terminal_near(p: Vector3) -> Dictionary:
 	for tm in map.get("terminals", []):
@@ -1702,6 +1826,11 @@ func use_terminal(tm: Dictionary) -> void:
 	Game.play_ui(self, "ui_click", -6)
 	match String(tm["kind"]):
 		"globe":
+			if local():
+				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+				Net.mission_params = {}
+				get_tree().change_scene_to_file("res://scenes/Main.tscn")
+				return
 			if not multiplayer.is_server():
 				hud.message("Velín ovládá hostitel.", 2.5)
 				return
@@ -1710,6 +1839,17 @@ func use_terminal(tm: Dictionary) -> void:
 			hud.open_screen(ResearchScreen.open(hud))
 		"ency":
 			hud.open_screen(Encyclopedia.open(hud))
+		"ammo":
+			var me := local_player()
+			var got := []
+			for slot in ["rh", "lh", "back", "side"]:
+				var it: Dictionary = me.item_in(slot)
+				var am := String(Game.ITEMS.get(String(it.get("id", "")), {}).get("ammo", ""))
+				if am != "" and not am in got:
+					got.append(am)
+					for n in 2:
+						drop_item({"id": am}, me.global_position + Vector3(0, 0.3, 0) - me.global_transform.basis.z * 0.7 + Vector3(n * 0.2, 0, 0))
+			hud.message("Zásobníky leží u bedny (E sebrat)." if not got.is_empty() else "Nemáš zbraň, do které by šly náboje.", 2.5)
 
 @rpc("authority", "call_local", "reliable")
 func _go_home_globe() -> void:
@@ -1853,10 +1993,22 @@ func _objectives_tick(delta: float) -> void:
 			var from := _edge_point(rr2)
 			for k in crew.size():
 				spawn_alien(crew[k], from + Vector3(rr2.randf_range(-3, 3), 0.3, rr2.randf_range(-3, 3)))
-			hud_note.rpc("DALŠÍ VLNA! Útočí od okraje rokle (%d)." % crew.size())
+			hud_note.rpc(("DALŠÍ VLNA! Lezou dovnitř hangárem nebo šachtou výtahu (%d)." if indoor() else "DALŠÍ VLNA! Útočí od okraje rokle (%d).") % crew.size())
 
 ## A point at the edge of the map, far from the team.
 func _edge_point(rr: RandomNumberGenerator) -> Vector3:
+	if not map.get("entries", []).is_empty():
+		# inside our base: through the hangar hatch or down the lift shaft, whichever is farther from us
+		var bestE: Vector3 = map["entries"][0]
+		var bdE := -1.0
+		for e2 in map["entries"]:
+			var near2 := 999.0
+			for pl in players():
+				near2 = minf(near2, pl.global_position.distance_to(e2))
+			if near2 + rr.randf() * 6.0 > bdE:
+				bdE = near2
+				bestE = e2
+		return bestE
 	var s: float = map["size"]
 	var best := Vector3(s / 2, 0.3, s - 4)
 	var bd := 0.0

@@ -159,6 +159,10 @@ func _ready() -> void:
 			if inv.has(hs):
 				inv[hs]["home"] = hs
 		armor = String(Game.valid_loadout(Game.veteran()).get("armor", ""))
+		if mission.has_method("home") and mission.home() and inv.has("rh") and not inv.has("back"):
+			# at home: the rifle hangs on the back, hands free (1 / Q takes it down - the range)
+			inv["back"] = inv["rh"]
+			inv.erase("rh")
 		var ids := []
 		for sl in inv:
 			ids.append(inv[sl]["id"])

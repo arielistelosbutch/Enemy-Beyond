@@ -406,7 +406,8 @@ func _build_side() -> void:
 	if Campaign.viewer:
 		# a co-op client: the host's globe, read-only; buying with own money
 		_lbl(side, "Díváš se na základnu hostitele. Misi spouští on.", FRAME, 8)
-		entries += [["Peníze v týmu", func(): _menu_screen("money")], ["Zpět do lobby", func(): get_tree().change_scene_to_file("res://scenes/Main.tscn")]]
+		entries += [["Peníze v týmu", func(): _menu_screen("money")], ["Zpět do lobby", func(): get_tree().change_scene_to_file("res://scenes/Main.tscn")],
+			["Na základnu (sám)", _go_base]]
 	else:
 		_btn(side, "VYSLAT (tým / stíhačku)", _launch, 10)
 		_btn(side, "Projít základnu (s týmem)", _go_base, 9)
@@ -631,7 +632,8 @@ func _start_air(c: Dictionary, fl: Dictionary) -> void:
 
 ## Everyone down into the base: walk round it between missions (back up at the velín terminal).
 func _go_base() -> void:
-	Campaign.save()
+	if not Campaign.viewer:
+		Campaign.save()
 	if not Net.is_online():
 		Net.play_solo()
 	var live := []
@@ -639,8 +641,13 @@ func _go_base() -> void:
 		if String(k).begins_with("live_") and int(Campaign.data["found"][k]) > 0:
 			for n in mini(int(Campaign.data["found"][k]), 2):
 				live.append(String(k).substr(5))
-	Net.start_mission({"type": "home", "type_name": "Základna", "base": Campaign.data["base"].duplicate(true), "grid_w": Campaign.GRID_W, "grid_h": Campaign.GRID_H,
-		"transport": Campaign.transport(), "live": live, "research": Campaign.data["research"]["done"].duplicate(), "night": false, "hour": 12.0})
+	var params := {"type": "home", "type_name": "Základna", "base": Campaign.data["base"].duplicate(true), "grid_w": Campaign.GRID_W, "grid_h": Campaign.GRID_H,
+		"transport": Campaign.transport(), "live": live, "research": Campaign.data["research"]["done"].duplicate(), "night": false, "hour": 12.0,
+		"blips": Campaign.data["flights"].map(func(f): return [float(f.get("lat", 0)), float(f.get("lon", 0))]) + Campaign.data["missions"].map(func(m): return [float(m.get("lat", 0)), float(m.get("lon", 0))])}
+	if Campaign.viewer:
+		Net.start_local_base(params)     # the host stays on the globe; this is our own copy
+	else:
+		Net.start_mission(params)
 
 func _start_ground(m: Dictionary) -> bool:
 	Campaign.save()
@@ -787,7 +794,7 @@ func _show_base() -> void:
 	box.add_child(grid)
 	var colors := {"velin": Color(0.2, 0.35, 0.6), "hangar": Color(0.3, 0.3, 0.32), "ubikace": Color(0.3, 0.25, 0.18),
 		"laborator": Color(0.15, 0.4, 0.35), "dilna": Color(0.4, 0.3, 0.15), "osetrovna": Color(0.45, 0.15, 0.15), "radar": Color(0.2, 0.45, 0.2),
-		"cela": Color(0.25, 0.3, 0.55), "sklad": Color(0.35, 0.33, 0.25)}
+		"cela": Color(0.25, 0.3, 0.55), "sklad": Color(0.35, 0.33, 0.25), "strelnice": Color(0.4, 0.38, 0.2)}
 	for i in Campaign.data["base"].size():
 		var cell: Dictionary = Campaign.data["base"][i]
 		var idx: int = i
@@ -814,7 +821,7 @@ func _build_menu(idx: int) -> void:
 		_alert("Nelze stavět\nTady je zatím jen zemina: zařízení musí sousedit s hotovým (jinak by k němu nevedla chodba).")
 		return
 	var box := _overlay("STAVBA", 380)
-	for f in ["laborator", "dilna", "osetrovna", "radar", "cela", "sklad"]:
+	for f in ["laborator", "dilna", "osetrovna", "radar", "cela", "sklad", "strelnice"]:
 		var key: String = f
 		var fi: Dictionary = Campaign.FACILITIES[f]
 		_btn(box, "%s - %d kr, %d dní: %s" % [fi["name"], fi["cost"], int(fi["days"]), fi["desc"]], func():
