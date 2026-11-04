@@ -13,16 +13,22 @@ from mathutils import Vector
 OUTDIR = sys.argv[-1]
 TAU = math.tau
 
+def mat2(name, rgb, rough=0.6, metal=0.0, emit=0.0):
+    m = mat(name, rgb, emit=emit, rough=rough)
+    m.node_tree.nodes.get("Principled BSDF").inputs["Metallic"].default_value = metal
+    return m
+
 def M():
+    # 0.50: their ships as in Ari's pictures - dark violet-black alloy, violet light in the seams, red eyes
     return dict(
-        hull=mat("UfoHull", (0.32, 0.34, 0.38), rough=0.35),
-        dark=mat("UfoDark", (0.08, 0.08, 0.1), rough=0.5),
-        rib=mat("UfoRib", (0.2, 0.21, 0.24), rough=0.4),
+        hull=mat2("UfoHull", (0.2, 0.17, 0.22), 0.35, 0.7),
+        dark=mat2("UfoDark", (0.06, 0.05, 0.07), 0.45, 0.6),
+        rib=mat2("UfoRib", (0.13, 0.11, 0.15), 0.4, 0.7),
         wall=mat("UfoWall", (0.16, 0.13, 0.2), rough=0.6),
         floor=mat("UfoFloorM", (0.11, 0.1, 0.13), rough=0.7),
-        glow=mat("UfoGlow", (0.6, 0.3, 1.0), emit=4.0),
+        glow=mat("UfoGlow", (0.85, 0.25, 1.0), emit=4.0),
         core=mat("UfoCore", (0.35, 1.0, 0.45), emit=6.0),
-        amber=mat("UfoAmber", (1.0, 0.55, 0.15), emit=3.0),
+        amber=mat("UfoAmber", (1.0, 0.15, 0.08), emit=4.0),
         screen=mat("UfoScreen", (0.2, 0.9, 0.7), emit=2.5),
         flesh=mat("UfoFlesh", (0.35, 0.18, 0.22), rough=0.8),
     )
@@ -183,6 +189,36 @@ def hull(m, r, h, segs, vis, scale_rim=1.3):
             vis.append(beam(m["rib"], (ca * (pts[2][0] - 0.05), sa * (pts[2][0] - 0.05), pts[2][1] + 0.06), (ca * (pts[3][0] + 0.05), sa * (pts[3][0] + 0.05), pts[3][1] + 0.06), 0.14, 0.08))
             if i not in door_gap and (i + 1) % n not in door_gap and (i - 1) % n not in door_gap:
                 vis.append(beam(m["dark"], (ca * (r + 0.15), sa * (r + 0.15), 0.42), (ca * (rim - 0.05), sa * (rim - 0.05), zr - 0.03), 0.12, 0.06))
+    # 0.50: a crown of blades round the roof, violet seams running down the upper hull
+    nb = 8 if r < 6 else 12
+    for k in range(nb):
+        a = TAU * (k + 0.5) / nb + math.pi / 2
+        if abs(math.cos(a)) < 0.2 and math.sin(a) > 0:
+            continue                     # (none right over the door)
+        ca, sa = math.cos(a), math.sin(a)
+        base = Vector((ca * pts[3][0] * 0.98, sa * pts[3][0] * 0.98, pts[3][1] - 0.05))
+        tip = base + Vector((ca * 0.9, sa * 0.9, 1.6 + (k % 2) * 0.7))
+        bl = cyl(m["rib"], (0, 0, 0), 0.32, 1.0, verts=4, r2=0.0)
+        for v in bl.data.vertices:
+            v.co.x *= 0.35
+            v.co.z += 0.5
+        d = (tip - base)
+        bl.scale = (1, 1, d.length)
+        q = Vector((0, 0, 1)).rotation_difference(d.normalized())
+        bl.rotation_mode = 'QUATERNION'
+        bl.rotation_quaternion = q @ Vector((0, 0, 1)).rotation_difference(Vector((0, 0, 1)))
+        bl.location = base
+        bpy.ops.object.select_all(action='DESELECT'); bl.select_set(True)
+        bpy.context.view_layer.objects.active = bl
+        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+        for v in bl.data.vertices:       # turn the flat side to face outwards
+            pass
+        vis.append(bl)
+        vis.append(beam(m["glow"], tuple(base + Vector((ca * 0.06, sa * 0.06, 0.1))), tuple(base.lerp(tip, 0.7) + Vector((ca * 0.06, sa * 0.06, 0))), 0.05, 0.05))
+    for i in range(0, n, 2):
+        a = TAU * (i + 0.5) / n + math.pi / 2 - math.pi / n
+        ca, sa = math.cos(a), math.sin(a)
+        vis.append(beam(m["glow"], (ca * (pts[2][0] - 0.02), sa * (pts[2][0] - 0.02), pts[2][1] + 0.12), (ca * (pts[3][0] + 0.08), sa * (pts[3][0] + 0.08), pts[3][1] + 0.12), 0.035, 0.03))
     # the entry recess: side plates from the wall out to the rim, a canopy over the door
     for i in (0, n - 1):
         side = 1 if i == 0 else 0

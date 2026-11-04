@@ -126,6 +126,70 @@ def limb(material, a, b, r1, r2, verts=7, group=None):
     rot = d.to_track_quat('Z', 'Y').to_euler()
     return _finish(o, material, (a + b) / 2, rot, (1, 1, 1), group)
 
+def lihnoun_anims(rig):
+    """The Líhnoun/Líhavec actions (shared with tools/blender/lihavec.py)."""
+    # --- animation: a predator, not a puppet. Weight low, head level, claws ready.
+    stance = {"spine": (-0.6, 0, 0), "neck": (0.25, 0, 0), "head": (0.45, 0, 0),
+              "thigh.L": (0.75, 0, 0.12), "thigh.R": (0.75, 0, -0.12), "shin.L": (-0.95, 0, 0), "shin.R": (-0.95, 0, 0),
+              "upperarm.L": (0.85, 0, 0.18), "upperarm.R": (0.85, 0, -0.18), "forearm.L": (0.75, 0, 0), "forearm.R": (0.75, 0, 0),
+              "hand.L": (-0.2, 0, 0), "hand.R": (-0.2, 0, 0)}
+    def var(d, **kw):
+        o = dict(d)
+        for k, v in kw.items():
+            o[k.replace("_", ".")] = v
+        return o
+    breath_in = var(stance, spine=(-0.56, 0, 0), head=(0.42, 0, 0))
+    look = var(stance, head=(0.5, 0.25, 0.55), neck=(0.3, 0, 0.15))
+    twitch = var(stance, hand_L=(-0.6, 0, 0), forearm_L=(1.0, 0, 0))
+    action(rig, "idle", [(1, stance, -0.2), (17, breath_in, -0.18), (33, stance, -0.2), (39, look, -0.2), (45, look, -0.2),
+                         (49, twitch, -0.2), (53, stance, -0.2), (69, breath_in, -0.18), (85, stance, -0.2)])
+    # walk: a slow stalk, shoulders rolling, head steady
+    def stalk(n):
+        out = []
+        for i in range(5):
+            f = 1 + i * n // 4
+            ph = i / 4 * 2 * math.pi
+            sw = math.sin(ph)
+            r = dict(stance)
+            r["thigh.L"] = (0.75 - sw * 0.45, 0, 0.12); r["thigh.R"] = (0.75 + sw * 0.45, 0, -0.12)
+            r["shin.L"] = (-0.95 - max(0, sw) * 0.5, 0, 0); r["shin.R"] = (-0.95 - max(0, -sw) * 0.5, 0, 0)
+            r["upperarm.L"] = (0.85 + sw * 0.35, 0, 0.18); r["upperarm.R"] = (0.85 - sw * 0.35, 0, -0.18)
+            r["spine"] = (-0.62, 0, sw * 0.12); r["head"] = (0.47, 0, -sw * 0.1)
+            out.append((f, r, -0.2 - abs(math.cos(ph)) * 0.03))
+        return out
+    action(rig, "walk", stalk(28))
+    # run: on all fours. Arms reach and pull like front legs, back arches and stretches
+    def gallop(n):
+        out = []
+        for i in range(5):
+            f = 1 + i * n // 4
+            ph = i / 4 * 2 * math.pi
+            sw = math.sin(ph); cw = math.cos(ph)
+            r = {"spine": (-1.25 + sw * 0.12, 0, 0), "neck": (0.45, 0, 0), "head": (0.75 - sw * 0.1, 0, 0),
+                 "thigh.L": (0.9 - sw * 0.75, 0, 0.1), "thigh.R": (0.9 - sw * 0.65, 0, -0.1),
+                 "shin.L": (-1.0 - max(0, sw) * 0.7, 0, 0), "shin.R": (-1.0 - max(0, sw) * 0.6, 0, 0),
+                 "upperarm.L": (1.0 + sw * 0.8, 0, 0.15), "upperarm.R": (1.0 + sw * 0.7, 0, -0.15),
+                 "forearm.L": (0.2 + max(0, -sw) * 0.9, 0, 0), "forearm.R": (0.2 + max(0, -sw) * 0.8, 0, 0),
+                 "hand.L": (0.4, 0, 0), "hand.R": (0.4, 0, 0)}
+            out.append((f, r, -0.42 + cw * 0.07))
+        return out
+    action(rig, "run", gallop(12))
+    # lurk: flattened to the ground, head low, utterly still but for a breath
+    lurk = {"spine": (-1.2, 0, 0), "neck": (0.5, 0, 0), "head": (0.75, 0, 0),
+            "thigh.L": (1.45, 0, 0.35), "thigh.R": (1.45, 0, -0.35), "shin.L": (-1.85, 0, 0), "shin.R": (-1.85, 0, 0),
+            "upperarm.L": (1.35, 0, 0.3), "upperarm.R": (1.35, 0, -0.3), "forearm.L": (1.2, 0, 0), "forearm.R": (1.2, 0, 0),
+            "hand.L": (-0.5, 0, 0), "hand.R": (-0.5, 0, 0)}
+    action(rig, "lurk", [(1, lurk, -0.52), (25, var(lurk, spine=(-1.16, 0, 0)), -0.51), (49, lurk, -0.52)])
+    # attack: rear up, both claws high, slam down and rake
+    rear = var(stance, spine=(-0.15, 0, 0), neck=(0.0, 0, 0), head=(0.1, 0, 0),
+               upperarm_L=(2.7, 0, 0.35), upperarm_R=(2.7, 0, -0.35), forearm_L=(0.7, 0, 0), forearm_R=(0.7, 0, 0),
+               hand_L=(-0.7, 0, 0), hand_R=(-0.7, 0, 0))
+    slam = var(stance, spine=(-1.05, 0, 0), head=(0.8, 0, 0), neck=(0.4, 0, 0),
+               upperarm_L=(1.1, 0, 0.05), upperarm_R=(1.1, 0, -0.05), forearm_L=(0.05, 0, 0), forearm_R=(0.05, 0, 0),
+               hand_L=(0.6, 0, 0), hand_R=(0.6, 0, 0))
+    action(rig, "attack", [(1, stance, -0.2), (5, rear, -0.05), (8, slam, -0.32), (12, var(slam, upperarm_L=(0.6, 0, 0.1)), -0.3), (17, stance, -0.2)])
+    action(rig, "aim", [(1, rear, -0.05), (13, var(rear, head=(0.2, 0.2, 0.25)), -0.06), (25, rear, -0.05)])
+
 def lihnoun():
     """Líhnoun - a heavy, near-black predator. Deep chest under overlapping
     plates and spines, digitigrade legs that coil like springs, long arms that
@@ -205,67 +269,7 @@ def lihnoun():
             p.append(limb(plate, (0.16 * x, 0.02, 0.05), (0.16 * x + c * 0.08, 0.22, 0.02), 0.03, 0.0, verts=4, group="shin." + sd))
         p.append(limb(plate, (0.16 * x, 0.0, 0.05), (0.16 * x, -0.12, 0.01), 0.022, 0.0, verts=4, group="shin." + sd))
     body = bind(rig, p, "Lihnoun")
-    # --- animation: a predator, not a puppet. Weight low, head level, claws ready.
-    stance = {"spine": (-0.6, 0, 0), "neck": (0.25, 0, 0), "head": (0.45, 0, 0),
-              "thigh.L": (0.75, 0, 0.12), "thigh.R": (0.75, 0, -0.12), "shin.L": (-0.95, 0, 0), "shin.R": (-0.95, 0, 0),
-              "upperarm.L": (0.85, 0, 0.18), "upperarm.R": (0.85, 0, -0.18), "forearm.L": (0.75, 0, 0), "forearm.R": (0.75, 0, 0),
-              "hand.L": (-0.2, 0, 0), "hand.R": (-0.2, 0, 0)}
-    def var(d, **kw):
-        o = dict(d)
-        for k, v in kw.items():
-            o[k.replace("_", ".")] = v
-        return o
-    breath_in = var(stance, spine=(-0.56, 0, 0), head=(0.42, 0, 0))
-    look = var(stance, head=(0.5, 0.25, 0.55), neck=(0.3, 0, 0.15))
-    twitch = var(stance, hand_L=(-0.6, 0, 0), forearm_L=(1.0, 0, 0))
-    action(rig, "idle", [(1, stance, -0.2), (17, breath_in, -0.18), (33, stance, -0.2), (39, look, -0.2), (45, look, -0.2),
-                         (49, twitch, -0.2), (53, stance, -0.2), (69, breath_in, -0.18), (85, stance, -0.2)])
-    # walk: a slow stalk, shoulders rolling, head steady
-    def stalk(n):
-        out = []
-        for i in range(5):
-            f = 1 + i * n // 4
-            ph = i / 4 * 2 * math.pi
-            sw = math.sin(ph)
-            r = dict(stance)
-            r["thigh.L"] = (0.75 - sw * 0.45, 0, 0.12); r["thigh.R"] = (0.75 + sw * 0.45, 0, -0.12)
-            r["shin.L"] = (-0.95 - max(0, sw) * 0.5, 0, 0); r["shin.R"] = (-0.95 - max(0, -sw) * 0.5, 0, 0)
-            r["upperarm.L"] = (0.85 + sw * 0.35, 0, 0.18); r["upperarm.R"] = (0.85 - sw * 0.35, 0, -0.18)
-            r["spine"] = (-0.62, 0, sw * 0.12); r["head"] = (0.47, 0, -sw * 0.1)
-            out.append((f, r, -0.2 - abs(math.cos(ph)) * 0.03))
-        return out
-    action(rig, "walk", stalk(28))
-    # run: on all fours. Arms reach and pull like front legs, back arches and stretches
-    def gallop(n):
-        out = []
-        for i in range(5):
-            f = 1 + i * n // 4
-            ph = i / 4 * 2 * math.pi
-            sw = math.sin(ph); cw = math.cos(ph)
-            r = {"spine": (-1.25 + sw * 0.12, 0, 0), "neck": (0.45, 0, 0), "head": (0.75 - sw * 0.1, 0, 0),
-                 "thigh.L": (0.9 - sw * 0.75, 0, 0.1), "thigh.R": (0.9 - sw * 0.65, 0, -0.1),
-                 "shin.L": (-1.0 - max(0, sw) * 0.7, 0, 0), "shin.R": (-1.0 - max(0, sw) * 0.6, 0, 0),
-                 "upperarm.L": (1.0 + sw * 0.8, 0, 0.15), "upperarm.R": (1.0 + sw * 0.7, 0, -0.15),
-                 "forearm.L": (0.2 + max(0, -sw) * 0.9, 0, 0), "forearm.R": (0.2 + max(0, -sw) * 0.8, 0, 0),
-                 "hand.L": (0.4, 0, 0), "hand.R": (0.4, 0, 0)}
-            out.append((f, r, -0.42 + cw * 0.07))
-        return out
-    action(rig, "run", gallop(12))
-    # lurk: flattened to the ground, head low, utterly still but for a breath
-    lurk = {"spine": (-1.2, 0, 0), "neck": (0.5, 0, 0), "head": (0.75, 0, 0),
-            "thigh.L": (1.45, 0, 0.35), "thigh.R": (1.45, 0, -0.35), "shin.L": (-1.85, 0, 0), "shin.R": (-1.85, 0, 0),
-            "upperarm.L": (1.35, 0, 0.3), "upperarm.R": (1.35, 0, -0.3), "forearm.L": (1.2, 0, 0), "forearm.R": (1.2, 0, 0),
-            "hand.L": (-0.5, 0, 0), "hand.R": (-0.5, 0, 0)}
-    action(rig, "lurk", [(1, lurk, -0.52), (25, var(lurk, spine=(-1.16, 0, 0)), -0.51), (49, lurk, -0.52)])
-    # attack: rear up, both claws high, slam down and rake
-    rear = var(stance, spine=(-0.15, 0, 0), neck=(0.0, 0, 0), head=(0.1, 0, 0),
-               upperarm_L=(2.7, 0, 0.35), upperarm_R=(2.7, 0, -0.35), forearm_L=(0.7, 0, 0), forearm_R=(0.7, 0, 0),
-               hand_L=(-0.7, 0, 0), hand_R=(-0.7, 0, 0))
-    slam = var(stance, spine=(-1.05, 0, 0), head=(0.8, 0, 0), neck=(0.4, 0, 0),
-               upperarm_L=(1.1, 0, 0.05), upperarm_R=(1.1, 0, -0.05), forearm_L=(0.05, 0, 0), forearm_R=(0.05, 0, 0),
-               hand_L=(0.6, 0, 0), hand_R=(0.6, 0, 0))
-    action(rig, "attack", [(1, stance, -0.2), (5, rear, -0.05), (8, slam, -0.32), (12, var(slam, upperarm_L=(0.6, 0, 0.1)), -0.3), (17, stance, -0.2)])
-    action(rig, "aim", [(1, rear, -0.05), (13, var(rear, head=(0.2, 0.2, 0.25)), -0.06), (25, rear, -0.05)])
+    lihnoun_anims(rig)
     finish([rig, body], rig, target=(0, 0.2, 0.8), dist=3.0)
 
 # ---------------------------------------------------------------------------------------
@@ -1053,4 +1057,5 @@ CREATURES = {"lihnoun": lihnoun, "civ_a": lambda: civilian("civ_a"), "civ_b": la
              "ohar": trhac, "nador": nador, "ohnivec": ohnivec, "myslodej": myslodej, "kolos": trojnozec_walker,
              # first roster (no longer used in the game)
              "hlidac": hlidac, "knez": knez, "meduza": meduza, "ohar_old": ohar, "trojnozec_old": trojnozec}
-CREATURES[KIND]()
+if __name__ == "__main__":
+    CREATURES[KIND]()

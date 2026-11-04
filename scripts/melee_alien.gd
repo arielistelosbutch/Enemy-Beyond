@@ -1,11 +1,11 @@
 extends "res://scripts/alien.gd"
 ## Melee races. The host thinks for them.
-##  Líhnoun - near-black, very fast. Waits in the dark until somebody is alone or
+##  Líhavec - near-black, very fast. Waits in the dark until somebody is alone or
 ##            looking away, then runs in, strikes and is gone again. A body it
 ##            kills does not stay dead: a civilian rises as a Nakažený in seconds,
 ##            a mercenary who bleeds out with its seed inside rises too.
 ##  Nakažený - what is left of the victim. Slow, relentless. When it falls, or
-##            after a while anyway, a new Líhnoun tears its way out.
+##            after a while anyway, a new Líhavec tears its way out.
 ##  Ohař     - blind beast. Hunts by sound: anything that makes noise brings it
 ##            running. Up close it smells you. Walk slowly and it may pass by.
 
@@ -37,7 +37,18 @@ func _physics_process(delta: float) -> void:
 		if _roar_t <= 0.0:
 			_roar_t = randf_range(70.0, 130.0)
 			_roar_fx.rpc()
+		# the dread: whoever sees it close knows what it does to people
+		_dread_t -= delta
+		if _dread_t <= 0.0:
+			_dread_t = 1.5
+			for p in mission.players():
+				if p.dead or p.downed or p.global_position.distance_to(global_position) > 16.0:
+					continue
+				if _los(p.global_position + Vector3(0, 1.5, 0)):
+					p.dread.rpc_id(p.get_multiplayer_authority(), 5.0)
 	super._physics_process(delta)
+
+var _dread_t := 0.0
 
 var _roar_t := randf_range(25.0, 50.0)
 @rpc("authority", "call_local", "reliable")
@@ -89,7 +100,7 @@ func _go_lurk(move_far: bool) -> void:
 	super._go_lurk(move_far)
 
 # ---- senses ----------------------------------------------------------------------------
-## Players and (for the Líhnoun) civilians it notices right now.
+## Players and (for the Líhavec) civilians it notices right now.
 func _sense(p: Node) -> bool:
 	var d: float = global_position.distance_to(p.global_position)
 	if R.has("blind"):
@@ -372,6 +383,15 @@ var _charge_prey: Node = null
 func _charge_fx() -> void:
 	Game.play_at(mission, "ohar_charge" if race == "ohar" else ("lihnoun_charge" if race == "lihnoun" else "hiss"), global_position + Vector3.UP, 4 if race == "ohar" else 2)
 
+## The Ohař's roar as it breaks cover: the green ones freeze for a moment (bravery and missions help).
+func _roar_scare() -> void:
+	for p in mission.players():
+		if p.dead or p.downed or p.global_position.distance_to(global_position) > 20.0:
+			continue
+		p.ohar_roar.rpc_id(p.get_multiplayer_authority(), rng.randf())
+
+var _lunge_t := 0.0
+var _lunge_cd := 0.0
 func _hunt(delta: float) -> void:
 	lurking = false
 	if not is_instance_valid(prey) or prey != _charge_prey:
@@ -408,6 +428,17 @@ func _hunt(delta: float) -> void:
 		repath_t = 0.25
 		_go(_snap(pp))
 	var spd := run_spd
+	if race == "zombie":
+		# dull and slow - and then, close up, a sudden desperate lunge
+		_lunge_cd -= delta
+		if _lunge_t > 0.0:
+			_lunge_t -= delta
+			spd = run_spd * 2.6
+		elif d < 4.5 and _lunge_cd <= 0.0:
+			_lunge_cd = rng.randf_range(4.0, 8.0)
+			if rng.randf() < 0.6:
+				_lunge_t = 0.7
+				_charge_fx.rpc()
 	var pc: Array = R.get("pounce", [])
 	if not pc.is_empty():
 		# creep in low and quiet - then, close enough, the mad dash
@@ -418,6 +449,8 @@ func _hunt(delta: float) -> void:
 			if not _charging:
 				_charging = true
 				_charge_fx.rpc()
+				if race == "ohar":
+					_roar_scare()
 			spd = run_spd * float(pc[1])
 	_walk(spd, delta)
 
@@ -451,7 +484,7 @@ func _strike_tick(delta: float) -> void:
 		if R.has("implant"):
 			prey.implant.rpc_id(prey.get_multiplayer_authority())
 		_hit_fx.rpc(prey.global_position + Vector3(0, 1.0, 0))
-		# Líhnoun: strike, then gone again - sometimes
+		# Líhavec: strike, then gone again - sometimes
 		if race == "lihnoun" and not prey.downed and rng.randf() < 0.45:
 			_retreat(rng.randf_range(2.5, 5.0))
 	else:

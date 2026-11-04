@@ -250,7 +250,6 @@ func _ready() -> void:
 	Game.camo = Game.camo_for(Net.mission_params if not Net.mission_params.is_empty() else {"type": "crash"})
 	_pick_weather()
 	_environment()
-	_post_filter()
 	if mtype() == "alienbase":
 		map = preload("res://scripts/alien_base_gen.gd").new().build(self, Net.mission_seed, Net.mission_params)
 		_underground_env()
@@ -791,6 +790,8 @@ func _maybe_spawn() -> void:
 	rng.seed = Net.mission_seed + 99
 	var spawns: Array = map["alien_spawns"].duplicate()
 	var count := (1 if roster().size() <= 1 else 2) + Net.roster.size() + (5 if String(map.get("ufo_kind", "")) in ["battleship", "supply"] else 0) + int(Net.mission_params.get("extra_aliens", 0)) + (1 if Game.veteran() else (-1 if Game.easy() else 0)) + int({"large": 1, "huge": 2, "colossal": 4}.get(Net.mission_params.get("size", ""), 0))
+	# co-op: every mercenary beyond the first brings more of them (on top of the one above)
+	count += maxi(0, Net.roster.size() - 1)
 	var crew := _crew(count, rng)
 	for k in crew.size():
 		var p: Vector3 = spawns[k % spawns.size()] + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
@@ -825,10 +826,7 @@ func _maybe_spawn() -> void:
 		nciv = cpos.size()
 		# their commander waits by the core
 		if map.has("command") and not crew.is_empty():
-			var off := "grey_velitel"
-			for g in GROUPS:
-				if GROUPS[g]["soldier"] == crew[0]:
-					off = GROUPS[g]["officer"]
+			var off: String = GROUPS.get(crew_group, {}).get("officer", "grey_velitel")
 			spawner.spawn({"kind": "alien", "id": next_alien_id, "pos": map["command"], "race": off})
 			next_alien_id += 1
 			aliens_total += 1
@@ -849,13 +847,14 @@ func _far_point(rng: RandomNumberGenerator, min_d: float) -> Vector3:
 ## The alien groups, as in the old game: who serves with whom, and the terror
 ## creature each group brings. "from": campaign month from which the group appears.
 const GROUPS := {
-	"sedaci": {"name": "Šeďáci", "soldier": "grey", "officer": "grey_velitel", "beast": "diskoll", "terror": "diskoll", "from": 0},
+	"sedaci": {"name": "Šediváci", "soldier": "grey", "officer": "grey_velitel", "beast": "diskoll", "terror": "diskoll", "from": 0},
 	"levite": {"name": "Levité", "soldier": "levit", "officer": "levit_velitel", "beast": "ohar", "terror": "ohar", "from": 0},
 	"jestetani": {"name": "Ještěřani", "soldier": "jestetan", "officer": "jestetan_velitel", "beast": "lihnoun", "terror": "lihnoun", "from": 1},
 	"bijci": {"name": "Bijci", "soldier": "bijec", "officer": "bijec_velitel", "beast": "nador", "terror": "ohnivec", "from": 2},
 	"myslodejove": {"name": "Myslodějové", "soldier": "bijec", "officer": "myslodej", "beast": "kolos", "terror": "kolos", "from": 3},
 }
 
+var crew_style := ""
 ## Who is on board: one group per ship, soldiers, an officer on bigger ships,
 ## their beasts or machines; on terror missions their terror creatures.
 func _crew(count: int, rng: RandomNumberGenerator) -> Array:
@@ -885,18 +884,48 @@ func _crew(count: int, rng: RandomNumberGenerator) -> Array:
 		if gid == "bijci":
 			out.append("nador")
 	else:
-		if big or rng.randf() < 0.3:
+		# the make-up of the crew changes from ship to ship - you never know what waits inside:
+		# the usual crew, a pack (more beasts than soldiers), a strike team (no beasts),
+		# or guests from another race on board
+		count = maxi(2, count + [-1, 0, 0, 0, 1][rng.randi() % 5])
+		var r := rng.randf()
+		crew_style = "posádka"
+		if r < 0.22:
+			crew_style = "smečka"
+			var nb := clampi(int(round(count * rng.randf_range(0.5, 0.65))), 1, count - 1)    # (one of them still a soldier)
+			for i in nb:
+				out.append(g["beast"])
+			if big:
+				out.append(g["officer"])
+		elif r < 0.37:
+			crew_style = "úderka"
 			out.append(g["officer"])
-		if count >= 4 or rng.randf() < 0.4:
-			out.append(g["beast"])
+		elif r < 0.5 and (not Campaign.active or month >= 1):
+			crew_style = "hosté"
+			var others := []
+			for og in GROUPS:
+				if og != gid and int(GROUPS[og]["from"]) <= month:
+					others.append(og)
+			if not others.is_empty():
+				var o: Dictionary = GROUPS[others[rng.randi() % others.size()]]
+				for i in clampi(rng.randi_range(1, 2), 1, count - 1):
+					out.append(o["soldier"] if rng.randf() < 0.6 else o["beast"])
+			if big and out.size() < count - 1:
+				out.append(g["officer"])
+		else:
+			if big or rng.randf() < 0.3:
+				out.append(g["officer"])
+			for i in (rng.randi_range(1, 2) if count >= 4 else (1 if rng.randf() < 0.5 else 0)):
+				out.append(g["beast"])
 		if gid == "bijci" and count >= 6:
 			out.append("ohnivec")
 	while out.size() < count:
 		out.append(g["soldier"])
+	if Game.autotest() != "": print("[CREW] %s %s: %s" % [gid, crew_style, out])
 	crew_group = gid
 	return out.slice(0, max(count + 1, 1))
 
-## Host: brings a new alien into the mission (a Líhnoun hatching, a victim rising).
+## Host: brings a new alien into the mission (a Líhavec hatching, a victim rising).
 func spawn_alien(race: String, pos: Vector3) -> void:
 	if not multiplayer.is_server():
 		return
@@ -1043,7 +1072,7 @@ func psi_glow(n: Node3D) -> void:
 	tw.tween_property(l, "light_energy", 0.0, 1.5)
 	tw.tween_callback(l.queue_free)
 
-## A Líhnoun tearing its way out of a body.
+## A Líhavec tearing its way out of a body.
 @rpc("authority", "call_local", "reliable")
 func burst_fx(p: Vector3) -> void:
 	blood_fx(p)
@@ -1089,6 +1118,7 @@ func _process(delta: float) -> void:
 		_critters(delta)
 		_drone_tick(delta)
 		_guard_drone_tick()
+		_late_tick(delta)
 	for l in map.get("lights", []):
 		if is_instance_valid(l):
 			l.light_energy = 1.4 + sin(t * 13.0) * 0.25 + sin(t * 7.3) * 0.2
@@ -1105,7 +1135,7 @@ func _process(delta: float) -> void:
 		_director(delta)
 		_risen()
 
-## Host: a mercenary who bled out with a Líhnoun's seed inside does not stay down.
+## Host: a mercenary who bled out with a Líhavec's seed inside does not stay down.
 func _risen() -> void:
 	for p in players():
 		if p.dead and p.infected and not p.has_meta("risen"):
@@ -1476,7 +1506,8 @@ const BREAK_MULT := {
 	"melee": {"wood": 0.5, "crate": 1.0, "glass": 1.0, "brick": 0.0, "metal": 0.0},
 	"plasma": {"wood": 2.5, "crate": 2.5, "glass": 1.0, "brick": 0.6, "metal": 0.4},
 	"explosion": {"wood": 3.0, "crate": 3.0, "glass": 1.0, "brick": 1.0, "metal": 0.7},
-	"fire": {"wood": 1.0, "crate": 1.2, "glass": 0.6, "brick": 0.0, "metal": 0.0}}
+	"fire": {"wood": 1.0, "crate": 1.2, "glass": 0.6, "brick": 0.0, "metal": 0.0},
+	"melt": {"wood": 3.0, "crate": 3.0, "glass": 3.0, "brick": 2.0, "metal": 1.6}}     # the Ohnivec's heat: nothing holds
 var _nav_dirty := 0.0
 
 @rpc("any_peer", "call_local", "reliable")
@@ -1967,7 +1998,7 @@ func _ambient(sname: String, pos: Vector3, db: float) -> void:
 func alive_aliens() -> int:
 	var n := 0
 	for a in aliens():
-		if not a.dead:
+		if not a.dead and not a.husk:       # (a fallen Nádor does not hold up the mission - but it may get up)
 			n += 1
 	return n
 
@@ -1991,7 +2022,7 @@ func _judge() -> void:
 	if map.has("brain"):
 		for a in aliens():
 			if a.race == "mozek" and a.dead and not finished:
-				_end.rpc(true, "VELKÝ MOZEK JE MRTVÝ. Jejich velín na Marsu utichl - a s ním každá loď, každý Šeďák, každý hlas v hlavě. Je konec.")
+				_end.rpc(true, "VELKÝ MOZEK JE MRTVÝ. Jejich velín na Marsu utichl - a s ním každá loď, každý Šedivák, každý hlas v hlavě. Je konec.")
 				return
 	var mt := mtype()
 	if mt == "rescue":
@@ -2037,6 +2068,8 @@ func _loot(success: bool) -> Dictionary:
 		# the bodies (and the living) go home on the Kondor for the laboratory
 		if a.captured:
 			out["live_" + a.race] = int(out.get("live_" + a.race, 0)) + 1
+		elif a.dead and a.race in Campaign.WRECKS:
+			out["trosky_" + a.race] = 1      # a blown-up machine: only scraps, one load a mission
 		elif a.dead:
 			out["corpse_" + a.race] = int(out.get("corpse_" + a.race, 0)) + 1
 	for a in aliens():
@@ -2134,7 +2167,16 @@ func _end(success: bool, why: String, airlift := false) -> void:
 			tc += p.captures
 			if p.dead or (p.downed and not _airlift and p.global_position.distance_to(map["evac"]) >= 3.5):
 				lost += 1
-		camp = Campaign.mission_done(int(Net.mission_params.get("id", -1)), success, tk, tc, lost, civ_saved, civ_dead, crew_names, _loot(success), lost >= players().size(), kits, q)
+		if not officer_killers.is_empty():
+			Campaign.mark_nemesis(officer_killers)
+		var gl := gear_lost(success)
+		camp = Campaign.mission_done(int(Net.mission_params.get("id", -1)), success, tk, tc, lost, civ_saved, civ_dead, crew_names, _loot(success), lost >= players().size(), kits, q, gl, kits_locker)
+		# what came out of their own lockers: each one crosses it off his own list
+		for peer in gl:
+			var ll := Campaign.locker_part(kits.get(peer, []), gl[peer], kits_locker.get(peer, {}))
+			var pl2: Node = actors.get_node_or_null("P%d" % peer)
+			if pl2 and not ll.is_empty():
+				pl2.locker_lost.rpc_id(peer, ll)
 		Net.last_result = camp
 	if campaign:
 		lines.append("Hodnocení mise: %s (odměny ×%.2f)" % [quality_name(q), q])
@@ -2560,6 +2602,24 @@ func vip() -> Node:
 			return c
 	return null
 
+## A spot where a person fits (not inside a crate or a wall): the spot itself, or the nearest
+## free one around it (rings of 0.35 m up to 1.4 m).
+func free_spot(at: Vector3) -> Vector3:
+	var space := get_world_3d().direct_space_state
+	var cap := CapsuleShape3D.new()
+	cap.radius = 0.27
+	cap.height = 1.6
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = cap
+	q.collision_mask = 1 | 64 | 128
+	for r in [0.0, 0.35, 0.7, 1.05, 1.4]:
+		for i in (1 if r == 0.0 else 12):
+			var p: Vector3 = at + Vector3(cos(TAU * i / 12.0), 0, sin(TAU * i / 12.0)) * r
+			q.transform = Transform3D(Basis(), p + Vector3(0, 0.65, 0))
+			if space.intersect_shape(q, 1).is_empty():
+				return p
+	return at
+
 ## Host, at spawn: what each kind of mission needs on the map.
 func _spawn_objectives(rng: RandomNumberGenerator) -> void:
 	match mtype():
@@ -2578,6 +2638,7 @@ func _spawn_objectives(rng: RandomNumberGenerator) -> void:
 				var snap := NavigationServer3D.map_get_closest_point(nm, best)
 				if snap.distance_to(best) < 3.0:
 					best = snap + Vector3(0, 0.3, 0)
+			best = free_spot(best)
 			spawner.spawn({"kind": "civ", "id": 50, "pos": best, "vip": true})
 			# hunters already near the beacon
 			for k in 2:
@@ -2747,13 +2808,131 @@ func objective_text() -> String:
 			return "Obrana základny: vln zbývá %d, vetřelců %d" % [waves_left, alive_aliens()]
 	return ""
 
+## Host: who killed one of their commanders this mission (they will remember him).
+var officer_killers := []
+
+# ---- the late war: night packs and reinforcements -------------------------------------------------
+var _pack_t := 60.0
+var _late_reinf_t := 0.0
+var _reinf_waves := 0
+var _nem_done := false
+## Host, every frame of a running mission.
+func _late_tick(delta: float) -> void:
+	if not multiplayer.is_server() or not started() or home() or mtype() in ["base", "mars"]:
+		return
+	if not _nem_done and t > 4.0:
+		_nem_done = true
+		_nemesis_start()
+	var late := clampf((float(Net.mission_params.get("day", 0.0)) - 15.0) / 90.0, 0.0, 1.0)
+	if Game.cmd_arg("late", "") != "":
+		late = float(Game.cmd_arg("late", "0"))
+	# at night they hunt in packs: a few of the waiting ones close in on one mercenary together
+	if phase() == "noc":
+		_pack_t -= delta
+		if _pack_t <= 0.0:
+			_pack_t = randf_range(lerpf(110.0, 55.0, late), lerpf(160.0, 85.0, late))
+			var ps := players().filter(func(p): return not p.dead and not p.downed)
+			if not ps.is_empty():
+				var prey: Node = ps[randi() % ps.size()]
+				var n := 0
+				var want := 2 + int(round(late * 2.0)) + maxi(0, Net.roster.size() - 1)
+				var near := aliens().filter(func(a): return not a.dead and not a.husk and a.state != a.S.COMBAT and a.state != a.S.DRAG \
+					and a.global_position.distance_to(prey.global_position) < 70.0)
+				near.sort_custom(func(a, b): return a.global_position.distance_to(prey.global_position) < b.global_position.distance_to(prey.global_position))
+				for a in near:
+					if n >= want:
+						break
+					a.stalk(prey)
+					n += 1
+				if n >= 2 and Game.autotest() != "": print("[LATE] night pack of %d after %s" % [n, prey.display_name])
+	# took too long: another ship drops more of them (the later in the war, the sooner)
+	_late_reinf_t += delta
+	var first := lerpf(600.0, 360.0, late)
+	if _reinf_waves < 3 and _late_reinf_t >= first + _reinf_waves * lerpf(300.0, 200.0, late):
+		_reinf_waves += 1
+		var g: Dictionary = GROUPS.get(crew_group, GROUPS.values()[0])
+		var cnt := 2 + int(round(late)) + maxi(0, Net.roster.size() - 1)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = Net.mission_seed + 500 + _reinf_waves
+		var at: Vector3 = _far_point(rng, 40.0)
+		for i in cnt:
+			spawn_alien(String(g["officer"] if i == 0 and late > 0.5 else g["soldier"]), free_spot(at + Vector3(rng.randf_range(-3, 3), 0.3, rng.randf_range(-3, 3))))
+		hud_note.rpc("RADAR: další loď shodila posily (%d). Zdržujete se - pospěšte!" % cnt)
+		if Game.autotest() != "": print("[LATE] reinforcements %d (wave %d)" % [cnt, _reinf_waves])
+
+## Host, at the start: the marked ones learn they are hunted; some aliens go straight for them.
+func _nemesis_start() -> void:
+	var names: Array = Net.mission_params.get("nemesis", [])
+	if names.is_empty():
+		return
+	for p in players():
+		if p.display_name in names:
+			p.hunted_note.rpc_id(p.get_multiplayer_authority())
+			var hunters := aliens().filter(func(a): return not a.dead and (a.R.has("guns") or a.tac in ["grey", "levit", "soldier", "hunter"]))
+			hunters.shuffle()
+			for a in hunters.slice(0, 1 + int(hunters.size() / 3)):
+				a.nemesis = p
+
 ## Host: what each mercenary took on board (lost with the Kondor if the whole team falls).
 var kits := {}
+var kits_now := {}        # host: what each one carries now (reported every few seconds)
+var kits_locker := {}     # host: how much of each kit came from the merc's own locker
+var _claimed := {}        # host: armory pieces already taken by the team
 @rpc("any_peer", "call_local", "reliable")
-func report_kit(ids: Array) -> void:
+func report_kit(ids: Array, from_locker := {}) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := multiplayer.get_remote_sender_id()
+	id = id if id != 0 else 1
+	# the armory is one for the whole team: what is over its stock stays at the base
+	var allot: Dictionary = Net.mission_params.get("allot", {})
+	var armory: Dictionary = Net.mission_params.get("armory", {})
+	var cnt := {}
+	for i in ids:
+		cnt[i] = int(cnt.get(i, 0)) + 1
+	var strip := {}
+	if Net.mission_params.has("allot"):
+		for i in cnt:
+			var need := maxi(0, int(cnt[i]) - int(allot.get(i, 0)) - int(from_locker.get(i, 0)))
+			var free := maxi(0, int(armory.get(i, 0)) - int(_claimed.get(i, 0)))
+			var take := mini(need, free)
+			_claimed[i] = int(_claimed.get(i, 0)) + take
+			if need > take:
+				strip[i] = need - take
+	var kept := ids.duplicate()
+	for i in strip:
+		for k in int(strip[i]):
+			kept.erase(i)
+	kits[id] = kept
+	kits_now[id] = kept
+	kits_locker[id] = from_locker
+	if not strip.is_empty():
+		var pl: Node = actors.get_node_or_null("P%d" % id)
+		if pl:
+			pl.kit_strip.rpc_id(id, strip)
+
+@rpc("any_peer", "call_local", "reliable")
+func report_kit_now(ids: Array) -> void:
 	if multiplayer.is_server():
 		var id := multiplayer.get_remote_sender_id()
-		kits[id if id != 0 else 1] = ids
+		kits_now[id if id != 0 else 1] = ids
+
+## Host, at the end: what each one lost - {peer: {item: n}}. Won and home alive: what he used up or
+## left lying; otherwise everything he took (it stays out there).
+func gear_lost(success: bool) -> Dictionary:
+	var out := {}
+	for peer in kits:
+		var pl: Node = actors.get_node_or_null("P%d" % peer)
+		var home: bool = success and pl != null and not pl.dead and not (pl.downed and not _airlift and pl.global_position.distance_to(map["evac"]) >= 3.5)
+		var now: Array = (kits_now.get(peer, []) as Array).duplicate() if home else []
+		var lost := {}
+		for i in kits[peer]:
+			if i in now:
+				now.erase(i)
+			else:
+				lost[i] = int(lost.get(i, 0)) + 1
+		out[peer] = lost
+	return out
 
 ## A short line for everybody (the Brain calling its guards...).
 @rpc("authority", "call_local", "reliable")

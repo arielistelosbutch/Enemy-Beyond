@@ -1,7 +1,7 @@
 extends CharacterBody3D
 ## Civilian on a terror mission. Panics: runs from aliens and gunfire, hides,
 ## cowers. A mercenary standing next to a cowering civilian calms him down -
-## then he follows that mercenary (E) to the Kondor. A Líhnoun kills with one
+## then he follows that mercenary (E) to the Kondor. A Líhavec kills with one
 ## strike, and a few seconds later the body gets up again.
 
 enum C { WANDER, FLEE, COWER, FOLLOW, SAFE }
@@ -228,7 +228,7 @@ func _saved() -> void:
 	if mission.local_player():
 		mission.hud.message(("%s je na palubě Kondoru." % mission.vip_name) if vip else "Civilista je na palubě Kondoru.", 2.5)
 
-## Struck by an alien (host). A Líhnoun's victim rises again.
+## Struck by an alien (host). A Líhavec's victim rises again.
 func killed_by(race: String) -> void:
 	if dead:
 		return

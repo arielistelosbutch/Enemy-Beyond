@@ -23,6 +23,25 @@ olive = mat("GrenadeOlive", (0.18, 0.22, 0.12))
 flare = mat("FlareRed", (0.7, 0.12, 0.08))
 scan = mat("ScannerBody", (0.25, 0.27, 0.24))
 screen = mat("ScannerScreen", (0.2, 0.9, 0.4), emit=2.0)
+plate = mat("ArmorPlate", (0.22, 0.22, 0.25), rough=0.45)         # 0.50: the UAI light armour (Ari's design)
+idlight = mat("IdLight", (0.55, 0.95, 1.0), emit=3.0)
+idred = mat("IdRed", (0.75, 0.08, 0.06), emit=0.6)
+sole = mat("Sole", (0.03, 0.03, 0.03))
+letter = mat("PatchText", (0.05, 0.05, 0.04))
+
+def chamf(o, w=0.012):
+    bpy.ops.object.select_all(action='DESELECT')
+    o.select_set(True)
+    bpy.context.view_layer.objects.active = o
+    m = o.modifiers.new("Bevel", 'BEVEL')
+    m.width = w
+    m.segments = 1
+    bpy.ops.object.modifier_apply(modifier="Bevel")
+    return o
+
+def bb(m, loc, size, group, w=0.012, rot=(0, 0, 0)):
+    """A box with chamfered edges (softer, reads better at a distance)."""
+    return chamf(box(m, loc, size, rot=rot, group=group), w)
 
 B = {
     "root": ((0, 0, 0), (0, 0, 0.3), None),
@@ -62,8 +81,8 @@ def piece(name, parts):
 
 # ---- body --------------------------------------------------------------------------
 body = []
-body.append(box(cloth, (0, 0, 1.24), (0.38, 0.22, 0.38), group="spine"))           # torso
-body.append(box(cloth, (0, 0, 1.0), (0.34, 0.2, 0.16), group="hips"))
+body.append(bb(cloth, (0, 0, 1.24), (0.38, 0.22, 0.38), "spine", 0.03))            # torso
+body.append(bb(cloth, (0, 0, 1.0), (0.34, 0.2, 0.16), "hips", 0.02))
 body.append(cyl(skin, (0, 0, 1.49), 0.055, 0.1, verts=6, group="neck"))
 body.append(box(skin, (0, 0.01, 1.66), (0.18, 0.2, 0.23), group="head"))           # head
 body.append(box(skin, (0, 0.11, 1.628), (0.036, 0.026, 0.042), group="head"))      # nose
@@ -78,18 +97,41 @@ for x in (1, -1):
     body.append(box(eyes, (0.042 * x, 0.112, 1.69), (0.018, 0.006, 0.018), group="head"))
     body.append(box(hairm, (0.042 * x, 0.108, 1.712), (0.05, 0.012, 0.01), group="head"))
 for s, x in (("L", 1), ("R", -1)):
-    body.append(box(cloth, (0.215 * x, 0, 1.28), (0.1, 0.11, 0.26), group="upperarm." + s))
-    body.append(box(cloth, (0.235 * x, 0, 1.01), (0.085, 0.095, 0.25), group="forearm." + s))
-    body.append(box(glove, (0.24 * x, 0.01, 0.83), (0.07, 0.08, 0.1), group="hand." + s))
-    body.append(box(cloth, (0.1 * x, 0, 0.74), (0.14, 0.15, 0.42), group="thigh." + s))
-    body.append(box(cloth, (0.1 * x, 0, 0.33), (0.12, 0.13, 0.36), group="shin." + s))
-    body.append(box(webbing, (0.1 * x, 0.07, 0.52), (0.11, 0.04, 0.1), group="shin." + s))   # knee pad
-    body.append(box(boots, (0.1 * x, 0.04, 0.07), (0.12, 0.25, 0.14), group="shin." + s))
-    body.append(box(patch, (0.265 * x, 0, 1.33), (0.01, 0.06, 0.06), group="upperarm." + s))
+    U, F, HD, T, S = "upperarm." + s, "forearm." + s, "hand." + s, "thigh." + s, "shin." + s
+    body.append(bb(cloth, (0.215 * x, 0, 1.28), (0.105, 0.115, 0.26), U))
+    body.append(bb(cloth, (0.235 * x, 0, 1.01), (0.09, 0.1, 0.25), F))
+    body.append(bb(webbing, (0.237 * x, 0, 0.9), (0.096, 0.106, 0.035), F, 0.006))        # cuff strap
+    body.append(bb(glove, (0.24 * x, 0.01, 0.83), (0.075, 0.085, 0.1), HD))
+    body.append(bb(webbing, (0.24 * x, 0.052, 0.845), (0.06, 0.012, 0.035), HD, 0.004))    # knuckle guard
+    body.append(bb(cloth, (0.1 * x, 0, 0.74), (0.145, 0.155, 0.42), T))
+    body.append(bb(cloth, (0.17 * x, 0.01, 0.7), (0.035, 0.11, 0.13), T, 0.008))           # cargo pocket
+    body.append(bb(webbing, (0.1 * x, 0.0, 0.62), (0.155, 0.165, 0.028), T, 0.005))        # thigh strap
+    body.append(bb(cloth, (0.1 * x, 0, 0.33), (0.125, 0.135, 0.36), S))
+    body.append(bb(plate, (0.1 * x, 0.075, 0.5), (0.11, 0.035, 0.13), S, 0.012))           # armoured knee pad
+    body.append(bb(webbing, (0.1 * x, 0.0, 0.42), (0.13, 0.14, 0.025), S, 0.005))
+    body.append(bb(boots, (0.1 * x, 0.04, 0.09), (0.125, 0.26, 0.16), S, 0.02))            # boot
+    body.append(bb(boots, (0.1 * x, 0.0, 0.19), (0.13, 0.14, 0.08), S, 0.01))              # boot shaft
+    body.append(box(sole, (0.1 * x, 0.04, 0.012), (0.13, 0.27, 0.025), group=S))
+    for k in range(3):                                                                     # laces
+        body.append(box(webbing, (0.1 * x, 0.105 - k * 0.015, 0.14 + k * 0.03), (0.05, 0.006, 0.008), group=S))
+    # the UAI patch on the shoulder (its colour tells the players apart)
+    body.append(box(patch, (0.268 * x, 0, 1.33), (0.008, 0.075, 0.05), group=U))
+    for (dy, dz, w, h) in ((-0.025, 0, 0.006, 0.03), (-0.012, -0.012, 0.02, 0.006), (0.0, 0, 0.006, 0.03),     # U
+                           (0.008, 0, 0.006, 0.03), (0.02, 0, 0.006, 0.03), (0.014, 0.012, 0.016, 0.006), (0.014, 0.0, 0.016, 0.005),  # A
+                           (0.03, 0, 0.006, 0.03)):                                                              # I
+        body.append(box(letter, (0.273 * x, dy * x, 1.33 + dz), (0.003, w, h), group=U))
+# the wrist unit with its little screen (left forearm), and a collar
+body.append(bb(webbing, (0.245, 0.03, 0.94), (0.06, 0.07, 0.05), "forearm.L", 0.006))
+body.append(box(idlight, (0.245, 0.067, 0.94), (0.04, 0.004, 0.032), group="forearm.L"))
+body.append(bb(cloth, (0, 0.0, 1.45), (0.2, 0.17, 0.05), "spine", 0.015))
 piece("Body", body)
-# plate carrier with mag pouches (always worn)
-v = [box(vest, (0, 0.005, 1.25), (0.41, 0.25, 0.32), group="spine"),
-     box(webbing, (0, 0.13, 1.17), (0.32, 0.03, 0.1), group="spine")]
+# the harness and the belt (always worn)
+v = [bb(webbing, (0, 0.0, 0.955), (0.36, 0.22, 0.045), "hips", 0.008)]
+v.append(box(metal, (0, 0.112, 0.955), (0.05, 0.008, 0.03), group="hips"))                  # buckle
+for x in (1, -1):
+    v.append(bb(webbing, (0.11 * x, 0.115, 1.27), (0.045, 0.012, 0.36), "spine", 0.004))     # shoulder straps
+    v.append(bb(webbing, (0.11 * x, -0.115, 1.27), (0.045, 0.012, 0.36), "spine", 0.004))
+    v.append(bb(webbing, (0.11 * x, 0.0, 1.448), (0.05, 0.24, 0.012), "spine", 0.004))
 piece("Vest", v)
 # ---- looks: hair, beards, female face details (shown / hidden by the game) ----
 def hp(name, parts):
@@ -146,9 +188,15 @@ hp("Look_Jaw", [box(skin, (0, 0.04, 1.562), (0.174, 0.16, 0.045), group="head"),
                 box(lips, (0, 0.1115, 1.576), (0.05, 0.006, 0.008), group="head")])  # and a thin mouth
 # headgear variants
 # a dome that sits ON the head (over the hair), its rim above the brows so the eyes show
-hm = [sphere(helmet, (0, 0.005, 1.772), 0.132, seg=10, rings=6, scale=(1.18, 1.25, 0.78), group="head"),
-      box(helmet, (0, 0.005, 1.747), (0.318, 0.336, 0.03), group="head"),
-      box(metal, (0, 0.148, 1.79), (0.05, 0.02, 0.04), group="head")]
+hm = [sphere(helmet, (0, 0.005, 1.772), 0.132, seg=16, rings=10, scale=(1.18, 1.25, 0.78), group="head"),
+      bb(helmet, (0, 0.005, 1.747), (0.318, 0.336, 0.03), "head", 0.012),               # the brim
+      bb(metal, (0, 0.148, 1.79), (0.05, 0.02, 0.04), "head", 0.006),                    # the night-vision mount
+      box(idlight, (0.09, 0.15, 1.765), (0.04, 0.006, 0.01), group="head"),             # the ID light
+      bb(helmet, (0, -0.02, 1.86), (0.06, 0.12, 0.012), "head", 0.004)]                 # the ridge
+for x in (1, -1):
+    hm.append(box(webbing, (0.094 * x, 0.02, 1.62), (0.008, 0.018, 0.13), group="head"))    # chin strap
+    hm.append(box(webbing, (0.06 * x, 0.09, 1.54), (0.07, 0.016, 0.012), rot=(0, 0, 0.5 * x), group="head"))
+    hm.append(bb(metal, (0.152 * x, -0.01, 1.77), (0.016, 0.06, 0.04), "head", 0.004))    # comms ear cups
 piece("Gear_Helmet", hm)
 cap = [box(cloth, (0, 0.005, 1.797), (0.232, 0.252, 0.078), group="head"),
        box(cloth, (0, 0.158, 1.766), (0.2, 0.11, 0.02), group="head")]
@@ -158,11 +206,17 @@ piece("Gear_Torch", [cyl(metal, (0.138, 0.05, 1.765), 0.022, 0.12, verts=6, rot=
                      cyl(lens, (0.138, 0.112, 1.765), 0.02, 0.005, verts=6, rot=(math.pi / 2, 0, 0), group="head")])
 # belt pouches b0..b3
 for i, xx in enumerate((0.12, 0.04, -0.04, -0.12)):
-    piece("Gear_Belt%d" % i, [box(webbing, (xx, 0.12, 0.97), (0.07, 0.05, 0.09), group="hips")])
+    piece("Gear_Belt%d" % i, [bb(webbing, (xx, 0.125, 0.965), (0.07, 0.055, 0.095), "hips", 0.01),
+                              bb(webbing, (xx, 0.128, 1.012), (0.074, 0.06, 0.02), "hips", 0.006)])     # the flap
 # backpack (any backpack slot used)
-piece("Gear_Backpack", [box(webbing, (0, -0.2, 1.22), (0.32, 0.17, 0.38), group="spine"),
-                        box(vest, (0, -0.3, 1.17), (0.26, 0.05, 0.22), group="spine"),
-                        box(webbing, (0, -0.19, 1.45), (0.3, 0.12, 0.07), group="spine")])
+bp = [bb(webbing, (0, -0.2, 1.22), (0.32, 0.17, 0.38), "spine", 0.04),
+      bb(vest, (0, -0.3, 1.16), (0.26, 0.05, 0.22), "spine", 0.02),
+      bb(webbing, (0, -0.19, 1.45), (0.3, 0.12, 0.07), "spine", 0.02)]
+for x in (1, -1):
+    bp.append(bb(vest, (0.18 * x, -0.2, 1.18), (0.05, 0.12, 0.2), "spine", 0.015))            # side pouches
+for r in (0.7, -0.7):                                                                       # the X
+    bp.append(box(mat("BackX", (0.75, 0.75, 0.7)), (0, -0.327, 1.16), (0.035, 0.006, 0.19), rot=(0, r, 0), group="spine"))
+piece("Gear_Backpack", bp)
 # items that show on the vest
 piece("Gear_Grenade", [sphere(olive, (0.13, 0.15, 1.33), 0.04, seg=6, rings=4, group="spine"),
                        box(metal, (0.13, 0.15, 1.38), (0.02, 0.02, 0.03), group="spine")])
@@ -173,11 +227,16 @@ piece("Gear_Medkit", [box(medred, (-0.14, -0.13, 1.05), (0.12, 0.08, 0.1), group
 piece("Gear_Holster", [box(webbing, (-0.2, 0.0, 0.88), (0.05, 0.12, 0.16), group="thigh.R"),
                        box(metal, (-0.2, 0.02, 0.97), (0.03, 0.05, 0.04), group="thigh.R")])
 # armour from research: a ballistic vest, then plates of alien alloy
-piece("Gear_Vest", [box(mat("Kevlar", (0.2, 0.22, 0.18)), (0, 0.115, 1.27), (0.36, 0.06, 0.34), group="spine"),
-                    box(mat("Kevlar", (0.2, 0.22, 0.18)), (0, -0.125, 1.27), (0.36, 0.05, 0.34), group="spine"),
-                    box(webbing, (0.12, 0, 1.45), (0.07, 0.26, 0.04), group="spine"),
-                    box(webbing, (-0.12, 0, 1.45), (0.07, 0.26, 0.04), group="spine"),
-                    box(webbing, (0, 0.15, 1.2), (0.3, 0.02, 0.05), group="spine")])
+gv = [bb(plate, (0, 0.13, 1.28), (0.34, 0.06, 0.32), "spine", 0.035),                 # the chest plate
+      bb(plate, (0, 0.145, 1.4), (0.26, 0.05, 0.08), "spine", 0.02),
+      bb(plate, (0, -0.13, 1.28), (0.34, 0.05, 0.32), "spine", 0.03),                   # back plate
+      box(idlight, (0.02, 0.164, 1.31), (0.2, 0.006, 0.014), group="spine"),             # the ID light strip
+      box(idred, (-0.1, 0.164, 1.31), (0.01, 0.006, 0.06), group="spine"),
+      bb(metal, (0.12, 0.164, 1.31), (0.035, 0.008, 0.035), "spine", 0.006)]
+for x, sd in ((1, "L"), (-1, "R")):
+    gv.append(bb(plate, (0.25 * x, 0, 1.43), (0.13, 0.17, 0.08), "upperarm." + sd, 0.025))   # shoulder plates
+    gv.append(bb(plate, (0.255 * x, 0, 1.37), (0.11, 0.15, 0.06), "upperarm." + sd, 0.02))
+piece("Gear_Vest", gv)
 alloy = mat("Alloy", (0.24, 0.23, 0.3), rough=0.3)
 seam = mat("AlloyGlow", (0.3, 0.9, 0.8), emit=2.5)
 piece("Gear_Plate", [box(alloy, (0, 0.13, 1.3), (0.4, 0.07, 0.36), group="spine"),
@@ -305,6 +364,8 @@ if "--preview" in sys.argv:
     for o in meshes:
         if o.name == "Gear_Cap":
             o.hide_render = True
+        if "--kit" in sys.argv and (o.name.startswith("Look_") and o.name not in ("Look_HairBuzz", "Look_Jaw") or o.name in ("Gear_Plate", "Gear_Scanner", "Gear_Flare", "Gear_Grenade")):
+            o.hide_render = True
     if "--head" in sys.argv:
         for o in meshes:
             if o.name.startswith("Look_") and o.name not in sys.argv[sys.argv.index("--head") + 1].split(","):
@@ -313,6 +374,6 @@ if "--preview" in sys.argv:
                 o.hide_render = o.name != sys.argv[sys.argv.index("--head") + 2]
         preview(sys.argv[i + 3], target=(0, 0, 1.68), dist=0.75, angle=float(sys.argv[i + 4]), height=0.05)
     else:
-        preview(sys.argv[i + 3], target=(0, 0, 1.0), dist=3.4, angle=float(sys.argv[i + 4]))
+        preview(sys.argv[i + 3], target=(0, 0, 1.0), dist=2.6 if "--kit" in sys.argv else 3.4, angle=float(sys.argv[i + 4]), height=0.25, res=(420, 560) if "--kit" in sys.argv else (480, 480))
 else:
     export_glb(OUT, [rig] + meshes, animations=True)

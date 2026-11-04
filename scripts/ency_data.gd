@@ -6,10 +6,10 @@ class_name EncyData
 const CATS := ["Vetřelci", "Pitvy a výslechy", "Stroje a lodě vetřelců", "Zbraně a výbava", "Naše letadla", "Objevy"]
 
 const AUTOPSY := {
-	"grey": ["pitva", "Tělo je lehké, kosti duté jako u ptáka. Trávicí soustava skoro chybí - šeďák se živí roztokem, který vstřebává kůží. Mozek a oči jsou naopak nepřiměřeně velké a propojené hustou sítí nervů. Rozmnožovací orgány nenašel nikdo. Vypadá to na tvora vypěstovaného, ne zrozeného. Nejzranitelnější je hrudník: tenká stěna, pod ní srdce velikosti pěsti."],
+	"grey": ["pitva", "Tělo je lehké, kosti duté jako u ptáka. Trávicí soustava skoro chybí - šedivák se živí roztokem, který vstřebává kůží. Mozek a oči jsou naopak nepřiměřeně velké a propojené hustou sítí nervů. Rozmnožovací orgány nenašel nikdo. Vypadá to na tvora vypěstovaného, ne zrozeného. Nejzranitelnější je hrudník: tenká stěna, pod ní srdce velikosti pěsti."],
 	"levit": ["pitva_levit", "Spodní polovina těla byla chirurgicky odstraněna a nahrazena pulzujícím vakem, který tvora nadnáší a zároveň dýchá, tráví a čistí krev místo něj. Horní polovina je svalnatý predátor se zuby žraloka. Pokud vak prorazíš, tvor se zřítí a udusí. Na zádech pahýly trysek srostlé s páteří."],
 	"ohar": ["pitva_ohar", "Kostěná čepel na čele roste přímo z lebky a je ostřejší než chirurgický skalpel. Oči zakrnělé, zato ušní dutiny obrovské - ohař slyší tlukot srdce na desítky metrů. Pancéřové pláty na plecích jsou kost, ne kov, a mezi nimi je kůže tenká jako u psa. Mířit na boky."],
-	"jestetan": ["pitva_jestetan", "Šupiny jsou tvrdé jako keramika a odvádějí teplo - proto je infračervená optika skoro nevidí. V hrdle orgán, který mění barvu kůže; u starších kusů je propojený s implantátem maskování. Samice nosí v těle desítky vajec, ze kterých se líhnou Líhnouni. Nejslabší místo: hrdlo pod čelistí."],
+	"jestetan": ["pitva_jestetan", "Šupiny jsou tvrdé jako keramika a odvádějí teplo - proto je infračervená optika skoro nevidí. V hrdle orgán, který mění barvu kůže; u starších kusů je propojený s implantátem maskování. Samice nosí v těle desítky vajec, ze kterých se líhnou Líhavci. Nejslabší místo: hrdlo pod čelistí."],
 	"lihnoun": ["pitva_lihnoun", "Chitinový krunýř drží kulky, ale ne žár - plazma ho propálí snadno. Dvě dlouhé drápové končetiny jsou duté a nesou zárodek, který tvor vpraví do oběti. Zárodek přebírá nervovou soustavu hostitele během několika vteřin. Srdce má tři a mozek rozdělený do uzlin podél páteře, proto běží ještě chvíli po zásahu do hlavy."],
 	"bijec": ["pitva_bijec", "Oblek není oblek: je to živá tkáň, srostlá s kůží, a slouží jako pancíř i chladič. Pod ní svaly s implantovanými vlákny, které násobí sílu. Bijci nemají rozmnožovací orgány ani bolestivé receptory - jsou to vypěstovaní vojáci. Švy obleku na bocích a v podpaží jsou místa, kde kulka projde."],
 	"nador": ["pitva_nador", "Uvnitř není nic, co by připomínalo orgány. Jen žíly, tekutina a desítky očí bez víček. Každá buňka si nese kopii celého tvora, proto se po zásahu znovu zformuje. Zastavit ho jde jen tak, že ho rozstřílíš na kusy, dokud leží."],
@@ -22,7 +22,7 @@ const AUTOPSY := {
 const INTERROGATION := "Velitel mluví jen v obrazech, které nám vnutí do mysli. Opakuje se jedno místo: rudá planeta, pod povrchem obrovský sál a v něm něco, co myslí za všechny. Vojáci poslouchají velitele, velitelé poslouchají TO. Pokud to zničíme, celá invaze ztratí hlavu."
 
 const UFO := {
-	"ufo_scout": ["Průzkumník", "Malý disk s posádkou několika šeďáků nebo jejich spojenců. Létá nízko, mapuje krajinu, unáší dobytek. Často havaruje - jeho motor je rychlý, ale křehký. Uvnitř jediný sál a pohonná jednotka.", "missions:0"],
+	"ufo_scout": ["Průzkumník", "Malý disk s posádkou několika šediváků nebo jejich spojenců. Létá nízko, mapuje krajinu, unáší dobytek. Často havaruje - jeho motor je rychlý, ale křehký. Uvnitř jediný sál a pohonná jednotka.", "missions:0"],
 	"ufo_raider": ["Nájezdník", "Střední loď pro přepady a únosy. Dva sály, silnější motor, pancéřovaný trup. Posádka bývá větší a mívá s sebou šelmy nebo stroje.", "missions:3"],
 	"ufo_harvester": ["Sklízeč", "Velká loď, která sklízí - lidi, zvířata, suroviny. Na palubě vždy velitel a těžká výzbroj. Když přistane, není to průzkum, je to žeň.", "missions:6"],
 }
@@ -46,7 +46,7 @@ const ITEM_TEXT := {
 	"scanner": "Detektor pohybu. Pípá, když se něco hýbe. Neřekne co.",
 	"radio": "Vysílačka. Bez ní je tým jen pár lidí ve tmě.",
 	"nvg": "Noktovizor PVS-7, armádní kus z osmdesátých let. Stačí ho mít u sebe: L ho sklopí před oči. Ve tmě vidíš do dálky, jen zeleně a zrnitě. Do svítilny, ohně nebo plazmy se nedívej - oslepí tě.",
-	"vesta": "Balistická vesta s keramickými pláty. O pětinu menší zranění.",
+	"vesta": "VOJENSKÁ DATABÁZE - PROJEKT X\nOznačení: STANDARDNÍ BOJOVÁ VÝSTROJ UAI. Klasifikace: Osobní ochranná výstroj pozemních jednotek. Typ: Lehká modulární bojová zbroj. Výrobce: Vojenský vývojový program Projekt X. Status: Standardní výbava operativců UAI.\n\nPOPIS VÝSTROJE: Standardní bojová výstroj UAI představuje základní ochranný systém vojáků nasazovaných v rámci Projektu X. Byla navržena s důrazem na pohyblivost, modularitu a ochranu proti konvenčním i mimozemským zbraním.\nZákladem je odolná vojenská kombinéza doplněná soustavou lehkých pancéřových plátů, které chrání nejdůležitější části těla, aniž by výrazně omezovaly pohyb vojáka.\nAčkoliv poskytuje spolehlivou ochranu proti střepinám a části běžných balistických hrozeb, její účinnost proti pokročilým mimozemským energetickým zbraním zůstává omezená.\n\nKONSTRUKCE A OCHRANA:\n- Hrudní pancíř: Kompozitní ochranný plát určený k ochraně životně důležitých orgánů. Integrovaný identifikační světelný prvek umožňuje rozpoznání spojeneckých jednotek.\n- Bojová přilba: Lehká balistická přilba s komunikační soupravou a možností připojení dodatečných senzorů nebo nočního vidění.\n- Ochrana končetin: Samostatné pancéřové segmenty chránící ramena, kolena a předloktí. Konstrukce upřednostňuje pohyblivost před maximálním pancéřováním.\n- Taktický batoh: Modulární úložný systém označený symbolem X, určený k přepravě munice, zdravotnického materiálu a specializovaného vybavení.\n- Identifikace UAI: Charakteristická nášivka na rameni označující příslušnost k mezinárodním obranným silám Projektu X.\n\nSTANDARDNÍ VÝBAVA:\n- Osobní zbraň: Standardní útočná puška dle bojového zařazení vojáka.\n- Komunikace: Šifrované rádiové spojení s velitelstvím a ostatními členy družstva.\n- Zdravotnická výbava: Individuální lékárnička pro základní ošetření v bojových podmínkách.\n- Taktické prostředky: Granáty, dodatečná munice a specializované vybavení podle charakteru mise.\n- Polní systém: Základní navigační a identifikační zařízení pro koordinaci pohybu jednotek.\n\nTAKTICKÉ HODNOCENÍ:\n- Výhody: Nízká hmotnost, dobrá pohyblivost, modulární konstrukce, snadná údržba, možnost budoucích technologických vylepšení.\n- Nevýhody: Omezená ochrana proti plazmovým a energetickým zbraním, nedostatečná odolnost vůči mimozemským biologickým útokům, absence aktivních obranných systémů.\n- Doporučené použití: Standardní pěchotní operace, průzkum, zajišťování objektů a boj proti lehkým mimozemským jednotkám.\n\nZÁVĚREČNÉ HODNOCENÍ: \"Tohle je to nejlepší, co v současnosti dokážeme našim vojákům nabídnout. Je to lehké, spolehlivé a umožňuje jim bojovat bez zbytečného omezení pohybu. Ale nedělejme si iluze. Proti zbraním, které ti zatracení cizáci používají, je to pořád jen kus pancíře. Potřebujeme jejich technologie. Potřebujeme pochopit jejich materiály. A hlavně potřebujeme čas, abychom z našich vojáků přestali dělat snadné cíle. Do té doby jim nezbývá nic jiného než dobrý výcvik, spolehlivá puška a trochu štěstí.\" - Vedoucí výzbrojního oddělení Projektu X, interní zpráva UAI\n\n",
 	"stit": "Ruční balistický štít s průzorem. Zastaví většinu střel zepředu.",
 	"pancir": "Pancíř ze slitin z trupu UFO. Těžký, ale plazmu vydrží.",
 	"laser_pistol": "Laserová pistole. Článek se dobíjí sám, žádné zásobníky.",
@@ -68,9 +68,9 @@ const PROS_CONS := {
 	"autocannon": ["prorazí zeď i pancíř, výbuch kolem zásahu", "velmi těžký a hlučný, malý zásobník, ze stoje nepřesný"],
 	"minigun": ["déšť olova, 150 ran v pásu", "musí se roztočit, nejtěžší zbraň, budí celou mapu"],
 	"rocket_launcher": ["zničí stroje, Ohnivce i úkryt za zdí", "jedna raketa, dlouhé nabíjení, nebezpečná zblízka i pro vás"],
-	"laser_pistol": ["žádné zásobníky, článek se dobíjí sám, tichá", "po vystřílení chvíli čekáš na dobití"],
-	"laser_rifle": ["přesná, tichá, bez zpětného rázu, nekonečná munice", "článek na 24 ran a pak pauza"],
-	"laser_cannon": ["silný na obrněné cíle a stroje", "těžký, krátký článek, chce oporu"],
+	"laser_pistol": ["žádné zásobníky, článek se dobíjí sám, tichá", "když ho vystřílíš do dna, nevystřelí, dokud se nenabije doplna"],
+	"laser_rifle": ["přesná, tichá, bez zpětného rázu, nekonečná munice", "vystřílený článek se musí nabít doplna, než zase střílí"],
+	"laser_cannon": ["silný na obrněné cíle a stroje", "těžký, krátký článek, chce oporu; vybitý se musí nabít doplna"],
 	"plasma_rifle": ["silná, přesná a tichá", "drahá: Moskovium a články"],
 	"knife": ["tichý, zezadu zabíjí", "musíš až k nim"],
 	"stun_baton": ["vetřelce omráčí živého pro výzkum", "skoro nezraní, musíš až k nim"],
@@ -139,7 +139,7 @@ const LORE := {
 	"moskovium": ["Moskovium 115", "Prvek, který u nás v přírodě není. Vetřelci ho používají jako palivo i jako zdroj energie zbraní. V malém množství září zeleně a hřeje na dotek. Bez něj nepostavíme plazmu ani loď, která doletí na Mars.", "", "plasma_cell"],
 	"slitiny": ["Vetřelecké slitiny", "Kov z trupu UFO je lehčí než hliník a pevnější než ocel. Nedá se svařit, jen tvarovat při velmi vysoké teplotě. Pláty z něj chrání žoldáky i naše letadla.", "", "a_pack"],
 	"vyslech": ["Výslech zajatce", "Živý vetřelec nemluví, ale jeho mysl prosakuje do přístrojů. Z toho, co jsme zachytili, víme, odkud přilétají a že mají někde na Zemi i vlastní základny.", "", "grey"],
-	"psi_clona": ["Psionická clona", "Velitelé šeďáků a Myslodějové útočí přímo na mysl: strach, panika, iluze, převzetí rukou. Kovová síťka pod helmou a cvičení soustředění ten útok tlumí. Když se obraz zbarví do fialova, něco je špatně - věř tomu, co víš, ne tomu, co vidíš.", "", "grey_velitel"],
+	"psi_clona": ["Psionická clona", "Velitelé šediváků a Myslodějové útočí přímo na mysl: strach, panika, iluze, převzetí rukou. Kovová síťka pod helmou a cvičení soustředění ten útok tlumí. Když se obraz zbarví do fialova, něco je špatně - věř tomu, co víš, ne tomu, co vidíš.", "", "grey_velitel"],
 	"signal": ["Signál z Marsu", "Úzký paprsek z rudé planety. Opakuje se každých jedenáct minut. Je to rozkaz - a odpověď. Tam je jejich velín.", "", "mars_hq"],
 	"rozbor_plazma": ["Plazmová zbraň vetřelců", "Uvnitř zbraně je článek, který drží plazmu v magnetickém poli. Spoušť ho na zlomek vteřiny otevře. Pochopili jsme, jak se nabíjí - ukořistěné zbraně teď slouží i nám a otevřela se cesta k laseru.", "", "a_pistol"],
 }
@@ -148,9 +148,9 @@ const LORE := {
 static func entries() -> Array:
 	var out := []
 	for r in Campaign.RACE_INFO:
-		var model: String = r if r != "levit_velitel" else "levit"
+		var model: String = r
 		out.append({"id": "race_" + r, "cat": "Vetřelci", "title": Campaign.RACE_INFO[r][0], "text": Campaign.RACE_INFO[r][1],
-			"model": model, "view": "stand", "unlock": "seen:" + r, "icon": "race_" + r if r != "levit_velitel" else "race_levit"})
+			"model": model, "view": "stand", "unlock": "seen:" + r, "icon": "race_" + r})
 	for r in AUTOPSY:
 		var a: Array = AUTOPSY[r]
 		var machine: bool = r in ["diskoll", "kolos"]

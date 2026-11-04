@@ -90,6 +90,22 @@ func _process(delta: float) -> void:
 		"climb": _climb(p)
 		"leaveany": _leaveany(p)
 		"skyshot": _skyshot(p)
+		"zfight": _zfight(p)
+		"suittest": _suittest(p)
+		"levgrab": _levgrab(p)
+		"mirotest": _mirotest(p)
+		"bijtest": _bijtest(p)
+		"bvtest": _bvtest(p)
+		"nadtest": _nadtest(p)
+		"ohntest": _ohntest(p)
+		"mystest": _mystest(p)
+		"koltest": _koltest(p)
+		"lasertest": _lasertest(p)
+		"aitest": _aitest(p)
+		"latetest": _latetest(p)
+		"gunshots": _gunshots(p)
+		"topshot": _topshot(p)
+		"shieldtest": _shieldtest(p)
 		"fireshot": _fireshot(p)
 		"abase": _abase(p)
 		"cloakshot": _cloakshot(p)
@@ -427,6 +443,11 @@ func _town(p: Node) -> void:
 		get_tree().quit()
 
 ## Line-up of the whole roster for screenshots (frozen, lit).
+## --zoo=levit,ohar: only these.
+func _zoo_list() -> Array:
+	var only := Game.cmd_arg("zoo", "")
+	return ZOO if only == "" else Array(only.split(","))
+
 const ZOO := ["grey", "grey_velitel", "diskoll", "levit", "levit_velitel", "ohar", "jestetan", "jestetan_velitel", "lihnoun", "bijec", "bijec_velitel", "nador", "ohnivec", "myslodej", "kolos"]
 ## Fake speech into the voice system: snippets get stored, an alien plays one back.
 var _vt := 0.0
@@ -688,6 +709,25 @@ func _pose(p: Node) -> void:
 		a.queue_free()
 	p.gun.visible = false
 	p.gun_l.visible = false
+	if Game.cmd_arg("kit", "") != "":
+		# the full kit on show: armour, backpack, belt, medkit, helmet; the camera all round
+		p.armor = "vesta"
+		p.inv["b0"] = {"id": "rifle_clip"}
+		p.inv["b1"] = {"id": "rifle_clip"}
+		p.inv[Game.pack_slots()[0]] = {"id": "medkit"}
+		p.inv["p0"] = {"id": "medkit"}
+		p.gear = p._gear_mask()
+		p._apply_gear()
+		Game.apply_look(p.merc_model, {"gear": "helmet", "hair": "buzz"})
+		for e2 in [["kit_front", Vector3(0.9, 1.0, -2.4)], ["kit_side", Vector3(2.6, 1.0, 0.0)], ["kit_back", Vector3(-0.6, 1.0, 2.5)]]:
+			cam.global_position = p.global_position + e2[1]
+			cam.look_at(p.global_position + Vector3(0, 0.9, 0))
+			for i in 20:
+				p._animate_body(1.0 / 30.0)
+				await get_tree().process_frame
+			get_viewport().get_texture().get_image().save_png("user://pose_%s.png" % e2[0])
+		get_tree().quit()
+		return
 	var shots := [["stand", false, false, false, false], ["crouch", true, false, false, false], ["prone", false, true, false, false]]
 	var only := Game.cmd_arg("only", "")
 	if only != "":
@@ -972,8 +1012,68 @@ func _wshot(p: Node) -> void:
 	m().hud.inventory_open = false
 	p.global_position = m().map["ufo"] + Vector3(4, 0.3, 16)
 	_aim_at(p, m().map["ufo"] + Vector3(0, 1.0, 0))
+	if Game.cmd_arg("lh", "") != "":
+		# what is in the hands (e.g. --lh=stit --rh=pistol: the view through the shield)
+		p.inv["rh"] = {"id": Game.cmd_arg("rh", "pistol"), "loaded": 10}
+		p.inv["lh"] = {"id": Game.cmd_arg("lh", "")}
+		p._update_held()
+		if Game.cmd_arg("up", "") != "":
+			Input.action_press("aim")
 	await get_tree().create_timer(1.5).timeout
 	get_viewport().get_texture().get_image().save_png("user://weather_%s.png" % m().weather)
+	get_tree().quit()
+
+## 0.50: the whole map from straight above (orthographic), to check the layout: user://top_<biome>_<seed>.png
+func _topshot(p: Node) -> void:
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	_skip_brief()
+	m().hud.visible = false
+	var size: float = m().map["size"]
+	var cam := Camera3D.new()
+	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+	cam.size = size * 1.02
+	cam.far = 300
+	m().add_child(cam)
+	cam.global_position = Vector3(size / 2, 120, size / 2)
+	cam.rotation = Vector3(-PI / 2, 0, 0)
+	cam.make_current()
+	m().env.fog_enabled = false
+	m().env.volumetric_fog_enabled = false
+	var sun := DirectionalLight3D.new()
+	sun.light_energy = 1.2
+	sun.rotation = Vector3(-1.1, 0.4, 0)
+	m().add_child(sun)
+	await get_tree().create_timer(1.5).timeout
+	get_viewport().get_texture().get_image().save_png("user://top_%s_%s.png" % [Game.cmd_arg("biome", "farm"), Game.cmd_arg("seed", "0")])
+	out("RESULT topshot untangled %s evac %s size %.0f" % [m().map.get("untangled", []), m().map["evac"], size])
+	get_tree().quit()
+
+## 0.50: every gun in the hands, one picture each (user://gun_<id>.png).
+func _gunshots(p: Node) -> void:
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	_skip_brief()
+	await get_tree().create_timer(2.0).timeout
+	m().hud.inventory_open = false
+	p.hp = 9999.0
+	for a in m().aliens():
+		a.queue_free()
+	p.global_position = m().free_spot(m().map["evac"] + Vector3(6, 0.3, -6))
+	_aim_at(p, m().map["ufo"] + Vector3(0, 1.5, 0))
+	var ids := Game.cmd_arg("guns", "rifle,pistol,shotgun,magnum,sniper,autocannon,minigun,rocket_launcher,plasma_rifle,laser_pistol,laser_rifle,laser_cannon").split(",")
+	for id in ids:
+		p.inv["rh"] = {"id": id, "loaded": 5}
+		p.inv.erase("lh")
+		p._update_held()
+		if Game.cmd_arg("aim", "") != "":
+			Input.action_press("aim")
+		await get_tree().create_timer(1.4).timeout
+		get_viewport().get_texture().get_image().save_png("user://gun_%s.png" % id)
+		Input.action_release("aim")
+	out("RESULT gunshots %d" % ids.size())
 	get_tree().quit()
 
 func _uic(tag: String) -> void:
@@ -1185,13 +1285,31 @@ func _zoo(p: Node) -> void:
 		set_meta("zoo_spawned", true)
 		for a in al:
 			a.queue_free()
-		for i in ZOO.size():
-			m().spawn_alien(ZOO[i], m().map["ufo"] + Vector3(i * 2.0 - ZOO.size(), 0.3, 20))
+		for i in _zoo_list().size():
+			m().spawn_alien(_zoo_list()[i], m().map["ufo"] + Vector3(i * 2.0 - _zoo_list().size(), 0.3, 20))
 		return
 	al = al.filter(func(a): return is_instance_valid(a) and not a.is_queued_for_deletion())
-	if step == 0 and t > 2.5 and al.size() >= ZOO.size():
+	if step == 0 and t > 2.5 and al.size() >= _zoo_list().size():
 		step = 1
 		var base: Vector3 = m().map["ufo"] + Vector3(0, 0, 13)
+		if Game.cmd_arg("stage", "") != "":
+			# a clean stage up in the sky (no walls in the way): a floor and a light
+			base = Vector3(0, 80, 0)
+			var fl := MeshInstance3D.new()
+			var fm := BoxMesh.new()
+			fm.size = Vector3(40, 0.2, 30)
+			fl.mesh = fm
+			fl.material_override = Game.mat("grass", 0.5)
+			m().add_child(fl)
+			fl.global_position = base + Vector3(0, -0.1, 0)
+			var sb := StaticBody3D.new()
+			var cs := CollisionShape3D.new()
+			var bs := BoxShape3D.new()
+			bs.size = fm.size
+			cs.shape = bs
+			sb.add_child(cs)
+			fl.add_child(sb)
+			p.set_physics_process(false)
 		var right := Vector3(1, 0, 0)
 		for i in al.size():
 			var a: Node = al[i]
@@ -1251,8 +1369,12 @@ func _zoo(p: Node) -> void:
 	if step >= 2 and step < 2 + al.size() and t > 4.5 + (step - 1) * 1.2:
 		var a: Node = al[step - 2]
 		var f: Vector3 = a.global_position
-		p.global_position = f + Vector3(0.6, 0, -3.2)
+		p.global_position = f + (Vector3(3.4, 0, 1.2) if Game.cmd_arg("side", "") != "" else Vector3(0.6, 0, -3.2))
 		_aim_at(p, f + Vector3(0, 1.0, 0))
+		if Game.cmd_arg("side", "") != "":
+			for c in p.cam.get_children():
+				if c is MeshInstance3D or (c is Node3D and not c is Light3D):
+					c.visible = false
 		if a.anim and a.anim.has_animation("attack"):
 			a.anim.play("aim" if a.race in ["grey", "hlidac", "meduza"] else "attack")
 		step += 1
@@ -1536,6 +1658,528 @@ func _coopheal(p: Node) -> void:
 		get_tree().quit()
 
 ## Climbing: a 2 m block (from the ground), a 2.9 m block (jump + Space held), then a house roof.
+## A Levit takes a lone merc with its tentacles and carries him off.
+func _levgrab(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	var ls: Array = m().aliens().filter(func(a): return a.race == "levit")
+	if ls.is_empty():
+		return
+	step = 1
+	for a in m().aliens():
+		if not a in ls:
+			a.queue_free()
+	var l: Node = ls[0]
+	for o in ls.slice(1):
+		o.queue_free()
+	p.hp = 999.0
+	l.global_position = m().free_spot(p.global_position + Vector3(0, 0.3, 6))     # (behind the ramp - not on a wing)
+	l.target = p
+	l.last_seen = p.global_position
+	l._enter_combat(null)
+	l._grab_cd = 0.0
+	l.phase = "grab"
+	for i in 40:
+		await get_tree().create_timer(0.25).timeout
+		if i % 4 == 0: out("lev %s phase %s state %s" % [l.global_position, l.phase, l.state])
+		if p.ko:
+			break
+	await get_tree().create_timer(3.0).timeout
+	out("RESULT levgrab ko %s carried %s state %s phase %s dist %.1f lpos %s" % [p.ko, p.carried_by != 0, l.state, l.phase, l.global_position.distance_to(p.global_position), l.global_position])
+	get_tree().quit()
+
+## A Šedivák hit hard: his suit fails (slower, worse aim).
+func _suittest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	var gs: Array = m().aliens().filter(func(a): return a.tac == "grey")
+	if gs.is_empty():
+		return
+	step = 1
+	var g: Node = gs[0]
+	var r0: float = g.run_spd
+	g.state = g.S.COMBAT
+	g.damage(float(g.R["hp"]) * 0.65, g.global_position + Vector3(0, 1, 2), null)
+	await get_tree().create_timer(0.3).timeout
+	out("RESULT suittest down %s run %.1f -> %.1f alive %s" % [g.suit_down, r0, g.run_spd, not g.dead])
+	get_tree().quit()
+
+## The shield: low it stops half from the front, up nearly all; acid wears it out until it breaks.
+func _shieldtest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.hp = 9999.0
+	p.armor = ""
+	p.inv["rh"] = {"id": "pistol", "loaded": 10}
+	p.inv["lh"] = {"id": "stit"}
+	p._update_held()
+	m().hud.inventory_open = false
+	await get_tree().create_timer(0.3).timeout
+	var front: Vector3 = p.global_position - p.global_transform.basis.z * 10.0
+	var h0: float = p.hp
+	p.hurt(20.0, front)
+	var low: float = h0 - p.hp
+	Input.action_press("aim")
+	await get_tree().create_timer(0.3).timeout
+	var h1: float = p.hp
+	p.hurt(20.0, front)
+	var up: float = h1 - p.hp
+	var n := 0
+	while p.item_in("lh").get("id", "") == "stit" and n < 200:
+		p.hurt(30.0, front, true)
+		n += 1
+	Input.action_release("aim")
+	out("RESULT shieldtest low %.0f up %.0f broke %s after %d" % [low, up, p.item_in("lh").is_empty(), n])
+	get_tree().quit()
+
+## A firefight to measure them: a squad against a merc who cannot die, standing at a house corner.
+## How much damage reaches him in 45 s, and what they did (from the [TAC] lines).
+func _aitest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	var race := Game.cmd_arg("race", "jestetan")
+	for a in m().aliens():
+		a.queue_free()
+	await get_tree().create_timer(0.3).timeout
+	p.hp = 99999.0
+	var ss: PhysicsDirectSpaceState3D = p.get_world_3d().direct_space_state
+	# an open spot for him: one that sees far in most directions
+	var bestp: Vector3 = p.global_position
+	var bestn := -1
+	for wp in m().map.get("waypoints", []):
+		var c: Vector3 = wp
+		var n := 0
+		for k in 8:
+			var a := k * TAU / 8.0
+			var q0 := PhysicsRayQueryParameters3D.create(c + Vector3(0, 1.4, 0), c + Vector3(sin(a) * 25.0, 1.4, cos(a) * 25.0), Game.WORLD)
+			if ss.intersect_ray(q0).is_empty():
+				n += 1
+		if n > bestn:
+			bestn = n
+			bestp = c
+	p.global_position = bestp + Vector3(0, 0.1, 0)
+	await get_tree().create_timer(0.3).timeout
+	var at: Vector3 = p.global_position
+	var placed := 0
+	for k in 200:
+		if placed >= int(Game.cmd_arg("n", "4")):
+			break
+		var a := randf() * TAU
+		var pt: Vector3 = m().free_spot(at + Vector3(sin(a), 0, cos(a)) * randf_range(18.0, 30.0) + Vector3(0, 0.3, 0))
+		var q := PhysicsRayQueryParameters3D.create(pt + Vector3(0, 1.6, 0), at + Vector3(0, 1.4, 0), Game.WORLD)
+		var fq := PhysicsRayQueryParameters3D.create(pt + Vector3(0, 1.0, 0), pt + Vector3(0, -1.0, 0), Game.WORLD)
+		var fh := ss.intersect_ray(fq)
+		if fh.is_empty() or absf(fh.position.y - at.y) > 0.6:
+			continue          # (off the map, or into a cellar)
+		if ss.intersect_ray(q).is_empty() or k > 150:
+			m().spawn_alien(race, pt)
+			placed += 1
+	await get_tree().create_timer(0.5).timeout
+	for a in m().aliens():
+		a.target = p
+		a.last_seen = p.global_position
+		a._enter_combat(p)
+		out("  %s gun %s nades %s mines %d traps %d hp %.0f at %s me %s" % [a.race, a.gun, a.has_nades, a.mines_left, a.traps_left, a.hp, a.global_position, p.global_position])
+	var hp0: float = p.hp
+	for i in 90:
+		await get_tree().create_timer(0.5).timeout
+		if i % 6 == 0:
+			var line := ""
+			for a in m().aliens():
+				line += "%s:%s/%s d%.0f los%s vis%s react%.1f arr%s | " % [a.name, a.state, a.phase, a.global_position.distance_to(p.global_position), int(a._los(p.global_position + Vector3(0, 1.4, 0))), int(a.visible_to(p)), a.react, int(a._arrived())]
+			out(line)
+	var shots := 0
+	for a in m().aliens():
+		shots += a.shots_fired
+		out("  %s state %s phase %s shots %d dist %.0f los %s" % [a.name, a.state, a.phase, a.shots_fired, a.global_position.distance_to(p.global_position), a._los(p.global_position + Vector3(0, 1.4, 0))])
+	out("RESULT aitest %s late %s dmg %.0f shots %d" % [race, Game.cmd_arg("late", "0"), hp0 - p.hp, shots])
+	get_tree().quit()
+
+## Laser: shot dry, it will not fire until the cell is full again.
+func _lasertest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.inv["rh"] = {"id": "laser_rifle", "loaded": 1}
+	p._update_held()
+	var r: Dictionary = Game.ITEMS["laser_rifle"]
+	p._shoot("rh", p.inv["rh"], r)
+	var drained: bool = p.inv["rh"].get("drained", false)
+	await get_tree().create_timer(2.5).timeout
+	var part: int = int(p.inv["rh"]["loaded"])
+	var still: bool = p.inv["rh"].get("drained", false)
+	var cap := Game.mag_size("laser_rifle")
+	await get_tree().create_timer(float(cap) / float(r["recharge"]) + 1.5).timeout
+	out("RESULT lasertest drained %s partial %s still %s full %s free %s" % [drained, part > 0 and part < cap, still, int(p.inv["rh"]["loaded"]) >= cap, not p.inv["rh"].get("drained", false)])
+	get_tree().quit()
+
+## The late war: a night pack, the nemesis, an officer's killer remembered, reinforcements; the campaign side.
+func _latetest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started() or m().aliens().size() < 3:
+		return
+	step = 1
+	p.hp = 9999.0
+	m()._nem_done = true
+	await get_tree().create_timer(1.0).timeout
+	var S = m().aliens()[0].S
+	# 1) a night pack: bring them within reach and let the timer run out
+	for a in m().aliens():
+		a.global_position = m().free_spot(p.global_position + Vector3(randf_range(-30, 30), 0.3, randf_range(25, 45)))
+		a.state = S.LURK
+	m()._pack_t = 0.0
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var stalkers: int = m().aliens().filter(func(a): return a.state == S.STALK).size()
+	# 2) the nemesis
+	Net.mission_params["nemesis"] = [p.display_name]
+	m()._nemesis_start()
+	var hunters: int = m().aliens().filter(func(a): return a.nemesis == p).size()
+	# 3) an officer's killer
+	var off: String = String(m().GROUPS.get(m().crew_group, m().GROUPS["sedaci"])["officer"])
+	m().spawn_alien(off, m().free_spot(p.global_position + Vector3(0, 0.3, 6)))
+	await get_tree().create_timer(0.6).timeout
+	var o = m().aliens().filter(func(a): return a.race == off and not a.dead)
+	if not o.is_empty():
+		o[0].damage(99999.0, p.global_position, p)
+	await get_tree().create_timer(0.3).timeout
+	var marked: bool = p.display_name in m().officer_killers
+	# 4) reinforcements: pretend they took far too long
+	var before: int = m().aliens().filter(func(a): return not a.dead).size()
+	m()._late_reinf_t = 100000.0
+	for i in 5:
+		await get_tree().process_frame
+	await get_tree().create_timer(1.0).timeout
+	var after: int = m().aliens().filter(func(a): return not a.dead).size()
+	# 5) the campaign side
+	var d0 = Campaign.data.duplicate(true)
+	Campaign.data["day"] = 105.0
+	Campaign.data["nemesis"] = {}
+	Campaign.data["log"] = []
+	var ws: float = Campaign.war_stage()
+	Campaign.mark_nemesis(["Testovic"])
+	var left := []
+	for i in 3:
+		Campaign._nemesis_tick()
+		left.append(Campaign.data["nemesis"].size())
+	Campaign.data = d0
+	out("RESULT latetest pack %d nemesis %d marked %s waves %d added %d war %.2f nem %s" % [stalkers, hunters, marked, m()._reinf_waves, after - before, ws, left])
+	get_tree().quit()
+
+## Kolos: up a wall onto a roof, then down again.
+func _koltest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	var ks: Array = m().aliens().filter(func(a): return a.race == "kolos")
+	if ks.is_empty():
+		if not has_meta("kol_spawned"):
+			set_meta("kol_spawned", true)
+			m().spawn_alien("kolos", m().free_spot(p.global_position + Vector3(0, 0.3, 8)))
+		return
+	step = 1
+	p.hp = 9999.0
+	for a in m().aliens():
+		if not a in ks:
+			a.queue_free()
+	var k: Node = ks[0]
+	await get_tree().create_timer(0.5).timeout
+	var ok := false
+	var tries := 0
+	# walk it round the houses until one has a wall it can go up
+	for r in m().map.get("roofs", []):
+		var rp: Vector3 = r
+		if rp.y < -50.0:
+			rp.y = 5.0
+		if rp.y > 14.0:
+			continue
+		tries += 1
+		k.global_position = m().free_spot(Vector3(rp.x + 10.0, 0.3, rp.z))
+		await get_tree().create_timer(0.2).timeout
+		if k._climb_up(Vector3(rp.x + 14.0, 0.0, rp.z)):
+			ok = true
+			break
+		if tries > 12:
+			break
+	var top := 0.0
+	for i in 60:
+		await get_tree().create_timer(0.25).timeout
+		top = maxf(top, k.global_position.y)
+		if Game.cmd_arg("shot", "") != "" and i == 7:
+			# a picture of it on the wall
+			p.global_position = Vector3(k.global_position.x, 0.2, k.global_position.z) + (k._wall_base - k._wall_top).normalized() * 0.0 + Vector3(k._wall_base.x - k._wall_top.x, 0, k._wall_base.z - k._wall_top.z).normalized() * 10.0 + Vector3(4, 0, 0)
+			_aim_at(p, k.global_position + Vector3(0, 1.0, 0))
+			await get_tree().create_timer(0.3).timeout
+			_snap("52_kolos_climb")
+		if not k.flying:
+			break
+	if Game.cmd_arg("shot", "") != "":
+		_aim_at(p, k.global_position + Vector3(0, 1.0, 0))
+		await get_tree().create_timer(0.3).timeout
+		_snap("53_kolos_roof")
+	var perched: bool = k.airborne and k.global_position.y > 2.0
+	k._climb_down()
+	for i in 60:
+		await get_tree().create_timer(0.25).timeout
+		if not k.flying:
+			break
+	out("RESULT koltest found %s up %s top %.1f down %s" % [ok, perched, top, k.global_position.y < 1.0 and not k.airborne])
+	get_tree().quit()
+
+## Mysloděj: shot, it is gone - somewhere else, out of the shooter's sight.
+func _mystest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	var ms: Array = m().aliens().filter(func(a): return a.race == "myslodej")
+	if ms.is_empty():
+		if not has_meta("mys_spawned"):
+			set_meta("mys_spawned", true)
+			m().spawn_alien("myslodej", p.global_position + Vector3(0, 0.3, 10))
+		return
+	step = 1
+	await get_tree().create_timer(0.5).timeout
+	var a: Node = ms[0]
+	var at0: Vector3 = a.global_position
+	a.damage(20.0, p.global_position, p)
+	var moved: float = a.global_position.distance_to(at0)
+	var at1: Vector3 = a.global_position
+	a.damage(20.0, p.global_position, p)      # (too soon: it stays)
+	out("RESULT mystest moved %s again %s alive %s" % [moved > 8.0, a.global_position.distance_to(at1) > 1.0, not a.dead])
+	get_tree().quit()
+
+## Ohnivec: it finds you through the ground, glows up and lets go a beam of heat.
+func _ohntest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	var os_: Array = m().aliens().filter(func(a): return a.race == "ohnivec")
+	if os_.is_empty():
+		if not has_meta("ohn_spawned"):
+			set_meta("ohn_spawned", true)
+			m().spawn_alien("ohnivec", p.global_position + Vector3(0, 0.3, 6))
+		return
+	step = 1
+	for a in m().aliens():
+		if not a in os_:
+			a.queue_free()
+	var o: Node = os_[0]
+	o.global_position = p.global_position + Vector3(0, 0.2, 6)
+	p.crouching = true
+	var hp0: float = p.hp
+	o.target = p
+	o._enter_combat(null)
+	o._heat_cd = 0.0
+	var knew := false
+	var charged := false
+	for i in 40:
+		await get_tree().create_timer(0.2).timeout
+		knew = knew or o._knows(p)
+		charged = charged or o._charge > 0.0
+		if p.hp < hp0 - 20.0:
+			break
+	out("RESULT ohntest knows %s charged %s hurt %s" % [knew, charged, p.hp < hp0 - 20.0])
+	get_tree().quit()
+
+## Nádor: bullets only knock it down (and then do nothing); a blast tears it apart for good.
+func _nadtest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	var ns: Array = m().aliens().filter(func(a): return a.race == "nador")
+	if ns.size() < 2:
+		if not has_meta("nad_spawned"):
+			set_meta("nad_spawned", true)
+			for i in 2 - ns.size():
+				m().spawn_alien("nador", p.global_position + Vector3(i * 6.0, 0.3, 16))
+		return
+	step = 1
+	await get_tree().create_timer(0.5).timeout
+	var a: Node = ns[0]
+	var b: Node = ns[1]
+	a.damage(999.0, a.global_position + Vector3(0, 0, 2), null)        # bullets: down, not dead
+	var husk1: bool = a.husk and not a.dead
+	for i in 5:
+		a.damage(999.0, a.global_position + Vector3(0, 0, 2), null)    # still bullets: nothing
+	var still: bool = a.husk and not a.dead
+	m().hit_kind = "explosion"
+	a.damage(60.0, a.global_position, null)                            # a grenade finishes it
+	b.damage(999.0, b.global_position, null)                           # and one caught standing is torn apart at once
+	m().hit_kind = ""
+	out("RESULT nadtest husk %s still %s blast %s direct %s" % [husk1, still, a.dead, b.dead and not b.husk])
+	get_tree().quit()
+
+## Bijec officer: left alone in a fight it calls reinforcements; a shot into the forearm module stops that.
+func _bvtest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	var vs: Array = m().aliens().filter(func(a): return a.race == "bijec_velitel")
+	if vs.size() < 2:
+		if not has_meta("bv_spawned"):
+			set_meta("bv_spawned", true)
+			for i in 2 - vs.size():
+				m().spawn_alien("bijec_velitel", p.global_position + Vector3(i * 4.0, 0.3, 14))
+		return
+	step = 1
+	p.hp = 9999.0
+	await get_tree().create_timer(0.5).timeout
+	var a: Node = vs[0]
+	var b: Node = vs[1]
+	# the module, where the weak spot is
+	var sk: Skeleton3D = b._rig
+	var bi := sk.find_bone("forearm.L")
+	var bp: Vector3 = (sk.global_transform * sk.get_bone_global_pose(bi)).origin
+	var tip: Vector3 = (sk.global_transform * sk.get_bone_global_pose(sk.find_bone("hand.L"))).origin
+	var spot: Vector3 = bp.lerp(tip, 0.45)
+	var weak: bool = b.weak_spot(spot)
+	var not_weak: bool = not b.weak_spot(b.global_position + Vector3(0, 1.0, 0))
+	b.module_hit()
+	var n0: int = m().aliens().size()
+	a.state = a.S.COMBAT
+	b.state = b.S.COMBAT
+	a._reinf_t = 999.0
+	b._reinf_t = 999.0
+	a._reinf_tick(0.1)
+	b._reinf_tick(0.1)
+	await get_tree().create_timer(1.0).timeout
+	out("RESULT bvtest weak %s body %s module %s reinf %d" % [weak, not_weak, b.module_ok, m().aliens().size() - n0])
+	get_tree().quit()
+
+## Bijec: no flinch from pain; hit hard, the armour fails and the bullets bite more.
+func _bijtest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	var bs: Array = m().aliens().filter(func(a): return a.race == "bijec")
+	if bs.is_empty():
+		if not has_meta("bij_spawned"):
+			set_meta("bij_spawned", true)
+			m().spawn_alien("bijec", p.global_position + Vector3(0, 0.3, 14))
+		return
+	step = 1
+	var b: Node = bs[0]
+	b.state = b.S.COMBAT
+	var t0: float = b.taken(10.0)
+	b.damage(float(b.R["hp"]) * 0.7 / float(b.R["armor"]), b.global_position + Vector3(0, 1, 2), null)
+	await get_tree().create_timer(0.3).timeout
+	out("RESULT bijtest broken %s flinch %s taken %.1f -> %.1f alive %s" % [b.armor_broken, b._flinch_t > 0.0, t0, b.taken(10.0), not b.dead])
+	get_tree().quit()
+
+## Levit Mírotvůrce: the Levits near it go berserk; badly hurt it pulls back and heals.
+func _mirotest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	var ms: Array = m().aliens().filter(func(a): return a.race == "levit_velitel")
+	var ls: Array = m().aliens().filter(func(a): return a.race == "levit")
+	if ms.is_empty() or ls.is_empty():
+		# (not every crew has both: bring in what is missing, once)
+		if not has_meta("miro_spawned"):
+			set_meta("miro_spawned", true)
+			var at: Vector3 = p.global_position + Vector3(0, 0.3, 14)
+			if ms.is_empty():
+				m().spawn_alien("levit_velitel", at)
+			if ls.is_empty():
+				m().spawn_alien("levit", at + Vector3(3, 0, 0))
+		return
+	step = 1
+	p.hp = 999.0
+	var mv: Node = ms[0]
+	var lv: Node = ls[0]
+	lv.global_position = mv.global_position + Vector3(3, 0, 0)
+	var r0: float = lv.run_spd
+	mv._enter_combat(null)
+	lv._enter_combat(null)
+	await get_tree().create_timer(2.5).timeout
+	var fr: bool = lv._frenzy
+	var r1: float = lv.run_spd
+	mv.damage(float(mv.R["hp"]) * 0.7 / float(mv.R["armor"]), mv.global_position + Vector3(0, 1, 2), null)
+	var hp0: float = mv.hp
+	var mending: bool = mv._mending
+	await get_tree().create_timer(9.0).timeout
+	out("RESULT mirotest frenzy %s run %.1f -> %.1f mending %s hp %.0f -> %.0f healed %s" % [fr, r0, r1, mending, hp0, mv.hp, mv.hp > hp0 + 10.0])
+	get_tree().quit()
+
+## Flickering surfaces: two boxes whose faces lie in the same plane and overlap (z-fighting).
+## Lists them with sizes and materials, so the map code can be fixed.
+func _zfight(p: Node) -> void:
+	if p == null or step > 0:
+		return
+	step = 1
+	var boxes := []
+	for mi in m().find_children("*", "MeshInstance3D", true, false):
+		var mm := mi as MeshInstance3D
+		if not mm.is_visible_in_tree() or mm.mesh == null:
+			continue
+		if not (mm.mesh is BoxMesh or mm.mesh is PlaneMesh or mm.mesh is QuadMesh or mm.mesh is CylinderMesh):
+			continue
+		var yaw := fposmod(mm.global_rotation.y, PI / 2.0)
+		if minf(yaw, PI / 2.0 - yaw) > 0.01 or absf(mm.global_rotation.x) > 0.01 or absf(mm.global_rotation.z) > 0.01:
+			continue
+		var bb: AABB = mm.global_transform * mm.get_aabb()
+		var mat_name := ""
+		var mat: Material = mm.material_override if mm.material_override else (mm.mesh.surface_get_material(0) if mm.mesh.get_surface_count() > 0 else null)
+		if mat: mat_name = mat.resource_name if mat.resource_name != "" else str(mat.get_instance_id())
+		boxes.append([bb, mm, mat_name])
+	var cell := {}
+	for i in boxes.size():
+		var bb: AABB = boxes[i][0]
+		for cx in range(int(floor(bb.position.x / 8.0)), int(floor(bb.end.x / 8.0)) + 1):
+			for cz in range(int(floor(bb.position.z / 8.0)), int(floor(bb.end.z / 8.0)) + 1):
+				var k := Vector2i(cx, cz)
+				if not cell.has(k): cell[k] = []
+				cell[k].append(i)
+	var seen := {}
+	var hits := []
+	var E := 0.004
+	for k in cell:
+		var lst: Array = cell[k]
+		for ai in lst.size():
+			for bi in range(ai + 1, lst.size()):
+				var a: int = lst[ai]
+				var b: int = lst[bi]
+				var key := Vector2i(mini(a, b), maxi(a, b))
+				if seen.has(key): continue
+				seen[key] = true
+				var A: AABB = boxes[a][0]
+				var B: AABB = boxes[b][0]
+				var why := ""
+				# same top face (both seen from above)
+				if absf(A.end.y - B.end.y) < E and _ov(A.position.x, A.end.x, B.position.x, B.end.x) * _ov(A.position.z, A.end.z, B.position.z, B.end.z) > 0.02:
+					why = "vrch"
+				elif absf(A.position.y - B.position.y) < E and A.position.y > 0.05 and _ov(A.position.x, A.end.x, B.position.x, B.end.x) * _ov(A.position.z, A.end.z, B.position.z, B.end.z) > 0.02:
+					why = "spodek"
+				else:
+					var oy := _ov(A.position.y, A.end.y, B.position.y, B.end.y)
+					for pr in [[A.position.x, B.position.x, "x"], [A.end.x, B.end.x, "x"], [A.position.z, B.position.z, "z"], [A.end.z, B.end.z, "z"]]:
+						if absf(pr[0] - pr[1]) < E:
+							var o2: float = _ov(A.position.z, A.end.z, B.position.z, B.end.z) if pr[2] == "x" else _ov(A.position.x, A.end.x, B.position.x, B.end.x)
+							if oy * o2 > 0.05:
+								why = "bok " + pr[2]
+								break
+				if why != "" and boxes[a][2] != boxes[b][2]:
+					hits.append("%s @%s: %s %s [%s] / %s %s [%s]" % [why, str(A.get_center().snapped(Vector3.ONE * 0.1)),
+						(boxes[a][1] as Node).get_parent().name, str(A.size.snapped(Vector3.ONE * 0.01)), boxes[a][2], (boxes[b][1] as Node).get_parent().name, str(B.size.snapped(Vector3.ONE * 0.01)), boxes[b][2]])
+	var kinds := {}
+	for h in hits:
+		var sig: String = h.split(": ")[1].replace(h.split(": ")[1].split(" ")[0], "")
+		kinds[sig] = kinds.get(sig, 0) + 1
+	for h in hits.slice(0, 40):
+		out("[Z] " + h)
+	out("RESULT zfight %d boxes, %d flicker pairs" % [boxes.size(), hits.size()])
+	get_tree().quit()
+
+func _ov(a0: float, a1: float, b0: float, b1: float) -> float:
+	return maxf(0.0, minf(a1, b1) - maxf(a0, b0))
+
 ## Time of day: one look towards the sun/moon, one away from it.
 func _skyshot(p: Node) -> void:
 	_skip_brief()
@@ -1546,10 +2190,27 @@ func _skyshot(p: Node) -> void:
 	for a in m().aliens():
 		a.set_physics_process(false)
 	p.hp = 999.0
-	p.light_on = false
+	p.light_on = Game.cmd_arg("light", "0") == "1"
 	var ev: Vector3 = m().map["evac"]
 	var nav_map: RID = m().get_world_3d().navigation_map
 	p.global_position = NavigationServer3D.map_get_closest_point(nav_map, ev + Vector3(float(Game.cmd_arg("ox", "14")), 0, float(Game.cmd_arg("oz", "-14")))) + Vector3(0, 0.3, 0)
+	var look := Game.cmd_arg("look", "")
+	if look != "" and m().map.has(look):
+		var tp: Vector3 = m().map[look]
+		var off := Vector3(float(Game.cmd_arg("lx", "7")), 0, float(Game.cmd_arg("lz", "6")))
+		p.global_position = NavigationServer3D.map_get_closest_point(nav_map, tp + off) + Vector3(0, 0.3, 0)
+		for i in 40:
+			await get_tree().create_timer(0.1).timeout
+			if m().hud._brief_t < 0:
+				break
+		await get_tree().create_timer(0.5).timeout
+		_aim_at(p, tp + Vector3(0, 0.8, 0))
+		await get_tree().create_timer(0.8).timeout
+		if DisplayServer.get_name() != "headless":
+			_snap("look_" + look)
+		out("RESULT look %s at %s" % [look, tp])
+		get_tree().quit()
+		return
 	await get_tree().create_timer(2.5).timeout
 	var tag := "%s_%s" % [m().phase(), m().weather]
 	var to_light: Vector3 = m().moon.global_transform.basis.z      # towards the light source
@@ -1697,6 +2358,7 @@ func _vipcheck(p: Node) -> void:
 		var snap := NavigationServer3D.map_get_closest_point(nm, sp0)
 		if snap.distance_to(sp0) < 3.0:
 			sp = snap + Vector3(0, 0.3, 0)
+		sp = m().free_spot(sp)
 		q.transform = Transform3D(Basis(), (sp as Vector3) + Vector3(0, 0.65, 0))   # (sp is 0.3 above the floor)
 		for h in space.intersect_shape(q, 4):
 			var cn: Node = h["collider"]

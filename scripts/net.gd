@@ -282,6 +282,24 @@ func _wallets(w: Dictionary) -> void:
 		Game.save_merc()
 	wallets_changed.emit()
 
+## Host on the globe: four times a second the moving parts (clock, UFOs, our crafts, reports)
+## go to everybody, so their globe turns and the crafts fly as on the host's screen.
+## (Lost packets do not matter - the next one is a quarter of a second away.)
+var geo_speed := 0.0          # days per second on the host's globe (clients run the clock on)
+func send_geo_live(spd: float) -> void:
+	if not multiplayer.is_server() or not is_online() or not Campaign.active:
+		return
+	_geo_live.rpc({"day": Campaign.data["day"], "missions": Campaign.data["missions"], "flights": Campaign.data.get("flights", []),
+		"crafts": Campaign.data.get("crafts", []), "speed": spd})
+
+@rpc("authority", "unreliable_ordered")
+func _geo_live(d: Dictionary) -> void:
+	if not Campaign.viewer:
+		return
+	for k in ["day", "missions", "flights", "crafts"]:
+		Campaign.data[k] = d[k]
+	geo_speed = float(d.get("speed", 0.0))
+
 ## Clients: a read-only copy of the host's campaign (globe, base, research, armory).
 @rpc("authority", "reliable")
 func _base_snapshot(d: Dictionary) -> void:
@@ -332,7 +350,7 @@ func _req_buy(item: String) -> void:
 		return
 	_add_money(from, -price)
 	Campaign.data["moskovium"] = Campaign.moskovium() - int(Campaign.SHOP_MK.get(item, 0))
-	Campaign.data["armory"][item] = int(Campaign.data["armory"].get(item, 0)) + 1
+	Campaign.order(item)
 	Campaign.save()
 	Campaign.changed.emit()
 	_note.rpc("%s koupil pro základnu: %s." % [roster.get(from, {}).get("name", "?"), Game.ITEMS[item]["name"]])

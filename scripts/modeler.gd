@@ -116,6 +116,8 @@ func _ready() -> void:
 	_show_hint()
 	if Game.autotest() == "modeler":
 		_selftest.call_deferred()
+	if Game.autotest() == "modclick":
+		_clicktest.call_deferred()
 
 # ---- the panel ------------------------------------------------------------------------------------
 func _build_panel() -> void:
@@ -920,6 +922,39 @@ func _input(ev: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 # ---- test: change the rifle a little, take pictures, put everything back -----------------------------
+## Real mouse clicks through the window (as Ari's hand does): on a part in the view, on a button.
+func _clicktest() -> void:
+	for i in model_opt.item_count:
+		if String(model_opt.get_item_metadata(i)) == "rifle":
+			model_opt.select(i)
+			_load_model("rifle")
+	for f in 10: await get_tree().process_frame
+	var xf := get_viewport().get_final_transform()
+	var parts := _parts()
+	# the screen point of the first part whose centre is in view (not hidden behind another part)
+	var pi := 0
+	for k in parts.size():
+		var ck: Vector3 = parts[k][0].global_transform * (parts[k][1]["center"] as Vector3)
+		if _pick(cam.unproject_position(ck)) == String(parts[k][1]["id"]):
+			pi = k
+			break
+	var c3: Vector3 = parts[pi][0].global_transform * (parts[pi][1]["center"] as Vector3)
+	var vp_px: Vector2 = cam.unproject_position(c3)                     # in SubViewport pixels
+	var in_svc: Vector2 = vp_px * (svc.size / Vector2(view.size))
+	var canvas_pt: Vector2 = svc.get_global_transform() * in_svc
+	var win: Vector2 = xf * canvas_pt
+	print("[CLICK] window %s canvas %s scale %s svc %s view %s" % [win, canvas_pt, xf.get_scale(), svc.size, view.size])
+	for pressed in [true, false]:
+		var ev := InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_LEFT
+		ev.pressed = pressed
+		ev.position = win
+		ev.global_position = win
+		Input.parse_input_event(ev)
+		for f in 3: await get_tree().process_frame
+	print("RESULT modclick sel '%s' (want '%s')" % [sel, parts[pi][1]["id"]])
+	get_tree().quit()
+
 func _selftest() -> void:
 	var keep := Game.model_mods.duplicate(true)
 	for i in model_opt.item_count:

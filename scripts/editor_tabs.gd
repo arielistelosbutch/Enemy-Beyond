@@ -25,7 +25,11 @@ static func add(parent: Control, active: String) -> HBoxContainer:
 		b.custom_minimum_size = Vector2(96, 15)
 		b.focus_mode = Control.FOCUS_NONE
 		UiSkin.button(b)
-		if tab[0] == active:
+		if not ResourceLoader.exists(tab[2]):
+			b.disabled = true
+			b.tooltip_text = "Připravuje se"
+			b.text = tab[1] + " (brzy)"
+		elif tab[0] == active:
 			b.disabled = true
 			b.add_theme_color_override("font_disabled_color", UiSkin.AMBER)
 		else:

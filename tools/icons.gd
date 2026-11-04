@@ -125,7 +125,7 @@ func _init() -> void:
 	for id in crafts:
 		all.append([id, CRAFT_SIZE, Vector3(0.9, 1.1, 1.3) if id.begins_with("ufo") else Vector3(1.1, 1.2, 0.9)])
 	# portraits of the races (the research tree, the encyclopedia), the Mars HQ
-	for r in ["grey", "grey_velitel", "diskoll", "levit", "ohar", "jestetan", "jestetan_velitel", "lihnoun", "zombie",
+	for r in ["grey", "grey_velitel", "diskoll", "levit", "levit_velitel", "ohar", "jestetan", "jestetan_velitel", "lihnoun", "zombie",
 			"bijec", "bijec_velitel", "nador", "ohnivec", "myslodej", "kolos", "mozek"]:
 		all.append(["race_" + r, Vector2i(64, 64), Vector3(0.55, 0.12, -1.0), r])
 	all.append(["mars", Vector2i(64, 64), Vector3(0.7, 0.5, -1.0), "mars_hq"])

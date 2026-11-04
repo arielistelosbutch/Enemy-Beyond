@@ -62,9 +62,30 @@ pair coop_mission host client          "players=2"                "blk=false vet
 pair coop_heal    coophealhost coophealclient "RESULT coopheal host ok" "client t=10 hp [0-9.]+ bleeding 0.00"  7902
 pair coop_base    lbhost lbclient       "start_mission"            "RESULT lb lbclient players 2" 7903
 pair coop_wipe    coopwipehost coopwipeclient "globe ready"     "END\\] leave"                  7904
+pair geo_live geolivehost geoliveclient "globe ready \(viewer false\)" "RESULT geolive day \+0\.0[1-9][0-9]* craft moved [1-9]" 7912
 run airdeath    150 h "RESULT airdeath ok"                 --autotest=airdeath --group=levite
 run vipcheck    200 h "RESULT vipcheck [0-9]+ spots, 0 bad" --autotest=vipcheck --mtype=rescue
 run climb       200 x "RESULT climb ok"                    --autotest=climb --mtype=terror --biome=farm
+run ws_click    100 x "RESULT wsclick bone true ring true item true" --autotest=wsclick
+run anim_edit   100 x "RESULT animtest mid true fp true"  --autotest=animtest
+run mod_click   100 x "RESULT modclick sel '(Rifle:[0-9]+)' \(want '\1'\)"   --autotest=modclick
 run leaveany    150 h "RESULT leaveany early_block true done true finished true" --autotest=leaveany
+run suit        100 h "RESULT suittest down true"        --autotest=suittest --group=sedaci --mtype=crash
+run levgrab     100 h "RESULT levgrab ko true carried true" --autotest=levgrab --group=levite --mtype=crash
+run mirotest   150 h "RESULT mirotest frenzy true .* mending true .* healed true" --autotest=mirotest --group=levite --mtype=landed
+run bijtest    150 h "RESULT bijtest broken true flinch false taken 7.5 -> 9.0 alive true" --autotest=bijtest --group=bijci --mtype=landed
+run bvtest     150 h "RESULT bvtest weak true body true module false reinf [23]" --autotest=bvtest --mtype=landed
+run nadtest    150 h "RESULT nadtest husk true still true blast true direct true" --autotest=nadtest --mtype=landed
+run ohntest    150 h "RESULT ohntest knows true charged true hurt true" --autotest=ohntest --mtype=landed
+run mystest    150 h "RESULT mystest moved true again false alive true" --autotest=mystest --mtype=landed
+run koltest    200 h "RESULT koltest found true up true top [0-9.]+ down true" --autotest=koltest --mtype=terror --biome=town
+run lasertest  120 h "RESULT lasertest drained true partial true still true full true free true" --autotest=lasertest --mtype=landed
+run shieldtest 100 h "RESULT shieldtest low 10 up 2 broke true" --autotest=shieldtest --mtype=landed
+run gearloss    60 h "RESULT gearloss order_wait true arrived true sold true won_grenades 4->3 clips_kept true lost_grenades 1 vests 1" --autotest=gearloss
+run ai_late    160 h "RESULT aitest jestetan late 1 dmg [1-9][0-9][0-9]" --autotest=aitest --mtype=crash --biome=farm --late=1 --seed=5 --hour=13
+run latetest   120 h "RESULT latetest pack [2-9] nemesis [1-9][0-9]* marked true waves 3 added [3-9]" --autotest=latetest --mtype=crash --biome=farm --late=1 --seed=5 --hour=23
+run maptown   220 x "RESULT topshot untangled" --autotest=topshot --mtype=crash --biome=town --hour=13 --seed=11 --late=1
+run mapdesert 220 x "RESULT topshot untangled" --autotest=topshot --mtype=crash --biome=desert --terrain=desert --hour=13 --seed=7 --late=1
+run wrecks      60 h "RESULT wrecks \[\[1, 0, false\], \[2, 0, false\], \[0, 1, true\]\]" --autotest=wrecks
 run ui_bigpack  200 x "m_result: 0 probl"                  --autotest=uimission --research=batohy
 echo -e "\n==== VELKÝ TEST: $pass OK, $fail CHYB ====\n$report"

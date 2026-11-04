@@ -19,49 +19,49 @@ const BoltScript := preload("res://scripts/bolt.gd")
 ## Race table. hp, speeds, armor (damage taken x), capsule, eye height, bolt power,
 ## shots per burst, accuracy (miss x), rate (time between shots x), glint (eye shine),
 ## weak (damage x by kind: plasma / explosion / bullet), psi (1 = officer, 2 = Mysloděj).
-## Groups as in the old game: Šeďáci + Diskoll, Levité + Ohař, Ještěřani + Líhnouni,
+## Groups as in the old game: Šediváci + Diskoll, Levité + Ohař, Ještěřani + Líhavci,
 ## Bijci + Nádor + Ohnivec, Myslodějové + Kolos.
 const RACES := {
-	"grey": {"name": "Šeďák", "hp": 70.0, "walk": 2.0, "run": 4.9, "tac": "grey", "armor": 1.0, "model": "grey", "h": 1.3, "r": 0.3, "eye": 1.15,
+	"grey": {"name": "Šedivák", "hp": 70.0, "walk": 2.0, "run": 4.9, "tac": "grey", "armor": 1.0, "model": "grey", "h": 1.3, "r": 0.3, "eye": 1.15,
 		"bolt": 1.0, "shots": [1, 2], "miss": 0.9, "glint": [Vector3(0, 1.22, -0.215), Color(0.3, 1.0, 0.4)], "hide": 1.2},
-	"grey_velitel": {"name": "Šeďák velitel", "hp": 95.0, "walk": 2.0, "run": 4.9, "tac": "grey", "armor": 1.0, "model": "grey_velitel", "h": 1.35, "r": 0.3, "eye": 1.2,
+	"grey_velitel": {"name": "Šedivák velitel", "hp": 95.0, "walk": 2.0, "run": 4.9, "tac": "grey", "armor": 1.0, "model": "grey_velitel", "h": 1.35, "r": 0.3, "eye": 1.2,
 		"bolt": 1.0, "shots": [1, 2], "miss": 0.9, "glint": [Vector3(0, 1.26, -0.22), Color(0.8, 0.45, 1.0)], "hide": 1.3, "psi": 1, "illusion": true},
 	"diskoll": {"name": "Diskoll", "hp": 110.0, "walk": 2.8, "run": 5.5, "armor": 0.6, "model": "diskoll", "h": 0.5, "r": 0.7, "eye": 1.5,
 		"bolt": 0.7, "shots": [4, 5], "miss": 0.55, "rate": 0.3, "hover": 1.45, "explode": [3.5, 40.0], "hide": 0.2,
 		"weak": {"plasma": 2.0, "laser": 1.8, "explosion": 1.5}},
 	"levit": {"name": "Levit", "hp": 70.0, "tac": "levit", "walk": 2.4, "run": 5.2, "armor": 1.0, "model": "levit", "h": 0.8, "r": 0.35, "eye": 1.75,
-		"bolt": 1.0, "shots": [1, 3], "miss": 1.0, "hover": 1.1, "hide": 0.7},
-	"levit_velitel": {"name": "Levit velitel", "hp": 115.0, "tac": "levit", "walk": 3.0, "run": 6.6, "armor": 0.8, "model": "levit", "scale": 1.15, "h": 0.9, "r": 0.38, "eye": 1.95,
-		"bolt": 1.35, "shots": [2, 3], "miss": 0.8, "hover": 1.25, "hide": 0.4, "jet": 1.5},
+		"bolt": 1.0, "shots": [1, 3], "miss": 1.0, "hover": 1.1, "hide": 0.7, "laser": true, "grab": true, "grab_open": true},
+	"levit_velitel": {"name": "Levit Mírotvůrce", "hp": 165.0, "tac": "levit", "walk": 3.0, "run": 6.6, "armor": 0.75, "model": "levit_velitel", "scale": 1.18, "h": 0.9, "r": 0.4, "eye": 1.98,
+		"bolt": 1.5, "shots": [2, 3], "miss": 0.8, "hover": 1.25, "hide": 0.4, "jet": 1.7, "bolt_col": Color(0.75, 0.25, 1.0), "mend": 6.0, "frenzy": 35.0},
 	"ohar": {"name": "Ohař", "hp": 160.0, "walk": 2.2, "run": 6.8, "armor": 0.8, "model": "ohar", "h": 1.1, "r": 0.5, "eye": 1.0,
 		"melee": [28.0, 40.0], "reach": 2.2, "strike_cd": 1.2, "dumb": true, "pounce": [11.0, 1.75]},
-	"jestetan": {"name": "Ještěřan", "hp": 140.0, "walk": 1.2, "run": 2.6, "armor": 0.7, "model": "jestetan", "h": 2.1, "r": 0.38, "eye": 2.0,
-		"bolt": 1.2, "shots": [1, 2], "miss": 0.95, "hide": 0.8, "tac": "hunter", "guns": ["minigun", "mg", "cannon", "rifle"], "nades": true, "traps": 2, "cloak": true,
-		"glint": [Vector3(0, 2.02, -0.3), Color(1.0, 0.6, 0.1)]},
-	"jestetan_velitel": {"name": "Ještěřan velitel", "hp": 185.0, "walk": 1.2, "run": 2.6, "armor": 0.5, "model": "jestetan_velitel", "h": 2.1, "r": 0.4, "eye": 2.0,
-		"bolt": 1.3, "shots": [2, 3], "miss": 0.85, "hide": 0.8, "tac": "hunter", "guns": ["minigun", "cannon", "mg"], "nades": true, "traps": 3, "cloak": true, "grab": true,
-		"glint": [Vector3(0, 2.02, -0.3), Color(1.0, 0.45, 0.1)]},
-	"lihnoun": {"name": "Líhnoun", "hp": 110.0, "walk": 2.2, "run": 6.6, "armor": 0.8, "model": "lihnoun", "h": 1.4, "r": 0.3, "eye": 1.5,
+	"jestetan": {"name": "Ještěřan", "hp": 190.0, "walk": 1.1, "run": 2.4, "armor": 0.6, "model": "jestetan", "h": 2.1, "r": 0.4, "eye": 2.2,
+		"bolt": 1.2, "shots": [1, 2], "miss": 0.75, "hide": 0.8, "tac": "hunter", "guns": ["rifle", "rifle", "rifle", "mg", "cannon"], "nades": true, "traps": 2, "cloak": true,
+		"night_eyes": true, "bite": [30.0, 45.0], "glint": [Vector3(0, 2.02, -0.3), Color(1.0, 0.6, 0.1)]},
+	"jestetan_velitel": {"name": "Ještěřan velitel", "hp": 230.0, "walk": 1.2, "run": 2.6, "armor": 0.5, "model": "jestetan_velitel", "h": 2.1, "r": 0.4, "eye": 2.0,
+		"bolt": 1.3, "shots": [2, 3], "miss": 0.7, "hide": 0.8, "tac": "hunter", "guns": ["rifle", "rifle", "minigun", "cannon"], "nades": true, "traps": 3, "cloak": true, "grab": true,
+		"bite": [35.0, 50.0], "glint": [Vector3(0, 2.02, -0.3), Color(1.0, 0.45, 0.1)]},
+	"lihnoun": {"name": "Líhavec", "hp": 110.0, "walk": 2.2, "run": 6.6, "armor": 0.8, "model": "lihnoun", "h": 1.4, "r": 0.3, "eye": 1.5,
 		"melee": [38.0, 52.0], "reach": 1.8, "strike_cd": 0.85, "implant": true, "pounce": [9.0, 1.45], "weak": {"plasma": 1.6}},
 	"zombie": {"name": "Nakažený", "hp": 65.0, "walk": 1.0, "run": 1.7, "armor": 1.0, "model": "zombie", "h": 1.6, "r": 0.3, "eye": 1.6,
 		"melee": [14.0, 22.0], "reach": 1.5, "strike_cd": 1.6},
-	"bijec": {"name": "Bijec", "hp": 160.0, "walk": 1.6, "run": 3.6, "armor": 0.75, "model": "bijec", "h": 2.1, "r": 0.42, "eye": 1.96,
-		"bolt": 1.5, "shots": [2, 3], "miss": 0.8, "hide": 0.5, "tac": "soldier", "guns": ["rifle", "mg", "minigun", "cannon"], "nades": true},
-	"bijec_velitel": {"name": "Bijec velitel", "hp": 340.0, "walk": 1.6, "run": 3.6, "armor": 0.5, "model": "bijec_velitel", "h": 2.1, "r": 0.42, "eye": 1.96,
-		"bolt": 1.5, "shots": [2, 4], "miss": 0.5, "hide": 0.4, "tac": "soldier", "guns": ["hminigun"], "nades": true, "heal": 3.0, "warcry": true},
-	"nador": {"name": "Nádor", "hp": 55.0, "walk": 1.0, "run": 1.9, "armor": 1.0, "model": "nador", "h": 0.5, "r": 0.42, "eye": 1.0,
-		"spit": "acid", "bolt": 1.1, "shots": [1, 1], "miss": 1.1, "rate": 1.6, "hover": 0.85, "hide": 0.3, "regen": true, "tac": "brute"},
-	"ohnivec": {"name": "Ohnivec", "hp": 170.0, "walk": 0.9, "run": 1.6, "armor": 0.2, "model": "ohnivec", "h": 0.7, "r": 0.6, "eye": 0.6,
+	"bijec": {"name": "Bijec", "hp": 200.0, "walk": 1.6, "run": 3.6, "armor": 0.75, "model": "bijec", "h": 2.1, "r": 0.42, "eye": 1.96,
+		"bolt": 1.5, "shots": [2, 3], "miss": 0.7, "hide": 0.5, "tac": "soldier", "guns": ["rifle", "rifle", "mg", "cannon"], "nades": true, "bolt_col": Color(0.7, 0.3, 1.0), "no_pain": true, "armor_break": 0.35},
+	"bijec_velitel": {"name": "Bijec velitel", "hp": 380.0, "walk": 1.6, "run": 3.6, "armor": 0.5, "model": "bijec_velitel", "h": 2.1, "r": 0.42, "eye": 1.96,
+		"bolt": 1.5, "shots": [2, 4], "miss": 0.5, "hide": 0.4, "tac": "soldier", "guns": ["hminigun"], "nades": true, "heal": 3.0, "warcry": true, "no_pain": true, "armor_break": 0.35, "module": true, "bolt_col": Color(1.0, 0.2, 0.15)},
+	"nador": {"name": "Nádor", "hp": 55.0, "walk": 1.0, "run": 1.9, "armor": 1.0, "model": "nador", "scale": 1.2, "h": 0.5, "r": 0.48, "eye": 1.1,
+		"spit": "acid", "bolt": 1.1, "shots": [1, 1], "miss": 1.1, "rate": 1.6, "hover": 0.95, "hide": 0.3, "regen": true, "tac": "brute"},
+	"ohnivec": {"name": "Ohnivec", "hp": 170.0, "walk": 0.9, "run": 1.2, "armor": 0.2, "model": "ohnivec", "h": 0.7, "r": 0.6, "eye": 0.6,
 		"spit": "lava", "bolt": 1.4, "shots": [1, 1], "miss": 1.0, "rate": 2.2, "hide": 0.0, "touch": 22.0, "tac": "brute", "heal": 4.0,
-		"weak": {"explosion": 6.0}},
-	"myslodej": {"name": "Mysloděj", "hp": 140.0, "walk": 1.3, "run": 2.8, "armor": 0.8, "model": "myslodej", "h": 1.6, "r": 0.4, "eye": 1.55,
-		"bolt": 0.75, "shots": [1, 2], "miss": 0.8, "hover": 0.35, "hide": 1.4, "psi": 2, "tac": "psi"},
+		"weak": {"explosion": 6.0}, "burn": true},
+	"myslodej": {"name": "Mysloděj", "hp": 115.0, "walk": 1.3, "run": 2.8, "armor": 1.0, "model": "myslodej", "h": 1.6, "r": 0.4, "eye": 1.55,
+		"bolt": 0.75, "shots": [1, 2], "miss": 0.8, "hover": 0.35, "hide": 1.4, "psi": 2, "tac": "psi", "teleport": true},
 	"mozek": {"name": "Velký mozek", "hp": 2200.0, "walk": 0.0, "run": 0.0, "armor": 0.6, "model": "mozek", "h": 2.6, "r": 1.6, "eye": 1.3,
 		"hide": 0.0, "psi": 3, "weak": {"explosion": 1.4, "laser": 1.3, "plasma": 1.2}},
 	"pylon": {"name": "Pylon štítu", "hp": 260.0, "walk": 0.0, "run": 0.0, "armor": 0.7, "model": "pylon", "h": 2.9, "r": 0.6, "eye": 2.8,
 		"hide": 0.0, "explode": [3.0, 25.0], "weak": {"explosion": 2.0}},
-	"kolos": {"name": "Kolos", "hp": 320.0, "walk": 1.6, "run": 3.2, "armor": 0.45, "model": "kolos", "h": 2.4, "r": 0.9, "eye": 2.0,
-		"bolt": 1.3, "shots": [2, 3], "miss": 0.8, "explode": [6.0, 90.0], "hide": 0.0, "tac": "brute", "weak": {"explosion": 1.3}},
+	"kolos": {"name": "Kolos", "hp": 340.0, "walk": 2.4, "run": 4.6, "armor": 0.45, "model": "kolos", "h": 2.4, "r": 0.9, "eye": 2.0,
+		"bolt": 1.3, "shots": [2, 3], "miss": 0.8, "explode": [6.0, 90.0], "hide": 0.0, "tac": "brute", "weak": {"explosion": 1.3}, "climb": true, "jet": 0.45},
 }
 
 ## Heavy weapons of the soldier races (each one carries one of its race's "guns").
@@ -72,7 +72,14 @@ const GUNS := {
 	"minigun": {"shots": [12, 18], "rate": 0.1, "bolt": 0.55, "miss": 1.55, "name": "minigun"},
 	"cannon": {"shots": [1, 1], "rate": 2.4, "bolt": 2.1, "miss": 0.8, "name": "plazmové dělo"},
 	"hminigun": {"shots": [16, 24], "rate": 0.09, "bolt": 0.85, "miss": 1.0, "name": "těžký plazmový minigun"},
+	"rocket": {"shots": [1, 1], "rate": 3.2, "bolt": 1.0, "miss": 0.7, "name": "raketomet", "rocket": true},
+	"hcannon": {"shots": [1, 2], "rate": 2.0, "bolt": 2.6, "miss": 0.75, "name": "těžké plazmové dělo"},
 }
+## Later in the war the soldier races bring heavier things (a share of them, growing with the days).
+const GUNS_LATE := {"jestetan": ["minigun", "hcannon", "rocket"], "jestetan_velitel": ["hcannon", "rocket"],
+	"bijec": ["minigun", "rocket", "hcannon"], "bijec_velitel": ["rocket"]}
+## Plasma mines laid on the way (late war: more of them, and more races lay them).
+const MINES := {"bijec": 1, "bijec_velitel": 2, "jestetan_velitel": 1}
 
 func _g(key: String, def):
 	var gd: Dictionary = GUNS.get(gun, {})
@@ -133,6 +140,25 @@ var _last_anim_pos := Vector3.ZERO
 var _speed := 0.0
 var glint_t := 0.0
 
+## {late: 0..1 over the war, coop: mercenaries beyond the first}.
+static func threat() -> Dictionary:
+	var day := float(Net.mission_params.get("day", 0.0))
+	var lt := clampf((day - 15.0) / 90.0, 0.0, 1.0)
+	if Game.cmd_arg("late", "") != "":
+		lt = float(Game.cmd_arg("late", "0"))
+	return {"late": lt, "coop": maxi(0, Net.roster.size() - 1)}
+
+var _late := 0.0
+var _aim_k := 1.0
+var _react_k := 1.0
+var _press := 0.3
+var has_nades := false
+var mines_left := 0
+var _duck_t := 0.0
+var _seen_t := -99.0
+var nemesis: Node = null      # the marked mercenary it hunts (killed one of their commanders)
+var _nem_t := 0.0
+
 func is_alien() -> bool:
 	return true
 
@@ -149,6 +175,21 @@ func setup(data: Dictionary) -> void:
 		var gl: Array = R["guns"]
 		gun = String(gl[rng.randi() % gl.size()])
 	traps_left = int(R.get("traps", 0))
+	# how hard the war has got: late days and every extra mercenary in co-op make them tougher,
+	# sharper, quicker - and better armed
+	var th := threat()
+	_late = float(th["late"])
+	var coop := float(th["coop"])
+	hp *= 1.0 + 0.35 * _late + 0.18 * coop
+	_aim_k = (1.0 - 0.3 * _late) * pow(0.9, coop)
+	_react_k = (1.0 - 0.35 * _late) * pow(0.92, coop)
+	_press = 0.3 + 0.45 * _late + 0.1 * coop
+	if GUNS_LATE.has(race) and rng.randf() < 0.15 + 0.55 * _late:
+		var gl2: Array = GUNS_LATE[race]
+		gun = String(gl2[rng.randi() % gl2.size()])
+	has_nades = R.has("nades") or (tac in ["grey", "levit"] and _late > 0.25 and rng.randf() < _late)
+	mines_left = int(MINES.get(race, 0)) + (1 if _late > 0.5 and tac in ["soldier", "hunter"] else 0)
+	traps_left += int(_late * 2.0) if R.has("traps") else 0
 	for who in Net.mission_params.get("habits", {}):
 		for it in Net.mission_params["habits"][who]:
 			if it in ["rocket_launcher", "autocannon", "grenade", "laser_cannon"]:
@@ -515,6 +556,11 @@ func _rigid_anim(delta: float) -> void:
 			w.rotate_object_local(Vector3.UP, PI)
 		else:
 			w.rotation = w.rotation.lerp(Vector3(0, sin(bob_t * 0.7) * 0.3, 0), delta * 2.0)
+	var magma := _part("Magma")
+	if magma:
+		var sp := 9.0 if _charge > 0.0 else 2.2
+		var k3 := 1.0 + sin(bob_t * sp) * (0.06 if _charge > 0.0 else 0.03)
+		magma.scale = Vector3(k3, k3, k3)
 	var body_mesh := _part("Body")
 	if body_mesh and R.get("spit", "") == "acid":
 		var k2 := 1.0 + sin(bob_t * 3.3) * 0.06 + sin(bob_t * 7.1) * 0.03
@@ -544,7 +590,10 @@ func visible_to(p: Node) -> bool:
 		return false
 	var head_pos: Vector3 = p.global_position + Vector3(0, 1.0 if p.crouching else 1.5, 0)
 	var d := eye().distance_to(head_pos)
-	if d > p.visibility_range() and d > 4.0:
+	var vr: float = p.visibility_range() * (1.0 + 0.3 * _late)      # (they learn where to look)
+	if R.has("night_eyes") and mission.phase() != "den":
+		vr = maxf(vr, 34.0)              # the Ještěřan sees in the dark
+	if d > vr and d > 4.0:
 		return false
 	var fwd := -global_transform.basis.z
 	if d > 4.0 and fwd.dot((head_pos - eye()).normalized()) < SIGHT_ANGLE and not alert:
@@ -597,6 +646,20 @@ func stalk(p: Node) -> void:
 	_go(_snap(p.global_position + away.normalized() * rng.randf_range(12.0, 17.0)))
 
 ## Damage after armour and the race's weaknesses (the mission says what kind of hit it is).
+## The Levit's anti-gravity organ (the soft lower half that holds it up): a hit there tears it.
+func weak_spot(at: Vector3) -> bool:
+	if R.has("module"):
+		# the Bijec officer's command module on the left forearm
+		if not module_ok or _rig == null or _rig.find_bone("forearm.L") < 0:
+			return false
+		var bi := _rig.find_bone("forearm.L")
+		var bp: Vector3 = (_rig.global_transform * _rig.get_bone_global_pose(bi)).origin
+		var tip: Vector3 = (_rig.global_transform * _rig.get_bone_global_pose(_rig.find_bone("hand.L"))).origin if _rig.find_bone("hand.L") >= 0 else bp
+		return at.distance_to(bp.lerp(tip, 0.45)) < 0.3 * float(R.get("scale", 1.0))
+	if tac != "levit" or not R.has("hover"):
+		return false
+	return to_local(at).y < (float(R["hover"]) + 0.15) * float(R.get("scale", 1.0))
+
 func taken(dmg: float) -> float:
 	var kind: String = mission.hit_kind if mission else ""
 	var w: Dictionary = R.get("weak", {})
@@ -606,7 +669,7 @@ func taken(dmg: float) -> float:
 		k *= 1.2           # the laboratory found where it is soft
 	if kind == "explosion" and k > 1.0:
 		return dmg * k       # armour does not stop a blast from tearing it apart
-	return dmg * float(R["armor"]) * k
+	return dmg * (lerpf(float(R["armor"]), 1.0, 0.6) if armor_broken else float(R["armor"])) * k
 
 func damage(dmg: float, from: Vector3, by: Node) -> void:
 	if dead:
@@ -615,6 +678,10 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 	if state != S.COMBAT and state != S.DRAG and by and by.has_method("is_player") and float(sus.get(String(by.name), 0.0)) < 1.0:
 		dmg *= 2.0
 		_ambush_note.rpc_id(by.get_multiplayer_authority(), String(by.name))
+	# the Nádor: once down, only a blast tears it apart for good - bullets just make the mass twitch
+	if husk and R.has("regen") and mission.hit_kind != "explosion":
+		regen_t += 0.3
+		return
 	hp -= taken(dmg)
 	alert = true
 	_hit_t = mission.t
@@ -627,7 +694,7 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 		_warn_squad(by, 40.0)
 	if dragging:
 		_release()
-	if hp <= 0 and R.has("regen") and not husk:
+	if hp <= 0 and R.has("regen") and not husk and mission.hit_kind != "explosion":
 		# it falls - but it is not dead yet
 		husk = true
 		hp = 35.0
@@ -643,11 +710,27 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 		if by and by.has_method("is_player"):
 			_credit.rpc_id(by.get_multiplayer_authority(), by.name)
 			_warn_squad(by, 30.0)     # one of theirs falls: the rest come for the killer
+			if (race.ends_with("_velitel") or race == "myslodej") and not by.display_name in mission.officer_killers:
+				mission.officer_killers.append(by.display_name)
 		return
 	# hurt: break contact at once and come back from somewhere else
 	if hp < float(R["hp"]) * 0.45:
 		bleeding = true
-	_flinch.rpc(from)
+	# a Šedivák's suit is what makes him fast: hit him hard and it fails (sparks, he slows down, aims worse)
+	if tac == "grey" and not suit_down and hp < float(R["hp"]) * 0.4:
+		_suit_fail.rpc()
+	# the Mírotvůrce: badly hurt, it pulls back to heal and comes back
+	if R.has("mend") and not _mending and _mend_cd <= 0.0 and hp < float(R["hp"]) * 0.4:
+		_mending = true
+		_mend_cd = 25.0
+		_tlog("mend: pulls back")
+	if R.has("teleport") and hp > 0.0 and _teleport_away(by.global_position if shooter_known else from):
+		return
+	# the Bijec's synthetic armour: hit hard enough and its systems fail (sparks, it stops shrugging off bullets)
+	if R.has("armor_break") and not armor_broken and hp < float(R["hp"]) * float(R["armor_break"]):
+		_armor_break.rpc()
+	if not R.has("no_pain"):
+		_flinch.rpc(from)       # (a Bijec does not even flinch)
 	last_seen = by.global_position if shooter_known else from
 	_enter_combat(null)
 	if tac == "brute":
@@ -708,7 +791,7 @@ func _drop_pack() -> void:
 	if randf() > 0.3:
 		return
 	var f: Array = PACK_FINDS[randi() % PACK_FINDS.size()]
-	mission.drop_item({"id": "a_pack", "what": f[0], "value": randi_range(int(f[1]), int(f[2]))}, global_position - global_transform.basis.x * 0.6)
+	mission.drop_item({"id": "a_pack", "what": f[0], "value": randi_range(int(f[1]), int(f[2]))}, _ground_below(global_position - global_transform.basis.x * 0.6))
 
 ## Host: the dead alien's gun lies next to it - anyone can pick it up (E).
 func _drop_gun() -> void:
@@ -717,7 +800,14 @@ func _drop_gun() -> void:
 		return
 	var r: Dictionary = Game.ITEMS[w]
 	var cells := randi_range(1, int(r["cells"]))
-	mission.drop_item({"id": w, "loaded": randi_range(int(r["cap"]) / 3, int(r["cap"])), "cells": cells}, global_position + global_transform.basis.x * 0.6)
+	mission.drop_item({"id": w, "loaded": randi_range(int(r["cap"]) / 3, int(r["cap"])), "cells": cells}, _ground_below(global_position + global_transform.basis.x * 0.6))
+
+## Where a thing let go of here comes to rest (shot out of the air: on the ground or a roof below).
+func _ground_below(p: Vector3) -> Vector3:
+	var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 0.5, 0), p + Vector3(0, -60.0, 0), Game.WORLD)
+	q.exclude = [get_rid()]
+	var h := get_world_3d().direct_space_state.intersect_ray(q)
+	return (h.position + Vector3(0, 0.05, 0)) if h else p
 
 @rpc("authority", "call_local", "reliable")
 func _ambush_note(player_name: String) -> void:
@@ -725,8 +815,15 @@ func _ambush_note(player_name: String) -> void:
 	if p and p.is_multiplayer_authority():
 		mission.hud.message("Útok ze zálohy - dvojnásobné zranění.", 2.0)
 
+## Their commander falls: the ones around him lose their heads for a while (worse aim, no rally).
+var _disarray_t := 0.0
 @rpc("authority", "call_local", "reliable")
 func _die() -> void:
+	if R.has("psi") and multiplayer.is_server():
+		for a in mission.aliens():
+			if a != self and not a.dead and a.global_position.distance_to(global_position) < 40.0:
+				a._disarray_t = 14.0
+				a._rally_t = 0.0
 	dead = true
 	lurking = false
 	collision_layer = 0
@@ -774,7 +871,11 @@ func _go(p: Vector3) -> void:
 	agent.target_position = p
 
 func _snap(p: Vector3) -> Vector3:
-	return NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, p)
+	var nm := get_world_3d().navigation_map
+	var c := NavigationServer3D.map_get_closest_point(nm, p)
+	if c == Vector3.ZERO and p.length() > 2.0:
+		return p          # (the paths are not ready, or being rebuilt: (0,0,0) is no place to go - a Levit flew off to the corner)
+	return c
 
 ## Stealth: an alien that is not yet fighting does not spot you at once. While it can see
 ## you, suspicion grows - fast when you are close, lit, standing or running; slowly when
@@ -836,6 +937,8 @@ func _find_target() -> Node:
 				continue
 		if seen_now:
 			var score := global_position.distance_to(p.global_position)
+			if p == nemesis:
+				score -= 25.0             # him first
 			# a lone mercenary is the preferred prey
 			for o in mission.players():
 				if o != p and not o.downed and o.global_position.distance_to(p.global_position) < 8.0:
@@ -853,7 +956,7 @@ func _enter_combat(seen: Node) -> void:
 		phase = "shoot" if seen else "hide"
 		_alert_voice.rpc()
 		shots_left = _shots() if R.has("shots") else 1
-		react = rng.randf_range(0.9, 1.6) * (0.65 if Game.veteran() else (1.4 if Game.easy() else 1.0)) * (0.7 if _rally_t > 0 else 1.0)   # the moment of surprise
+		react = rng.randf_range(0.9, 1.6) * (0.65 if Game.veteran() else (1.4 if Game.easy() else 1.0)) * (0.7 if _rally_t > 0 else 1.0) * _react_k   # the moment of surprise
 		hide_t = rng.randf_range(2.0, 4.0)
 	alert = true
 	lurking = false
@@ -869,6 +972,12 @@ func _husk_fx(down: bool) -> void:
 
 func _think(delta: float) -> void:
 	_think_dt = delta
+	if R.has("bite"):
+		_bite_tick(delta)
+	if R.has("mend"):
+		_mend_tick(delta)
+	if tac == "levit" and not R.has("frenzy"):
+		_frenzy_check(delta)
 	if husk:
 		velocity.x = 0; velocity.z = 0
 		regen_t -= delta
@@ -885,21 +994,37 @@ func _think(delta: float) -> void:
 			for p in mission.players():
 				if not p.dead and p.global_position.distance_to(global_position) < 1.7:
 					p.hurt.rpc_id(p.get_multiplayer_authority(), float(R["touch"]) * (1.3 if Game.veteran() else 1.0), global_position)
+	if R.has("burn"):
+		_burn_tick(delta)
 	if R.has("heal") and hp < float(R["hp"]) and mission.t - _hit_t > 3.0:
 		# Ohnivec: the molten core seals its wounds
 		hp = minf(float(R["hp"]), hp + float(R["heal"]) * delta)
-	if R.has("psi"):
+	_disarray_t = maxf(0.0, _disarray_t - delta)
+	if R.has("psi") and not (tac == "grey" and suit_down):     # (a commander's broken suit takes the circlet with it)
 		_psi(delta)
 	if state == S.DRAG:
 		_drag(delta)
 		return
+	if nemesis and is_instance_valid(nemesis) and not nemesis.dead:
+		_nem_t -= delta
+		if _nem_t <= 0.0:
+			_nem_t = 15.0
+			_know(nemesis, 6.0)
+			if state != S.COMBAT and state != S.DRAG:
+				stalk(nemesis)
 	var seen := _find_target()
 	if seen:
+		_seen_t = mission.t
 		target = seen
 		last_seen = seen.global_position
 		unseen_t = 0.0
 		if state != S.COMBAT:
 			_enter_combat(seen)
+		elif phase == "move" and tac in ["soldier", "hunter", "grey"] and react < -0.5 and rng.randf() < _press * delta * 3.0:
+			# on the move and there he is: stop and fire (more often the later it gets)
+			phase = "shoot"
+			shots_left = _shots()
+			react = rng.randf_range(0.25, 0.5) * _react_k
 		elif phase == "flank" or phase == "hide":
 			# came round the corner and there he is
 			if phase == "hide" and hide_t > 1.0:
@@ -1033,24 +1158,32 @@ func _combat(delta: float, seen: Node) -> void:
 						_flank_rear(seen)
 						phase = "flank"
 						return
-				if R.has("nades") and _nade_cd <= 0 and dist > 7.0 and dist < 26.0 and rng.randf() < (0.75 if _habit(seen, "pancir") else 0.4):
+				if has_nades and _nade_cd <= 0 and dist > 7.0 and dist < 26.0 and rng.randf() < (0.75 if _habit(seen, "pancir") else 0.4):
 					_throw_nade(seen.global_position)
 				else:
 					_fire(seen)
 				mission.combat_t = mission.t
 				shots_left -= 1
-				shoot_cd = rng.randf_range(0.7, 1.1) * float(_g("rate", 1.0))
+				shoot_cd = rng.randf_range(0.7, 1.1) * float(_g("rate", 1.0)) * (0.6 if _frenzy else 1.0)
 				if shots_left <= 0:
 					_after_burst()
 		"move":
 			lurking = false
 			_walk(run_spd, delta)
-			if _arrived():
+			if _arrived() and seen and tac in ["soldier", "hunter", "grey"] and hp > float(R["hp"]) * 0.45:
+				phase = "shoot"           # (a firing position: straight to it)
+				shots_left = _shots()
+				react = rng.randf_range(0.2, 0.45) * _react_k
+			elif _arrived():
 				phase = "hide"
-				hide_t = rng.randf_range(2.5, 6.0) * float(R["hide"])
+				hide_t = rng.randf_range(2.5, 6.0) * float(R["hide"]) * (1.0 - 0.45 * _late)
 				if tac == "levit":
 					hide_t = rng.randf_range(0.6, 1.6)
-				if R.has("traps"):
+					if _frenzy:
+						hide_t *= 0.4      # mad with rage: no waiting
+					if _mending:
+						hide_t = 12.0      # out of sight until the wounds close
+				if traps_left > 0 or mines_left > 0:
 					_maybe_trap(0.5)
 		"hide":
 			lurking = true
@@ -1063,10 +1196,23 @@ func _combat(delta: float, seen: Node) -> void:
 				shots_left = _shots() + 1
 				react = rng.randf_range(0.15, 0.35)
 				return
+			if _mending and hide_t <= 0 and mission.t - _hit_t > 2.0:
+				hide_t = 1.0
 			if hide_t <= 0:
 				_next_move()
 		"grab":
 			_grab(delta)
+		"duck":
+			lurking = true
+			velocity.x = 0; velocity.z = 0
+			_duck_t -= delta
+			if _duck_t <= 0.0:
+				if seen:
+					phase = "shoot"
+					shots_left = _shots()
+					react = rng.randf_range(0.15, 0.4) * _react_k
+				else:
+					_next_move()
 		"flank":
 			lurking = false
 			_walk(walk_spd * 1.4 if tac != "grey" else run_spd * 0.85, delta)
@@ -1075,6 +1221,180 @@ func _combat(delta: float, seen: Node) -> void:
 				hide_t = rng.randf_range(3.0, 7.0) * float(R["hide"])
 				if tac == "levit":
 					hide_t = rng.randf_range(0.8, 2.0)
+
+## Ještěřan: too close and the jaws (and the claws) come down on you.
+var _bite_cd := 0.0
+func _bite_tick(delta: float) -> void:
+	_bite_cd -= delta
+	if _bite_cd > 0.0 or state != S.COMBAT or not is_instance_valid(target) or not target.has_method("is_player"):
+		return
+	if target.dead or target.downed or global_position.distance_to(target.global_position) > 2.3:
+		return
+	_bite_cd = rng.randf_range(1.4, 2.0)
+	var b: Array = R["bite"]
+	_face(target.global_position, 10.0)
+	Game.play_at(mission, "roar", global_position + Vector3.UP * 1.8, 0)
+	target.hurt.rpc_id(target.get_multiplayer_authority(), rng.randf_range(float(b[0]), float(b[1])) * (1.3 if Game.veteran() else 1.0), global_position)
+	mission.combat_t = mission.t
+
+## Ohnivec: feels the footsteps through the ground (it always knows where you are, close by), melts
+## whatever stands in its way, and - near enough - glows up and lets go a beam of heat.
+var _burn_t := 0.0
+var _sense_t := 0.0
+var _charge := 0.0
+var _heat_cd := 4.0
+const HEAT_CHARGE := 2.2
+func _burn_tick(delta: float) -> void:
+	_sense_t -= delta
+	if _sense_t <= 0.0:
+		_sense_t = 2.0
+		for p in mission.players():
+			if not p.dead and p.global_position.distance_to(global_position) < 40.0:
+				_know(p, 4.0)
+	_burn_t -= delta
+	if _burn_t <= 0.0:
+		_burn_t = 0.5
+		# what is right in front of it melts
+		var fwd := -global_transform.basis.z
+		var q := PhysicsRayQueryParameters3D.create(global_position + Vector3(0, 0.45, 0), global_position + Vector3(0, 0.45, 0) + fwd * 1.6, Game.WORLD | Game.GLASS)
+		q.exclude = [get_rid()]
+		var h := get_world_3d().direct_space_state.intersect_ray(q)
+		if h and h.collider and h.collider.has_meta("break"):
+			mission.hit_breakable(int(h.collider.get_meta("break")), 30.0, "melt")
+			if rng.randf() < 0.3:
+				mission.ignite(h.position)
+	_heat_cd -= delta
+	var tgt: Node = target if is_instance_valid(target) and target.has_method("is_player") and not target.dead else null
+	if _charge > 0.0:
+		_charge += delta
+		if _charge >= HEAT_CHARGE:
+			_charge = 0.0
+			_heat_cd = rng.randf_range(6.0, 9.0)
+			if tgt:
+				_discharge(tgt.global_position + Vector3(0, 1.0, 0))
+			else:
+				_heat_glow.rpc(false)
+	elif tgt and _heat_cd <= 0.0 and global_position.distance_to(tgt.global_position) < 9.0 \
+			and _los(tgt.global_position + Vector3(0, 1.2, 0)):
+		_charge = 0.01
+		_heat_glow.rpc(true)
+
+func _discharge(at: Vector3) -> void:
+	var from := global_position + Vector3(0, 0.5, 0)
+	var dir := (at - from).normalized()
+	var to := from + dir * 10.0
+	var q := PhysicsRayQueryParameters3D.create(from, to, Game.WORLD | Game.GLASS)
+	q.exclude = [get_rid()]
+	var h := get_world_3d().direct_space_state.intersect_ray(q)
+	if h:
+		to = h.position
+		if h.collider and h.collider.has_meta("break"):
+			mission.hit_breakable(int(h.collider.get_meta("break")), 160.0, "melt")    # straight through a wall
+	var dmg := 45.0 * (1.35 if Game.veteran() else 1.0)
+	for p in mission.players():
+		if p.dead:
+			continue
+		var pp: Vector3 = p.global_position + Vector3(0, 1.0, 0)
+		var t := clampf((pp - from).dot(dir) / maxf(0.01, from.distance_to(to)), 0.0, 1.0)
+		if pp.distance_to(from.lerp(to, t)) < 1.4:
+			p.hurt.rpc_id(p.get_multiplayer_authority(), dmg, global_position)
+	mission.ignite(to)
+	mission.ignite(from.lerp(to, 0.6))
+	_tlog("heat discharge")
+	_heat_fx.rpc(from, to)
+
+@rpc("authority", "call_local", "reliable")
+func _heat_glow(on: bool) -> void:
+	var old := body.get_node_or_null("Heat")
+	if old:
+		old.queue_free()
+	if not on:
+		return
+	var l := OmniLight3D.new()
+	l.name = "Heat"
+	l.light_color = Color(1.0, 0.35, 0.05)
+	l.omni_range = 7.0
+	l.light_energy = 0.0
+	body.add_child(l)
+	l.position = Vector3(0, 0.6, 0)
+	var tw := l.create_tween().set_parallel(true)
+	tw.tween_property(l, "light_energy", 7.0, HEAT_CHARGE)
+	tw.tween_property(l, "light_color", Color(1.0, 0.9, 0.4), HEAT_CHARGE)
+	Game.play_at(mission, "fire", global_position, 2)
+	var me: Node = mission.local_player()
+	if me and me.global_position.distance_to(global_position) < 15.0 and mission.hud:
+		mission.hud.message("Ohnivec žhne - uhni mu z cesty!", 2.0)
+
+@rpc("authority", "call_local", "reliable")
+func _heat_fx(from: Vector3, to: Vector3) -> void:
+	var old := body.get_node_or_null("Heat")
+	if old:
+		old.queue_free()
+	Game.play_at(mission, "fire_ignite", from, 6)
+	var mi := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.18
+	cm.bottom_radius = 0.18
+	cm.height = from.distance_to(to)
+	mi.mesh = cm
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = Color(1.0, 0.75, 0.2)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mi.material_override = m
+	mission.add_child(mi)
+	mi.global_position = (from + to) / 2.0
+	mi.look_at_from_position(mi.global_position, to, Vector3.UP if absf((to - from).normalized().y) < 0.95 else Vector3.RIGHT)
+	mi.rotate_object_local(Vector3.RIGHT, PI / 2.0)
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.6, 0.15)
+	l.light_energy = 8.0
+	l.omni_range = 9.0
+	mi.add_child(l)
+	var tw := mi.create_tween()
+	tw.tween_property(m, "albedo_color:a", 0.0, 0.45)
+	tw.parallel().tween_property(l, "light_energy", 0.0, 0.45)
+	tw.tween_callback(mi.queue_free)
+
+## Levit Mírotvůrce: wounds close when nothing has hit it for a while (up to three quarters).
+var _mending := false
+var _mend_cd := 0.0
+func _mend_tick(delta: float) -> void:
+	_mend_cd -= delta
+	var top := float(R["hp"]) * 0.75
+	if hp < top and mission.t - _hit_t > 5.0:
+		hp = minf(top, hp + float(R["mend"]) * delta)
+	if _mending and hp >= float(R["hp"]) * 0.7:
+		_mending = false
+		_tlog("mend: back")
+
+## Levits near a Mírotvůrce in a fight go berserk: a howl, faster, shooting more, no hiding.
+var _frenzy := false
+var _frenzy_chk := 0.0
+func _frenzy_check(delta: float) -> void:
+	_frenzy_chk -= delta
+	if _frenzy_chk > 0.0:
+		return
+	_frenzy_chk = 1.0
+	var on := false
+	if state == S.COMBAT:
+		for a in mission.aliens():
+			if a != self and not a.dead and a.R.has("frenzy") and a.state == S.COMBAT \
+					and a.global_position.distance_to(global_position) < float(a.R["frenzy"]):
+				on = true
+				break
+	if on != _frenzy:
+		_set_frenzy.rpc(on)
+
+@rpc("authority", "call_local", "reliable")
+func _set_frenzy(on: bool) -> void:
+	_frenzy = on
+	if on:
+		Game.play_at(mission, "roar", global_position, -2)
+	if multiplayer.is_server():
+		var k := 1.3 if on else 1.0 / 1.3
+		walk_spd *= k
+		run_spd *= k
 
 ## A burst is over: away from where it was seen.
 func _after_burst() -> void:
@@ -1086,6 +1406,18 @@ func _after_burst() -> void:
 	if tac == "levit" and rng.randf() < 0.8 and _levit_hop(last_seen, false):
 		phase = "move"
 		return
+	if tac in ["soldier", "hunter", "grey"] and hp > float(R["hp"]) * 0.45:
+		# hold the ground: duck behind what it stands at, then up and firing again -
+		# more so when a squad mate is moving up meanwhile (one shoots, one runs)
+		var p := _press
+		for a in mission.aliens():
+			if a != self and not a.dead and a.phase in ["move", "flank"] and a.global_position.distance_to(global_position) < 20.0:
+				p += 0.2
+				break
+		if rng.randf() < p:
+			phase = "duck"
+			_duck_t = rng.randf_range(0.5, 1.4) * (1.0 - 0.3 * _late)
+			return
 	_relocate(last_seen)
 	phase = "move"
 
@@ -1121,8 +1453,24 @@ func _next_move() -> void:
 		"psi":
 			_keep_away(last_seen)
 			return
-	if dist > 28.0 and _advance(last_seen):
-		return
+	if dist > lerpf(28.0, 15.0, _late) and _advance(last_seen):
+		return           # (late in the war they press in instead of trading shots from afar)
+	if tac in ["soldier", "hunter"] and mission.t - _seen_t > 5.0 and rng.randf() < 0.3 + _press:
+		# lost sight of him for a while: push straight in until it sees him again
+		var dir := last_seen - global_position
+		dir.y = 0
+		if dir.length() > 5.0:
+			_tlog("push")
+			phase = "flank"
+			_go(_snap(global_position + dir.normalized() * minf(dir.length() - 3.0, 14.0)))
+			return
+	if tac in ["soldier", "hunter", "grey"] and rng.randf() < 0.35 + _press * 0.6:
+		# a firing position: cover near by, from which it can see where he was
+		var fs := _fire_spot(last_seen)
+		if fs != Vector3.INF:
+			_tlog("fire spot")
+			_go(fs)
+			return
 	if not R.has("hover") and rng.randf() < (0.55 if tac in ["soldier", "hunter"] else 0.4):
 		var w := _window_spot(last_seen)
 		if w != Vector3.INF:
@@ -1130,6 +1478,34 @@ func _next_move() -> void:
 			_go(w)
 			return
 	_flank()
+
+## A cover point near by from which @a at can be seen (and shot): half cover preferred.
+func _fire_spot(at: Vector3) -> Vector3:
+	var ss := get_world_3d().direct_space_state
+	var best := Vector3.INF
+	var bs := 1e9
+	for c in mission.map["cover"]:
+		var cp: Vector3 = c
+		var d := global_position.distance_to(cp)
+		if d > 14.0 or d < 1.5:
+			continue
+		var dt := cp.distance_to(at)
+		if dt < 7.0 or dt > 34.0:
+			continue
+		var q := PhysicsRayQueryParameters3D.create(cp + Vector3(0, 1.5, 0), at + Vector3(0, 1.1, 0), Game.WORLD)
+		if not ss.intersect_ray(q).is_empty():
+			continue
+		var sc := d + absf(dt - 16.0) * 0.4 + rng.randf() * 3.0
+		var q2 := PhysicsRayQueryParameters3D.create(cp + Vector3(0, 0.6, 0), at + Vector3(0, 0.6, 0), Game.WORLD)
+		if not ss.intersect_ray(q2).is_empty():
+			sc -= 5.0           # something low in front of it: it can duck
+		for a in mission.aliens():
+			if a != self and not a.dead and a.goal.distance_to(cp) < 3.0:
+				sc += 6.0
+		if sc < bs:
+			bs = sc
+			best = cp
+	return best
 
 ## Breaks line of sight: a cover point that hides it from @a from,
 ## preferably to the side, so the next attack comes from elsewhere.
@@ -1200,6 +1576,10 @@ var _cry_t := 6.0
 
 ## Bijec officer: a roar that drives the others on - steadier, faster, wounds forgotten.
 func _warcry_tick(delta: float) -> void:
+	if R.has("module"):
+		_reinf_tick(delta)
+		if not module_ok:
+			return             # the module is gone: no more orders
 	_cry_t -= delta
 	if _cry_t > 0.0:
 		return
@@ -1213,6 +1593,48 @@ func _warcry_tick(delta: float) -> void:
 			n += 1
 	_tlog("warcry %d" % n)
 	_warcry_fx.rpc()
+
+## Bijec officer: the command module on its forearm. Left alive too long in a fight, it calls more of them;
+## shoot the module and it can neither call nor drive the others on.
+var module_ok := true
+var _reinf_t := 0.0
+var _reinf_done := false
+func _reinf_tick(delta: float) -> void:
+	if not module_ok or _reinf_done or state != S.COMBAT:
+		return
+	_reinf_t += delta
+	if _reinf_t < (55.0 if Game.veteran() else 75.0):
+		return
+	_reinf_done = true
+	var soldier: String = race.trim_suffix("_velitel")
+	var away := Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized()
+	for i in (3 if Game.veteran() else 2):
+		var at: Vector3 = mission.free_spot(global_position + away * rng.randf_range(24.0, 32.0) + Vector3(rng.randf_range(-4, 4), 0.3, rng.randf_range(-4, 4)))
+		mission.spawn_alien(soldier, at)
+	_tlog("reinforcements")
+	_reinf_fx.rpc()
+
+@rpc("authority", "call_local", "reliable")
+func _reinf_fx() -> void:
+	Game.play_at(mission, "bijec_warcry", global_position + Vector3(0, 2.0, 0), 8)
+	if mission.hud:
+		mission.hud.message("BIJEC VELITEL PŘIVOLAL POSILY!", 4.0)
+
+func module_hit() -> void:
+	if not module_ok or dead:
+		return
+	module_ok = false
+	hp -= 30.0
+	_tlog("module destroyed")
+	_module_fx.rpc()
+
+@rpc("authority", "call_local", "reliable")
+func _module_fx() -> void:
+	module_ok = false
+	Game.play_at(mission, "zap", global_position + Vector3.UP * 1.2, 2)
+	var me: Node = mission.local_player()
+	if me and me.global_position.distance_to(global_position) < 60.0 and mission.hud:
+		mission.hud.message("Velitelský modul na předloktí zničen - posily nepřijdou.", 3.0)
 
 @rpc("authority", "call_local", "reliable")
 func _warcry_fx() -> void:
@@ -1387,13 +1809,17 @@ func _window_spot(at: Vector3, high_only := false) -> Vector3:
 	return best
 
 # ---- Ještěřan officer: unseen, a blow to the back of the head, then off to the ship --------------
+## (The Levit grabs in the open, with its tentacles - but only a man the others are too far to help.)
 func _can_grab() -> bool:
-	return R.has("grab") and can_cloak and _grab_cd <= 0.0 and is_instance_valid(target) and target.has_method("is_player") \
-			and not target.downed and not target.dead and global_position.distance_to(target.global_position) < 35.0
+	if not (R.has("grab") and (can_cloak or R.get("grab_open", false)) and _grab_cd <= 0.0 and is_instance_valid(target) and target.has_method("is_player") \
+			and not target.downed and not target.dead and global_position.distance_to(target.global_position) < 35.0):
+		return false
+	return not R.get("grab_open", false) or _other_prey(target) == null
 
 func _grab(delta: float) -> void:
 	lurking = false
-	if not is_instance_valid(target) or target.dead or target.downed or not can_cloak:
+	var open: bool = R.get("grab_open", false)
+	if not is_instance_valid(target) or target.dead or target.downed or not (can_cloak or open) or (open and _other_prey(target) != null):
 		phase = "hide"
 		hide_t = 0.8
 		return
@@ -1406,7 +1832,7 @@ func _grab(delta: float) -> void:
 		_brute_repath = 0.3
 		_go(_snap(tp + back * 0.9))
 	var dd := global_position.distance_to(tp)
-	if not cloak and dd < 6.0:
+	if not cloak and not open and dd < 6.0:
 		velocity.x = 0; velocity.z = 0      # let the cloak settle before the last steps
 		return
 	_walk(run_spd * (0.85 if dd > 6.0 else 1.25), delta)
@@ -1414,6 +1840,8 @@ func _grab(delta: float) -> void:
 		_face(tp, delta * 3.0)
 		_tlog("grab KO")
 		target.knock_out.rpc_id(target.get_multiplayer_authority())
+		if open:
+			target.abducted_note.rpc_id(target.get_multiplayer_authority())
 		_grab_fx.rpc(tp + Vector3(0, 1.5, 0))
 		_grab_cd = rng.randf_range(35.0, 50.0)
 		_decloak_t = 0.8
@@ -1457,7 +1885,7 @@ func _brute(delta: float, seen: Node) -> void:
 		if react <= 0 and shoot_cd <= 0 and R.has("shots"):
 			_fire(seen)
 			mission.combat_t = mission.t
-			shoot_cd = rng.randf_range(0.7, 1.1) * float(_g("rate", 1.0))
+			shoot_cd = rng.randf_range(0.7, 1.1) * float(_g("rate", 1.0)) * (0.6 if _frenzy else 1.0)
 	elif _arrived():
 		velocity.x = 0; velocity.z = 0
 		rotation.y += delta * 0.7      # where did it go
@@ -1549,7 +1977,7 @@ func _fly(delta: float) -> void:
 		return
 	var tgt: Vector3 = _jet[0]
 	var flat := Vector2(tgt.x - global_position.x, tgt.z - global_position.z).length()
-	var spd := (6.5 if flat > 0.3 else 4.5) * float(R.get("jet", 1.0))    # slow enough to be hit (it was 12)
+	var spd := (9.25 if flat > 0.3 else 6.25) * float(R.get("jet", 1.0))    # 0.44 slowed them from 12 to 6.5, too much: half of it back
 	global_position = global_position.move_toward(tgt, spd * delta)
 	if flat > 0.3:
 		_face(tgt, delta)
@@ -1577,7 +2005,7 @@ func _jet_tick(delta: float) -> void:
 			_jet_snd.bus = "SFX"
 			add_child(_jet_snd)
 			_jet_light = OmniLight3D.new()
-			_jet_light.light_color = Color(1.0, 0.25, 0.15) if race == "levit_velitel" else Color(0.45, 0.6, 1.0)
+			_jet_light.light_color = Color(0.75, 0.25, 1.0) if race == "levit_velitel" else Color(0.45, 0.6, 1.0)
 			_jet_light.omni_range = 5.0
 			_jet_light.light_energy = 0.0
 			add_child(_jet_light)
@@ -1596,7 +2024,7 @@ func _throw_nade(at: Vector3) -> void:
 		if a != self and not a.dead and a.global_position.distance_to(at) < 5.0:
 			_fire_instead(at)
 			return
-	_nade_cd = rng.randf_range(14.0, 24.0) * (0.75 if Game.veteran() else 1.0)
+	_nade_cd = rng.randf_range(14.0, 24.0) * (0.75 if Game.veteran() else 1.0) * (1.0 - 0.4 * _late)
 	var fwd := -global_transform.basis.z
 	var from := global_position + Vector3(0, float(R["h"]) * 0.85, 0) + fwd * 0.4
 	var aim := at + Vector3(rng.randf_range(-1.2, 1.2), 0.1, rng.randf_range(-1.2, 1.2))
@@ -1663,22 +2091,27 @@ var _trap_t := 0.0
 var _trap_n := 0
 
 func _maybe_trap(chance: float) -> void:
-	if traps_left <= 0 or rng.randf() > chance or airborne:
+	if (traps_left <= 0 and mines_left <= 0) or rng.randf() > chance or airborne:
 		return
 	var p := global_position
 	for a in mission.aliens():
 		for t in a._traps:
 			if (t[0] as Vector3).distance_to(p) < 7.0:
 				return
-	traps_left -= 1
+	var kind := "flash"
+	if mines_left > 0 and (traps_left <= 0 or rng.randf() < 0.5):
+		kind = "mine"
+		mines_left -= 1
+	else:
+		traps_left -= 1
 	_trap_n += 1
 	var id := "%s_%d" % [name, _trap_n]
-	_traps.append([p, id])
-	_tlog("trap")
-	_trap_put.rpc(p, id)
+	_traps.append([p, id, kind])
+	_tlog("trap " + kind)
+	_trap_put.rpc(p, id, kind)
 
 @rpc("authority", "call_local", "reliable")
-func _trap_put(p: Vector3, id: String) -> void:
+func _trap_put(p: Vector3, id: String, kind := "flash") -> void:
 	var n := Node3D.new()
 	n.name = "Trap_" + id
 	var disc := MeshInstance3D.new()
@@ -1691,7 +2124,7 @@ func _trap_put(p: Vector3, id: String) -> void:
 	var sm := SphereMesh.new()
 	sm.radius = 0.012; sm.height = 0.024
 	dot.mesh = sm
-	var dm := Game.color_mat(Color(1.0, 0.15, 0.05), true)
+	var dm := Game.color_mat(Color(0.35, 1.0, 0.45) if kind == "mine" else Color(1.0, 0.15, 0.05), true)
 	dot.material_override = dm
 	n.add_child(dot)
 	dot.position.y = 0.025
@@ -1716,8 +2149,11 @@ func _traps_tick(delta: float) -> void:
 				continue
 			var dd: Vector3 = p.global_position - tp
 			if Vector2(dd.x, dd.z).length() < 1.6 and absf(dd.y) < 1.5:
-				_trap_go.rpc(String(_traps[i][1]), tp)
+				var kind: String = _traps[i][2] if _traps[i].size() > 2 else "flash"
+				_trap_go.rpc(String(_traps[i][1]), tp, kind)
 				_traps.remove_at(i)
+				if kind == "mine":
+					get_tree().create_timer(0.35).timeout.connect(func(): mission.explode(tp + Vector3(0, 0.3, 0), 3.8, 75.0 * (1.2 if Game.veteran() else 1.0), "-", true))
 				mission.noise(tp, 30.0)
 				# the hunters know at once where the prey is
 				for a in mission.aliens():
@@ -1728,10 +2164,16 @@ func _traps_tick(delta: float) -> void:
 				break
 
 @rpc("authority", "call_local", "reliable")
-func _trap_go(id: String, p: Vector3) -> void:
+func _trap_go(id: String, p: Vector3, kind := "flash") -> void:
 	var n := mission.get_node_or_null("Trap_" + id)
 	if n:
 		n.queue_free()
+	if kind == "mine":
+		Game.play_at(mission, "plasma_grenade_beep", p, 6)
+		var me0: Node = mission.local_player()
+		if me0 and not me0.dead and me0.global_position.distance_to(p) < 8.0:
+			mission.hud.message("MINA! Pryč!", 1.0)
+		return
 	Game.play_at(mission, "flash_trap", p, 6)
 	var l := OmniLight3D.new()
 	l.light_color = Color(1.0, 0.97, 0.9)
@@ -1951,7 +2393,7 @@ func _face(p: Vector3, delta: float) -> void:
 func _fire(p: Node) -> void:
 	var tgt: Vector3 = p.global_position + Vector3(0, 0.75 if p.crouching else 1.15, 0)
 	var dist := global_position.distance_to(tgt)
-	if R.has("rocket") and _rocket_cd <= 0.0 and dist > 7.0:
+	if (R.has("rocket") and _rocket_cd <= 0.0 and dist > 7.0) or (gun == "rocket" and dist > 6.0):
 		# Levit officer: a rocket at his feet
 		_rocket_cd = rng.randf_range(6.0, 10.0)
 		var rf := _muzzle_pos()
@@ -1960,9 +2402,13 @@ func _fire(p: Node) -> void:
 		_tlog("rocket")
 		_plasma.rpc(rf, (rt - rf).normalized(), 1.0, "rocket")
 		return
-	var miss := (0.45 + dist * 0.032) * float(_g("miss", 1.0))
+	var miss := (0.45 + dist * 0.032) * float(_g("miss", 1.0)) * (1.5 if suit_down else 1.0) * (1.6 if _disarray_t > 0.0 else 1.0)
+	if R.has("night_eyes"):
+		# the Ještěřan sees best in the dark: at night its aim is steadier still
+		miss *= {"noc": 0.6, "soumrak": 0.8, "svitani": 0.8}.get(mission.phase(), 1.0)
 	if Game.veteran(): miss *= 0.8
 	elif Game.easy(): miss *= 1.4
+	miss *= _aim_k
 	if _rally_t > 0: miss *= 0.75
 	if p.crouching: miss *= 1.25
 	var pv := Vector3(p.velocity.x, 0, p.velocity.z)
@@ -2008,9 +2454,13 @@ func _plasma(from: Vector3, dir: Vector3, power := 1.0, kind := "plasma", quiet 
 	# the big ones (and the drones) fire the heavy plasma, ten takes so it never repeats
 	if kind == "rocket":
 		Game.play_at(mission, "missile_launch", from, 2)
+	elif not quiet and R.get("laser", false) and kind == "plasma": Game.play_at(mission, "laser", from, -1)    # the Levit's laser rifle
 	elif not quiet: Game.play_at(mission, ("plasma_cannon" if power >= 1.9 else "plasma_heavy" if power >= 1.3 else "plasma") if kind == "plasma" else ("acid_spit" if kind == "acid" else "lunge"), from, -2 + (power - 1.0) * 2.0)
 	var bolt := Node3D.new()
 	bolt.set_script(BoltScript)
+	bolt.red = R.get("laser", false) and kind == "plasma"
+	if R.has("bolt_col") and kind == "plasma":
+		bolt.tint = R["bolt_col"]
 	bolt.power = power
 	bolt.kind = kind
 	bolt.dir = dir
@@ -2070,20 +2520,64 @@ func _psi(delta: float) -> void:
 					n += 1
 			if n > 0:
 				return
-		if r < 0.78:
+		if r < 0.68 and _illusion_try(best):
+			return
+		if r < 0.8:
 			best.psi_blast.rpc_id(best.get_multiplayer_authority(), rng.randf_range(9.0, 16.0))
 			return
 		# a stronger will: harder to resist
 		best.psi_attack.rpc_id(best.get_multiplayer_authority(), 0.25 + rng.randf() * 0.75)
 		return
-	if R.has("illusion") and rng.randf() < 0.5:
-		# the grey officer's trick: a friend's face becomes one of theirs
-		for o in mission.players():
-			if o != best and not o.dead and o.global_position.distance_to(best.global_position) < 30.0:
-				_tlog("illusion")
-				best.psi_illusion.rpc_id(best.get_multiplayer_authority(), String(o.name), rng.randf_range(14.0, 22.0), rng.randf())
-				return
+	if R.has("illusion") and rng.randf() < 0.5 and _illusion_try(best):
+		return
 	best.psi_attack.rpc_id(best.get_multiplayer_authority(), rng.randf())
+
+## The illusion: a friend's face becomes one of theirs (the grey officer, the Mysloděj).
+func _illusion_try(best: Node) -> bool:
+	for o in mission.players():
+		if o != best and not o.dead and o.global_position.distance_to(best.global_position) < 30.0:
+			_tlog("illusion")
+			best.psi_illusion.rpc_id(best.get_multiplayer_authority(), String(o.name), rng.randf_range(14.0, 22.0), rng.randf())
+			return true
+	return false
+
+## Mysloděj: hit, it is simply somewhere else - out of sight, a few dozen metres away.
+var _tele_cd := 0.0
+func _teleport_away(from: Vector3) -> bool:
+	if _tele_cd > mission.t or dead or husk:
+		return false
+	var ss := get_world_3d().direct_space_state
+	for i in 12:
+		var a := rng.randf() * TAU
+		var d := rng.randf_range(12.0, 22.0)
+		var to: Vector3 = mission.free_spot(global_position + Vector3(sin(a) * d, 0.3, cos(a) * d))
+		if to.distance_to(global_position) < 8.0:
+			continue
+		var q := PhysicsRayQueryParameters3D.create(from + Vector3(0, 1.4, 0), to + Vector3(0, 1.2, 0), Game.WORLD)
+		if ss.intersect_ray(q).is_empty() and i < 9:
+			continue        # (somewhere the shooter cannot see, if it can)
+		_tele_cd = mission.t + rng.randf_range(7.0, 11.0)
+		_tlog("teleport")
+		_teleport_fx.rpc(global_position, to)
+		global_position = to
+		goal = to
+		last_seen = from
+		return true
+	return false
+
+@rpc("authority", "call_local", "reliable")
+func _teleport_fx(from: Vector3, to: Vector3) -> void:
+	for at in [from, to]:
+		Game.play_at(mission, "psi", at + Vector3.UP, 0)
+		var l := OmniLight3D.new()
+		l.light_color = Color(0.7, 0.25, 1.0)
+		l.light_energy = 5.0
+		l.omni_range = 6.0
+		mission.add_child(l)
+		l.global_position = at + Vector3(0, 1.2, 0)
+		var tw := l.create_tween()
+		tw.tween_property(l, "light_energy", 0.0, 0.6)
+		tw.tween_callback(l.queue_free)
 
 ## An ally worth strengthening: hurt, or fighting.
 func _hurt_ally() -> Node:
@@ -2111,8 +2605,68 @@ func psi_boost() -> void:
 		get_tree().create_timer(12.0).timeout.connect(func():
 			if is_inside_tree() and _boost_t > 0:
 				_boost_t = 0.0
-				walk_spd = float(R["walk"])
-				run_spd = float(R["run"]))
+				walk_spd = float(R["walk"]) * (0.55 if suit_down else 1.0)
+				run_spd = float(R["run"]) * (0.55 if suit_down else 1.0))
+
+var armor_broken := false
+@rpc("authority", "call_local", "reliable")
+func _armor_break() -> void:
+	armor_broken = true
+	_tlog("armor broken")
+	Game.play_at(mission, "zap", global_position + Vector3.UP * 1.5, 0)
+	var sp := CPUParticles3D.new()
+	sp.one_shot = true
+	sp.amount = 40
+	sp.lifetime = 0.7
+	sp.explosiveness = 0.85
+	sp.direction = Vector3.UP
+	sp.spread = 90.0
+	sp.initial_velocity_min = 2.0
+	sp.initial_velocity_max = 4.5
+	sp.gravity = Vector3(0, -7, 0)
+	var qm := QuadMesh.new()
+	qm.size = Vector2(0.03, 0.03)
+	var mm := StandardMaterial3D.new()
+	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mm.albedo_color = Color(0.8, 0.45, 1.0)
+	mm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	qm.material = mm
+	sp.mesh = qm
+	add_child(sp)
+	sp.position = Vector3(0, float(R["h"]) * 0.7, 0)
+	sp.emitting = true
+	get_tree().create_timer(1.8).timeout.connect(sp.queue_free)
+
+## The biomechanical suit gives out: sparks from the collar, the speed and the reflexes are gone.
+var suit_down := false
+@rpc("authority", "call_local", "reliable")
+func _suit_fail() -> void:
+	suit_down = true
+	walk_spd *= 0.55
+	run_spd *= 0.55
+	Game.play_at(mission, "zap", global_position + Vector3.UP, -2)
+	var sp := CPUParticles3D.new()
+	sp.one_shot = true
+	sp.amount = 24
+	sp.lifetime = 0.5
+	sp.explosiveness = 0.9
+	sp.direction = Vector3.UP
+	sp.spread = 70.0
+	sp.initial_velocity_min = 1.5
+	sp.initial_velocity_max = 3.5
+	sp.gravity = Vector3(0, -6, 0)
+	var qm := QuadMesh.new()
+	qm.size = Vector2(0.025, 0.025)
+	var mm := StandardMaterial3D.new()
+	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mm.albedo_color = Color(0.75, 0.95, 1.0)
+	mm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	qm.material = mm
+	sp.mesh = qm
+	add_child(sp)
+	sp.position = Vector3(0, float(R["h"]) * 0.72, 0)
+	sp.emitting = true
+	get_tree().create_timer(1.5).timeout.connect(sp.queue_free)
 
 @rpc("authority", "call_local", "reliable")
 func _psi_fx() -> void:
@@ -2124,7 +2678,7 @@ func _psi_fx() -> void:
 
 # ---- what they do while nobody is looking -------------------------------------------------------
 ## Activities: the host picks one at the start (a grey working at a cow, two greys whispering,
-## a guard at the ship's door, a Líhnoun feeding...). Every machine lays a pose over the
+## a guard at the ship's door, a Líhavec feeding...). Every machine lays a pose over the
 ## animation clip while the alien stands at it; any alarm and the job is dropped for good.
 const ACTS := ["", "work", "work_high", "talk", "guard", "stare", "eat", "sniff"]
 const HUMANOID := ["grey", "grey_velitel", "jestetan", "jestetan_velitel", "bijec", "bijec_velitel"]
@@ -2324,7 +2878,7 @@ func _act_sounds(act: String, delta: float) -> void:
 		"stare": _act_snd = 10.0
 		"guard": _act_snd = 10.0
 
-## The Líhnoun's meal: what is left of somebody, lying in front of it (every machine makes its own).
+## The Líhavec's meal: what is left of somebody, lying in front of it (every machine makes its own).
 func _lay_corpse() -> void:
 	_corpse = Game.model("civ_b" if absi(hash(String(name))) % 2 == 0 else "civ_a")
 	mission.add_child(_corpse)

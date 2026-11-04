@@ -43,7 +43,7 @@ var bracing := false
 var _breath_ph := 0.0
 var _breath_snd := 0.0
 var panic := ""           # "", "flee", "drop", "berserk" (X-COM style panic)
-var infected := false     # a Líhnoun's seed: bleed out with it and you rise again
+var infected := false     # a Líhavec's seed: bleed out with it and you rise again
 var radio_button := false
 var _winded := false      # ran out of stamina: sprint locked until it recovers # holding the mouse button of the hand with the radio
 
@@ -163,10 +163,8 @@ func _ready() -> void:
 			# at home: the rifle hangs on the back, hands free (1 / Q takes it down - the range)
 			inv["back"] = inv["rh"]
 			inv.erase("rh")
-		var ids := []
-		for sl in inv:
-			ids.append(inv[sl]["id"])
-		(func(): mission.report_kit.rpc_id(1, ids)).call_deferred()
+		var ids := _kit_ids()
+		(func(): mission.report_kit.rpc_id(1, ids, _from_locker(ids))).call_deferred()
 		cam = Camera3D.new()
 		cam.fov = Game.fov
 		cam.near = 0.05
@@ -328,11 +326,11 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 	rot += ra[1]
 	# which right-hand grip shows: both hands on the gun, or the right hand alone (the left
 	# is busy reloading, or holds something)
-	var busy_l := (reloading and rid in ["pistol", "magnum", "shotgun"]) or _rev_open > 0.05
+	var busy_l := (reloading and rid in ["pistol", "magnum", "shotgun"]) or _rev_open > 0.05 or _fp_hand_busy
 	var g2 := gun.get_node_or_null("GripTwo")
 	var g1 := gun.get_node_or_null("GripOne")
 	if g2 and g1:
-		g2.visible = pistol_grip() and not busy_l
+		g2.visible = (pistol_grip() or Game.two_handed(rid)) and not busy_l
 		g1.visible = not g2.visible
 	_lower_left = busy_l and inv.has("lh")
 	# digging in the backpack: hands drop out of view
@@ -353,6 +351,10 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 		var lt: Vector3 = VM_ONE_L + Vector3(-bob.x, bob.y, 0) + Vector3(0, -0.4 * dig - 0.45 * _lower_l_t, 0)
 		if sprinting:
 			lt += Vector3(0, -0.15, 0.05)
+		if item_in("lh").get("id", "") == "stit":
+			# low and to the side; up to the face (its window before the eyes) on the right button
+			_shield_k = move_toward(_shield_k, 1.0 if shield_up else 0.0, delta * 3.5)
+			lt += Vector3(0.0, -0.38, 0.06).lerp(Vector3(0.2, -0.06, 0.02), _shield_k)
 		gun_l.position = gun_l.position.lerp(lt, k)
 	# melee swing
 	if _swing > 0:
@@ -652,6 +654,11 @@ func _hold_pose(delta: float) -> void:
 	_act_t += delta
 	var want := hold_want(held, held_l, act, _act_t)
 	want = Game.tweak_pose("hold/" + (held if held != "" else "nic"), want)
+	# an animation made in the Dílna (Animace) for this action and item wins
+	var ca: String = {1: "reload", 2: "strike", 3: "dig", 4: "heal"}.get(act, "hold")
+	var clip := AnimClips.find("tp", ca, held)
+	if not clip.is_empty():
+		want.merge(AnimClips.pose(clip, AnimClips.clip_time(clip, _act_t)), true)
 	for bn in want:
 		var i := _bone(bn)
 		if i >= 0:
@@ -711,8 +718,10 @@ func _emote_pose(delta: float) -> void:
 	var want := {}
 	if emote == 1:
 		want = Game.tweak_pose("emote/salute", POSE_SALUTE)
+		want.merge(_emote_clip("salute", 2.4 - _emote_t), true)
 	elif emote == 2:
 		want = Game.tweak_pose("emote/atease", POSE_ATEASE)
+		want.merge(_emote_clip("atease", _idle_t), true)
 	if _body_speed < 0.15 and not crouching:
 		_idle_t += delta
 	else:
@@ -720,6 +729,7 @@ func _emote_pose(delta: float) -> void:
 	# standing about with empty hands: hands on the hips
 	if want.is_empty() and held == "" and held_l == "" and _idle_t > 4.0:
 		want = Game.tweak_pose("emote/hips", POSE_HIPS)
+		want.merge(_emote_clip("hips", _idle_t - 4.0), true)
 	for bn in want:
 		var i := _bone(bn)
 		if i >= 0:
@@ -732,6 +742,12 @@ func _emote_pose(delta: float) -> void:
 			var look := sin(_idle_t * 0.45) * 0.5 * smoothstep(3.0, 5.0, _idle_t) + sin(_idle_t * 1.3) * 0.05
 			var rest2: Quaternion = _sk.get_bone_rest(hi).basis.get_rotation_quaternion()
 			_sk.set_bone_pose_rotation(hi, rest2 * Quaternion.from_euler(Vector3(-0.08 * sin(_idle_t * 0.3), look, 0)))
+
+func _emote_clip(what: String, t: float) -> Dictionary:
+	var clip := AnimClips.get_clip("tp_%s_vse" % what)
+	if clip.is_empty():
+		return {}
+	return AnimClips.pose(clip, AnimClips.clip_time(clip, maxf(0.0, t)))
 
 ## Owner: what the hands are doing, for the others to see.
 func _act_tick() -> void:
@@ -778,7 +794,13 @@ func _show_items(r: String, l: String, back: String) -> void:
 		if gun:
 			gun.add_child(_held_model(r))
 			if two:
-				gun.add_child(Game.model("hands_" + r))
+				var both2 := Game.model("hands_" + r)
+				both2.name = "GripTwo"
+				gun.add_child(both2)
+				var one2 := Game.model("hand_r")      # (the left hand busy reloading: the right one alone)
+				one2.name = "GripOne"
+				one2.visible = false
+				gun.add_child(one2)
 			else:
 				var one := Game.model("hand_r")
 				one.name = "GripOne"
@@ -1177,7 +1199,8 @@ func _physics_process(delta: float) -> void:
 	var brace_w: bool = two and Game.ITEMS[rh["id"]].get("brace", false)
 	# heavy guns are not aimed down a sight: they are pulled in tight to the body
 	bracing = brace_w and Input.is_action_pressed("aim") and not inv_open and not sprinting and busy <= 0
-	aiming = (two and not brace_w or pistol_grip()) and Input.is_action_pressed("aim") and not inv_open and not sprinting and busy <= 0
+	shield_up = item_in("lh").get("id", "") == "stit" and Input.is_action_pressed("aim") and not inv_open and busy <= 0 and not prone
+	aiming = (two and not brace_w or pistol_grip()) and Input.is_action_pressed("aim") and not inv_open and not sprinting and busy <= 0 and not shield_up
 	if cam:
 		var scoped: bool = aiming and Game.ITEMS[rh["id"]].get("scope", false)
 		var zoom := 0.2 if scoped else (0.45 if Game.has_mod(rh.get("id", ""), "optika", merc) else 0.7)
@@ -1195,13 +1218,15 @@ func _physics_process(delta: float) -> void:
 		_winded = true
 	if _winded and stamina > 25.0 and not Input.is_action_pressed("sprint"):
 		_winded = false
-	var sprint := Input.is_action_pressed("sprint") and not _winded and not crouching and not prone and not aiming and dir.length() > 0.1 and not busy_stand
+	var sprint := Input.is_action_pressed("sprint") and not _winded and not crouching and not prone and not aiming and not shield_up and dir.length() > 0.1 and not busy_stand
 	if _winded and Input.is_action_just_pressed("sprint"):
 		mission.hud.message("Nemáš dech.", 1.0)
 	sprinting = sprint
 	var speed := 0.7 if prone else (CROUCH if crouching else (SPRINT if sprint else WALK))
 	if aiming:
 		speed *= 0.6
+	if shield_up:
+		speed *= 0.3              # behind the shield: a step at a time
 	if bracing:
 		speed *= 0.55
 	if busy_stand:
@@ -1269,6 +1294,7 @@ func _physics_process(delta: float) -> void:
 	_bleed(delta)
 	healed_t = maxf(0.0, healed_t - delta)
 	_laser_charge(delta)
+	_kit_tick(delta)
 	_laser_dot()
 	if Input.is_action_just_pressed("flashlight"):
 		light_on = not light_on
@@ -1367,8 +1393,87 @@ func _laser_charge(delta: float) -> void:
 			w["loaded"] = int(w["loaded"]) + 1
 			c -= 1.0
 		w["charge"] = c if int(w["loaded"]) < cap else 0.0
+		if int(w["loaded"]) >= cap and w.get("drained", false):
+			w.erase("drained")
+			if s == "rh" or s == "lh":
+				Game.play_ui(self, "ping", -12)
+
+## What he carries (ids, with the armour): the host keeps track, for what comes home and what is lost.
+func _kit_ids() -> Array:
+	var ids := []
+	for sl in inv:
+		ids.append(inv[sl]["id"])
+	if armor != "":
+		ids.append(armor)
+	return ids
+
+## Of the kit, the pieces that come from his own locker (they go first, then the base's armory).
+func _from_locker(ids: Array) -> Dictionary:
+	var allot: Dictionary = Net.mission_params.get("allot", {})
+	var lk: Dictionary = Game.merc.get("locker", {})
+	var cnt := {}
+	for i in ids:
+		cnt[i] = int(cnt.get(i, 0)) + 1
+	var out := {}
+	for i in cnt:
+		var over := maxi(0, int(cnt[i]) - int(allot.get(i, 0)))
+		var mine := mini(over, int(lk.get(i, 0)))
+		if mine > 0:
+			out[i] = mine
+	return out
+
+var _kit_t := 3.0
+func _kit_tick(delta: float) -> void:
+	if not is_multiplayer_authority() or Net.mission_params.is_empty():
+		return
+	_kit_t -= delta
+	if _kit_t > 0.0:
+		return
+	_kit_t = 3.0
+	mission.report_kit_now.rpc_id(1, [] if dead else _kit_ids())
+
+## Host: more of something was taken than the base has - it stays in the armory.
+@rpc("any_peer", "call_local", "reliable")
+func kit_strip(items: Dictionary) -> void:
+	if not is_multiplayer_authority():
+		return
+	var l := []
+	for it in items:
+		for k in int(items[it]):
+			for sl in inv.keys():
+				if inv[sl]["id"] == it:
+					inv.erase(sl)
+					break
+			if armor == it:
+				armor = ""
+		l.append("%s %dx" % [Game.ITEMS[it]["short"], int(items[it])])
+	_update_held()
+	mission.hud.message("Ve skladu nezbylo: %s (vzali to ostatní)." % ", ".join(l), 5.0)
+
+@rpc("any_peer", "call_local", "reliable")
+func hunted_note() -> void:
+	if is_multiplayer_authority() and mission.hud:
+		mission.hud.message("Zabil jsi jim velitele. Znají tvoje jméno - a jdou po tobě.", 7.0)
+
+## Host, at the end: what he lost out of his own locker.
+@rpc("any_peer", "call_local", "reliable")
+func locker_lost(items: Dictionary) -> void:
+	if not is_multiplayer_authority():
+		return
+	var lk: Dictionary = Game.merc.get("locker", {})
+	for it in items:
+		lk[it] = maxi(0, int(lk.get(it, 0)) - int(items[it]))
+		if int(lk[it]) <= 0:
+			lk.erase(it)
+	Game.merc["locker"] = lk
+	Game.save_merc()
 
 var _click_lock := false
+## The shield: carried low (out of the way), or held up to the face on the right button -
+## then you look through its window, move very slowly and can still fire a pistol.
+var shield_up := false
+var _shield_k := 0.0
+const SHIELD_HP := 420.0
 func _actions(delta: float) -> void:
 	radio_button = false
 	var rh := item_in("rh")
@@ -1441,7 +1546,12 @@ func _use_hand(slot: String, pressed: bool, just: bool, delta: float) -> void:
 					return
 			var trigger := pressed if rule["auto"] else just
 			if trigger and fire_cd <= 0:
-				if int(it.get("loaded", 0)) > 0:
+				if it.get("drained", false):
+					# a laser shot dry must charge all the way before it fires again
+					if just:
+						Game.play_at(self, "empty", global_position, -6)
+						mission.hud.message("Laser je vybitý - nabíjí se doplna (%d/%d)" % [int(it.get("loaded", 0)), Game.mag_size(it["id"])], 1.5)
+				elif int(it.get("loaded", 0)) > 0:
 					_shoot(slot, it, rule)
 				elif just:
 					Game.play_at(self, "empty", global_position, -6)
@@ -1500,6 +1610,8 @@ func _muzzle(slot: String, rule: Dictionary) -> Vector3:
 
 func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 	wp["loaded"] = int(wp["loaded"]) - 1
+	if rule.get("laser", false) and int(wp["loaded"]) <= 0:
+		wp["drained"] = true
 	_since_shot = 0.0
 	fire_cd = rule["rate"] / (2.0 if slot == "lh" and not gun_in("rh").is_empty() else 1.0)
 	_vm_kick = 1.0
@@ -1548,8 +1660,11 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 			var c: Object = hit.collider
 			if c and c.has_method("is_alien"):
 				var dmg: float = rule["damage"] * randf_range(0.6, 1.4) * (1.15 if Game.has_research("pitva") else 1.0) * (0.45 if Game.alien_unknown(wp["id"]) else 1.0)
+				var weak: bool = c.has_method("weak_spot") and c.weak_spot(hit.position)
+				if weak:
+					dmg *= 1.5           # the Levit's organ, the Bijec officer's command module
 				mission.hud.hitmarker()
-				_hit_alien.rpc_id(1, c.name, dmg, "plasma" if wp["id"] == "plasma_rifle" or rule.get("alien", false) else ("laser" if Game.ITEMS[wp["id"]].get("laser", false) else "bullet"))
+				_hit_alien.rpc_id(1, c.name, dmg, "plasma" if wp["id"] == "plasma_rifle" or rule.get("alien", false) else ("laser" if Game.ITEMS[wp["id"]].get("laser", false) else "bullet"), weak)
 			elif c and c.has_method("is_player") and not c.dead:
 				c.hurt.rpc_id(c.get_multiplayer_authority(), rule["damage"] * randf_range(0.5, 1.0), global_position)
 				c.shot_by.rpc_id(c.get_multiplayer_authority(), display_name)
@@ -1758,11 +1873,13 @@ func _start_busy(time: float, text: String, done: Callable) -> void:
 	busy_done = done
 
 @rpc("any_peer", "call_local", "reliable")
-func _hit_alien(alien_name: String, dmg: float, kind := "bullet") -> void:
+func _hit_alien(alien_name: String, dmg: float, kind := "bullet", weak := false) -> void:
 	if not multiplayer.is_server():
 		return
 	var a: Node = mission.actors.get_node_or_null(alien_name)
 	if a and not a.dead:
+		if weak and a.has_method("module_hit"):
+			a.module_hit()
 		mission.hit_kind = kind
 		a.damage(dmg, global_position, self)
 		mission.hit_kind = ""
@@ -1900,6 +2017,59 @@ func _vm_part(n: String) -> Node3D:
 			return f
 	return null
 
+## What the free hand carries while reloading or working (also shown in the Dílna).
+static func make_carry(carry: String) -> Node3D:
+	if carry == "bandage":
+		# a white roll, a loose end trailing from it
+		var bd := MeshInstance3D.new()
+		var bc := CylinderMesh.new()
+		bc.top_radius = 0.022
+		bc.bottom_radius = 0.022
+		bc.height = 0.06
+		bc.radial_segments = 10
+		bd.mesh = bc
+		bd.material_override = Game.color_mat(Color(0.92, 0.9, 0.85))
+		bd.name = "Carry"
+		bd.position = Vector3(0, 0.03, -0.04)
+		bd.rotation = Vector3(0, 0, PI / 2)
+		var tail := MeshInstance3D.new()
+		var tm := BoxMesh.new()
+		tm.size = Vector3(0.05, 0.18, 0.004)
+		tail.mesh = tm
+		tail.material_override = bd.material_override
+		tail.position = Vector3(0, -0.1, 0.02)
+		bd.add_child(tail)
+		return bd
+	elif carry == "shell":
+		# a red shotgun shell with a brass base
+		var sh := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.0105
+		cm.bottom_radius = 0.0105
+		cm.height = 0.065
+		cm.radial_segments = 8
+		sh.mesh = cm
+		sh.material_override = Game.color_mat(Color(0.7, 0.12, 0.08))
+		sh.name = "Carry"
+		sh.position = Vector3(0, 0.02, -0.04)
+		sh.rotation = Vector3(PI / 2, 0, 0)
+		var base := MeshInstance3D.new()
+		var bm := CylinderMesh.new()
+		bm.top_radius = 0.011
+		bm.bottom_radius = 0.011
+		bm.height = 0.015
+		bm.radial_segments = 8
+		base.mesh = bm
+		base.material_override = Game.color_mat(Color(0.75, 0.6, 0.25))
+		base.position = Vector3(0, -0.035, 0)
+		sh.add_child(base)
+		return sh
+	elif carry != "":
+		var m := Game.model(carry)
+		m.name = "Carry"
+		return m
+	return null
+
 func _reload_hand(carry: String) -> Node3D:
 	if _rl_hand == null:
 		_rl_hand = Game.model("hand_l")
@@ -1910,55 +2080,9 @@ func _reload_hand(carry: String) -> Node3D:
 		for c in _rl_hand.get_children():
 			if c.name.begins_with("Carry"):
 				c.queue_free()
-		if carry == "bandage":
-			# a white roll, a loose end trailing from it
-			var bd := MeshInstance3D.new()
-			var bc := CylinderMesh.new()
-			bc.top_radius = 0.022
-			bc.bottom_radius = 0.022
-			bc.height = 0.06
-			bc.radial_segments = 10
-			bd.mesh = bc
-			bd.material_override = Game.color_mat(Color(0.92, 0.9, 0.85))
-			bd.name = "Carry"
-			bd.position = Vector3(0, 0.03, -0.04)
-			bd.rotation = Vector3(0, 0, PI / 2)
-			var tail := MeshInstance3D.new()
-			var tm := BoxMesh.new()
-			tm.size = Vector3(0.05, 0.18, 0.004)
-			tail.mesh = tm
-			tail.material_override = bd.material_override
-			tail.position = Vector3(0, -0.1, 0.02)
-			bd.add_child(tail)
-			_rl_hand.add_child(bd)
-		elif carry == "shell":
-			# a red shotgun shell with a brass base
-			var sh := MeshInstance3D.new()
-			var cm := CylinderMesh.new()
-			cm.top_radius = 0.0105
-			cm.bottom_radius = 0.0105
-			cm.height = 0.065
-			cm.radial_segments = 8
-			sh.mesh = cm
-			sh.material_override = Game.color_mat(Color(0.7, 0.12, 0.08))
-			sh.name = "Carry"
-			sh.position = Vector3(0, 0.02, -0.04)
-			sh.rotation = Vector3(PI / 2, 0, 0)
-			var base := MeshInstance3D.new()
-			var bm := CylinderMesh.new()
-			bm.top_radius = 0.011
-			bm.bottom_radius = 0.011
-			bm.height = 0.015
-			bm.radial_segments = 8
-			base.mesh = bm
-			base.material_override = Game.color_mat(Color(0.75, 0.6, 0.25))
-			base.position = Vector3(0, -0.035, 0)
-			sh.add_child(base)
-			_rl_hand.add_child(sh)
-		elif carry != "":
-			var m := Game.model(carry)
-			m.name = "Carry"
-			_rl_hand.add_child(m)
+		var cm0 := make_carry(carry)
+		if cm0:
+			_rl_hand.add_child(cm0)
 	return _rl_hand
 
 ## Zip open, then the hand rummages.
@@ -2003,6 +2127,22 @@ func _reload_anim(delta: float, rid: String, reloading: bool) -> Array:
 	var hand_at := Vector3.ZERO
 	var hand_rot := Vector3(0.7, 0.0, 0.0)
 	var ph := 1.0 - busy / busy_total if busy_total > 0 else 0.0
+	# an animation made in the Dílna (Animace z očí) for this gun wins over the hand-written ones
+	var fact := ""
+	if reloading:
+		fact = "reload1" if busy_text.begins_with("Přebíjím po") else "reload"
+	var fclip := AnimClips.find("fp", fact, rid) if fact != "" else {}
+	if not fclip.is_empty():
+		return _fp_clip_anim(fclip, ph)
+	_fp_hand_busy = false
+	if not _fp_parts.is_empty():
+		for pn in _fp_parts:
+			var pp := _vm_part(pn)
+			if pp:
+				pp.transform = pp.get_meta("rest")
+				pp.visible = true
+		_fp_parts.clear()
+		_fp_last = -1.0
 	if rid == "pistol":
 		var slide := _vm_part("Slide")
 		var mag := _vm_part("Mag")
@@ -2127,6 +2267,50 @@ func _reload_anim(delta: float, rid: String, reloading: bool) -> Array:
 			_rl_hand.global_position = hand_at
 			_rl_hand.global_transform.basis = cam.global_transform.basis * Basis.from_euler(hand_rot)
 	return [dp, dr]
+
+## A Dílna animation in the eyes view: the gun's offset, its parts, the free hand, sounds.
+var _fp_parts := {}
+var _fp_last := -1.0
+var _fp_hand_busy := false
+func _fp_clip_anim(clip: Dictionary, ph: float) -> Array:
+	var t := clampf(ph, 0.0, 1.0) * float(clip.get("delka", 1.0))
+	if t < _fp_last:
+		_fp_last = -1.0
+	for e in AnimClips.events_between(clip, _fp_last, t):
+		var ev := String(e)
+		if ev.begins_with("zvuk:"):
+			Game.play_ui(self, ev.substr(5), -4)
+		elif ev == "vyhodit:zasobnik":
+			_drop_mag()
+		elif ev == "vyhodit:nabojnice":
+			_eject_empties()
+	_fp_last = t
+	var g := AnimClips.xform(clip, "zbran", t)
+	for name in clip.get("stopy", {}):
+		if name == "zbran" or name == "ruka":
+			continue
+		var part := _vm_part(name)
+		if part:
+			part.transform = (part.get_meta("rest") as Transform3D) * AnimClips.xform(clip, name, t)
+			_fp_parts[name] = true
+	var mag := _vm_part("Mag")
+	if mag:
+		var vis := true
+		for e in clip.get("udalosti", []):
+			if float(e["t"]) <= t + 0.0001:
+				if String(e["typ"]) == "skryt:Mag": vis = false
+				elif String(e["typ"]) == "ukazat:Mag": vis = true
+		mag.visible = vis
+		_fp_parts["Mag"] = true
+	_fp_hand_busy = AnimClips.hand_free(clip, t)
+	if _fp_hand_busy:
+		var h := AnimClips.xform(clip, "ruka", t)
+		_reload_hand(AnimClips.last_event(clip, "drzi", t))
+		_rl_hand.visible = true
+		_rl_hand.global_transform = Transform3D(cam.global_transform.basis * h.basis, cam.global_transform * h.origin)
+	elif _rl_hand:
+		_rl_hand.visible = false
+	return [g.origin, g.basis.get_euler()]
 
 ## The revolver breaks open: the empties fall out.
 func _eject_empties() -> void:
@@ -2307,7 +2491,7 @@ func shot_by(who: String) -> void:
 	mission.hud.message("Trefil tě %s!" % who, 2.5)
 
 @rpc("any_peer", "call_local", "reliable")
-func hurt(dmg: float, from: Vector3) -> void:
+func hurt(dmg: float, from: Vector3, acid := false) -> void:
 	if not is_multiplayer_authority() or dead:
 		return
 	if Game.easy():
@@ -2316,14 +2500,29 @@ func hurt(dmg: float, from: Vector3) -> void:
 		bleed_left -= dmg * 0.5
 		return
 	if armor != "":
-		dmg *= float(Game.ITEMS[armor].get("protect", 1.0))
+		# (the Nádor's acid eats through the vest: the armour helps only a third as much)
+		var pr := float(Game.ITEMS[armor].get("protect", 1.0))
+		dmg *= lerpf(pr, 1.0, 0.67) if acid else pr
 	# a shield in the left hand stops most of what comes from the front
-	if item_in("lh").get("id", "") == "stit" and from.distance_to(global_position) > 1.5:
+	var sh := item_in("lh")
+	if sh.get("id", "") == "stit" and from.distance_to(global_position) > 1.5:
 		var to: Vector3 = (from - global_position)
 		to.y = 0
-		if to.length() > 0.1 and (-global_transform.basis.z).dot(to.normalized()) > 0.45:
-			dmg *= 0.25
+		if to.length() > 0.1 and (-global_transform.basis.z).dot(to.normalized()) > (0.35 if shield_up else 0.55):
+			# up: it stops nearly everything; low: it covers the body, not the head
+			var kept := dmg * (0.9 if shield_up else 0.5)
+			dmg -= kept
 			Game.play_at(self, "clink", global_position + Vector3.UP, -2)
+			# it holds as long as it lasts: acid eats it, plasma burns it
+			var hp_left := float(sh.get("hp", SHIELD_HP)) - kept * (2.2 if acid else 1.4)
+			sh["hp"] = hp_left
+			if hp_left <= 0.0:
+				inv.erase("lh")
+				_update_held()
+				Game.play_at(self, "glass_break", global_position + Vector3.UP, 0)
+				mission.hud.message("ŠTÍT SE ROZPADL!", 2.5)
+			elif hp_left < SHIELD_HP * 0.3 and hp_left + kept * 1.4 >= SHIELD_HP * 0.3:
+				mission.hud.message("Štít je prožraný - dlouho nevydrží (%d %%)." % int(100.0 * hp_left / SHIELD_HP), 2.5)
 	hp -= dmg
 	wounded = true
 	stress = min(100.0, stress + dmg * (1.4 - float(merc.get("bravery", 40)) / 100.0) * 2.0)
@@ -2563,7 +2762,7 @@ func _use_civilian() -> bool:
 			return true
 	return false
 
-## A Líhnoun's claw leaves something inside (only matters once you are down).
+## A Líhavec's claw leaves something inside (only matters once you are down).
 @rpc("any_peer", "call_local", "reliable")
 func implant() -> void:
 	if not is_multiplayer_authority() or dead:
@@ -2599,6 +2798,35 @@ func psi_attack(roll: float) -> void:
 		panic_t = 4.0
 		_panic_dir = Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
 		mission.hud.message("Hlas ti šeptá: UTEČ.", 3.0)
+	Game.play_ui(self, "heartbeat", 0)
+
+## A Líhavec in sight, close: the fear grows before it even touches you.
+var _dread_note := -99.0
+@rpc("any_peer", "call_local", "reliable")
+func dread(amount: float) -> void:
+	if not is_multiplayer_authority() or dead or downed:
+		return
+	var brave := float(merc.get("bravery", 40)) / 100.0
+	stress = min(100.0, stress + amount * (1.3 - brave) * (0.5 if Game.has_talent(merc, "zelezne_nervy") else 1.0))
+	if mission.t - _dread_note > 40.0:
+		_dread_note = mission.t
+		mission.hud.message("Víš, co ta věc dělá s lidmi. Ruce se ti třesou.", 3.0)
+
+## An Ohař roars as it breaks from cover: fear, and the green ones freeze for a moment.
+@rpc("any_peer", "call_local", "reliable")
+func ohar_roar(roll: float) -> void:
+	if not is_multiplayer_authority() or dead or downed:
+		return
+	var brave := float(merc.get("bravery", 40)) / 100.0
+	var seasoned := minf(1.0, float(merc.get("missions", 0)) / 8.0)
+	stress = min(100.0, stress + 22.0 * (1.3 - brave))
+	var resist := brave * 0.5 + seasoned * 0.4 + (0.3 if Game.has_talent(merc, "zelezne_nervy") else 0.0)
+	if roll < resist or panic != "":
+		mission.hud.message("Řev ti projel až do morku. Ustál jsi to.", 2.0)
+		return
+	panic = "drop"
+	panic_t = randf_range(1.4, 2.2)
+	mission.hud.message("ŘEV TĚ OCHROMIL!", 2.0)
 	Game.play_ui(self, "heartbeat", 0)
 
 ## The grey officer's illusion: for a while one teammate looks like a grey to you.
@@ -2662,6 +2890,12 @@ func _end_illusion() -> void:
 	_illusion_of = null
 
 ## Ještěřan officer: a blow to the back of the head - out cold (no bleeding yet, but helpless).
+## A Levit's tentacles took him: the message the victim sees (the knock-out does the rest).
+@rpc("any_peer", "call_local", "reliable")
+func abducted_note() -> void:
+	if mission and mission.hud:
+		mission.hud.message("CHAPADLA TĚ ZVEDLA ZE ZEMĚ - spoluhráči musí střílet do Levita, jinak tě odnese!", 6.0)
+
 var ko := false
 @rpc("any_peer", "call_local", "reliable")
 func knock_out() -> void:
@@ -2832,6 +3066,10 @@ func visibility_range() -> float:
 	if downed:
 		return 6.0
 	var r := 40.0 if light_on else 13.0
+	# by day (and at dusk) the dark does not hide you
+	match mission.phase() if mission else "noc":
+		"den": r = maxf(r, 70.0)
+		"svitani", "soumrak": r = maxf(r, 30.0)
 	if prone:
 		r *= 0.4
 	elif crouching:

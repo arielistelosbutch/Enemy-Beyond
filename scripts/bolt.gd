@@ -22,10 +22,14 @@ var kind := "plasma"         # plasma / acid (Nádor) / lava (Ohnivec): the spit
 var vel := Vector3.ZERO
 var mission: Node
 var streak := false
+var red := false             # a laser (the Levits): a red dash instead of the green plasma
+var tint := Color(0, 0, 0, 0)  # an own colour (the Mírotvůrce's violet plasma)
 
 func _ready() -> void:
 	var mi := MeshInstance3D.new()
 	var col := Color(0.4, 1.0, 0.45)
+	if red: col = Color(1.0, 0.12, 0.08)
+	if tint.a > 0.0: col = tint
 	if kind == "acid": col = Color(0.65, 0.95, 0.15)
 	elif kind == "lava": col = Color(1.0, 0.4, 0.05)
 	elif kind == "rocket": col = Color(1.0, 0.55, 0.15)
@@ -87,7 +91,7 @@ func _physics_process(dt: float) -> void:
 		var base := (randf_range(18.0, 30.0) if Game.veteran() else randf_range(8.0, 14.0)) * power
 		if multiplayer.is_server() and hit.collider and hit.collider.has_method("is_player"):
 			var pl: Node = hit.collider
-			pl.hurt.rpc_id(pl.get_multiplayer_authority(), base, shooter_pos)
+			pl.hurt.rpc_id(pl.get_multiplayer_authority(), base, shooter_pos, kind == "acid")
 		if multiplayer.is_server() and hit.collider and hit.collider.has_meta("break"):
 			mission.hit_breakable(int(hit.collider.get_meta("break")), base, "plasma")
 		if kind == "plasma" and power >= 1.9 and multiplayer.is_server():
@@ -100,7 +104,7 @@ func _physics_process(dt: float) -> void:
 			if multiplayer.is_server():
 				for pl2 in mission.players():
 					if pl2 != hit.collider and not pl2.dead and pl2.global_position.distance_to(hit.position) < 1.8:
-						pl2.hurt.rpc_id(pl2.get_multiplayer_authority(), base * 0.5, hit.position)
+						pl2.hurt.rpc_id(pl2.get_multiplayer_authority(), base * 0.5, hit.position, kind == "acid")
 			mission.splash_fx(hit.position, kind)
 		queue_free()
 		return

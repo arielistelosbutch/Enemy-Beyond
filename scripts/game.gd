@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.45 prototyp"
-const VERSION_NUM := "0.45"
+const VERSION := "0.50 prototyp"
+const VERSION_NUM := "0.50"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -18,9 +18,9 @@ const ITEMS := {
 	"plasma_rifle": {"name": "Plazmová puška", "short": "Plazma", "weight": 6, "type": "weapon", "two": true, "ammo": "plasma_cell", "damage": 48, "spread": 0.9, "rate": 0.2, "auto": true, "sound": "plasma", "noise": 30.0, "muzzle": 0.8, "reload": 1.2, "kick": 0.6},
 	"sniper": {"name": "Odstřelovací puška", "short": "Odstřelovačka", "weight": 9, "type": "weapon", "two": true, "ammo": "sniper_clip", "damage": 120, "spread": 0.25, "hip": 5.0, "scope": true, "rate": 1.3, "auto": false, "sound": "sniper", "noise": 75.0, "muzzle": 1.07, "reload": 2.4, "kick": 3.5},
 	# lasers: no magazines - the cell recharges by itself after a short pause (cap = shots in the cell)
-	"laser_pistol": {"name": "Laserová pistole", "short": "Laser. pistole", "weight": 2, "type": "weapon", "ammo": "", "laser": true, "cap": 10, "recharge": 2.5, "damage": 34, "spread": 1.2, "rate": 0.3, "auto": false, "sound": "laser", "noise": 25.0, "muzzle": 0.21, "kick": 0.3},
-	"laser_rifle": {"name": "Laserová puška", "short": "Laser. puška", "weight": 6, "type": "weapon", "two": true, "ammo": "", "laser": true, "cap": 24, "recharge": 4.0, "damage": 42, "spread": 0.8, "rate": 0.17, "auto": true, "sound": "laser", "noise": 28.0, "muzzle": 0.6, "kick": 0.4},
-	"laser_cannon": {"name": "Laserový kanón", "short": "Laser. kanón", "weight": 13, "type": "weapon", "two": true, "heavy": 0.75, "brace": true, "ammo": "", "laser": true, "cap": 12, "recharge": 1.6, "damage": 90, "spread": 1.2, "rate": 0.55, "auto": true, "sound": "laser", "noise": 40.0, "muzzle": 0.78, "kick": 1.5},
+	"laser_pistol": {"name": "Laserová pistole", "short": "Laser. pistole", "weight": 2, "type": "weapon", "ammo": "", "laser": true, "cap": 10, "recharge": 2.5, "damage": 27, "spread": 1.2, "rate": 0.3, "auto": false, "sound": "laser", "noise": 25.0, "muzzle": 0.21, "kick": 0.3},
+	"laser_rifle": {"name": "Laserová puška", "short": "Laser. puška", "weight": 6, "type": "weapon", "two": true, "ammo": "", "laser": true, "cap": 24, "recharge": 4.0, "damage": 34, "spread": 0.8, "rate": 0.17, "auto": true, "sound": "laser", "noise": 28.0, "muzzle": 0.6, "kick": 0.4},
+	"laser_cannon": {"name": "Laserový kanón", "short": "Laser. kanón", "weight": 13, "type": "weapon", "two": true, "heavy": 0.75, "brace": true, "ammo": "", "laser": true, "cap": 12, "recharge": 1.6, "damage": 72, "spread": 1.2, "rate": 0.55, "auto": true, "sound": "laser", "noise": 40.0, "muzzle": 0.78, "kick": 1.5},
 	"stun_baton": {"name": "Omračovací obušek", "short": "Obušek", "weight": 2, "type": "melee", "blunt": true, "damage": 4, "stun": 42, "reach": 2.1, "rate": 0.8, "sound": "zap"},
 	"knife": {"name": "Bojový nůž", "short": "Nůž", "weight": 1, "type": "melee", "damage": 38, "backstab": 3.0, "reach": 1.7, "rate": 0.45, "sound": "swish"},
 	"rifle_clip": {"name": "Zásobník pušky", "short": "Zás. puška", "weight": 3, "type": "ammo", "rounds": 20},
@@ -47,7 +47,7 @@ const ITEMS := {
 		"cap": 5, "cells": 2, "damage": 110, "splash": 2.2, "spread": 0.9, "rate": 0.9, "auto": false, "sound": "plasma", "noise": 45.0, "muzzle": 0.7, "kick": 2.0, "reload": 4.0},
 	"a_pack": {"name": "Batoh vetřelce", "short": "Batoh vetřelce", "weight": 0, "type": "salvage"},
 	"stit": {"name": "Balistický štít", "short": "Štít", "weight": 6, "type": "shield"},
-	"vesta": {"name": "Balistická vesta", "short": "Vesta", "weight": 4, "type": "armor", "protect": 0.8},
+	"vesta": {"name": "Bojová výstroj UAI", "short": "Vesta", "weight": 4, "type": "armor", "protect": 0.8},
 	"pancir": {"name": "Slitinový pancíř", "short": "Pancíř", "weight": 7, "type": "armor", "protect": 0.62},
 	"scanner": {"name": "Detektor pohybu", "short": "Detektor", "weight": 4, "type": "scanner"},
 	"radio": {"name": "Vysílačka", "short": "Vysílačka", "weight": 1, "type": "radio"},
@@ -609,7 +609,8 @@ func load_settings() -> void:
 		mouse_sens = cf.get_value("controls", "mouse_sens", 1.0)
 		invert_y = cf.get_value("controls", "invert_y", false)
 		fov = cf.get_value("controls", "fov", 75.0)
-		retro = cf.get_value("video", "retro", true)
+		retro = false       # (the PS1 look is gone since 0.50: a modern picture)
+		wobble = false
 		volumetric = cf.get_value("video", "volumetric", true)
 		render_scale = cf.get_value("video", "render_scale", 1.0)
 		grass = cf.get_value("video", "grass", true)
@@ -636,6 +637,7 @@ func save_settings() -> void:
 	cf.set_value("controls", "invert_y", invert_y)
 	cf.set_value("controls", "fov", fov)
 	cf.set_value("video", "retro", retro)
+	cf.set_value("video", "wobble", wobble)
 	cf.set_value("video", "volumetric", volumetric)
 	cf.set_value("video", "render_scale", render_scale)
 	cf.set_value("video", "grass", grass)
@@ -824,7 +826,9 @@ var _sounds := {}
 ## Materials that sway in the wind (strength per metre of height above the mesh centre).
 const WINDY := {"leaves": 0.09, "wheat": 0.16}
 const WORLD_SHADER := preload("res://shaders/world.gdshader")
-var retro := true          # PS1 jitter + dithering filter
+const METAL_SHADER := preload("res://shaders/world_metal.gdshader")
+var retro := true          # the screen filter: dithering, grain, colour bleed
+var wobble := false        # PS1 vertex jitter (the world "shivers" a little) - its own switch since 0.50
 var volumetric := true     # volumetric fog (Forward+ only)
 var render_scale := 1.0    # 3D resolution (1 = native, sharp; lower = faster)
 var grass := true          # grass blades swaying in the wind
@@ -865,7 +869,7 @@ func mat(tex_name: String, scale := 0.5, emission := Color.BLACK) -> ShaderMater
 	m.set_shader_parameter("uv_scale", scale)
 	m.set_shader_parameter("emission_color", emission)
 	m.set_shader_parameter("emission_energy", 1.0 if emission != Color.BLACK else 0.0)
-	m.set_shader_parameter("jitter", 1.0 if retro else 0.0)
+	m.set_shader_parameter("jitter", 1.0 if wobble else 0.0)
 	m.set_meta("tex", tex_name)
 	_materials[key] = m
 	return m
@@ -913,18 +917,22 @@ func surface_at(world: Node3D, pos: Vector3, map: Dictionary) -> String:
 
 const STEP_DB := {"grass": -1.0, "dirt": 0.0, "hard": 0.0, "wood": 0.0, "metal": 0.0, "snow": 0.0, "sand": -1.0, "water": 0.0, "alien": 0.0}
 
-func color_mat(c: Color, emission := false) -> ShaderMaterial:
-	var key := "c|%s|%s" % [c, emission]
+func color_mat(c: Color, emission := false, metal := 0.0, rough := 1.0) -> ShaderMaterial:
+	var key := "c|%s|%s|%.2f|%.2f" % [c, emission, metal, rough]
 	if _materials.has(key):
 		return _materials[key]
 	var m := ShaderMaterial.new()
 	m.shader = WORLD_SHADER
+	if metal > 0.0:
+		m.shader = METAL_SHADER     # (0.50: steel and alien alloy catch the light)
+		m.set_shader_parameter("metal", metal)
+		m.set_shader_parameter("rough", rough)
 	m.set_shader_parameter("use_tex", false)
 	m.set_shader_parameter("albedo", c)
 	if emission:
 		m.set_shader_parameter("emission_color", Color(c.r, c.g, c.b))
 		m.set_shader_parameter("emission_energy", 2.0)
-	m.set_shader_parameter("jitter", 1.0 if retro else 0.0)
+	m.set_shader_parameter("jitter", 1.0 if wobble else 0.0)
 	_materials[key] = m
 	return m
 
@@ -960,10 +968,27 @@ func _restyle(n: Node) -> void:
 				if camo != "" and src.resource_name in CAMO_PARTS:
 					mi.set_surface_override_material(i, camo_mat(camo))
 					continue
+				if src.resource_name.ends_with("Glass"):
+					mi.set_surface_override_material(i, glass_mat())     # (a window you can see through)
+					continue
 				var c: Color = src.albedo_color
-				mi.set_surface_override_material(i, color_mat(c, src.emission_enabled))
+				var mt := 0.0
+				if src.metallic >= 0.25 and not src.emission_enabled:
+					mt = minf(src.metallic, 1.0) * 0.55      # (a sheen, not a mirror - at night it would go black)
+				mi.set_surface_override_material(i, color_mat(c, src.emission_enabled, mt, clampf(src.roughness, 0.25, 0.9)))
 	for c in n.get_children():
 		_restyle(c)
+
+var _glass_m: StandardMaterial3D
+func glass_mat() -> StandardMaterial3D:
+	if _glass_m == null:
+		_glass_m = StandardMaterial3D.new()
+		_glass_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_glass_m.albedo_color = Color(0.6, 0.75, 0.8, 0.18)
+		_glass_m.roughness = 0.05
+		_glass_m.metallic_specular = 0.9
+		_glass_m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return _glass_m
 
 # ---- camouflage: the uniform matches where the team flies ---------------------------------------
 ## "" = plain uniform (menus, our own base). Set by the mission before anybody is spawned.
@@ -1026,8 +1051,8 @@ func camo_mat(scheme: String) -> Material:
 	var m := StandardMaterial3D.new()
 	m.albedo_texture = ImageTexture.create_from_image(img)
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	m.uv1_triplanar = true
-	m.uv1_scale = Vector3(1.5, 1.5, 1.5)
+	# (not triplanar: on a skinned helmet or cap the pattern would swim as the head moves)
+	m.uv1_scale = Vector3(3.0, 3.0, 3.0)
 	m.roughness = 0.95
 	_camo_mats[scheme] = m
 	return m
@@ -1037,7 +1062,7 @@ func apply_retro() -> void:
 	for k in _materials:
 		var m = _materials[k]
 		if m is ShaderMaterial:
-			m.set_shader_parameter("jitter", 1.0 if retro else 0.0)
+			m.set_shader_parameter("jitter", 1.0 if wobble else 0.0)
 
 ## A looping copy of a sound (for hums, engines, burning flares).
 func loop_stream(sname: String) -> AudioStream:

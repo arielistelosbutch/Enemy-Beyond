@@ -91,7 +91,7 @@ func _ready() -> void:
 		Campaign.data["won_shown"] = true
 		Campaign.save()
 		Game.play_music("victory", false)
-		_alert("VÍTĚZSTVÍ\nVelký mozek je mrtvý a velín na Marsu utichl. UFO padají z nebe jako mrtví ptáci, Šeďáci v lesích jen stojí a dívají se do tmy.\nŽoldáci přežili noc, která neměla konec.\n\nOPERACE X - ENEMY BEYOND\nPocta UFO: Enemy Unknown - fanouškovská hra, ne na prodej.\nNápad a hra: Ari (Ivo Arielistelos Florek).\nKampaň můžeš hrát dál.")
+		_alert("VÍTĚZSTVÍ\nVelký mozek je mrtvý a velín na Marsu utichl. UFO padají z nebe jako mrtví ptáci, Šediváci v lesích jen stojí a dívají se do tmy.\nŽoldáci přežili noc, která neměla konec.\n\nOPERACE X - ENEMY BEYOND\nPocta UFO: Enemy Unknown - fanouškovská hra, ne na prodej.\nNápad a hra: Ari (Ivo Arielistelos Florek).\nKampaň můžeš hrát dál.")
 	_autotest.call_deferred()
 
 # ---- the globe -------------------------------------------------------------------------------
@@ -200,6 +200,23 @@ static func latlon_to_local(lat: float, lon: float, r := 1.0) -> Vector3:
 	var lo := deg_to_rad(lon)
 	return Vector3(cos(la) * sin(lo), sin(la), cos(la) * cos(lo)) * r
 
+var _live_t := 0.0
+## Teammates watching the host's globe: markers glide to where the host's packet put them
+## (four packets a second would make them jump otherwise).
+var _shown := {}
+func _glide(id: int, n: Node3D, lat: float, lon: float) -> void:
+	if not Campaign.viewer or not _shown.has(id):
+		_shown[id] = Vector2(lat, lon)
+	else:
+		var cur: Vector2 = _shown[id]
+		var dlon := wrapf(lon - cur.y, -180.0, 180.0)
+		var k := minf(1.0, get_process_delta_time() * 6.0)
+		if absf(lat - cur.x) > 20.0 or absf(dlon) > 20.0:
+			k = 1.0          # a jump (new flight, landed): no slow slide across the world
+		_shown[id] = Vector2(lerpf(cur.x, lat, k), wrapf(cur.y + dlon * k, -180.0, 180.0))
+	var v: Vector2 = _shown[id]
+	_place(n, v.x, v.y)
+
 func _place(n: Node3D, lat: float, lon: float) -> void:
 	# local to the globe, so the marker turns with it (look_at_from_position worked in world space = bug)
 	var p := latlon_to_local(lat, lon, 1.012)
@@ -239,6 +256,14 @@ func _process(delta: float) -> void:
 	if popup == null and not Campaign.viewer and not Campaign.data.get("lost", false):
 		if Campaign.advance(SPEEDS[speed] * delta):
 			speed = 0
+	if Campaign.viewer:
+		# the host's clock runs on between his packets (each packet sets it right again)
+		Campaign.data["day"] = float(Campaign.data["day"]) + Net.geo_speed * delta
+	elif Net.is_online():
+		_live_t -= delta
+		if _live_t <= 0.0:
+			_live_t = 0.25
+			Net.send_geo_live(0.0 if popup != null or Campaign.data.get("lost", false) else SPEEDS[speed])
 	_sync_markers()
 	_sync_reports()
 	_update_text()
@@ -293,7 +318,7 @@ func _sync_markers() -> void:
 		ids[id] = true
 		if not markers.has(id):
 			markers[id] = _icon_marker("ufo_" + String(f["kind"]), Color(1.0, 0.75, 0.75), 0.11)
-		_place(markers[id], float(f["lat"]), float(f["lon"]))
+		_glide(id, markers[id], float(f["lat"]), float(f["lon"]))
 		markers[id].visible = fmod(t * 3.0, 1.0) < 0.7 or id == selected
 		markers[id].scale = Vector3.ONE * (1.6 if id == selected else (1.3 if id == hover else 1.0))
 	for c in Campaign.crafts():
@@ -301,12 +326,13 @@ func _sync_markers() -> void:
 		ids[cid] = true
 		if not markers.has(cid):
 			markers[cid] = _icon_marker({"jet": "sokol", "heli": "heli", "kondor": "dropship"}.get(String(c["kind"]), "dropship"), Color(0.8, 0.95, 1.0), 0.08 if c["kind"] == "jet" else 0.09)
-		_place(markers[cid], float(c["lat"]), float(c["lon"]))
+		_glide(cid, markers[cid], float(c["lat"]), float(c["lon"]))
 		markers[cid].visible = true
 	for id in markers.keys():
 		if not ids.has(id):
 			markers[id].queue_free()
 			markers.erase(id)
+			_shown.erase(id)
 			if selected == id:
 				selected = -1
 
@@ -767,7 +793,7 @@ func _show_armory() -> void:
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 8)
-	_scroll(box, 250).add_child(grid)
+	_scroll(box, 215).add_child(grid)
 	var stash := Campaign.stash()
 	var locker: Dictionary = Game.merc.get("locker", {})
 	for id in Campaign.SHOP:
@@ -780,7 +806,9 @@ func _show_armory() -> void:
 		row.add_theme_constant_override("separation", 2)
 		grid.add_child(row)
 		var cost := ("%d kr" % Campaign.price(id) + (" + %d g" % mk if mk > 0 else "")) if ok else "zamčeno"
-		var name_b := _btn(row, "%s  %s\nsklad %d, tvoje %d" % [Game.ITEMS[id]["short"], cost, int(stash.get(id, 0)), int(locker.get(id, 0))], func(): pass, 8)
+		var arm_n := int(Campaign.data["armory"].get(id, 0))
+		var ord_n := Campaign.on_order(id)
+		var name_b := _btn(row, "%s  %s\nsklad %d%s, tvoje %d" % [Game.ITEMS[id]["short"], cost, arm_n, (" +%d jede" % ord_n) if ord_n > 0 else "", int(locker.get(id, 0))], func(): pass, 8)
 		name_b.custom_minimum_size = Vector2(150, 24)
 		name_b.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		UiSkin.item_icon(name_b, key, 30)
@@ -792,7 +820,10 @@ func _show_armory() -> void:
 				Net.buy_for_base(key)
 				await get_tree().create_timer(0.5).timeout
 				_show_armory()
-			elif Campaign.buy(key): Game.play_ui(self, "money", -10); _show_armory()
+			elif Campaign.buy(key):
+				Game.play_ui(self, "money", -10)
+				_show_armory()
+				_alert("Objednáno\n%s dorazí do skladu asi za %.1f dne." % [Game.ITEMS[key]["name"], Campaign.delivery_days(key)])
 			else: _alert("Nelze koupit\nV rozpočtu základny není dost kreditů nebo Moskovia 115."), 8)
 		bb.custom_minimum_size = Vector2(38, 24)
 		bb.disabled = not ok
@@ -801,7 +832,40 @@ func _show_armory() -> void:
 			else: _alert("Nelze koupit\nNemáš dost vlastních peněz."), 8)
 		mb.custom_minimum_size = Vector2(38, 24)
 		mb.disabled = not ok or mk > 0
+	_btn(box, "Prodat ze skladu a kořisti...", _show_sell, 9)
 	_btn(box, "Zavřít", _close_popup)
+
+## The black market: spare gear from the armory (40 % of the price) and alien loot.
+func _show_sell() -> void:
+	var box := _overlay("PRODEJ", 500)
+	_lbl(box, "Co se prodá, je pryč. Výbava ze skladu za 40 % ceny, mimozemská kořist na černém trhu. Kredity základny: %d." % int(Campaign.data["credits"]), FRAME, 8).custom_minimum_size = Vector2(480, 0)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 8)
+	_scroll(box, 250).add_child(grid)
+	var n := 0
+	for id in Campaign.data["armory"]:
+		if not Game.ITEMS.has(id) or int(Campaign.data["armory"][id]) <= 0:
+			continue
+		var key: String = id
+		var b := _btn(grid, "%s (%dx) - prodat za %d kr" % [Game.ITEMS[id]["short"], int(Campaign.data["armory"][id]), Campaign.sell_price(id)], func():
+			if Campaign.sell(key): Game.play_ui(self, "money", -10); _show_sell(), 8)
+		b.custom_minimum_size = Vector2(235, 22)
+		b.disabled = Campaign.viewer
+		n += 1
+	var found: Dictionary = Campaign.data.get("found", {})
+	for k in Campaign.LOOT_SELL:
+		if int(found.get(k, 0)) <= 0:
+			continue
+		var key2: String = k
+		var b2 := _btn(grid, "%s (%dx) - prodat za %d kr" % [Campaign.loot_name(k).replace("tělo: ", ""), int(found[k]), Campaign.loot_sell_price(k)], func():
+			if Campaign.sell_loot(key2): Game.play_ui(self, "money", -10); _show_sell(), 8)
+		b2.custom_minimum_size = Vector2(235, 22)
+		b2.disabled = Campaign.viewer
+		n += 1
+	if n == 0:
+		_lbl(box, "Není co prodat.", FRAME, 9)
+	_btn(box, "Zpět", _show_armory)
 
 func _show_base() -> void:
 	var box := _overlay("ZÁKLADNA", 470)
@@ -877,6 +941,24 @@ func _ui_check(tag: String) -> void:
 		get_viewport().get_texture().get_image().save_png("user://ui_%s.png" % tag)
 
 func _autotest() -> void:
+	if Game.autotest() == "geolivehost":
+		await get_tree().create_timer(14.0).timeout
+		get_tree().quit()
+		return
+	if Game.autotest() == "geoliveclient":
+		while Campaign.crafts().is_empty():
+			await get_tree().create_timer(0.2).timeout
+		await get_tree().create_timer(2.0).timeout
+		var d0 := float(Campaign.data["day"])
+		var c0: Dictionary = Campaign.crafts()[0].duplicate()
+		var mk0: Vector3 = markers[900000 + int(c0["id"])].position if markers.has(900000 + int(c0["id"])) else Vector3.ZERO
+		await get_tree().create_timer(5.0).timeout
+		var c1: Dictionary = Campaign.crafts()[0] if not Campaign.crafts().is_empty() else c0
+		var mk1: Vector3 = markers[900000 + int(c0["id"])].position if markers.has(900000 + int(c0["id"])) else Vector3.ZERO
+		var moved := Vector2(float(c1["lat"]) - float(c0["lat"]), float(c1["lon"]) - float(c0["lon"])).length()
+		print("RESULT geolive day +%.4f craft moved %.3f deg marker moved %.4f speed %.4f" % [float(Campaign.data["day"]) - d0, moved, mk0.distance_to(mk1), Net.geo_speed])
+		get_tree().quit()
+		return
 	if Game.autotest() == "econhost":
 		await get_tree().create_timer(30.0).timeout
 		print("[ECON-HOST] credits=%d rifles=%d wallets=%s" % [int(Campaign.data["credits"]), int(Campaign.data["armory"].get("rifle", 0)), Net.wallets])

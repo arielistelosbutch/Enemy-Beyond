@@ -3,9 +3,9 @@ extends "res://scripts/alien.gd"
 ## when they are destroyed they blow apart.
 ##  Diskoll - a fast flying disc that escorts the greys. Quick, very precise
 ##            bursts (not one-shot kills). Plasma and explosions cut through it.
-##  Kolos   - a walking machine on three legs: two plasma heads in front fire
-##            bursts, the roof cannon fires a heavy bolt every few seconds. Deadly
-##            and accurate, but stupid: it walks straight at the last thing it saw.
+##  Kolos   - a huge armoured spider on eight legs, almost silent: two rotary plasma guns
+##            under the head fire bursts, the cannon on top a heavy bolt every few seconds.
+##            It climbs walls onto roofs to fire from above, and comes down again.
 
 var hum: AudioStreamPlayer3D
 var _cannon_t := 6.0
@@ -24,7 +24,7 @@ func _ready() -> void:
 	super._ready()
 	hum = AudioStreamPlayer3D.new()
 	hum.stream = Game.loop_stream("drone_hover") if race == "diskoll" else Game.sound("hum")
-	hum.volume_db = -8.0 if race == "diskoll" else -4.0
+	hum.volume_db = -8.0 if race == "diskoll" else -30.0     # (the Kolos moves almost without a sound)
 	hum.pitch_scale = 1.3 if race == "diskoll" else 0.7
 	hum.max_distance = 30.0
 	hum.unit_size = 3.0
@@ -43,15 +43,24 @@ func _physics_process(delta: float) -> void:
 	if ring:
 		ring.rotation.y += delta * (3.0 + _speed)
 	if race == "kolos":
-		# three legs stepping in turn while it walks
-		_gait += delta * clampf(_speed, 0.0, 3.5) * 2.2
-		var moving := clampf(_speed, 0.0, 1.0)
-		for i in 3:
+		# the legs stepping in turn (eight: two alternating sets of four, like a spider)
+		var spd := 3.0 if flying else clampf(_speed, 0.0, 4.5)
+		_gait += delta * spd * 2.4
+		var moving := 1.0 if flying else clampf(_speed, 0.0, 1.0)
+		var n := 8 if _part("Leg7") else 3
+		for i in n:
 			var leg := _part("Leg%d" % i)
 			if leg:
-				var ph := _gait + i * TAU / 3.0
-				leg.rotation.x = sin(ph) * 0.22 * moving
-				leg.rotation.z = maxf(0.0, cos(ph)) * 0.12 * moving
+				var ph := _gait + ((PI * float((i / 2 + i) % 2)) if n == 8 else i * TAU / 3.0)
+				leg.rotation.y = sin(ph) * 0.18 * moving
+				leg.rotation.z = maxf(0.0, cos(ph)) * 0.14 * moving * (1.0 if i % 2 == 0 else -1.0)
+		# on a wall: belly to the wall, head up, legs gripping it
+		var on_wall := flying and not _jet.is_empty() and _wall_n != Vector3.ZERO \
+				and Vector2((_jet[0] as Vector3).x - global_position.x, (_jet[0] as Vector3).z - global_position.z).length() < 0.3 \
+				and absf((_jet[0] as Vector3).y - global_position.y) > 0.3
+		body.rotation.x = lerp_angle(body.rotation.x, PI / 2.0 if on_wall else 0.0, delta * 5.0)
+		if on_wall:
+			rotation.y = lerp_angle(rotation.y, atan2(_wall_n.x, _wall_n.z), delta * 8.0)
 		var hull := _part("Hull")
 		if hull:
 			hull.position.y = -absf(sin(_gait * 1.5)) * 0.05 * moving
@@ -69,6 +78,8 @@ func _think(delta: float) -> void:
 		_scan(delta)
 	if race != "kolos" or dead:
 		return
+	if R.has("climb"):
+		_climb_tick(delta)
 	# roof cannon: a heavy bolt at whatever it is fighting, every few seconds
 	_cannon_t -= delta
 	if _cannon_t <= 0 and state == S.COMBAT and is_instance_valid(target) and not target.dead and visible_to(target):
@@ -78,6 +89,90 @@ func _think(delta: float) -> void:
 		tgt += Vector3(rng.randf_range(-miss, miss), rng.randf_range(-miss, miss) * 0.5, rng.randf_range(-miss, miss))
 		var from := global_position + Vector3(0, 2.75, 0) - global_transform.basis.z * 1.0
 		_plasma.rpc(from, (tgt - from).normalized(), 2.0, "plasma")
+
+## Kolos: up a wall onto a roof to fire from above - and, after a while, down again somewhere else.
+var _climb_cd := 10.0
+var _wall_top := Vector3.INF
+var _wall_base := Vector3.INF
+var _wall_n := Vector3.ZERO
+func _climb_tick(delta: float) -> void:
+	_climb_cd -= delta
+	if flying or _climb_cd > 0.0 or state != S.COMBAT or not is_instance_valid(target) or target.dead:
+		return
+	_climb_cd = rng.randf_range(14.0, 22.0)
+	if airborne:
+		_climb_down()
+	else:
+		_climb_up(target.global_position)
+
+func _climb_up(at: Vector3) -> bool:
+	var ss := get_world_3d().direct_space_state
+	var cand := []
+	for r in mission.map.get("roofs", []):
+		var rp: Vector3 = r
+		if rp.y < -50.0:
+			# a pitched roof: how high it is there
+			var q0 := PhysicsRayQueryParameters3D.create(Vector3(rp.x, 40.0, rp.z), Vector3(rp.x, -1.0, rp.z), Game.WORLD)
+			var h0 := ss.intersect_ray(q0)
+			rp = Vector3(rp.x, h0.position.y if not h0.is_empty() else -999.0, rp.z)
+		if rp.y < 2.5 or rp.y > 14.0:
+			continue
+		var d := Vector2(rp.x - global_position.x, rp.z - global_position.z).length()
+		if d < 4.0 or d > 26.0 or rp.distance_to(at) > 40.0:
+			continue
+		cand.append(rp)
+	cand.shuffle()
+	for rp in cand:
+		# the wall it goes up: where the line to the building meets it
+		var q := PhysicsRayQueryParameters3D.create(global_position + Vector3(0, 1.0, 0), Vector3(rp.x, global_position.y + 1.0, rp.z), Game.WORLD)
+		q.exclude = [get_rid()]
+		var h := ss.intersect_ray(q)
+		if h.is_empty():
+			continue
+		var n: Vector3 = h.normal
+		n.y = 0
+		if n.length() < 0.5:
+			continue
+		n = n.normalized()
+		var base: Vector3 = h.position + n * 0.4
+		base.y = global_position.y
+		# the roof edge above that point
+		var top_probe: Vector3 = h.position - n * 1.2
+		var q2 := PhysicsRayQueryParameters3D.create(top_probe + Vector3(0, 30, 0), top_probe + Vector3(0, -2, 0), Game.WORLD)
+		var h2 := ss.intersect_ray(q2)
+		if h2.is_empty() or h2.position.y < 2.5:
+			continue
+		var top: Vector3 = h2.position + Vector3(0, 0.1, 0)
+		var q3 := PhysicsRayQueryParameters3D.create(top + Vector3(0, 2.5, 0), at + Vector3(0, 1.2, 0), Game.WORLD)
+		if not ss.intersect_ray(q3).is_empty():
+			continue        # (no shot from up there)
+		var up: Vector3 = Vector3(base.x, top.y + 0.3, base.z)
+		_wall_base = base
+		_wall_top = up
+		_wall_n = n
+		_jet = [base, up, top]
+		_jet_perch = true
+		flying = true
+		airborne = true
+		lurking = false
+		goal = top
+		_tlog("climb up %.1f m" % top.y)
+		return true
+	return false
+
+func _climb_down() -> void:
+	if _wall_top == Vector3.INF:
+		return
+	var away: Vector3 = _wall_base + (_wall_base - _wall_top).normalized() * 0.0
+	var off := (Vector3(_wall_base.x, 0, _wall_base.z) - Vector3(_wall_top.x, 0, _wall_top.z))
+	var dest: Vector3 = mission.free_spot(_wall_base + Vector3(rng.randf_range(-3, 3), 0.2, rng.randf_range(-3, 3)) + off * 2.0)
+	_jet = [_wall_top, _wall_base, dest]
+	_jet_perch = false
+	flying = true
+	airborne = true
+	goal = dest
+	agent.target_position = dest
+	_tlog("climb down")
 
 func _muzzle_pos() -> Vector3:
 	if race == "kolos":
@@ -101,6 +196,11 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 	var was := dead
 	super.damage(dmg, from, by)
 	if dead and not was and multiplayer.is_server():
+		if race == "diskoll":
+			# its link goes dead: the Šediváci around lose the picture it gave them for a while
+			for a in mission.aliens():
+				if a != self and not a.dead and a.tac == "grey" and a.global_position.distance_to(global_position) < 80.0:
+					a._disarray_t = maxf(a._disarray_t, 8.0)
 		var ex: Array = R.get("explode", [4.0, 50.0])
 		var at := global_position + Vector3(0, float(R.get("hover", 0.0)) + (1.8 if race == "kolos" else 0.0), 0)
 		get_tree().create_timer(0.6).timeout.connect(func(): mission.explode(at, float(ex[0]), float(ex[1]), "-", true))
@@ -152,4 +252,4 @@ func _mark_fx(who: String, at: Vector3) -> void:
 	var me: Node = mission.local_player()
 	if me and String(me.name) == who:
 		Game.play_ui(me, "radar_ping", -6)
-		mission.hud.message("Ten disk tě zaměřil - šeďáci teď vědí, kde jsi.", 3.0)
+		mission.hud.message("Ten disk tě zaměřil - šediváci teď vědí, kde jsi.", 3.0)

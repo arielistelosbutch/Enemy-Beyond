@@ -92,6 +92,7 @@ func build() -> void:
 	rv.add_child(body)
 	var tv := VBoxContainer.new()
 	tv.custom_minimum_size = Vector2(196, 300)
+	tv.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	body.add_child(tv)
 	title_lbl = Label.new()
 	title_lbl.add_theme_color_override("font_color", TITLE)
@@ -103,8 +104,15 @@ func build() -> void:
 	text_lbl.add_theme_color_override("font_color", TEXT)
 	text_lbl.add_theme_font_size_override("font_size", 9)
 	text_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
-	text_lbl.custom_minimum_size = Vector2(196, 0)
-	tv.add_child(text_lbl)
+	text_lbl.custom_minimum_size = Vector2(186, 0)
+	text_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# long database texts scroll (the panel stays the same size)
+	var tsc := ScrollContainer.new()
+	tsc.custom_minimum_size = Vector2(196, 262)
+	tsc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	tsc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	tv.add_child(tsc)
+	tsc.add_child(text_lbl)
 	# the plate with the model
 	plate = Plate.new()
 	plate.custom_minimum_size = Vector2(222, 296)
@@ -230,6 +238,7 @@ func _select(i: int) -> void:
 		_set_cat(cat)
 	title_lbl.text = String(e["title"])
 	text_lbl.text = String(e["text"])
+	(text_lbl.get_parent() as ScrollContainer).scroll_vertical = 0
 	Game.play_ui(self, "type", -14)
 	_show_model(String(e["model"]), String(e["view"]))
 

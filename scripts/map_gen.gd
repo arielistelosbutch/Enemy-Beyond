@@ -19,6 +19,7 @@ var info := {
 	"windows": [], "roofs": [], "doors": [], "cows": [], "circle": Vector3.ZERO, "truck": Vector3.ZERO, "breakables": [], "landmarks": [], "vip_spots": [],
 }
 var us := 2                # how many blocks the ship takes on a side
+var _sky_x := -9           # the Kondor's column (roads keep off it)
 var _circle_done := false
 var _truck_done := false
 
@@ -98,8 +99,15 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 		for dz in us:
 			grid[ux + dx][uz + dz] = "ufo"
 	info["ufo"] = Vector3((ux + us / 2.0) * BLOCK, 0, (uz + us / 2.0) * BLOCK)
-	var sx := rng.randi_range(0, N - 1)
-	grid[sx][0] = "sky"
+	# the Kondor: one block in from the edge, an open block in front of its nose and beside its wings
+	# (it used to stand with its nose against the edge of the world)
+	var sx := rng.randi_range(1, N - 2)
+	grid[sx][1] = "sky"
+	for dx in [-1, 0, 1]:
+		for dz in [0, 1]:
+			if grid[sx + dx][dz] == "":
+				grid[sx + dx][dz] = "open"
+	_sky_x = sx
 	_lay_roads(grid, ux, uz)
 	# the landmarks of each kind of place first, then the fill around them
 	var extra := maxi(0, (N * N - 49) / 12)     # bigger maps: more of everything
@@ -214,6 +222,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 				"icespires": _icespires(o)
 				"polarhut": _polar_hut(o)
 				"sky": _skyranger(o)
+				"open": _open(o)
 				"ufo":
 					_ground(o, "concrete" if biome == "industrial" else "grass")
 					if biome != "industrial" and biome != "base":
@@ -224,10 +233,12 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	else:
 		_ufo(Vector3((ux + 1) * BLOCK, 0, (uz + 1) * BLOCK))
 	if Game.autotest() != "": print("[MAP] ufo done")
+	_war_scars(grid, params)
 	_blood_trail()
 	if Game.autotest() != "": print("[MAP] trail done")
 	_borders()
 	_clear_doors()
+	_untangle()
 	nav.bake_navigation_mesh(false)
 	if Game.autotest() != "": print("[MAP] nav done %d ms" % (Time.get_ticks_msec() - _t0))
 	return info
@@ -244,6 +255,8 @@ func box(pos: Vector3, size: Vector3, material: Material, collide := true, rot_y
 			var ax := Vector3(size.x / 2 - 1.2, 0, 0) if size.x > size.z else Vector3(0, 0, size.z / 2 - 1.2)
 			info["roofs"].append(top + ax)
 			info["roofs"].append(top - ax)
+	if maxf(size.x, size.z) < 3.0 and size.y >= 0.15 and size.y < 3.0 and pos.y + size.y / 2.0 > 0.3:
+		_small.append(Vector3(pos.x, maxf(size.x, size.z) / 2.0, pos.z))   # (x, radius, z): crates, pallets...
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = size
@@ -404,9 +417,122 @@ func _retexture(n: Node, swap: Dictionary) -> void:
 				m.set_surface_override_material(i, swap[src.resource_name])
 
 var _cars: Array = []
-## A parked car right in front of a door: towed away (the streets are laid before the houses).
+var _small: Array = []
+var _loose: Array = []        # free-standing props: checked at the end so nothing stands inside anything else
+
+# ---- 0.50: nothing may stand inside anything else -------------------------------------------------
+var _shape_aabb := {}
+## The floor plan (x, z) of everything solid under a node, in world space.
+func _rects(n: Node) -> Array:
+	var out := []
+	for cs in n.find_children("*", "CollisionShape3D", true, false):
+		var c := cs as CollisionShape3D
+		if c.shape == null or c.disabled:
+			continue
+		if not _shape_aabb.has(c.shape):
+			var dm := c.shape.get_debug_mesh()
+			_shape_aabb[c.shape] = dm.get_aabb() if dm else AABB()
+		var a: AABB = c.global_transform * (_shape_aabb[c.shape] as AABB)
+		if a.end.y < 0.3 or a.size.x * a.size.z < 0.01:
+			continue          # ground, floors, kerbs: you can stand there
+		out.append(Rect2(a.position.x, a.position.z, a.size.x, a.size.z))
+	return out
+
+const _CELL := 4.0
+func _bucket_add(grid: Dictionary, r: Rect2) -> void:
+	for gx in range(int(floor(r.position.x / _CELL)), int(floor(r.end.x / _CELL)) + 1):
+		for gz in range(int(floor(r.position.y / _CELL)), int(floor(r.end.y / _CELL)) + 1):
+			var k := Vector2i(gx, gz)
+			if not grid.has(k):
+				grid[k] = []
+			grid[k].append(r)
+
+func _hits(rs: Array, grid: Dictionary, shrink := 0.12) -> bool:
+	for r0 in rs:
+		var r: Rect2 = r0
+		var a := r.grow(-shrink) if minf(r.size.x, r.size.y) > shrink * 2.5 else r
+		for gx in range(int(floor(a.position.x / _CELL)), int(floor(a.end.x / _CELL)) + 1):
+			for gz in range(int(floor(a.position.y / _CELL)), int(floor(a.end.y / _CELL)) + 1):
+				for o in grid.get(Vector2i(gx, gz), []):
+					if a.intersects(o):
+						return true
+	return false
+
+## Every free-standing prop that ended up inside a wall, a car, a tree or another prop is moved a
+## little; when there is no room, it goes (better nothing than a tractor in the kitchen).
+func _untangle() -> void:
+	var moved := 0
+	var gone := 0
+	var static_rects := {}           # node -> its rects, for everything that is not a loose prop
+	var loose_set := {}
+	for n in _loose:
+		if is_instance_valid(n):
+			loose_set[n] = true
+	for sb in root.find_children("*", "StaticBody3D", true, false):
+		var owner_n: Node = sb
+		var p := sb.get_parent()
+		while p and p != root:
+			if loose_set.has(p):
+				owner_n = null
+				break
+			p = p.get_parent()
+		if owner_n == null:
+			continue
+		static_rects[sb] = _rects(sb)
+	var grid := {}
+	for rl in static_rects.values():
+		for r in rl:
+			_bucket_add(grid, r)
+	for d in info["doors"]:
+		var c: Vector3 = d["c"]
+		_bucket_add(grid, Rect2(c.x - 0.7, c.z - 0.7, 1.4, 1.4))     # keep the doorways clear
+	var size: float = info["size"]
+	for n in _loose:
+		if not is_instance_valid(n):
+			continue
+		var rs := _rects(n)
+		if rs.is_empty():
+			continue
+		if not _hits(rs, grid):
+			for r in rs:
+				_bucket_add(grid, r)
+			continue
+		var home: Vector3 = n.position
+		var ok := false
+		for t in 14:
+			var step := 1.0 + t * 0.35
+			var off := Vector3(rng.randf_range(-step, step), 0, rng.randf_range(-step, step))
+			var np := home + off
+			if np.x < 1.5 or np.z < 1.5 or np.x > size - 1.5 or np.z > size - 1.5:
+				continue
+			n.position = np
+			rs = _rects(n)
+			if not _hits(rs, grid):
+				ok = true
+				break
+		if ok:
+			moved += 1
+			for r in rs:
+				_bucket_add(grid, r)
+		else:
+			n.position = home
+			_cars.erase(n)
+			n.free()
+			gone += 1
+	if Game.autotest() != "": print("[MAP] untangled: moved %d, removed %d of %d" % [moved, gone, _loose.size()])
+	info["untangled"] = [moved, gone]
+## A parked car right in front of a door, or with crates and pallets stuck in it: towed away
+## (the streets are laid before the houses and the yards).
 func _clear_doors() -> void:
+	var towed := 0
 	for car in _cars:
+		if not is_instance_valid(car):
+			continue
+		for s in _small:
+			if Vector2(car.position.x - s.x, car.position.z - s.z).length() < 2.3 + s.y:
+				car.free()
+				towed += 1
+				break
 		if not is_instance_valid(car):
 			continue
 		for dd in info["doors"]:
@@ -414,6 +540,7 @@ func _clear_doors() -> void:
 			if Vector2(car.position.x - c.x, car.position.z - c.z).length() < 4.0:
 				car.free()      # now, before the paths are baked
 				break
+	if Game.autotest() != "": print("[MAP] cars %d, towed for crates %d" % [_cars.size(), towed])
 
 func _prop(name: String, p: Vector3, yaw := 0.0, cover := true) -> Node3D:
 	var n: Node3D = Game.model("v_" + name)
@@ -422,6 +549,8 @@ func _prop(name: String, p: Vector3, yaw := 0.0, cover := true) -> Node3D:
 	n.rotation.y = yaw
 	if name.begins_with("car"):
 		_cars.append(n)
+	if not name in ["house_roof", "window"]:
+		_loose.append(n)
 	if name == "house_roof":
 		# solid: a merc who climbs up stands on the tiles (and they stop bullets from above)
 		for mi in n.find_children("*", "MeshInstance3D", true, false):
@@ -587,7 +716,7 @@ func _lay_roads(grid: Array, ux: int, uz: int) -> void:
 	for i in cols:
 		for t in 20:
 			var c := rng.randi_range(0, N - 1)
-			if (c >= ux and c < ux + us) or c in used_c or (c - 1) in used_c or (c + 1) in used_c:
+			if (c >= ux and c < ux + us) or c in used_c or (c - 1) in used_c or (c + 1) in used_c or absi(c - _sky_x) <= 1:
 				continue
 			used_c.append(c)
 			for z in N:
@@ -596,7 +725,7 @@ func _lay_roads(grid: Array, ux: int, uz: int) -> void:
 			break
 	for i in rows:
 		for t in 20:
-			var r := rng.randi_range(1, N - 1)
+			var r := rng.randi_range(2, N - 1)       # (rows 0-1: the Kondor's landing place)
 			if r >= uz and r < uz + us:
 				continue
 			for x in N:
@@ -677,6 +806,134 @@ func _meadow(o: Vector3) -> void:
 	if rng.randf() < 0.25:
 		var p := _jit(o, 2.0)
 		cyl(p + Vector3(0, 0.3, 0), 0.4, 0.6, 0.6, Game.mat("rock", 0.5), true, 6)
+	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
+
+# ---- 0.50: the war has been here (after Ari's pictures) ------------------------------------------
+## Burnt-out cars on the roads, craters, debris, dead trees, broken fences, abandoned supply dumps,
+## masts and dishes - and around the ship, their violet growth. More of it the longer the war lasts.
+const SCARS := {
+	"farm": ["car_burnt", "crater", "debris", "dead_tree", "broken_fence", "broken_fence", "mil_crates", "crater"],
+	"forest": ["crater", "dead_tree", "dead_tree", "debris", "mil_crates", "car_burnt"],
+	"mountain": ["crater", "dead_tree", "mil_crates", "debris"],
+	"town": ["rubble", "rubble", "car_burnt", "debris", "crater", "fallen_signal", "mil_crates", "barbed_fence"],
+	"industrial": ["rubble", "car_burnt", "truck_wreck", "crater", "mil_crates", "barbed_fence", "debris"],
+	"desert": ["humvee_wreck", "crater", "crater", "mil_crates", "barbed_fence", "dead_tree"],
+	"polar": ["snowmobile_wreck", "crater", "mil_crates", "dead_tree"],
+	"base": ["mil_crates", "crater", "barbed_fence"],
+}
+const ONE_OFF := {"farm": ["silo", "radio_tower"], "town": ["radio_tower"], "industrial": ["radio_tower", "radar_dish"],
+	"desert": ["radar_dish", "radio_tower"], "polar": ["radar_dish", "radio_tower"], "mountain": ["radio_tower"], "forest": ["radio_tower"]}
+func _war_scars(grid: Array, params: Dictionary) -> void:
+	if biome == "base" and mtype == "base":
+		return
+	var late := clampf((float(params.get("day", 0.0)) - 15.0) / 90.0, 0.0, 1.0)
+	if Game.cmd_arg("late", "") != "":
+		late = float(Game.cmd_arg("late", "0"))
+	var kinds: Array = SCARS.get(biome, SCARS["farm"])
+	var evac: Vector3 = info["evac"]
+	var placed := 0
+	for x in N:
+		for z in N:
+			var g: String = grid[x][z]
+			var o := Vector3(x * BLOCK, 0, z * BLOCK)
+			if (o + Vector3(BLOCK / 2, 0, BLOCK / 2)).distance_to(evac) < 16.0:
+				continue
+			if g.begins_with("road") or g.begins_with("street"):
+				# a wreck left on the road (not on a crossing)
+				if not g.ends_with("_x") and rng.randf() < 0.18 + late * 0.25:
+					var ew := g.ends_with("_ew")
+					var wreck: String = ["car_burnt", "car_burnt", "truck_wreck" if biome != "polar" else "snowmobile_wreck"][rng.randi() % 3]
+					if biome == "desert":
+						wreck = "humvee_wreck"
+					var lp := Vector3(BLOCK / 2 + rng.randf_range(-0.8, 0.8), 0, rng.randf_range(3.0, 9.0))
+					_prop(wreck, _rp(o, lp, ew), (PI / 2 if ew else 0.0) + rng.randf_range(-0.5, 0.5))
+					if rng.randf() < 0.5:
+						_smolder(_rp(o, lp + Vector3(0, 0.6, 0.6), ew))
+					placed += 1
+				continue
+			if not g in ["field", "pasture", "meadow", "dunes", "rocks", "forest", "yard", "garden", "orchard", "icelake", "parking", "park"]:
+				continue
+			var n := 0
+			var chance := 0.22 + late * 0.35
+			while rng.randf() < chance and n < 2:
+				var k: String = kinds[rng.randi() % kinds.size()]
+				var p := _jit(o, 2.5)
+				_prop(k, p, rng.randf() * TAU, k != "crater")
+				if k in ["car_burnt", "debris", "truck_wreck"] and rng.randf() < 0.35:
+					_smolder(p + Vector3(0, 0.2, 0))
+				n += 1
+				placed += 1
+				chance *= 0.5
+	# a landmark or two: a silo, a mast, a tracking dish (once each, if there is room)
+	for k in ONE_OFF.get(biome, []):
+		if rng.randf() < 0.55:
+			for t in 20:
+				var x := rng.randi_range(0, N - 1)
+				var z := rng.randi_range(2, N - 1)
+				if grid[x][z] in ["field", "pasture", "meadow", "dunes", "rocks", "yard", "icelake"]:
+					_prop(k, Vector3(x * BLOCK + BLOCK / 2, 0, z * BLOCK + BLOCK / 2), rng.randf() * TAU)
+					grid[x][z] = "landmark"
+					placed += 1
+					break
+	# where they came down: violet veins in the ground, crystal blades, their pods (more of them later on)
+	var u: Vector3 = info["ufo"]
+	var r0 := 13.0 if us <= 2 else 26.0
+	for i in 3 + int(late * 3):
+		var a := rng.randf() * TAU
+		var p := u + Vector3(cos(a), 0, sin(a)) * rng.randf_range(r0, r0 + 9.0)
+		if p.distance_to(evac) > 14.0:
+			_prop("alien_veins", p, rng.randf() * TAU, false)
+	for i in int(round(late * 3.0)) + (1 if mtype == "landed" else 0):
+		var a := rng.randf() * TAU
+		var p := u + Vector3(cos(a), 0, sin(a)) * rng.randf_range(r0 + 2.0, r0 + 14.0)
+		if p.distance_to(evac) > 16.0:
+			_prop("alien_spike" if rng.randf() < 0.5 else "alien_pod", p, rng.randf() * TAU)
+			var gl := OmniLight3D.new()
+			gl.light_color = Color(0.8, 0.3, 1.0)
+			gl.light_energy = 1.2
+			gl.omni_range = 6.0
+			root.add_child(gl)
+			gl.position = p + Vector3(0, 1.4, 0)
+	if Game.autotest() != "": print("[MAP] war scars %d (late %.2f)" % [placed, late])
+
+## Something still smoulders there: low flames, a flickering orange light, a crackle.
+func _smolder(fp: Vector3) -> void:
+	var fire := OmniLight3D.new()
+	fire.light_color = Color(1.0, 0.45, 0.12)
+	fire.light_energy = 1.6
+	fire.omni_range = 5.0
+	fire.set_meta("flicker", true)
+	root.add_child(fire)
+	fire.position = fp + Vector3(0, 0.6, 0)
+	info["lights"].append(fire)
+	var fl := CPUParticles3D.new()
+	fl.amount = 20
+	fl.lifetime = 0.9
+	fl.direction = Vector3.UP
+	fl.spread = 15.0
+	fl.initial_velocity_min = 0.6
+	fl.initial_velocity_max = 1.4
+	fl.gravity = Vector3(0, 0.5, 0)
+	fl.scale_amount_min = 0.6
+	fl.scale_amount_max = 1.2
+	var fq := QuadMesh.new()
+	fq.size = Vector2(0.3, 0.4)
+	var fmat := StandardMaterial3D.new()
+	fmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fmat.albedo_color = Color(1.0, 0.55, 0.15, 0.8)
+	fmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	fmat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	fq.material = fmat
+	fl.mesh = fq
+	root.add_child(fl)
+	fl.position = fp
+	info["sounds"].append({"name": "fire", "pos": fp, "db": -18.0})
+
+## Room around the Kondor: bare ground and a little grass, nothing to fly into.
+func _open(o: Vector3) -> void:
+	_ground(o, "concrete" if biome in ["industrial", "base"] else "grass")
+	if terrain == "temperate" and not biome in ["industrial", "base"]:
+		_grass(o, 250, "grass", 0.4, 0.8)
 	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
 
 ## Desert: sand in long low dunes, a few stones, dry tufts, sometimes a bleached wreck.
@@ -1007,6 +1264,32 @@ func _lamp(p: Vector3, energy := 1.1, rng_ := 5.5, col := Color(1.0, 0.78, 0.5))
 	bulb.position = p
 	lamp.set_meta("lens", bulb)
 
+## A forklift: yellow body, black wheels, the seat under a cage, the mast and two forks in front
+## (a pallet on the forks now and then).
+func _forklift(fp: Vector3, yaw: float) -> void:
+	info["forklift"] = fp
+	var yel := Game.color_mat(Color(0.78, 0.58, 0.1))
+	var blk := Game.color_mat(Color(0.08, 0.08, 0.08))
+	var grey := Game.color_mat(Color(0.3, 0.3, 0.32))
+	var at := func(off: Vector3) -> Vector3: return fp + off.rotated(Vector3.UP, yaw)
+	box(at.call(Vector3(0, 0.62, 0.15)), Vector3(1.1, 0.7, 1.7), yel, true, yaw)            # body
+	box(at.call(Vector3(0, 0.95, 0.85)), Vector3(1.1, 0.5, 0.45), yel, false, yaw)          # counterweight at the back
+	for wx in [-0.56, 0.56]:
+		for wz in [-0.45, 0.75]:
+			box(at.call(Vector3(wx, 0.3, wz)), Vector3(0.22, 0.6, 0.6), blk, false, yaw)     # wheels
+	box(at.call(Vector3(0, 1.1, 0.25)), Vector3(0.5, 0.12, 0.5), blk, false, yaw)            # seat
+	for cx in [-0.5, 0.5]:
+		for cz in [-0.3, 0.75]:
+			box(at.call(Vector3(cx, 1.55, cz)), Vector3(0.06, 1.2, 0.06), blk, false, yaw)   # cage posts
+	box(at.call(Vector3(0, 2.15, 0.22)), Vector3(1.1, 0.06, 1.2), blk, false, yaw)          # cage roof
+	for mx in [-0.35, 0.35]:
+		box(at.call(Vector3(mx, 1.2, -0.75)), Vector3(0.1, 2.4, 0.12), grey, false, yaw)    # mast
+	var lift := rng.randf_range(0.1, 0.9)
+	for kx in [-0.28, 0.28]:
+		box(at.call(Vector3(kx, lift + 0.03, -1.3)), Vector3(0.12, 0.05, 1.0), grey, false, yaw)   # forks
+	if rng.randf() < 0.5:
+		box(at.call(Vector3(0, lift + 0.12, -1.3)), Vector3(1.0, 0.14, 1.0), Game.mat("planks", 1.0), false, yaw)
+
 func _crate(p: Vector3, sz := 1.0, yaw := 0.0) -> void:
 	sz = maxf(sz, 0.85)
 	var b := box(p + Vector3(0, sz / 2, 0), Vector3(sz, sz, sz), Game.mat("planks", 1.0), true, yaw)
@@ -1142,7 +1425,7 @@ func _ruin(o: Vector3) -> void:
 		info["sounds"].append({"name": "fire", "pos": fp, "db": -16.0})
 	if rng.randf() < 0.6:
 		# a burnt-out car in front
-		box(o + Vector3(rng.randf_range(3, 9), 0.6, 10.8), Vector3(4.2, 0.9, 1.8), Game.mat("scorch", 1.0), true, rng.randf_range(-0.3, 0.3))
+		_prop("car_burnt", o + Vector3(rng.randf_range(3, 9), 0, 10.6), PI / 2 + rng.randf_range(-0.3, 0.3))
 	_cover(c + Vector3(1.0, 0, 1.0)); _cover(c + Vector3(w - 1.0, 0, d - 1.0)); _cover(c + Vector3(w / 2, 0, -0.8))
 	info["vip_spots"].append(c + Vector3(1.2, 0.3, d - 1.2))
 	info["waypoints"].append(c + Vector3(w / 2, 0, d / 2))
@@ -1389,8 +1672,7 @@ func _yard(o: Vector3) -> void:
 	# forklift
 	var fp := o + Vector3(rng.randf_range(4, 8), 0, rng.randf_range(4, 8))
 	var yaw := rng.randf() * TAU
-	box(fp + Vector3(0, 0.7, 0), Vector3(1.2, 1.0, 2.0), Game.color_mat(Color(0.75, 0.55, 0.1)), true, yaw)
-	box(fp + Vector3(0, 1.7, 0.2), Vector3(1.1, 0.08, 1.2), Game.color_mat(Color(0.1, 0.1, 0.1)), false, yaw)
+	_forklift(fp, yaw)
 	_cover(fp + Vector3(1.5, 0, 0))
 	for i in 4:
 		var dp := _jit(o, 1.0)

@@ -62,11 +62,27 @@ def sokol():
 
 def ufo(kind):
     reset()
-    hull = mat("UfoHull", (0.42, 0.44, 0.47), rough=0.3)
-    dark = mat("UfoDark", (0.12, 0.12, 0.15), rough=0.3)
-    glow = mat("UfoGlow", (0.6, 0.3, 1.0), emit=5.0)
-    eye = mat("UfoEye", (0.3, 1.0, 0.45), emit=5.0)
+    # 0.50: dark violet alloy, violet light, a red eye - as in Ari's pictures
+    hull = mat("UfoHull", (0.2, 0.17, 0.22), rough=0.35)
+    hull.node_tree.nodes.get("Principled BSDF").inputs["Metallic"].default_value = 0.7
+    dark = mat("UfoDark", (0.07, 0.06, 0.08), rough=0.4)
+    dark.node_tree.nodes.get("Principled BSDF").inputs["Metallic"].default_value = 0.6
+    glow = mat("UfoGlow", (0.85, 0.25, 1.0), emit=5.0)
+    eye = mat("UfoEye", (1.0, 0.12, 0.06), emit=5.0)
     p = []
+    def blades(r, z, n, h):
+        for i in range(n):
+            a = (i + 0.5) / n * math.tau
+            b = cyl(dark, (0, 0, 0), h * 0.22, h, verts=4, r2=0.0)
+            for v in b.data.vertices:
+                v.co.x *= 0.35
+                v.co.z += h / 2
+            b.rotation_euler = (0.45, 0, a - math.pi / 2)
+            b.location = (math.cos(a) * r, math.sin(a) * r, z)
+            bpy.ops.object.select_all(action='DESELECT'); b.select_set(True)
+            bpy.context.view_layer.objects.active = b
+            bpy.ops.object.transform_apply(location=True, rotation=True)
+            p.append(b)
     if kind == "scout":
         p.append(cyl(hull, (0, 0, 0), 4.0, 0.9, verts=16, r2=2.0))
         p.append(cyl(hull, (0, 0, -0.7), 2.0, 0.5, verts=16, r2=4.0))
@@ -75,6 +91,7 @@ def ufo(kind):
             a = i / 8 * math.tau
             p.append(box(glow, (math.cos(a) * 3.3, math.sin(a) * 3.3, -0.2), (0.4, 0.4, 0.15), rot=(0, 0, a)))
         p.append(cyl(eye, (0, 0, -0.98), 0.9, 0.06, verts=12))
+        blades(2.6, 0.3, 6, 1.6)
     elif kind == "raider":
         p.append(sphere(hull, (0, 0, 0), 6.0, seg=20, rings=8, scale=(1, 1, 0.28)))
         p.append(cyl(dark, (0, 0, 0), 7.8, 0.35, verts=24, r2=7.8))
@@ -85,6 +102,7 @@ def ufo(kind):
         p.append(sphere(dark, (0, 0, 1.6), 2.2, seg=12, rings=6, scale=(1, 1, 0.5)))
         for x in (2.5, -2.5):
             p.append(sphere(eye, (x, 3.5, -0.6), 0.6, seg=8, rings=5, scale=(1, 1, 0.5)))
+        blades(4.2, 1.0, 10, 2.6)
     else:   # harvester: a long manta shape
         p.append(sphere(hull, (0, 0, 0), 9.0, seg=20, rings=8, scale=(1.5, 1.0, 0.25)))
         p.append(sphere(dark, (0, 3.0, 1.4), 3.5, seg=12, rings=6, scale=(1.3, 1.6, 0.5)))
@@ -95,6 +113,7 @@ def ufo(kind):
             p.append(box(glow, (-6 + i * 2, -8.6, 0), (1.0, 0.4, 0.5)))
         p.append(cyl(eye, (0, 0, -2.2), 2.5, 0.1, verts=12))
         p.append(box(dark, (0, -9.5, 0.6), (5.0, 1.5, 1.2)))
+        blades(6.0, 1.4, 12, 3.4)
     o = join(p, "Ufo_" + kind)
     export_glb(os.path.join(OUTDIR, "ufo_%s.glb" % kind), [o])
 

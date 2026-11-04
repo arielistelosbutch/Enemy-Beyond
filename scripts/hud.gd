@@ -1014,19 +1014,6 @@ static func settings_ui(box: Control) -> void:
 	inv.add_theme_font_size_override("font_size", 9)
 	inv.toggled.connect(func(on): Game.invert_y = on; Game.save_settings())
 	box.add_child(inv)
-	var retro := CheckBox.new()
-	retro.text = "Retro filtr (PS1 chvění, rastr, zrno)"
-	retro.button_pressed = Game.retro
-	retro.focus_mode = Control.FOCUS_NONE
-	retro.add_theme_font_size_override("font_size", 9)
-	retro.toggled.connect(func(on):
-		Game.retro = on
-		Game.apply_retro()
-		Game.save_settings()
-		var m: Node = box.get_tree().current_scene
-		if m and m.has_method("set_retro"):
-			m.set_retro(on))
-	box.add_child(retro)
 	var vol := CheckBox.new()
 	vol.text = "Objemová mlha (náročnější, od příští mise)"
 	vol.button_pressed = Game.volumetric

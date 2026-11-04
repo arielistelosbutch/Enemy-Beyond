@@ -157,17 +157,17 @@ func _button(text: String, cb: Callable) -> Button:
 # ---- screens ---------------------------------------------------------------------
 ## Quick mission types (also used by a hosted co-op game outside the campaign).
 const QUICK := [
-	["Noc na samotě (Šeďáci, Diskoll)", {"group": "sedaci", "type": "crash", "type_name": "Havárie UFO", "biome": "farm", "place": "Samota u Telče", "extra_aliens": 0}],
-	["Teror v městečku (Ještěřani, Líhnouni, civilisté)", {"group": "jestetani", "type": "terror", "type_name": "Teror", "biome": "town", "place": "Městečko u Jihlavy", "extra_aliens": 1, "size": "huge"}],
+	["Noc na samotě (Šediváci, Diskoll)", {"group": "sedaci", "type": "crash", "type_name": "Havárie UFO", "biome": "farm", "place": "Samota u Telče", "extra_aliens": 0}],
+	["Teror v městečku (Ještěřani, Líhavci, civilisté)", {"group": "jestetani", "type": "terror", "type_name": "Teror", "biome": "town", "place": "Městečko u Jihlavy", "extra_aliens": 1, "size": "huge"}],
 	["Únos na venkově (Levité, Ohař)", {"group": "levite", "type": "abduction", "type_name": "Únos", "biome": "farm", "place": "Samota u Třeště", "extra_aliens": 0}],
 	["Přistání v lesích (Bijci, Nádor, Ohnivec)", {"group": "bijci", "type": "landed", "type_name": "Přistání UFO", "biome": "forest", "place": "Lesy pod Javořicí", "extra_aliens": 2}],
 	["Velká loď (Myslodějové, Kolos)", {"group": "myslodejove", "type": "landed", "type_name": "Přistání UFO", "biome": "forest", "place": "Lesy u Dačic", "extra_aliens": 2, "ufo": "harvester", "size": "large"}],
-	["Zimní noc v horách (Šeďáci, sníh)", {"group": "sedaci", "type": "crash", "type_name": "Havárie UFO", "biome": "forest", "place": "Krkonoše", "extra_aliens": 1, "terrain": "snow", "size": "medium"}],
+	["Zimní noc v horách (Šediváci, sníh)", {"group": "sedaci", "type": "crash", "type_name": "Havárie UFO", "biome": "forest", "place": "Krkonoše", "extra_aliens": 1, "terrain": "snow", "size": "medium"}],
 	["Poušť (Bijci, Ohnivec)", {"group": "bijci", "type": "landed", "type_name": "Přistání UFO", "biome": "desert", "place": "Sahara", "extra_aliens": 1, "terrain": "desert", "size": "large"}],
 	["Záchrana v horách (vědkyně, Levité, sníh)", {"group": "levite", "type": "rescue", "type_name": "Záchrana", "biome": "mountain", "place": "Krkonoše", "extra_aliens": 1, "terrain": "snow", "size": "large"}],
-	["Sabotáž v průmyslovém areálu (Šeďáci)", {"group": "sedaci", "type": "sabotage", "type_name": "Sabotáž", "biome": "industrial", "place": "Kladno - Poldi", "extra_aliens": 2, "size": "large"}],
+	["Sabotáž v průmyslovém areálu (Šediváci)", {"group": "sedaci", "type": "sabotage", "type_name": "Sabotáž", "biome": "industrial", "place": "Kladno - Poldi", "extra_aliens": 2, "size": "large"}],
 	["Obrana základny (Bijci, vlny)", {"group": "bijci", "type": "base", "type_name": "Útok na základnu", "biome": "base", "place": "Základna - Vysočina", "extra_aliens": 2, "size": "medium"}],
-	["Polární stanice (Šeďáci, led)", {"group": "sedaci", "type": "sabotage", "type_name": "Sabotáž", "biome": "polar", "place": "Špicberky", "extra_aliens": 1, "terrain": "snow", "size": "large"}],
+	["Polární stanice (Šediváci, led)", {"group": "sedaci", "type": "sabotage", "type_name": "Sabotáž", "biome": "polar", "place": "Špicberky", "extra_aliens": 1, "terrain": "snow", "size": "large"}],
 	["Teror v průmyslu (Ještěřani)", {"group": "jestetani", "type": "terror", "type_name": "Teror", "biome": "industrial", "place": "Ostrava - Vítkovice", "extra_aliens": 2, "size": "huge"}],
 	["Poslední mise: Velín na Marsu (Velký mozek)", {"group": "myslodejove", "type": "mars", "type_name": "Velín na Marsu", "biome": "mars", "terrain": "mars", "place": "Mars - rudá pláň", "extra_aliens": 3, "size": "large"}],
 	["Náhodná mise", {}],
@@ -215,7 +215,7 @@ func _show_quick() -> void:
 		names.append(q[0])
 	_cycle(_box, "Scénář", names, quick_pick, func(i): quick_pick = i)
 	var gk := ["", "sedaci", "jestetani", "levite", "bijci", "myslodejove"]
-	var gn := ["podle scénáře", "Šeďáci", "Ještěřani", "Levité", "Bijci", "Myslodějové"]
+	var gn := ["podle scénáře", "Šediváci", "Ještěřani", "Levité", "Bijci", "Myslodějové"]
 	_cycle(_box, "Nepřítel", gn, gk.find(quick_group), func(i): quick_group = gk[i])
 	var mn := []
 	for m in QUICK_MAPS:
@@ -1094,9 +1094,9 @@ func _show_main_msg(t: String) -> void:
 # ---- headless tests -------------------------------------------------------------
 func _autotest() -> void:
 	match Game.autotest():
-		"workshop":
+		"workshop", "wsclick", "animtest", "animshots":
 			get_tree().change_scene_to_file("res://scenes/Workshop.tscn")
-		"modeler":
+		"modeler", "modclick":
 			get_tree().change_scene_to_file("res://scenes/Modeler.tscn")
 		"geo", "campaign", "campair", "uigeo":
 			# (the test machine's merc may still be on the sick bay from an earlier test run)
@@ -1181,7 +1181,7 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "leaveany", "skyshot", "fireshot", "abase":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "aitest", "latetest", "gunshots", "topshot", "shieldtest", "fireshot", "abase":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
@@ -1243,6 +1243,38 @@ func _autotest() -> void:
 				f.store_buffer(lv.dbg_rx.to_byte_array())
 				f.close()
 				get_tree().quit()
+		"gearloss":
+			# economy: an order takes days; a won mission costs what was used up; a lost one everything taken
+			Campaign.new_campaign()
+			Campaign.data["credits"] = 5000
+			var g0 := int(Campaign.data["armory"].get("grenade", 0))
+			Campaign.buy("grenade")
+			var arrived0 := int(Campaign.data["armory"].get("grenade", 0)) == g0
+			Campaign.advance(5.0)
+			var arrived1 := int(Campaign.data["armory"].get("grenade", 0)) == g0 + 1
+			var c0 := int(Campaign.data["credits"])
+			Campaign.sell("grenade")
+			var sold := int(Campaign.data["credits"]) > c0
+			var gr := int(Campaign.data["armory"].get("grenade", 0))
+			var kit := ["rifle", "rifle_clip", "rifle_clip", "rifle_clip", "grenade", "grenade", "vesta"]
+			# won: threw one grenade, all else home
+			Campaign.mission_done(-1, true, 1, 0, 0, 0, 0, [], {}, false, {1: kit}, 1.0, {1: {"grenade": 1, "rifle_clip": 1}}, {1: {}})
+			var gr1 := int(Campaign.data["armory"].get("grenade", 0))
+			var clips1 := int(Campaign.data["armory"].get("rifle_clip", 0))
+			# lost: everything taken stays out there
+			Campaign.mission_done(-1, false, 0, 0, 1, 0, 0, [], {}, true, {1: kit}, 1.0, {1: {"rifle": 1, "rifle_clip": 3, "grenade": 2, "vesta": 1}}, {1: {}})
+			print("RESULT gearloss order_wait %s arrived %s sold %s won_grenades %d->%d clips_kept %s lost_grenades %d vests %d" % [arrived0, arrived1, sold, gr, gr1, clips1 == int(Campaign.START_ARMORY["rifle_clip"]), int(Campaign.data["armory"].get("grenade", 0)), int(Campaign.data["armory"].get("vesta", 0))])
+			get_tree().quit()
+		"wrecks":
+			# a Diskoll blown up on three won missions: the scraps make one whole for the laboratory
+			Campaign.new_campaign()
+			var res := []
+			for i in 3:
+				Campaign.mission_done(-1, true, 1, 0, 0, 0, 0, ["diskoll"], {"trosky_diskoll": 1})
+				res.append([int(Campaign.data["found"].get("trosky_diskoll", 0)), int(Campaign.data["found"].get("corpse_diskoll", 0)),
+					Campaign.research_available("rozbor_diskoll")])
+			print("RESULT wrecks ", res, " ", Campaign.research_needs("rozbor_diskoll") if Campaign.has_method("research_needs") else "")
+			get_tree().quit()
 		"checkall":
 			for f in DirAccess.get_files_at("res://scripts"):
 				if f.ends_with(".gd"):
@@ -1269,6 +1301,27 @@ func _autotest() -> void:
 			Net.give_money(1, 200)
 			await get_tree().create_timer(2.5).timeout
 			print("[ECON] after gift my=%d wallets=%s" % [Net.my_money(), Net.wallets])
+			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+		"geolivehost":
+			# the host flies a transport on his globe; the client's globe must show it moving
+			Campaign.new_campaign("normal")
+			Game.merc["name"] = "Hostitel"
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			while Net.roster.size() < 2:
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(1.0).timeout
+			var gm: Dictionary = Campaign.generate_mission()
+			Campaign.data["missions"].append(gm)
+			Campaign.launch_craft("kondor", gm, "mission")
+			Net.broadcast_team()
+			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+		"geoliveclient":
+			# (the measuring is done on the globe: geoscape.gd _autotest)
+			Game.merc["name"] = "Klient"
+			await get_tree().create_timer(1.0).timeout
+			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+			while not Campaign.viewer:
+				await get_tree().create_timer(0.2).timeout
 			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
 		"coopwipehost":
 			# co-op campaign mission that the team loses to the last man, then back to the globe

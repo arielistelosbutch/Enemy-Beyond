@@ -81,7 +81,9 @@ def hq():
     export_glb(os.path.join(OUTDIR, "mars_hq.glb"), objs)
 
 def brain():
-    """The Great Brain: two lobes of folds, a stem into the cradle, nerves glowing."""
+    """The Great Brain - since 0.50 made by tools/blender/mozek.py (after Ari's picture); this old one is kept
+    only for reference and no longer written."""
+    return
     reset(); m = MM(); p = []
     import random
     random.seed(7)

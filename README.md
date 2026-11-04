@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.45
+# Operace X - Enemy Beyond — prototyp 0.50
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -8,6 +8,13 @@ Co-op: jeden hráč dá „Hostovat hru“, ostatní „Připojit ke hře“ s j
 Fanouškovská pocta UFO: Enemy Unknown. Kooperativní hororová střílečka z pohledu
 první osoby pro 1–4 hráče. Nekomerční projekt, veškerá grafika a zvuky jsou vlastní
 (generované skriptem `tools/gen_assets.py`).
+
+## Novinky 0.50
+Velká aktualizace, na kterou jsem šetřil:
+- Všichni vetřelci mají nové modely podle mých kreseb, vlastní schopnosti a texty z vojenské databáze (Levit Mírotvůrce, Ještěřan, Líhavec, Nakažený, Bijec, Nádor, Ohnivec, Mysloděj, Kolos, Ohař...).
+- Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
+- Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
+- Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
 
 ## Spuštění
 Otevři složku v Godotu 4.7 a dej F5. Hlavní scéna je `scenes/Main.tscn`.

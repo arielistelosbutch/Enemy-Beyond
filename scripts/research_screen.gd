@@ -185,6 +185,24 @@ func _layout() -> void:
 		canvas.add_child(b)
 		nodes[id] = b
 
+## 0.50: research keeps its secrets. A project is known (name, needs) once it can be started or is done;
+## the ones that follow straight after a known one show only as "???"; the rest are not shown at all.
+func known(id: String) -> bool:
+	var st := _state(id)
+	return st != "locked"
+
+func hinted(id: String) -> bool:
+	if known(id):
+		return true
+	var n: Dictionary = Campaign.RESEARCH[id]["needs"]
+	if not n.has("research"):
+		return true          # (something to be found out there: its place shows, nothing more)
+	var reqs: Array = n["research"] if n["research"] is Array else [n["research"]]
+	for r in reqs:
+		if Campaign.researched(r):
+			return true
+	return false
+
 func _state(id: String) -> String:
 	if Campaign.researched(id):
 		return "done"
@@ -206,6 +224,11 @@ func refresh() -> void:
 	for id in nodes:
 		var b: Button = nodes[id]
 		var st := _state(id)
+		b.visible = hinted(id)
+		var kn := known(id)
+		b.text = String(Campaign.RESEARCH[id]["name"]) if kn else "???"
+		var ic := String(Campaign.RESEARCH[id].get("icon", ""))
+		b.icon = UiSkin.icon(ic) if kn and ic != "" and UiSkin.icon(ic) else null
 		var sb := StyleBoxFlat.new()
 		var c := _col(st)
 		sb.bg_color = Color(c.r * 0.18, c.g * 0.18, c.b * 0.22, 0.95) if st != "locked" else Color(0.08, 0.09, 0.1, 0.9)
@@ -230,6 +253,12 @@ func _select(id: String) -> void:
 		c.queue_free()
 	var rr: Dictionary = Campaign.RESEARCH[id]
 	var st := _state(id)
+	if not known(id):
+		var tl0 := _lbl(detail, "???", ACCENT, 10)
+		UiSkin.title(tl0, 10)
+		_lbl(detail, "NEZNÁMÝ PROJEKT", LOCKED.lightened(0.3), 8)
+		_lbl(detail, "Laboratoř zatím neví, co tu hledat. Něco z toho, co je venku, ještě nemáme - nebo jsme to ještě nepochopili. Přineste z boje víc.", TEXT, 8)
+		return
 	var ic := String(rr.get("icon", ""))
 	if ic != "" and UiSkin.icon(ic):
 		var tr := TextureRect.new()
@@ -244,7 +273,7 @@ func _select(id: String) -> void:
 	_lbl(detail, String(rr["desc"]), TEXT, 8)
 	_lbl(detail, "Cena: %d kr%s   Doba: %d dní" % [Campaign.research_cost(id), (" + %d g Moskovia" % int(rr["mk"])) if rr.has("mk") else "", ceili(Campaign.research_days(id))], FRAME, 8)
 	var nl := Campaign.needs_list(id)
-	if not nl.is_empty():
+	if not nl.is_empty() and st != "done":
 		_lbl(detail, "Vyžaduje:", FRAME, 8)
 		for c in nl:
 			_lbl(detail, ("  ✔ " if c[1] else "  ✘ ") + String(c[0]), DONE if c[1] else RED, 8)
@@ -252,7 +281,7 @@ func _select(id: String) -> void:
 	if not lt.is_empty():
 		var names := []
 		for k in lt:
-			names.append(Campaign.RESEARCH[k]["name"])
+			names.append(Campaign.RESEARCH[k]["name"] if known(k) else "???")
 		_lbl(detail, "Vede k: " + ", ".join(names), LOCKED.lightened(0.3), 8)
 	if st == "open" and not Campaign.viewer:
 		var busy := String(Campaign.data["research"]["current"]) != ""
@@ -294,7 +323,11 @@ class TreeCanvas extends Control:
 			if not n.has("research"):
 				continue
 			var reqs: Array = n["research"] if n["research"] is Array else [n["research"]]
+			if not screen.hinted(id):
+				continue
 			for r in reqs:
+				if not screen.hinted(r):
+					continue
 				var a: Vector2 = screen.pos[r] + Vector2(screen.NODE_W, screen.NODE_H / 2)
 				var b2: Vector2 = screen.pos[id] + Vector2(0, screen.NODE_H / 2)
 				var done: bool = Campaign.researched(r)
