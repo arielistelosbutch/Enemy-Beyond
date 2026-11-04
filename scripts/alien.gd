@@ -149,6 +149,15 @@ func setup(data: Dictionary) -> void:
 		var gl: Array = R["guns"]
 		gun = String(gl[rng.randi() % gl.size()])
 	traps_left = int(R.get("traps", 0))
+	for who in Net.mission_params.get("habits", {}):
+		for it in Net.mission_params["habits"][who]:
+			if it in ["rocket_launcher", "autocannon", "grenade", "laser_cannon"]:
+				_spread_out = true
+	# a team that brings heavy armour: the soldiers come with their heaviest guns
+	if R.has("guns") and gun != "cannon" and "cannon" in R["guns"]:
+		for who in Net.mission_params.get("habits", {}):
+			if "pancir" in Net.mission_params["habits"][who] and rng.randf() < 0.5:
+				gun = "cannon"
 	# the cloak: officers from the start; as the war goes on, their soldiers get it too
 	var day := float(Net.mission_params.get("day", 0.0))
 	can_cloak = R.has("cloak") and (race.ends_with("_velitel") or day >= (30.0 if Game.veteran() else 45.0) or Game.cmd_arg("cloak", "") == "1")
@@ -999,6 +1008,11 @@ func _combat(delta: float, seen: Node) -> void:
 					_after_burst()
 				return
 			var dist := global_position.distance_to(seen.global_position)
+			if tac != "brute" and react < 0.3 and ((dist < 9.0 and (_habit(seen, "shotgun") or _habit(seen, "magnum"))) or (dist < 6.0 and _habit(seen, "stun_baton"))):
+				# it knows what he carries up close: no closer
+				_keep_away(seen.global_position)
+				phase = "move"
+				return
 			if tac == "psi" and dist < 13.0 and react < 0.3:
 				# a Mysloděj does not trade shots up close: it slips away
 				_keep_away(seen.global_position)
@@ -1012,7 +1026,7 @@ func _combat(delta: float, seen: Node) -> void:
 						_flank_rear(seen)
 						phase = "flank"
 						return
-				if R.has("nades") and _nade_cd <= 0 and dist > 7.0 and dist < 26.0 and rng.randf() < 0.4:
+				if R.has("nades") and _nade_cd <= 0 and dist > 7.0 and dist < 26.0 and rng.randf() < (0.75 if _habit(seen, "pancir") else 0.4):
 					_throw_nade(seen.global_position)
 				else:
 					_fire(seen)
@@ -1078,6 +1092,12 @@ func _next_move() -> void:
 		_relocate(last_seen)
 		phase = "move"
 		return
+	if is_instance_valid(target) and target.has_method("is_player"):
+		if _habit(target, "sniper") and dist > 14.0 and _advance(last_seen):
+			return           # a sniper: close in under cover, never stay at his range
+		if (_habit(target, "stit") or _habit(target, "minigun")) and tac != "brute":
+			_flank_rear(target)
+			return
 	if _can_grab() and rng.randf() < 0.7:
 		phase = "grab"
 		_brute_repath = 0.0
@@ -1126,6 +1146,11 @@ func _relocate(from: Vector3) -> void:
 		var score: float = d - side * 5.0
 		if c.distance_to(from) < 6.0:
 			score += 20.0
+		if _spread_out:
+			# they carry explosives: do not bunch up
+			for a in mission.aliens():
+				if a != self and not a.dead and a.goal.distance_to(c) < 5.0:
+					score += 8.0
 		if far or tac == "soldier":
 			# a shooter far away: each move brings it closer to him
 			score += (c.distance_to(from) - global_position.distance_to(from)) * 0.6
@@ -1147,11 +1172,19 @@ func _flank() -> void:
 	_go(_snap(p))
 
 # ---- tactics -------------------------------------------------------------------------------
+## What this mercenary is known to bring (the aliens have learned it over the campaign).
+func _habit(p: Node, item: String) -> bool:
+	if p == null or not is_instance_valid(p) or not "display_name" in p:
+		return false
+	var h: Dictionary = Net.mission_params.get("habits", {})
+	return item in h.get(String(p.display_name), [])
+
 func _tlog(what: String) -> void:
 	if Game.autotest() != "":
 		print("[TAC] %s %s %s" % [name, race, what])
 
 var _bail_done := false
+var _spread_out := false
 var _burst_snd := 0.0
 var _nade_cd := 8.0
 var _rocket_cd := 2.0

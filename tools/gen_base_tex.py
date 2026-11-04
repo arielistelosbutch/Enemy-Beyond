@@ -50,3 +50,25 @@ for y in range(32):
         im.putpixel((x, y), c)
 save(im, 'earth')
 print('ok')
+
+# alien base: dark violet rock with jagged cracks
+im = Image.new('RGB', (32, 32))
+for y in range(32):
+    for x in range(32):
+        c = noise((62, 48, 82), 12)
+        if (x * 3 + y * 5) % 17 == 0 or (x * 7 - y * 2) % 23 == 0: c = (34, 26, 46)
+        if random.random() < 0.04: c = (92, 74, 118)
+        im.putpixel((x, y), c)
+save(im, 'alien_rock')
+
+# alien built walls: pale steel panels with orange and blue light inlays
+im = Image.new('RGB', (32, 32))
+for y in range(32):
+    for x in range(32):
+        c = (150, 150, 172)
+        if x % 16 in (0, 15) or y in (0, 31): c = (96, 96, 118)
+        elif 6 <= y <= 25 and 3 <= x % 16 <= 12:
+            c = (220, 130, 50) if (x // 16 + y // 10) % 2 == 0 else (70, 120, 210)
+        im.putpixel((x, y), noise(c, 5))
+save(im, 'alien_panel')
+print('alien ok')

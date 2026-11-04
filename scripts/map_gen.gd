@@ -18,6 +18,7 @@ var info := {
 	"elec_lights": [], "sounds": [], "barn": Vector3.ZERO, "house": Vector3.ZERO,
 	"windows": [], "roofs": [], "doors": [], "cows": [], "circle": Vector3.ZERO, "truck": Vector3.ZERO, "breakables": [], "landmarks": [], "vip_spots": [],
 }
+var us := 2                # how many blocks the ship takes on a side
 var _circle_done := false
 var _truck_done := false
 
@@ -34,11 +35,17 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	N = int(SIZES.get(params.get("size", "medium"), 7))
 	# which ship: given (air war, quick missions), else by mission type and map size
 	ufo_kind = params.get("ufo", "")
-	if not ufo_kind in ["scout", "raider", "harvester"]:
+	if not ufo_kind in ["scout", "raider", "harvester", "battleship", "supply"]:
 		match mtype:
 			"crash": ufo_kind = "scout" if rng.randf() < 0.6 else "raider"
-			"landed": ufo_kind = "harvester" if params.get("size", "") in ["large", "huge", "colossal"] else "raider"
+			"landed":
+				ufo_kind = "harvester" if params.get("size", "") in ["large", "huge", "colossal"] else "raider"
+				# later in the war the giants come down: a battleship or a supply ship
+				if params.get("late", false) and params.get("size", "") in ["huge", "colossal"] and rng.randf() < 0.55:
+					ufo_kind = "battleship" if rng.randf() < 0.5 else "supply"
 			_: ufo_kind = "raider"
+	if ufo_kind in ["battleship", "supply"] and N < 12:
+		N = 12
 	if ufo_kind == "harvester" and N < 8:
 		N = 8          # a big ship needs room around it
 	terrain = params.get("terrain", "temperate")
@@ -82,14 +89,15 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 		grid.append([])
 		for z in N:
 			grid[x].append("")
-	var ux := rng.randi_range(N / 2 - 1, N / 2)
-	var uz := rng.randi_range(N / 2 - 1, N / 2)
+	us = 4 if ufo_kind in ["battleship", "supply"] else 2
+	var ux := rng.randi_range(N / 2 - us / 2, N / 2 - us / 2 + 1)
+	var uz := rng.randi_range(N / 2 - us / 2, N / 2 - us / 2 + 1)
 	if biome == "base":
-		uz = N - 2           # they landed at the far end of the ravine
-	for dx in 2:
-		for dz in 2:
+		uz = N - us           # they landed at the far end of the ravine
+	for dx in us:
+		for dz in us:
 			grid[ux + dx][uz + dz] = "ufo"
-	info["ufo"] = Vector3((ux + 1) * BLOCK, 0, (uz + 1) * BLOCK)
+	info["ufo"] = Vector3((ux + us / 2.0) * BLOCK, 0, (uz + us / 2.0) * BLOCK)
 	var sx := rng.randi_range(0, N - 1)
 	grid[sx][0] = "sky"
 	_lay_roads(grid, ux, uz)
@@ -211,7 +219,10 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 					if biome != "industrial" and biome != "base":
 						_grass(o, 700, "dry", 0.5, 1.1)
 	if Game.autotest() != "": print("[MAP] tiles done %d ms" % (Time.get_ticks_msec() - _t0))
-	_ufo(Vector3((ux + 1) * BLOCK, 0, (uz + 1) * BLOCK))
+	if us > 2:
+		_big_ufo(Vector3((ux + us / 2.0) * BLOCK, 0, (uz + us / 2.0) * BLOCK))
+	else:
+		_ufo(Vector3((ux + 1) * BLOCK, 0, (uz + 1) * BLOCK))
 	if Game.autotest() != "": print("[MAP] ufo done")
 	_blood_trail()
 	if Game.autotest() != "": print("[MAP] trail done")
@@ -541,7 +552,7 @@ func _lay_roads(grid: Array, ux: int, uz: int) -> void:
 	for i in cols:
 		for t in 20:
 			var c := rng.randi_range(0, N - 1)
-			if c == ux or c == ux + 1 or c in used_c or (c - 1) in used_c or (c + 1) in used_c:
+			if (c >= ux and c < ux + us) or c in used_c or (c - 1) in used_c or (c + 1) in used_c:
 				continue
 			used_c.append(c)
 			for z in N:
@@ -551,7 +562,7 @@ func _lay_roads(grid: Array, ux: int, uz: int) -> void:
 	for i in rows:
 		for t in 20:
 			var r := rng.randi_range(1, N - 1)
-			if r == uz or r == uz + 1:
+			if r >= uz and r < uz + us:
 				continue
 			for x in N:
 				if grid[x][r] == "":
@@ -1881,6 +1892,198 @@ func _ufo(center: Vector3) -> void:
 		var wp := center + Vector3(sin(a4) * (r + 4.5), 0, cos(a4) * (r + 4.5))
 		info["waypoints"].append(wp)
 		info["alien_spawns"].append(wp + Vector3(0, 0.2, 0))
+
+# ---- the giants: a ship of octagonal halls joined by short passages (late in the war) ----------
+## Battleship: command bridge in the middle, power core, lab with tanks, quarters, cargo with cages and
+## teleports. Supply ship: mostly cargo and specimen tanks. Shoot the power core and it blows.
+const SEC_R := 6.5
+const SEC_S := 15.0
+func _big_ufo(center: Vector3) -> void:
+	info["ufo"] = center
+	info["ufo_kind"] = ufo_kind
+	var plan: Dictionary
+	if ufo_kind == "battleship":
+		plan = {Vector2i(0, -1): "entry", Vector2i(0, 0): "command", Vector2i(-1, 0): "power", Vector2i(1, 0): "lab",
+			Vector2i(0, 1): "quarters", Vector2i(-1, 1): "cargo", Vector2i(1, 1): "teleport", Vector2i(-1, -1): "quarters", Vector2i(1, -1): "cargo"}
+	else:
+		plan = {Vector2i(0, -1): "entry", Vector2i(0, 0): "cargo", Vector2i(-1, 0): "lab", Vector2i(1, 0): "cargo",
+			Vector2i(0, 1): "power", Vector2i(-1, 1): "lab", Vector2i(1, 1): "teleport"}
+	# the hull's shadow on the ground, scorched grass around
+	cyl(center + Vector3(0, 0.01, 0), 28.0, 28.0, 0.02, Game.mat("scorch"), false, 24)
+	for k in plan:
+		var cp := center + Vector3(k.x * SEC_S, 0, k.y * SEC_S)
+		var open := []
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if plan.has(k + d):
+				open.append(d)
+		if plan[k] == "entry":
+			open.append(Vector2i(0, -1))       # the ramp out
+		_section(cp, open, String(plan[k]))
+		for d in open:
+			if plan.has(k + d) and (d.x > 0 or d.y > 0):
+				_passage(cp + Vector3(d.x, 0, d.y) * SEC_R, Vector3(d.x, 0, d.y))
+	var door := center + Vector3(0, 0, -SEC_S - SEC_R - 1.5)
+	info["ufo_door"] = door
+	info["waypoints"].append(door)
+	for i in 8:
+		var a4 := TAU * i / 8.0
+		info["waypoints"].append(center + Vector3(sin(a4), 0, cos(a4)) * 30.0)
+
+func _section(c: Vector3, open: Array, role: String) -> void:
+	var H2 := 4.5
+	var wall := Game.mat("ufo_wall", 0.5)
+	var side := 2.0 * SEC_R * tan(PI / 8.0)
+	cyl(c + Vector3(0, 0.05, 0), SEC_R / cos(PI / 8.0), SEC_R / cos(PI / 8.0), 0.1, Game.mat("ufo_floor", 0.5), true, 8).rotation.y = PI / 8.0
+	cyl(c + Vector3(0, H2 + 0.15, 0), SEC_R / cos(PI / 8.0) + 0.3, SEC_R / cos(PI / 8.0) + 0.3, 0.3, Game.mat("ufo_hull", 0.5), true, 8).rotation.y = PI / 8.0
+	for k in 8:
+		var ang := k * PI / 4.0           # side k faces this direction (0 = +x, 2 = +z ...)
+		var nrm := Vector3(cos(ang), 0, sin(ang))
+		var mid := c + nrm * SEC_R
+		var yaw := -ang + PI / 2.0
+		var gap := false
+		for d in open:
+			if Vector3(d.x, 0, d.y).dot(nrm) > 0.99:
+				gap = true
+		if gap:
+			# two pieces either side of a 3 m opening, a lintel over it
+			var tang := Vector3(-nrm.z, 0, nrm.x)
+			for sd in [-1.0, 1.0]:
+				box(mid + tang * sd * (side / 2.0 + 1.5) / 2.0 + Vector3(0, H2 / 2, 0), Vector3((side - 3.0) / 2.0, H2, 0.35), wall, true, yaw)
+			box(mid + Vector3(0, H2 - 0.6, 0), Vector3(3.0, 1.2, 0.35), wall, true, yaw)
+		else:
+			box(mid + Vector3(0, H2 / 2, 0), Vector3(side + 0.1, H2, 0.35), wall, true, yaw)
+		# a strip of violet light along the top of every wall
+		box(mid - nrm * 0.2 + Vector3(0, H2 - 0.3, 0), Vector3(side * 0.8, 0.08, 0.05), Game.color_mat(Color(0.7, 0.4, 1.0), true), false, yaw)
+	var l := OmniLight3D.new()
+	l.light_color = Color(0.65, 0.4, 1.0) if role != "power" else Color(1.0, 0.55, 0.2)
+	l.light_energy = 1.4
+	l.omni_range = 10.0
+	root.add_child(l)
+	l.position = c + Vector3(0, H2 - 0.6, 0)
+	info["waypoints"].append(c)
+	info["alien_spawns"].append(c + Vector3(1.5, 0.2, 1.5))
+	_cover(c + Vector3(SEC_R - 1.2, 0, 0)); _cover(c + Vector3(-SEC_R + 1.2, 0, 0)); _cover(c + Vector3(0, 0, SEC_R - 1.2))
+	var pink := Game.color_mat(Color(0.85, 0.55, 0.85))
+	var chair_c := Game.color_mat(Color(0.35, 0.5, 0.85))
+	match role:
+		"command":
+			# a ring of consoles round the middle, chairs, green screens on the walls
+			for k in 2:
+				var tc := c + Vector3((k - 0.5) * 4.5, 0, 0)
+				cyl(tc + Vector3(0, 0.5, 0), 1.0, 0.8, 1.0, pink, true, 8)
+				box(tc + Vector3(0, 1.05, 0), Vector3(1.0, 0.04, 0.6), Game.color_mat(Color(0.3, 1.0, 0.5), true), false)
+				for j in 4:
+					var aa := j * TAU / 4.0 + PI / 4.0
+					cyl(tc + Vector3(cos(aa), 0, sin(aa)) * 1.7 + Vector3(0, 0.4, 0), 0.32, 0.25, 0.8, chair_c, true, 8)
+			for k in 4:
+				var aa2 := PI * 1.25 + k * 0.5
+				var sp := c + Vector3(cos(aa2), 0, sin(aa2)) * (SEC_R - 0.3) + Vector3(0, 2.0, 0)
+				box(sp, Vector3(1.0, 0.7, 0.06), Game.color_mat(Color(0.2, 0.9, 0.4), true), false, -aa2 + PI / 2.0)
+			_low_walls(c, [[Vector3(-3.2, 0, 3.0), Vector3(3.2, 0, 3.0)]])
+		"power":
+			# the core: a column of molten orange light on a dark plinth - and a bomb if you hit it
+			cyl(c + Vector3(0, 0.4, 0), 1.6, 1.8, 0.8, Game.color_mat(Color(0.12, 0.1, 0.14)), true, 10)
+			var core := cyl(c + Vector3(0, 2.2, 0), 0.7, 0.7, 2.8, Game.color_mat(Color(1.0, 0.55, 0.1), true), true, 10)
+			_breakable(core, "metal")
+			core.set_meta("hp", 260.0)
+			core.set_meta("explode", [7.0, 140.0])
+			var cl := OmniLight3D.new()
+			cl.light_color = Color(1.0, 0.5, 0.1)
+			cl.light_energy = 3.0
+			cl.omni_range = 9.0
+			root.add_child(cl)
+			cl.position = c + Vector3(0, 2.2, 0)
+			for k in 6:
+				var aa3 := k * TAU / 6.0
+				box(c + Vector3(cos(aa3), 0, sin(aa3)) * (SEC_R - 0.5) + Vector3(0, 1.6, 0), Vector3(0.12, 3.2, 1.2), Game.color_mat(Color(0.3, 0.2, 0.35)), false, -aa3 + PI / 2.0)
+		"lab":
+			# specimen tanks round the walls; an operating table with jointed arms in the middle
+			for k in 7:
+				var aa4 := PI * 0.6 + k * TAU / 9.0
+				_tank(c + Vector3(cos(aa4), 0, sin(aa4)) * (SEC_R - 1.2))
+			box(c + Vector3(0, 0.85, 0), Vector3(2.2, 0.12, 1.0), Game.color_mat(Color(0.9, 0.88, 0.92)), true)
+			box(c + Vector3(0, 0.4, 0), Vector3(0.6, 0.8, 0.5), Game.color_mat(Color(0.5, 0.45, 0.55)), false)
+			box(c + Vector3(0.1, 1.05, 0), Vector3(1.4, 0.25, 0.5), Game.color_mat(Color(0.55, 0.35, 0.25)), false)    # what lies on it
+			for sd in [-1.0, 1.0]:
+				box(c + Vector3(sd * 0.7, 2.4, 0.9), Vector3(0.08, 1.2, 0.08), Game.color_mat(Color(0.3, 0.4, 0.8)), false)
+				box(c + Vector3(sd * 0.5, 1.8, 0.6), Vector3(0.06, 0.06, 0.7), Game.color_mat(Color(0.3, 0.4, 0.8)), false)
+			box(c + Vector3(0, H2 - 0.1, 0.9), Vector3(1.8, 0.2, 0.2), Game.color_mat(Color(0.25, 0.25, 0.3)), false)
+		"quarters":
+			# violet glowing floor squares, chairs on them
+			for x in 3:
+				for z in 3:
+					var fp := c + Vector3((x - 1) * 2.2, 0.11, (z - 1) * 2.2)
+					box(fp, Vector3(2.0, 0.02, 2.0), Game.color_mat(Color(0.55, 0.2, 0.75), true) if (x + z) % 2 == 0 else Game.color_mat(Color(0.35, 0.15, 0.5)), false)
+					if (x + z) % 2 == 1:
+						cyl(fp + Vector3(0, 0.4, 0), 0.32, 0.25, 0.8, chair_c, true, 8)
+		"cargo":
+			# cages of bone spikes round the walls, crates of their stores, a red teleport square
+			for k in 4:
+				var aa5 := k * TAU / 4.0 + PI / 4.0
+				_cage(c + Vector3(cos(aa5), 0, sin(aa5)) * (SEC_R - 2.0))
+			box(c + Vector3(0, 0.12, 0), Vector3(2.0, 0.04, 2.0), Game.color_mat(Color(0.9, 0.12, 0.1), true), false)
+			_low_walls(c, [[Vector3(-2.0, 0, -2.5), Vector3(2.0, 0, -2.5)]])
+		"teleport":
+			for k in 4:
+				var tp := c + Vector3((k % 2 - 0.5) * 4.0, 0.12, (k / 2 - 0.5) * 4.0)
+				box(tp, Vector3(1.8, 0.04, 1.8), Game.color_mat(Color(0.9, 0.12, 0.1), true), false)
+			for k in 3:
+				var aa6 := PI * 0.8 + k * 0.6
+				_tank(c + Vector3(cos(aa6), 0, sin(aa6)) * (SEC_R - 1.2))
+		"entry":
+			# the ramp down to the ground on the south side
+			box(c + Vector3(0, 0.05, -SEC_R - 1.2), Vector3(3.0, 0.1, 2.6), Game.mat("ufo_floor", 0.5))
+
+## A short covered passage from one hall's doorway to the next (2 m, 3 m wide).
+func _passage(a: Vector3, d: Vector3) -> void:
+	var L := SEC_S - SEC_R * 2.0 + 0.4
+	var c := a + d * (L / 2.0 - 0.2)
+	var along_x := absf(d.x) > 0.5
+	var wall := Game.mat("ufo_wall", 0.5)
+	box(c + Vector3(0, 0.05, 0), Vector3(L, 0.1, 3.0) if along_x else Vector3(3.0, 0.1, L), Game.mat("ufo_floor", 0.5))
+	box(c + Vector3(0, 3.5, 0), Vector3(L, 0.3, 3.6) if along_x else Vector3(3.6, 0.3, L), Game.mat("ufo_hull", 0.5))
+	for sd in [-1.0, 1.0]:
+		var off := Vector3(0, 0, sd * 1.65) if along_x else Vector3(sd * 1.65, 0, 0)
+		box(c + off + Vector3(0, 1.7, 0), Vector3(L, 3.4, 0.3) if along_x else Vector3(0.3, 3.4, L), wall)
+
+## A low partition (head-high to a grey, waist-high to us).
+func _low_walls(c: Vector3, segs: Array) -> void:
+	for sg in segs:
+		var a: Vector3 = c + sg[0]
+		var b: Vector3 = c + sg[1]
+		var d := b - a
+		box((a + b) / 2.0 + Vector3(0, 1.1, 0), Vector3(d.length(), 2.2, 0.25), Game.mat("ufo_wall", 0.5), true, atan2(d.x, d.z) - PI / 2.0)
+
+## A specimen tank: glass, blue liquid, something floating in it.
+func _tank(p: Vector3) -> void:
+	cyl(p + Vector3(0, 0.15, 0), 0.6, 0.65, 0.3, Game.color_mat(Color(0.75, 0.72, 0.7)), true, 10)
+	cyl(p + Vector3(0, 2.25, 0), 0.6, 0.6, 0.3, Game.color_mat(Color(0.75, 0.72, 0.7)), false, 10)
+	var liquid := StandardMaterial3D.new()
+	liquid.albedo_color = Color(0.3, 0.6, 1.0, 0.45)
+	liquid.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	liquid.emission_enabled = true
+	liquid.emission = Color(0.1, 0.25, 0.5)
+	cyl(p + Vector3(0, 1.2, 0), 0.55, 0.55, 1.8, liquid, true, 10)
+	var what := rng.randi() % 3
+	var col: Color = [Color(0.55, 0.2, 0.15), Color(0.85, 0.7, 0.6), Color(0.35, 0.25, 0.2)][what]
+	box(p + Vector3(0, 1.2, 0), Vector3(0.35, 0.6 if what != 1 else 0.9, 0.3), Game.color_mat(col), false, rng.randf() * PI)
+
+## A cage of curved bone spikes standing in a ring.
+func _cage(p: Vector3) -> void:
+	cyl(p + Vector3(0, 0.08, 0), 1.0, 1.0, 0.16, Game.color_mat(Color(0.3, 0.12, 0.1)), true, 10)
+	for k in 9:
+		var a := k * TAU / 9.0
+		var sp := cyl(p + Vector3(cos(a), 0, sin(a)) * 0.9 + Vector3(0, 0.9, 0), 0.02, 0.07, 1.8, Game.color_mat(Color(0.75, 0.5, 0.3)), false, 5)
+		sp.rotation = Vector3(sin(a) * 0.15, 0, -cos(a) * 0.15)
+	var sb := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	var cy := CylinderShape3D.new()
+	cy.radius = 1.0
+	cy.height = 2.0
+	cs.shape = cy
+	sb.add_child(cs)
+	root.add_child(sb)
+	sb.position = p + Vector3(0, 1.0, 0)
 
 ## The last mission: red rock, bone spires, the Velín sunk into a crater; the Kondor
 ## lands on the plain in front of its tunnel.

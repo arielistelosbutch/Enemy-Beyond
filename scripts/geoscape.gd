@@ -410,15 +410,14 @@ func _build_side() -> void:
 			["Na základnu (sám)", _go_base]]
 	else:
 		_btn(side, "VYSLAT (tým / stíhačku)", _launch, 10)
-		_btn(side, "Projít základnu (s týmem)", _go_base, 9)
-		entries += [["Co-op / peníze týmu", func():
+		entries += [["Na základnu", _go_base], ["Co-op / peníze týmu", func():
 			if Net.is_online(): _menu_screen("money")
 			else: _host()], ["Uložit a menu", _quit]]
 	var grid := GridContainer.new()
 	grid.columns = 2
 	side.add_child(grid)
 	for e in entries:
-		_btn(grid, e[0], e[1], 8).custom_minimum_size = Vector2(98, 15)
+		_btn(grid, e[0], e[1], 8).custom_minimum_size = Vector2(94, 15)
 
 func _update_text() -> void:
 	var d: Dictionary = Campaign.data

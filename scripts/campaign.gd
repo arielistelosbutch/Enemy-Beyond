@@ -31,6 +31,8 @@ const MTYPES := {
 		"text": "Nouzový maják. Někdo, kdo o vetřelcích ví víc, než by měl, se schovává před jejich hlídkou. Najít, chránit, dostat do Kondoru."},
 	"sabotage": {"name": "Sabotáž", "reward": 800, "aliens": 2, "expire": 0.5, "trust": 6,
 		"text": "Vetřelci rozmístili v krajině tři majáky. Volají jimi posily. Položit nálože, zničit všechny tři a zmizet."},
+	"alienbase": {"name": "Základna vetřelců", "reward": 1400, "aliens": 5, "expire": 9999.0, "trust": 14,
+		"text": "Výslech prozradil, kde mají základnu. Jeskyně pod zemí, velitelské centrum s řídicím jádrem, v líhni zajatí lidé. Zničit jádro."},
 	"base": {"name": "Útok na základnu", "reward": 600, "aliens": 3, "expire": 0.2, "trust": 6,
 		"text": "Radar hlásí loď nad roklí. Míří na NÁS. Bránit základnu do posledního vetřelce."},
 }
@@ -301,6 +303,8 @@ func advance(days: float) -> bool:
 			_log("Výzkum dokončen: " + RESEARCH[done]["name"])
 			if done == "orel":
 				_add_final()
+			if done == "vyslech":
+				_add_alien_base()
 			if done == "kondor":
 				data["transport"] = "kondor"
 				_log("Kondor je v hangáru. Čáp jde do zálohy.")
@@ -772,6 +776,59 @@ func terrain_at(lat: float, lon: float) -> String:
 	return "temperate"
 
 ## The last mission appears on the globe at the base: the Orel takes off from there.
+# ---- the aliens learn: what each mercenary keeps bringing, they learn to answer -------------------
+const HABIT_GEAR := ["sniper", "shotgun", "magnum", "rocket_launcher", "autocannon", "minigun", "stun_baton", "stit",
+	"pancir", "flare", "smoke_grenade", "mine", "grenade", "laser_rifle", "laser_cannon", "plasma_rifle"]
+const HABIT_TEXT := {"sniper": "odstřelovačku - budou se k němu stahovat zblízka, krytem", "shotgun": "brokovnici - budou držet odstup",
+	"magnum": "revolver - budou držet odstup", "rocket_launcher": "raketomet - nebudou se shlukovat", "autocannon": "autokanón - nebudou se shlukovat",
+	"minigun": "minigun - budou se skrývat a chodit zezadu", "stun_baton": "obušek - nepustí ho k sobě", "stit": "štít - budou střílet z boku a zezadu",
+	"pancir": "těžký pancíř - přinesou těžké zbraně a granáty", "flare": "světlice - budou se držet mimo světlo",
+	"smoke_grenade": "kouř - budou čekat, až se rozplyne", "mine": "miny - budou chodit jinudy", "grenade": "granáty - nebudou se shlukovat",
+	"laser_rifle": "laser - budou se víc krýt", "laser_cannon": "laserový kanón - nebudou se shlukovat", "plasma_rifle": "plazmu - budou se víc krýt"}
+
+func _learn_habits(kits: Dictionary) -> void:
+	var h: Dictionary = data.get("habits", {})
+	for who in h:
+		for it in h[who]:
+			h[who][it] = float(h[who][it]) * 0.8          # they forget slowly
+	for peer in kits:
+		var who := String(Net.roster.get(peer, {}).get("name", "")) if Net.roster.has(peer) else String(Game.merc.get("name", ""))
+		if who == "":
+			continue
+		if not h.has(who):
+			h[who] = {}
+		for it in kits[peer]:
+			if it in HABIT_GEAR:
+				h[who][it] = float(h[who].get(it, 0.0)) + 1.0
+	data["habits"] = h
+
+## Who carries what so often that the aliens have learned it: {merc name: [items]}.
+func known_habits() -> Dictionary:
+	var out := {}
+	var h: Dictionary = data.get("habits", {})
+	for who in h:
+		var l := []
+		for it in h[who]:
+			if float(h[who][it]) >= 2.2:
+				l.append(it)
+		if not l.is_empty():
+			out[who] = l
+	return out
+
+## The interrogation told us where they hide on Earth: a base underground (stays until destroyed).
+func _add_alien_base() -> void:
+	for mm in data["missions"]:
+		if mm["type"] == "alienbase":
+			return
+	var m := generate_mission()
+	m["type"] = "alienbase"
+	m["size"] = "large"
+	m["extra_aliens"] = int(MTYPES["alienbase"]["aliens"]) + int(float(data["day"]) / 15.0)
+	m["reward"] = int(MTYPES["alienbase"]["reward"])
+	m["expires"] = float(data["day"]) + 9999.0
+	data["missions"].append(m)
+	_log("Výslech prozradil polohu jejich základny: %s. Mise čeká na globu." % m["place"])
+
 func _add_final() -> void:
 	for mm in data["missions"]:
 		if mm["type"] == "mars":
@@ -807,6 +864,8 @@ func mission_params(m: Dictionary) -> Dictionary:
 	p["cid"] = str(data.get("cid", ""))
 	p["day"] = float(data["day"])
 	p["transport"] = transport()
+	p["late"] = int(data.get("month", 0)) >= 3
+	p["habits"] = known_habits()
 	if String(m.get("type", "")) == "base":
 		# the defence happens inside our own base
 		p["base"] = data["base"].duplicate(true)
@@ -889,6 +948,7 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 			data["moskovium"] = moskovium() + int(loot[k])
 		got.append("%s %d%s" % [loot_name(k), int(loot[k]), " g" if k == "moskovium" else "x"])
 	data["found"] = found
+	_learn_habits(kits)
 	# the archive learns what the team has met
 	var seen: Array = data.get("seen_races", [])
 	for r in races:

@@ -65,7 +65,7 @@ func _pick_weather() -> void:
 		w = "snow"
 	elif Net.mission_params.get("terrain", "") == "desert" and (w == "rain" or w == "fog"):
 		w = "clear"
-	if Net.mission_params.get("type", "") in ["mars", "home"] or Net.mission_params.has("base"):
+	if Net.mission_params.get("type", "") in ["mars", "home", "alienbase"] or Net.mission_params.has("base"):
 		w = "clear"
 	weather = w
 
@@ -205,7 +205,11 @@ func _ready() -> void:
 	_pick_weather()
 	_environment()
 	_post_filter()
-	map = (preload("res://scripts/base_gen.gd").new() if indoor() else MapGen.new()).build(self, Net.mission_seed, Net.mission_params)
+	if mtype() == "alienbase":
+		map = preload("res://scripts/alien_base_gen.gd").new().build(self, Net.mission_seed, Net.mission_params)
+		_underground_env()
+	else:
+		map = (preload("res://scripts/base_gen.gd").new() if indoor() else MapGen.new()).build(self, Net.mission_seed, Net.mission_params)
 	if indoor():
 		_home_env()
 	_hang_doors()
@@ -299,6 +303,7 @@ func _ready() -> void:
 func _wind_name() -> String:
 	var biome := String(Net.mission_params.get("biome", "farm"))
 	match String(map.get("terrain", "")):
+		"alienbase": return "ufo_hum"
 		"snow": return "polar"
 		"mars": return "mars"
 		"desert": return "night_silence"
@@ -312,6 +317,8 @@ func _wind_name() -> String:
 func _ambient_bed() -> String:
 	if mtype() == "base":
 		return "base_interior" if indoor() else "ufo_interior"
+	if mtype() == "alienbase":
+		return "ufo_interior"
 	if map.get("terrain", "") in ["mars", "snow"]:
 		return ""
 	match String(Net.mission_params.get("biome", "farm")):
@@ -346,7 +353,7 @@ func _critters(delta: float) -> void:
 
 ## Our transport waits at the landing zone with the engines idling: you can find it by ear.
 func _ship_engine() -> void:
-	if map.get("evac", Vector3.ZERO) == Vector3.ZERO or mtype() == "base":
+	if map.get("evac", Vector3.ZERO) == Vector3.ZERO or mtype() in ["base", "alienbase"]:
 		return
 	var heli := String(Net.mission_params.get("transport", "kondor")) == "heli"
 	var ap := AudioStreamPlayer3D.new()
@@ -411,6 +418,7 @@ func _briefing_text() -> String:
 			"abduction": "Z okolních stavení zmizeli lidé. Nad krajinou viděli světla. Možná ještě někdo žije.",
 			"mars": "Orel přistál na rudé pláni. Před vámi je tunel do jejich velína a za ním Velký mozek - to, co je všechny řídí. Chrání ho štít ze tří pylonů. Zničte pylony, pak mozek. Myslí na vás. Uslyšíte ho.",
 			"rescue": "Nouzový maják vysílá z oblasti, kam dosedlo UFO. Někdo tam přežil a vetřelci po něm jdou. Signál ukazuje směr a vzdálenost (nahoře na obrazovce).",
+			"alienbase": "Výslech prozradil, kde mají základnu: jeskyně pod zemí, vykopané do skály a zarostlé jejich zahradou. Sjíždíte šachtou dolů. Někde v hloubce je velitelské centrum s řídicím jádrem - a v líhni prý drží lidi.",
 			"sabotage": "Tři cizí majáky v krajině vysílají k jejich lodím. Dokud stojí, přicházejí další. Každý maják: drž u něj E 3 sekundy, nálož bouchne za 8 sekund.",
 			"base": "Vetřelci přistáli nad základnou. Vyřadili pojistky - hlavní světla zhasla, svítí jen rudé nouzové lampy. Lezou dovnitř hangárem a šachtou výtahu, ve vlnách. Vydržet a zabít všechny. Znáte tu každou chodbu - oni ne." if Net.mission_params.has("base") else "Vetřelci přistáli u základny v rokli. Kondor stojí na ploše a nikam se neletí. Útočí ve vlnách od okraje rokle. Vydržet a zabít všechny.",
 			"terror": "Vetřelci vtrhli do městečka. Spojení s místními je přerušeno. Poslední hovor na tísňovou linku: \"Je to černé, je to rychlé, a ti, co to zabilo, zase vstávají.\"\nZachraň, koho můžeš (E u vyděšeného civilisty - půjde za tebou do Kondoru).",
@@ -421,7 +429,19 @@ func _briefing_text() -> String:
 			"mars": task = "ÚKOL: zničit tři pylony štítu a Velký mozek. Návrat není."
 			"rescue": task = "ÚKOL: najít a přivést do Kondoru živého - ostatní vetřelci jsou až na druhém místě (E u něj = půjde za tebou)."
 			"sabotage": task = "ÚKOL: zničit všechny tři majáky a vrátit se do Kondoru."
+			"alienbase": task = "ÚKOL: najít velitelské centrum, zničit řídicí jádro (výbuch!) a vrátit se k šachtě. Zajatce z líhně vezměte s sebou (E u nich)."
 			"base": task = "ÚKOL: ubránit základnu - přežít všechny vlny. Prohra znamená vyrabovanou základnu."
+		var learned := ""
+		var hb: Dictionary = mp.get("habits", {})
+		for who in hb:
+			var parts := []
+			for it in hb[who]:
+				if Campaign.HABIT_TEXT.has(it) and parts.size() < 2:      # two per man: the briefing has to fit
+					parts.append(Campaign.HABIT_TEXT[it])
+			if not parts.is_empty():
+				learned += "\n%s pořád nosí %s." % [who, "; ".join(parts)]
+		if learned != "":
+			task += "\n\nVetřelci se učí:" + learned
 		return "%s\nOblast: %s, místní čas %02d:%02d (%s), mapa %s%s\n\n%s\n\n" % [
 			String(mp.get("type_name", "Mise")).to_upper(), mp.get("place", "?"), int(h), int(fmod(h, 1.0) * 60),
 			"noc" if mp.get("night", true) else "den", MapGen.SIZE_NAMES.get(mp.get("size", "medium"), "střední"), terr, flavor.get(mp.get("type", "crash"), "")] + task
@@ -578,7 +598,7 @@ func _maybe_spawn() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = Net.mission_seed + 99
 	var spawns: Array = map["alien_spawns"].duplicate()
-	var count := 2 + Net.roster.size() + int(Net.mission_params.get("extra_aliens", 0)) + (1 if Game.veteran() else (-1 if Game.easy() else 0)) + int({"large": 1, "huge": 2, "colossal": 4}.get(Net.mission_params.get("size", ""), 0))
+	var count := 2 + Net.roster.size() + (5 if String(map.get("ufo_kind", "")) in ["battleship", "supply"] else 0) + int(Net.mission_params.get("extra_aliens", 0)) + (1 if Game.veteran() else (-1 if Game.easy() else 0)) + int({"large": 1, "huge": 2, "colossal": 4}.get(Net.mission_params.get("size", ""), 0))
 	var crew := _crew(count, rng)
 	for k in crew.size():
 		var p: Vector3 = spawns[k % spawns.size()] + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
@@ -606,8 +626,20 @@ func _maybe_spawn() -> void:
 		nciv = rng.randi_range(5, 8)
 	elif mt == "abduction":
 		nciv = rng.randi_range(1, 3)
+	var cpos: Array = map.get("captives", [])
+	if mt == "alienbase":
+		nciv = cpos.size()
+		# their commander waits by the core
+		if map.has("command") and not crew.is_empty():
+			var off := "grey_velitel"
+			for g in GROUPS:
+				if GROUPS[g]["soldier"] == crew[0]:
+					off = GROUPS[g]["officer"]
+			spawner.spawn({"kind": "alien", "id": next_alien_id, "pos": map["command"], "race": off})
+			next_alien_id += 1
+			aliens_total += 1
 	for ci in nciv:
-		spawner.spawn({"kind": "civ", "id": ci, "pos": _far_point(rng, 12.0)})
+		spawner.spawn({"kind": "civ", "id": ci, "pos": cpos[ci] if mt == "alienbase" else _far_point(rng, 12.0)})
 	civs_total = nciv
 	_spawn_objectives(rng)
 
@@ -987,6 +1019,7 @@ func _build_rain() -> void:
 	rain.mesh = qm
 	add_child(rain)
 
+var _roof_t := 0.0
 func _storm_fx(delta: float) -> void:
 	# wind for trees, wheat and grass: a slow swell, a shove with every lightning
 	var ws := (1.0 + 0.45 * sin(t * 0.13) + 0.25 * sin(t * 0.41 + 1.0)) * _wind_base + (0.8 if _flash_t > 0 else 0.0)
@@ -994,6 +1027,13 @@ func _storm_fx(delta: float) -> void:
 	var me := local_player()
 	if me and rain:
 		rain.global_position = me.global_position + Vector3(0, 7, 0) + me.velocity * 0.4
+		# under a roof (a house, a barn, inside their ship) it does not rain
+		_roof_t -= delta
+		if _roof_t <= 0.0:
+			_roof_t = 0.3
+			var q := PhysicsRayQueryParameters3D.create(me.global_position + Vector3(0, 1.8, 0), me.global_position + Vector3(0, 30, 0), 1)
+			var under := not get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+			rain.visible = not under
 	if _flash_t > 0:
 		_flash_t -= delta
 		# a double flash: bright, dark, bright
@@ -1185,6 +1225,8 @@ func _objective_met() -> bool:
 			return not beacons.is_empty() and beacons_left() == 0
 		"base", "mars":
 			return false
+		"alienbase":
+			return core_down()
 	return _spawned and aliens_total > 0 and alive_aliens() == 0
 
 @rpc("authority", "call_local", "reliable")
@@ -1273,6 +1315,12 @@ func _break(i: int) -> void:
 	n.set_meta("broken", true)
 	var kind := String(n.get_meta("break_kind"))
 	var at := n.global_position
+	if n == map.get("core") and multiplayer.is_server():
+		hud_note.rpc("ŘÍDICÍ JÁDRO ZNIČENO! Zpět k šachtě.")
+	if n.has_meta("explode") and multiplayer.is_server():
+		# the power core of a big ship: it goes up
+		var ex: Array = n.get_meta("explode")
+		get_tree().create_timer(0.4).timeout.connect(func(): explode(at, float(ex[0]), float(ex[1]), "-", true))
 	var sz := Vector3.ONE
 	var mat: Material = null
 	for c in n.get_children():
@@ -1705,6 +1753,9 @@ func _judge() -> void:
 			"sabotage":
 				won = beacons_left() == 0
 				why = "Všechny majáky zničeny." if won else "Majáky dál volají posily. Mise selhala."
+			"alienbase":
+				won = core_down()
+				why = "Řídicí jádro jejich základny je zničené. Bez něj jsou slepí a hluší." if won else "Jádro dál stojí. Základna vetřelců přežila."
 		_end.rpc(won, why)
 
 ## Won missions: everything the aliens dropped is picked up on the way out (no carrying needed).
@@ -1852,6 +1903,22 @@ func mtype() -> String:
 ## Walking round our own base between missions (no aliens, no night - lights and terminals).
 func home() -> bool:
 	return mtype() == "home"
+
+func core_down() -> bool:
+	if not map.has("core"):
+		return false
+	var c = map["core"]
+	return not is_instance_valid(c) or c.get_meta("broken", false)
+
+## Their base underground: violet gloom, close air.
+func _underground_env() -> void:
+	env.background_color = Color(0.01, 0.005, 0.02)
+	env.ambient_light_color = Color(0.5, 0.35, 0.7)
+	env.ambient_light_energy = 0.12
+	env.fog_light_color = Color(0.08, 0.04, 0.12)
+	env.fog_density = 0.03
+	moon.light_energy = 0.0
+	moon.visible = false
 
 ## Our own copy of the base (a co-op client walking round while the host plays the globe).
 func local() -> bool:

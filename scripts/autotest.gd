@@ -59,6 +59,7 @@ func _process(delta: float) -> void:
 		"basewalk": _basewalk(p)
 		"doorshot": _doorshot(p)
 		"fireshot": _fireshot(p)
+		"abase": _abase(p)
 		"cloakshot": _cloakshot(p)
 		"voice": _voice_test(p)
 		"club": _club(p)
@@ -473,6 +474,11 @@ func _ui_mission(p: Node) -> void:
 	var h: Node = m().hud
 	await get_tree().create_timer(1.0).timeout
 	await _uic("m_briefing")
+	m().hud._brief_t = -1.0       # stop the typing: the whole text at once
+	m().hud._brief_lbl.visible_characters = -1
+	await get_tree().create_timer(0.3).timeout
+	await _uic("m_briefing_full")
+	out("BRIEF len %d vis %d text %s" % [m().hud._brief_len, m().hud._brief_lbl.visible_characters, m().hud._brief_lbl.text.replace("\n", " | ")])
 	_skip_brief()
 	await get_tree().create_timer(3.0).timeout
 	h.message("[RÁDIO] Pilot: Ztrácím signál od Vendula Sokolová! Někdo k ní běžte, než ji něco odtáhne do tmy. Opakuji, ztrácím signál!", 5.0)
@@ -822,6 +828,11 @@ func _ufoshot(p: Node) -> void:
 	var shots := [["out", u + out * (40.0 if m().map.has("brain") else 26.0) + Vector3(6, 4.5, 0), u + Vector3(0, 1.5, 0)],
 		["door", door + out * 2.5 + Vector3(0, 0.3, 0), u],
 		["in", door - out * 2.6 + Vector3(0, 0.3, 0), u - out * 3.0]]
+	if String(m().map.get("ufo_kind", "")) in ["battleship", "supply"]:
+		shots = [shots[0], ["door", door + Vector3(0, 0.3, -6.0), u]]
+		for k in [[0, 0], [-1, 0], [1, 0], [0, 1], [-1, 1], [1, 1]]:
+			var sc: Vector3 = u + Vector3(k[0] * 15.0, 0, k[1] * 15.0)
+			shots.append(["sec%d_%d" % [k[0] + 1, k[1]], sc + Vector3(3.5, 0.3, -4.5), sc + Vector3(-1.0, 1.0, 1.0)])
 	if m().map.has("brain"):
 		shots = [shots[0], ["door", u + out * 16.0 + Vector3(0, 0.3, 0), u],
 			["in", u + out * 9.0 + Vector3(2, 0.3, 0), m().map["brain"] + Vector3(0, 1.2, 0)]]
@@ -829,6 +840,7 @@ func _ufoshot(p: Node) -> void:
 		p.global_position = e[1]
 		_aim_at(p, e[2])
 		p.flash.visible = true
+		m().env.ambient_light_energy = 0.6
 		await get_tree().create_timer(1.5).timeout
 		get_viewport().get_texture().get_image().save_png("user://ufo_%s_%s.png" % [m().map.get("ufo_kind", "?"), e[0]])
 	get_tree().quit()
@@ -1529,4 +1541,42 @@ func _fireshot(p: Node) -> void:
 		out("t%d fires %d wood left %d of %d smoke-blocks %s" % [k, m().fires.size(), left, before, m().smoke_blocks(p.global_position + Vector3(0, 1.5, 0), at + Vector3(0, 1.0, 0))])
 	Engine.time_scale = 1.0
 	out("RESULT fireshot")
+	get_tree().quit()
+
+## Their base: pictures of the cells, the captives, the core blown up, the objective.
+func _abase(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.inventory_open = false
+	p.set_meta("ghost", true)
+	p.hp = 5000.0
+	p.set_physics_process(false)
+	p.light_on = true
+	out("captives %d civs %d aliens %d core %s" % [m().map["captives"].size(), m().civilians().size(), m().aliens().size(), m().map.has("core")])
+	for a in m().aliens():
+		a.set_physics_process(false)
+	var shots := 0
+	var gen = m().map
+	var wps: Array = gen["waypoints"]
+	for i in range(0, wps.size(), maxi(1, wps.size() / 6)):
+		var c: Vector3 = wps[i]
+		p.global_position = c + Vector3(-4.5, 0.3, -4.5)
+		_aim_at(p, c + Vector3(0, 1.0, 0))
+		for f in 15: await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png("user://abase_%d.png" % shots)
+		shots += 1
+	var cmd: Vector3 = gen["command"]
+	p.global_position = cmd + Vector3(3.5, 0.1, -3.0)
+	_aim_at(p, cmd + Vector3(0, 1.5, 3.0))
+	for f in 15: await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png("user://abase_command.png")
+	var core: Node3D = gen["core"]
+	out("core idx %d kind %s hp %s same %s" % [int(core.get_meta("break")), core.get_meta("break_kind"), core.get_meta("hp"), m().map["breakables"][int(core.get_meta("break"))] == core])
+	m().hit_breakable(int(core.get_meta("break")), 999.0, "explosion")
+	out("after hp %s broken %s" % [core.get_meta("hp") if is_instance_valid(core) else "freed", core.get_meta("broken", false) if is_instance_valid(core) else true])
+	await get_tree().create_timer(1.0).timeout
+	out("core down %s objective %s" % [m().core_down(), m()._objective_met()])
+	out("RESULT abase %d" % shots)
 	get_tree().quit()

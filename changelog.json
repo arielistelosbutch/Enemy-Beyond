@@ -1,4 +1,11 @@
 {
+ "0.39": [
+  "Obří lodě (od 4. měsíce kampaně, přistání na obrovských mapách): Bitevník a Zásobovací loď. Osmiboké sály spojené krátkými chodbami: velitelský můstek s konzolemi a zelenými obrazovkami, pohonné jádro, laboratoř s nádržemi a operačním stolem s rameny, ubikace s fialovou podlahou, sklady s kostěnými klecemi, teleporty. Pohonné jádro jde rozstřílet - a vybuchne. Na palubě je o pět vetřelců víc.",
+  "Základna vetřelců: po výzkumu Výslech zajatce se na globu objeví mise. Jeskyně ve fialové skále zarostlé jejich zahradou, sál s křesly a sudy, líheň se zajatými lidmi v klecích, sklady a velitelské centrum s řídicím jádrem. Úkol: zničit jádro a vrátit se k šachtě; zajaté vezměte s sebou. Všechny jeskyně jsou propojené, žádná chodba nekončí ve skále.",
+  "Vetřelci se učí: co žoldák nosí mise co mise, to se naučí kontrovat. Na odstřelovače se stahují krytem zblízka, od brokovnice a obušku drží odstup, štít a minigun obcházejí zezadu, proti pancíři nosí plazmová děla a granáty, proti výbušninám se neshlukují. Briefing řekne, co už o vás vědí. Pomalu zapomínají, když výbavu měníte.",
+  "Pod střechou (v domě, ve stodole, v lodi) už neprší.",
+  "Opraveno: boční panel na globu přetékal o pár pixelů mimo obrazovku."
+ ],
  "0.38": [
   "Dveře: v domech visí dveře, E je otevře nebo zavře (od sebe, se zavrzáním). Vetřelec u zavřených dveří je rozrazí. Kulky a výbuchy dveře rozbijí.",
   "Okna mají sklo: je přes něj vidět (i vetřelcům), ale kulka, plazma nebo výbuch ho roztříští. Kdo střílí přes okno, nejdřív rozbije sklo.",

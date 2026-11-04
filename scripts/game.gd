@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.38 prototyp"
-const VERSION_NUM := "0.38"
+const VERSION := "0.39 prototyp"
+const VERSION_NUM := "0.39"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -792,7 +792,7 @@ const TEX_SURFACE := {"planks": "wood", "barn": "wood", "fence": "wood", "bark":
 	"snow": "snow", "sand": "sand", "grass": "grass", "wheat": "grass", "leaves": "grass",
 	"concrete": "hard", "asphalt": "hard", "brick": "hard", "rock": "hard", "tiles": "hard", "wallpaper": "wood",
 	"corrugated": "metal", "container_red": "metal", "container_blue": "metal", "container_green": "metal",
-	"base_floor": "hard", "base_wall": "hard", "hangar_floor": "metal", "earth": "dirt"}
+	"base_floor": "hard", "base_wall": "hard", "hangar_floor": "metal", "earth": "dirt", "alien_rock": "hard", "alien_panel": "alien"}
 
 ## The surface under @a pos: a decal floor (road, path) first, then what the feet stand on.
 func surface_at(world: Node3D, pos: Vector3, map: Dictionary) -> String:
