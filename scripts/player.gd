@@ -79,9 +79,9 @@ func is_player() -> bool:
 func setup(data: Dictionary) -> void:
 	merc = data["merc"]
 	display_name = data["name"]
-	max_hp = float(merc.get("health", 30)) + (5.0 if Game.has_talent(merc, "houzevnaty") else 0.0) + (8.0 if Game.has_research("slitiny") else 0.0)
+	max_hp = float(merc.get("health", 30)) + (12.0 if Game.has_talent(merc, "houzevnaty") else 0.0) + (8.0 if Game.has_research("slitiny") else 0.0)
 	hp = max_hp
-	bleed_left = BLEED_OUT + (30.0 if Game.has_talent(merc, "houzevnaty") else 0.0) + (20.0 if Game.has_research("medicina") else 0.0)
+	bleed_left = bleed_time()
 	if Game.veteran():
 		# old wounds come along to the next mission
 		hp = max(max_hp * 0.4, max_hp - Game.injury_now(merc))
@@ -448,7 +448,7 @@ func _gear_mask() -> int:
 	var m := 0
 	for i in 4:
 		if inv.has("b%d" % i): m |= 1 << i
-	for s in ["p0", "p1", "p2", "p3", "p4", "p5"]:
+	for s in Game.pack_slots():
 		if inv.has(s): m |= 1 << 4
 	for s in inv:
 		var id: String = inv[s]["id"]
@@ -840,7 +840,7 @@ func carried_weight() -> int:
 
 ## Finds an item; belt before backpack (like UFO, the backpack is slow to reach).
 func find_item(pred: Callable) -> String:
-	for s in ["lh", "rh", "b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
+	for s in ["lh", "rh", "b0", "b1", "b2", "b3"] + Game.pack_slots():
 		var it := item_in(s)
 		if not it.is_empty() and pred.call(it):
 			return s
@@ -880,7 +880,7 @@ func timed_move(a: String, b: String) -> bool:
 	var t: float = Game.fetch_time(ia["id"], a)
 	if ib != null:
 		t = max(t, Game.fetch_time(ib["id"], b))
-	t *= 0.65 if Game.has_talent(merc, "rychle_ruce") else 1.0
+	t *= 0.65 if Game.has_talent(merc, "rychle_prebiti") else 1.0
 	var dig := a.begins_with("p") or b.begins_with("p")
 	busy_stand = dig
 	if dig:
@@ -938,7 +938,7 @@ func draw_slot(src: String) -> void:
 	var t: float = Game.fetch_time(it["id"], src)
 	if put != "":
 		t += Game.fetch_time(cur["id"], put) * 0.6
-	t *= 0.65 if Game.has_talent(merc, "rychle_ruce") else 1.0
+	t *= 0.65 if Game.has_talent(merc, "rychle_prebiti") else 1.0
 	var dig := src.begins_with("p") or put.begins_with("p")
 	busy_stand = dig
 	if dig:
@@ -1002,7 +1002,7 @@ func _weapon_key(slot: String) -> void:
 	draw_slot(slot)
 
 func _free_slot(skip: Array) -> String:
-	for sl in ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
+	for sl in ["b0", "b1", "b2", "b3"] + Game.pack_slots():
 		if not inv.has(sl) and not sl in skip:
 			return sl
 	return ""
@@ -1045,7 +1045,7 @@ func _radio_tick(delta: float) -> void:
 		return     # in the helmet: no hands needed
 	if not _radio_have:
 		var where := ""
-		for s in ["rh", "b0", "b1", "b2", "b3", "side", "p0", "p1", "p2", "p3", "p4", "p5"]:
+		for s in ["rh", "b0", "b1", "b2", "b3", "side"] + Game.pack_slots():
 			if item_in(s).get("id", "") == "radio":
 				where = s
 				break
@@ -1134,6 +1134,13 @@ func _physics_process(delta: float) -> void:
 	var bsw := Vector2(sin(_breath_ph * 0.5) * 0.4, sin(_breath_ph)) * breath * 0.035 * (0.6 if aiming else 1.0)
 	head.rotation.x = pitch + _sway.y + bsw.y
 	head.rotation.y = _sway.x + bsw.x
+	if _mantle_t >= 0.0:
+		_mantle_tick(delta)
+		return
+	# in the air with Space held, a ledge in reach in front: grab it and pull up
+	if not is_on_floor() and Input.is_action_pressed("jump") and not downed and _mantle_cd <= 0.0 and _mantle_try(MANTLE_JUMP):
+		return
+	_mantle_cd = maxf(0.0, _mantle_cd - delta)
 	# stance
 	if downed:
 		panic = ""
@@ -1174,7 +1181,7 @@ func _physics_process(delta: float) -> void:
 	if cam:
 		var scoped: bool = aiming and Game.ITEMS[rh["id"]].get("scope", false)
 		var zoom := 0.2 if scoped else (0.45 if Game.has_mod(rh.get("id", ""), "optika", merc) else 0.7)
-		cam.fov = lerp(cam.fov, Game.fov * zoom if aiming else Game.fov, delta * (14.0 if scoped else 8.0))
+		cam.fov = lerp(cam.fov, Game.fov * zoom if aiming else Game.fov, delta * (14.0 if scoped else 8.0) * (1.5 if Game.has_talent(merc, "pevna_ruka") else 1.0))
 		if gun:
 			gun.visible = not (scoped and cam.fov < Game.fov * 0.4)
 	# move
@@ -1204,7 +1211,7 @@ func _physics_process(delta: float) -> void:
 	if Game.has_talent(merc, "tezka_vaha"): heavy = 1.0 - (1.0 - heavy) * 0.5
 	speed *= heavy
 	var w := carried_weight()
-	var strength := float(merc.get("strength", 30)) + (10.0 if Game.has_talent(merc, "mezek") else 0.0)
+	var strength := float(merc.get("strength", 30)) + (15.0 if Game.has_talent(merc, "mezek") else 0.0)
 	if w > strength:
 		speed *= max(0.45, strength / float(w))
 	if Game.veteran() and hp < max_hp * 0.6:
@@ -1229,7 +1236,8 @@ func _physics_process(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
 	elif Input.is_action_just_pressed("jump") and not crouching and not prone and not inv_open and not busy_stand:
-		velocity.y = 4.2
+		if not _mantle_try(MANTLE_STAND):
+			velocity.y = 4.2
 	move_and_slide()
 	# footsteps: what you sound like is what the aliens hear
 	if is_on_floor() and dir.length() > 0.1:
@@ -1264,6 +1272,19 @@ func _physics_process(delta: float) -> void:
 	_laser_dot()
 	if Input.is_action_just_pressed("flashlight"):
 		light_on = not light_on
+	if not _eyes_done:
+		_eyes_done = true
+		if Game.has_talent(merc, "nocni_oko"):
+			mission.night_eyes()
+	if Input.is_action_just_pressed("nvg") and not inv_open:
+		if find_item(func(it): return it["id"] == "nvg") != "":
+			mission.set_nvg(not mission.nvg_on)
+			Game.play_ui(self, "clink", -8)
+			mission.hud.message("Noktovizor sklopen." if mission.nvg_on else "Noktovizor nahoru.", 1.5)
+		else:
+			mission.hud.message("Nemáš noktovizor (kup ho ve výzbroji).", 2.0)
+	if mission.nvg_on and (downed or find_item(func(it): return it["id"] == "nvg") == ""):
+		mission.set_nvg(false)
 	flash.visible = light_on
 	_flicker(delta)
 	# evac: E at the Kondor
@@ -1286,7 +1307,8 @@ func _physics_process(delta: float) -> void:
 ## Enter in the ship: "ready to take off" (again = not yet). The wounded on the floor can
 ## do it too; the dead cannot. Leaving the ship takes it back.
 func _evac_input(at_ship: bool, inv_open: bool) -> void:
-	if not at_ship:
+	# the job is done: Enter anywhere calls the transport (no walk back needed)
+	if not at_ship and not mission.objective_done():
 		wants_evac = false
 		return
 	if not mission.started() or inv_open or dead:
@@ -1352,7 +1374,9 @@ func _actions(delta: float) -> void:
 	var rh := item_in("rh")
 	var lh := item_in("lh")
 	var two := not rh.is_empty() and Game.two_handed(rh["id"])
-	if _click_lock and not Input.is_action_pressed("fire") and not Input.is_action_pressed("aim"):
+	if (Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and Game.autotest() == "") or Time.get_ticks_msec() < mission.hud.fire_block_until:
+		_click_lock = true      # just back from a menu / the window had no mouse: that click was not a shot
+	elif _click_lock and not Input.is_action_pressed("fire") and not Input.is_action_pressed("aim"):
 		_click_lock = false
 	if not sprinting and not _click_lock and not radio_up and _radio_lower < 0.05:
 		# one thing in the hands: left button uses it, right button aims
@@ -1600,7 +1624,7 @@ func _melee_hit(rule: Dictionary) -> void:
 		var dmg: float = float(rule["damage"]) * (float(rule.get("backstab", 1.0)) if behind else 1.0)
 		if behind and Game.has_talent(merc, "tichy_zabijak") and rule.has("backstab"):
 			dmg = 999.0
-		var stun: float = float(rule.get("stun", 0.0)) * (1.5 if Game.has_talent(merc, "lovec_hlav") else 1.0)
+		var stun: float = float(rule.get("stun", 0.0)) * (1.5 if Game.has_talent(merc, "tichy_zabijak") else 1.0)
 		if behind:
 			stun *= 1.5          # from behind it never saw it coming
 		mission.hud.hitmarker()
@@ -1633,6 +1657,99 @@ func _quick_melee() -> void:
 	else:
 		# rifle butt
 		_melee("rh", {"damage": 12, "reach": 1.6, "rate": 0.9, "sound": "swish"})
+
+# ---- climbing: grab a ledge (a wall's top, a crate, a car, a roof's edge) and pull yourself up -----
+const MANTLE_STAND := 2.3     # from the ground: a ledge this high (feet to ledge)
+const MANTLE_JUMP := 3.6      # with a jump (Space held in the air): the hands reach the eaves
+var _mantle_t := -1.0
+var _mantle_from := Vector3.ZERO
+var _mantle_to := Vector3.ZERO
+var _mantle_cd := 0.0
+const MANTLE_TIME := 0.85
+
+## The top of a ledge in front within @a reach (feet to top), with room to stand on it; or INF.
+func mantle_spot(reach: float) -> Vector3:
+	var space := get_world_3d().direct_space_state
+	var fwd := -global_transform.basis.z
+	fwd.y = 0.0
+	fwd = fwd.normalized()
+	var feet := global_position
+	# something solid in front (chest or knees high)
+	var wall_d := -1.0
+	for hgt in [1.2, 0.6, 1.8]:
+		var q := PhysicsRayQueryParameters3D.create(feet + Vector3(0, hgt, 0), feet + Vector3(0, hgt, 0) + fwd * 0.9, Game.WORLD)
+		q.exclude = [get_rid()]
+		var h := space.intersect_ray(q)
+		if not h.is_empty():
+			wall_d = (h.position - (feet + Vector3(0, hgt, 0))).length()
+			break
+	if wall_d < 0.0:
+		return Vector3.INF
+	# its top: straight down from above, a little past the face
+	var over := feet + fwd * (wall_d + 0.4)
+	var q2 := PhysicsRayQueryParameters3D.create(over + Vector3(0, reach + 0.6, 0), over + Vector3(0, 0.5, 0), Game.WORLD)
+	q2.exclude = [get_rid()]
+	var top := space.intersect_ray(q2)
+	if top.is_empty() or (top.normal as Vector3).y < 0.65:
+		return Vector3.INF
+	var lift: float = (top.position as Vector3).y - feet.y
+	if lift < 0.7 or lift > reach:
+		return Vector3.INF
+	# room up there (crouched) and nothing in the way of the hands over the edge
+	var cap := CapsuleShape3D.new()
+	cap.radius = 0.3
+	cap.height = 1.1
+	var q3 := PhysicsShapeQueryParameters3D.new()
+	q3.shape = cap
+	q3.collision_mask = Game.WORLD
+	q3.exclude = [get_rid()]
+	var stand: Vector3 = (top.position as Vector3) + Vector3(0, 0.6, 0)
+	q3.transform = Transform3D(Basis(), stand)
+	if not space.intersect_shape(q3, 1).is_empty():
+		return Vector3.INF
+	var q4 := PhysicsRayQueryParameters3D.create(feet + Vector3(0, lift + 0.4, 0), stand, Game.WORLD)
+	q4.exclude = [get_rid()]
+	if not space.intersect_ray(q4).is_empty():
+		return Vector3.INF
+	return top.position
+
+func _mantle_try(reach: float) -> bool:
+	if busy_stand or prone or downed or carried_by != 0 or held_l == "stit":
+		return false
+	var spot := mantle_spot(reach)
+	if spot == Vector3.INF:
+		return false
+	_mantle_from = global_position
+	_mantle_to = spot + Vector3(0, 0.05, 0)
+	_mantle_t = 0.0
+	velocity = Vector3.ZERO
+	crouching = true
+	Game.play_at(mission, "gear", global_position + Vector3.UP, -8)
+	mission.noise(global_position, 6.0)
+	return true
+
+## Pulling up: first the body rises along the wall, then it rolls over the edge.
+func _mantle_tick(delta: float) -> void:
+	_mantle_t += delta / MANTLE_TIME
+	var k := clampf(_mantle_t, 0.0, 1.0)
+	var up := clampf(k / 0.65, 0.0, 1.0)
+	var over := clampf((k - 0.5) / 0.5, 0.0, 1.0)
+	var p := _mantle_from
+	p.y = lerpf(_mantle_from.y, _mantle_to.y, 1.0 - pow(1.0 - up, 2.0))
+	p.x = lerpf(_mantle_from.x, _mantle_to.x, over * over)
+	p.z = lerpf(_mantle_from.z, _mantle_to.z, over * over)
+	global_position = p
+	velocity = Vector3.ZERO
+	head.rotation.x = pitch - 0.25 * sin(k * PI)       # the look dips over the edge
+	if _mantle_t >= 1.0:
+		_mantle_t = -1.0
+		_mantle_cd = 0.4
+		# up on your feet again if there is room for it
+		var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 0.5, global_position + Vector3.UP * 1.95, Game.WORLD)
+		q.exclude = [get_rid()]
+		if get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+			crouching = false
+		Game.play_at(mission, "step_wood0", global_position, -10)
 
 func _start_busy(time: float, text: String, done: Callable) -> void:
 	busy_total = time
@@ -1713,7 +1830,7 @@ func _reload(wp: Dictionary, rule: Dictionary) -> void:
 	var slot := find_item(func(it): return it["id"] == rule["ammo"])
 	if slot == "" or slot == "rh" or slot == "lh":
 		slot = ""
-		for s2 in ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
+		for s2 in ["b0", "b1", "b2", "b3"] + Game.pack_slots():
 			if item_in(s2).get("id", "") == rule["ammo"]:
 				slot = s2
 				break
@@ -2076,6 +2193,8 @@ func _throw(kind: String, from_slot := "") -> void:
 		var dir := -cam.global_transform.basis.z
 		var from := cam.global_position + dir * 0.5
 		var v := dir * 13.0 + Vector3.UP * 3.0
+		if Game.has_talent(merc, "granatnik"):
+			v = dir * 19.0 + Vector3.UP * 4.0
 		if kind == "mine":
 			v = dir * 3.0 + Vector3.UP * 1.0
 		_spawn_throwable.rpc(kind, from, v, name))
@@ -2215,11 +2334,23 @@ func hurt(dmg: float, from: Vector3) -> void:
 	if hp <= 0:
 		hp = 0
 		downed = true
-		bleed_left = BLEED_OUT
+		bleed_left = bleed_time()
 		crouching = true
 		light_on = false
 		mission.hud.message("PADL JSI! Krvácíš - spoluhráč tě musí ošetřit (E s lékárničkou) nebo odnést.", 6.0)
+		if Game.has_talent(merc, "druhy_dech") and not _second_wind_used:
+			_second_wind_used = true
+			get_tree().create_timer(6.0).timeout.connect(func():
+				if is_instance_valid(self) and downed and not dead and not ko and not infected:
+					revived("Druhý dech")
+					mission.hud.message("DRUHÝ DECH - zvedl ses sám. Podruhé to nepůjde.", 4.0))
 		Game.play_ui(self, "death_female" if merc.get("look", {}).get("female", false) else "death_male", -6)
+
+## How long a downed merc bleeds before he dies (tough mercs and research make it longer).
+var _second_wind_used := false
+var _eyes_done := false
+func bleed_time() -> float:
+	return BLEED_OUT + (45.0 if Game.has_talent(merc, "houzevnaty") else 0.0) + (20.0 if Game.has_research("medicina") else 0.0)
 
 func _bleed(delta: float) -> void:
 	if bleeding > 0 and not downed and healed_t <= 0.0:      # (a hand pressing on the wound stops it)
@@ -2455,7 +2586,7 @@ func psi_attack(roll: float) -> void:
 	if Game.autotest() != "": print("[PSI] roll %.2f brave %.2f" % [roll, brave])
 	Game.play_ui(self, "psi", -2)
 	mission.hud.psi_flash()
-	var resist := brave * 0.8 + (0.15 if Game.has_talent(merc, "zelezne_nervy") else 0.0) + (0.15 if Game.has_research("vyslech") else 0.0) + (0.3 if Game.has_research("psi_clona") else 0.0)
+	var resist := brave * 0.8 + (0.3 if Game.has_talent(merc, "zelezne_nervy") else 0.0) + (0.15 if Game.has_research("vyslech") else 0.0) + (0.3 if Game.has_research("psi_clona") else 0.0)
 	if roll < resist or panic != "":
 		mission.hud.message("Cizí hlas v hlavě. Odolal jsi.", 3.0)
 		return
@@ -2481,7 +2612,7 @@ func psi_illusion(ally: String, secs: float, roll: float) -> void:
 	if not is_multiplayer_authority() or dead or downed:
 		return
 	var brave := float(merc.get("bravery", 40)) / 100.0
-	var resist := brave * 0.5 + (0.15 if Game.has_talent(merc, "zelezne_nervy") else 0.0) + (0.3 if Game.has_research("psi_clona") else 0.0)
+	var resist := brave * 0.5 + (0.3 if Game.has_talent(merc, "zelezne_nervy") else 0.0) + (0.3 if Game.has_research("psi_clona") else 0.0)
 	Game.play_ui(self, "psi_illusion", -4)
 	if roll < resist:
 		mission.hud.psi_flash()
@@ -2673,7 +2804,7 @@ func _pick_up() -> void:
 		return
 	var slot := ""
 	var pid: String = it["item"]["id"]
-	for s in ["rh", "back", "side", "lh", "b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
+	for s in ["rh", "back", "side", "lh", "b0", "b1", "b2", "b3"] + Game.pack_slots():
 		if not inv.has(s) and Game.slot_refuse(s, pid) == "" and not (s == "rh" and inv.has("lh") and Game.two_handed(pid)):
 			slot = s
 			break

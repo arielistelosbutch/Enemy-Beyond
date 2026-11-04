@@ -86,6 +86,10 @@ func _process(delta: float) -> void:
 		"soundcheck": _soundcheck(p)
 		"dronetest": _dronetest(p)
 		"airdeath": _airdeath(p)
+		"vipcheck": _vipcheck(p)
+		"climb": _climb(p)
+		"leaveany": _leaveany(p)
+		"skyshot": _skyshot(p)
 		"fireshot": _fireshot(p)
 		"abase": _abase(p)
 		"cloakshot": _cloakshot(p)
@@ -1530,6 +1534,189 @@ func _coopheal(p: Node) -> void:
 			await get_tree().create_timer(1.0).timeout
 			out("client t=%d hp %.1f bleeding %.2f healed_t %.1f" % [k, p.hp, p.bleeding, p.healed_t])
 		get_tree().quit()
+
+## Climbing: a 2 m block (from the ground), a 2.9 m block (jump + Space held), then a house roof.
+## Time of day: one look towards the sun/moon, one away from it.
+func _skyshot(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	m().hud.inventory_open = false
+	for a in m().aliens():
+		a.set_physics_process(false)
+	p.hp = 999.0
+	p.light_on = false
+	var ev: Vector3 = m().map["evac"]
+	var nav_map: RID = m().get_world_3d().navigation_map
+	p.global_position = NavigationServer3D.map_get_closest_point(nav_map, ev + Vector3(float(Game.cmd_arg("ox", "14")), 0, float(Game.cmd_arg("oz", "-14")))) + Vector3(0, 0.3, 0)
+	await get_tree().create_timer(2.5).timeout
+	var tag := "%s_%s" % [m().phase(), m().weather]
+	var to_light: Vector3 = m().moon.global_transform.basis.z      # towards the light source
+	_aim_at(p, p.global_position + Vector3(0, 1.6, 0) + Vector3(to_light.x, maxf(to_light.y, 0.25), to_light.z) * 20.0)
+	await get_tree().create_timer(0.6).timeout
+	if DisplayServer.get_name() != "headless":
+		_snap("sky_%s_sun" % tag)
+	_aim_at(p, p.global_position + Vector3(0, 1.2, 0) - Vector3(to_light.x, 0, to_light.z) * 20.0)
+	await get_tree().create_timer(0.6).timeout
+	if DisplayServer.get_name() != "headless":
+		_snap("sky_%s_away" % tag)
+	if Game.cmd_arg("nvg", "0") == "1":
+		p.inv["p5"] = {"id": "nvg"}
+		Input.action_press("nvg")
+		await get_tree().physics_frame
+		await get_tree().physics_frame
+		Input.action_release("nvg")
+		await get_tree().create_timer(0.6).timeout
+		out("nvg on %s" % m().nvg_on)
+		if DisplayServer.get_name() != "headless":
+			_snap("sky_%s_nvg" % tag)
+		out("RESULT skyshot %s hour %.1f light %.2f" % [tag, m().hour(), m().moon.light_energy])
+	get_tree().quit()
+
+## Job done -> Enter anywhere ends the mission (no walk back to the ship).
+func _leaveany(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	m().hud.inventory_open = false
+	for i in 40:
+		await get_tree().create_timer(0.25).timeout
+		if m().aliens_total > 0:
+			break
+	var ev: Vector3 = m().map["evac"]
+	var nav_map: RID = m().get_world_3d().navigation_map
+	var spot: Vector3 = NavigationServer3D.map_get_closest_point(nav_map, ev + Vector3(25, 0, 25))
+	p.global_position = spot + Vector3(0, 0.3, 0)
+	p.velocity = Vector3.ZERO
+	await get_tree().create_timer(0.5).timeout
+	var far: float = p.global_position.distance_to(ev)
+	Input.action_press("ready")
+	await get_tree().physics_frame
+	Input.action_release("ready")
+	await get_tree().create_timer(0.5).timeout
+	out("before: done %s, wants_evac %s (should be false), %.0f m from the ship" % [m().objective_done(), p.wants_evac, far])
+	var early: bool = p.wants_evac
+	for i in 40:
+		for a in m().aliens():
+			if not a.dead:
+				a.damage(9999.0, a.global_position + Vector3(0, 0, 1), p)
+		await get_tree().create_timer(0.25).timeout
+		if m().objective_done():
+			break
+	out("aliens dead (%d alive, %d total, type %s), done %s" % [m().alive_aliens(), m().aliens_total, m().mtype(), m().objective_done()])
+	Input.action_press("ready")
+	await get_tree().physics_frame
+	Input.action_release("ready")
+	for i in 20:
+		await get_tree().create_timer(0.25).timeout
+		if m().finished:
+			break
+	out("RESULT leaveany early_block %s done %s finished %s far %.0f" % [not early, m().objective_done(), m().finished, far])
+	get_tree().quit()
+
+func _climb(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	m().hud.inventory_open = false
+	for a in m().aliens():
+		a.set_physics_process(false)
+	var results := []
+	for hgt in [2.0, 2.9]:
+		var base: Vector3 = p.global_position + Vector3(0, 30, 0)     # up in the sky: nothing else around
+		var floor_b: Node = m().map_box(base + Vector3(0, -0.5, 0), Vector3(12, 1, 12))
+		var blk: Node = m().map_box(base + Vector3(0, hgt / 2.0, -2.0), Vector3(4, hgt, 2))
+		p.global_position = base + Vector3(0, 0.05, -0.6)
+		p.rotation.y = 0.0
+		p.velocity = Vector3.ZERO
+		for f in 6: await get_tree().physics_frame
+		if hgt < 2.5:
+			Input.action_press("jump")
+			await get_tree().physics_frame
+			Input.action_release("jump")
+		else:
+			Input.action_press("jump")
+			for f in 40: await get_tree().physics_frame
+			Input.action_release("jump")
+		await get_tree().create_timer(1.2).timeout
+		var up: float = p.global_position.y - base.y
+		results.append(up)
+		out("climb %.1f m block: feet now %.2f m up" % [hgt, up])
+		floor_b.queue_free()
+		blk.queue_free()
+		await get_tree().physics_frame
+	# a house: under the eaves, jump and hold Space - onto the roof
+	var roof_ok := true
+	var hv: Vector3 = m().map.get("house", Vector3.ZERO)
+	if hv != Vector3.ZERO:
+		var c := hv - Vector3(3.6, 0, -1.5)     # the house's corner (map_gen: house = c + (3.6, 0, -1.5))
+		p.global_position = c + Vector3(6.0, 0.3, -0.45)
+		p.rotation.y = PI                      # facing +z, the long north wall
+		p.velocity = Vector3.ZERO
+		for f in 40: await get_tree().physics_frame
+		var y0: float = p.global_position.y
+		Input.action_press("jump")
+		for f in 40: await get_tree().physics_frame
+		Input.action_release("jump")
+		await get_tree().create_timer(1.2).timeout
+		out("house roof: feet %.2f m up (from %.2f)" % [p.global_position.y - y0, y0])
+		roof_ok = p.global_position.y - y0 > 2.6
+		get_viewport().get_texture().get_image().save_png("user://climb_roof.png") if DisplayServer.get_name() != "headless" else null
+	out("RESULT climb %s" % ("ok" if absf(results[0] - 2.0) < 0.3 and absf(results[1] - 2.9) < 0.3 and roof_ok else "FAIL"))
+	get_tree().quit()
+
+## Rescue spots: a person standing there must fit - nothing solid in the body, no roof through the head.
+func _vipcheck(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().go:
+		return
+	step = 1
+	await get_tree().physics_frame
+	var space: PhysicsDirectSpaceState3D = p.get_world_3d().direct_space_state
+	var cap := CapsuleShape3D.new()
+	cap.radius = 0.25
+	cap.height = 1.6
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = cap
+	q.collision_mask = 1 | 64 | 128
+	var roofs := []
+	for mi in m().find_children("*", "MeshInstance3D", true, false):
+		var n := String(mi.name).to_lower() + String(mi.get_parent().name).to_lower()
+		if "roof" in n and mi.is_visible_in_tree():
+			roofs.append((mi as MeshInstance3D).global_transform * (mi as MeshInstance3D).get_aabb())
+	var bad := 0
+	var spots: Array = m().map.get("vip_spots", [])
+	var nm: RID = p.get_world_3d().navigation_map
+	for sp0 in spots:
+		var errs := []
+		# (as the game does at spawn: onto the nearest walkable ground)
+		var sp: Vector3 = sp0
+		var snap := NavigationServer3D.map_get_closest_point(nm, sp0)
+		if snap.distance_to(sp0) < 3.0:
+			sp = snap + Vector3(0, 0.3, 0)
+		q.transform = Transform3D(Basis(), (sp as Vector3) + Vector3(0, 0.65, 0))   # (sp is 0.3 above the floor)
+		for h in space.intersect_shape(q, 4):
+			var cn: Node = h["collider"]
+			var sz := ""
+			for ch in cn.get_children():
+				if ch is CollisionShape3D and (ch as CollisionShape3D).shape is BoxShape3D:
+					sz = str(((ch as CollisionShape3D).shape as BoxShape3D).size)
+			errs.append("v těle: %s %s @%s" % [cn.name, sz, str(snapped((cn as Node3D).global_position, Vector3(0.1, 0.1, 0.1)))])
+		for rb in roofs:
+			var bb: AABB = rb
+			# standing at the eaves' height or higher, inside the roof's footprint: in the roof
+			var inside := Rect2(bb.position.x + 0.2, bb.position.z + 0.2, bb.size.x - 0.4, bb.size.z - 0.4).has_point(Vector2(sp.x, sp.z))
+			if inside and sp.y > bb.position.y - 0.4 and sp.y < bb.end.y:
+				errs.append("hlava ve střeše")
+				break
+		if not errs.is_empty():
+			bad += 1
+			out("[VIP] %s: %s" % [str(snapped(sp, Vector3(0.1, 0.1, 0.1))), errs])
+	out("RESULT vipcheck %d spots, %d bad" % [spots.size(), bad])
+	get_tree().quit()
 
 ## A Levit shot out of the air falls to the ground (and does not hang up there).
 func _airdeath(p: Node) -> void:

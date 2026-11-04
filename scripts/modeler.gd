@@ -38,6 +38,18 @@ var info: Label
 var model_opt: OptionButton
 var _box_lines: MeshInstance3D
 var svc: SubViewportContainer
+# Svitky-style handling: several parts selected at once, arrows to drag along an axis, G/S/R modes
+var sels: Array = []         # all selected part ids (sel = the active one)
+var mode := "posun"          # posun / velikost / otaceni
+var _gizmo: MeshInstance3D
+var _hint: Label
+var _redo := []
+var _batch := false
+var _axis_drag := -1         # dragging an arrow (0 x, 1 y, 2 z)
+var _hover_axis := -1
+var _pan := false
+const MODE_NAMES := {"posun": "POSUN (G)", "velikost": "VELIKOST (S)", "otaceni": "OTÁČENÍ (R)"}
+const AXIS_COL := [Color(0.92, 0.27, 0.24), Color(0.43, 0.82, 0.31), Color(0.31, 0.55, 0.98)]
 
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -49,15 +61,15 @@ func _ready() -> void:
 	add_child(bg)
 	var frame := PanelContainer.new()
 	frame.add_theme_stylebox_override("panel", UiSkin.inset(3))
-	frame.position = Vector2(6, 6)
-	frame.size = Vector2(384, 348)
+	frame.position = Vector2(6, 20)
+	frame.size = Vector2(384, 314)
 	add_child(frame)
 	svc = SubViewportContainer.new()
 	svc.stretch = true
 	svc.gui_input.connect(_view_input)
 	# a holder at the frame's size; the view inside renders at the screen's real resolution
 	var holder := Control.new()
-	holder.custom_minimum_size = Vector2(378, 342)
+	holder.custom_minimum_size = Vector2(378, 308)
 	holder.clip_contents = true
 	frame.add_child(holder)
 	holder.add_child(svc)
@@ -90,7 +102,18 @@ func _ready() -> void:
 	lm.no_depth_test = true
 	_box_lines.material_override = lm
 	world.add_child(_box_lines)
+	_gizmo = MeshInstance3D.new()
+	var gm := StandardMaterial3D.new()
+	gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	gm.vertex_color_use_as_albedo = true
+	gm.no_depth_test = true
+	gm.render_priority = 10
+	_gizmo.material_override = gm
+	world.add_child(_gizmo)
 	_build_panel()
+	EditorTabs.add(self, "models")
+	_hint = EditorTabs.hint(self)
+	_show_hint()
 	if Game.autotest() == "modeler":
 		_selftest.call_deferred()
 
@@ -98,8 +121,8 @@ func _ready() -> void:
 func _build_panel() -> void:
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", UiSkin.panel(6))
-	p.position = Vector2(396, 6)
-	p.size = Vector2(238, 348)
+	p.position = Vector2(396, 20)
+	p.size = Vector2(238, 314)
 	add_child(p)
 	var sc := ScrollContainer.new()
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -133,7 +156,7 @@ func _build_panel() -> void:
 	for e in [["◄ vlevo", Vector3.LEFT], ["▲ nahoru", Vector3.UP], ["► vpravo", Vector3.RIGHT],
 			["▼ dolů", Vector3.DOWN], ["● blíž", Vector3.BACK], ["○ dál", Vector3.FORWARD]]:
 		var d: Vector3 = e[1]
-		_btn(g, e[0], func(): _move_view(d))
+		_btn(g, e[0], func(): _group(func(): _move_view(d)))
 	_lbl(box, "OTOČIT", UiSkin.GLOW)
 	var g2 := GridContainer.new()
 	g2.columns = 3
@@ -142,7 +165,7 @@ func _build_panel() -> void:
 			["⤒ od sebe", Vector3.RIGHT, -15.0], ["⟲ naklonit", Vector3.FORWARD, 15.0], ["⟳ naklonit", Vector3.FORWARD, -15.0]]:
 		var ax: Vector3 = e[1]
 		var deg: float = e[2]
-		_btn(g2, e[0], func(): _rotate_view(ax, deg))
+		_btn(g2, e[0], func(): _group(func(): _rotate_view(ax, deg)))
 	_lbl(box, "VELIKOST", UiSkin.GLOW)
 	var g3 := GridContainer.new()
 	g3.columns = 4
@@ -151,7 +174,7 @@ func _build_panel() -> void:
 			["delší", 2, 1.1], ["kratší", 2, 0.9], ["větší", 3, 1.1], ["menší", 3, 0.9]]:
 		var axis: int = e[1]
 		var f: float = e[2]
-		_btn(g3, e[0], func(): _scale(axis, f))
+		_btn(g3, e[0], func(): _group(func(): _scale(axis, f)))
 	_lbl(box, "BARVA", UiSkin.GLOW)
 	var g4 := GridContainer.new()
 	g4.columns = 8
@@ -169,11 +192,11 @@ func _build_panel() -> void:
 		sh.border_color = UiSkin.GLOW
 		b.add_theme_stylebox_override("hover", sh)
 		b.add_theme_stylebox_override("pressed", sh)
-		b.pressed.connect(func(): _paint(col))
+		b.pressed.connect(func(): _group(func(): _paint(col)))
 		g4.add_child(b)
 	var r5 := HBoxContainer.new()
 	box.add_child(r5)
-	_btn(r5, "původní barva", func(): _paint(null))
+	_btn(r5, "původní barva", func(): _group(func(): _paint(null)))
 	_lbl(box, "KOSTKY", UiSkin.GLOW)
 	var r6 := GridContainer.new()
 	r6.columns = 3
@@ -181,17 +204,16 @@ func _build_panel() -> void:
 	_btn(r6, "+ kostka", func(): _add("box"))
 	_btn(r6, "+ válec", func(): _add("cyl"))
 	_btn(r6, "+ koule", func(): _add("ball"))
-	_btn(r6, "kopie", _duplicate)
-	_btn(r6, "smazat", _delete)
-	_btn(r6, "vrátit kostku", _reset_part)
-	_lbl(box, "Myš: klik vybere kostku, tažení vybrané kostky ji posouvá, pravé tlačítko otáčí pohled, kolečko přibližuje. Ctrl+Z krok zpět.", UiSkin.DIM)
+	_btn(r6, "kopie (Ctrl+D)", func(): _each(_duplicate))
+	_btn(r6, "zrcadlo (M)", func(): _each(_mirror))
+	_btn(r6, "smazat (Del)", func(): _each(_delete))
+	_btn(r6, "vrátit kostku", func(): _each(_reset_part))
 	status = _lbl(box, "", UiSkin.DIM)
 	var r7 := HBoxContainer.new()
 	box.add_child(r7)
 	_btn(r7, "Uložit", _save)
 	_btn(r7, "Krok zpět", _undo_step)
 	_btn(r7, "Vše vrátit", _reset_all)
-	_btn(r7, "Zpět", func(): get_tree().change_scene_to_file("res://scenes/Main.tscn"))
 	_load_model(String(model_opt.get_item_metadata(0)))
 
 func _btn(parent: Node, s: String, cb: Callable) -> Button:
@@ -304,11 +326,16 @@ func _find(id: String) -> Array:
 
 # ---- editing -----------------------------------------------------------------------------------
 func _push() -> void:
+	if _batch:
+		return
+	_redo.clear()
 	_undo.append(work.duplicate(true))
 	if _undo.size() > 80:
 		_undo.pop_front()
 
 func _commit() -> void:
+	if _batch:
+		return
 	Game.model_mods[model_name] = work
 	_rebuild()
 
@@ -316,8 +343,59 @@ func _undo_step() -> void:
 	if _undo.is_empty():
 		status.text = "Není co vracet."
 		return
+	_redo.append(work.duplicate(true))
 	work = _undo.pop_back()
 	_commit()
+
+func _redo_step() -> void:
+	if _redo.is_empty():
+		status.text = "Není co vrátit dopředu."
+		return
+	_undo.append(work.duplicate(true))
+	work = _redo.pop_back()
+	_commit()
+
+## One change for every selected part (one step of undo).
+func _group(fn: Callable) -> void:
+	if sels.is_empty():
+		if sel == "":
+			status.text = "Nejdřív klikni na kostku."
+			return
+		sels = [sel]
+	_push()
+	_batch = true
+	var active := sel
+	for id in sels:
+		sel = id
+		fn.call()
+	sel = active
+	_batch = false
+	_commit()
+
+## Copy / mirror / delete / reset for every selected part (new parts become the selection).
+func _each(fn: Callable) -> void:
+	if sels.is_empty():
+		if sel == "":
+			status.text = "Nejdřív klikni na kostku."
+			return
+		sels = [sel]
+	_push()
+	_batch = true
+	var ids: Array = sels.duplicate()
+	# deleting new parts shifts the ones after them: go from the back
+	ids.sort_custom(func(a, b): return (int(String(a).substr(4)) if String(a).begins_with("new:") else -1) > (int(String(b).substr(4)) if String(b).begins_with("new:") else -1))
+	var made := []
+	for id in ids:
+		sel = id
+		var before: int = work["new"].size()
+		fn.call()
+		for k in range(before, work["new"].size()):
+			made.append("new:%d" % k)
+	_batch = false
+	sels = made if not made.is_empty() else []
+	sel = made[-1] if not made.is_empty() else ""
+	_commit()
+	_show_box()
 
 ## The xf (pos, rot, scale) of the selected part: a reference to its entry so it can be changed.
 func _entry() -> Dictionary:
@@ -417,6 +495,7 @@ func _add(shape: String) -> void:
 	work["new"].append({"piece": String(mi.name), "shape": shape, "xf": [at.x, at.y, at.z, 0, 0, 0, s, s, s],
 		"color": [0.5, 0.5, 0.5], "bone": String(e[1].get("bone", "")) if not e.is_empty() else ""})
 	sel = "new:%d" % (work["new"].size() - 1)
+	sels = [sel]
 	sel_piece = String(mi.name)
 	_commit()
 	status.text = "Přidáno. Posuň ji tažením nebo šipkami."
@@ -451,6 +530,30 @@ func _duplicate() -> void:
 	_commit()
 	status.text = "Kopie hotová (vedle původní)."
 
+## A mirror copy on the other side of the model (across its middle, left-right in the model's own space).
+func _mirror() -> void:
+	var e := _find(sel)
+	if e.is_empty():
+		return
+	var mi: MeshInstance3D = e[0]
+	var cx := (mi.global_transform.affine_inverse() * _world_box().get_center()).x
+	var c := {}
+	if sel.begins_with("new:"):
+		c = _entry().duplicate(true)
+	else:
+		var tris: PackedVector3Array = e[1]["tris"]
+		var bb := AABB(tris[0], Vector3.ZERO)
+		for q in tris:
+			bb = bb.expand(q)
+		var at := bb.get_center()
+		c = {"piece": String(mi.name), "shape": "box", "xf": [at.x, at.y, at.z, 0, 0, 0, bb.size.x, bb.size.y, bb.size.z],
+			"color": _entry().get("color", _part_color(mi, e[1])), "bone": String(e[1].get("bone", ""))}
+	var xf: Array = c["xf"]
+	xf[0] = 2.0 * cx - float(xf[0])
+	xf[4] = -float(xf[4])
+	xf[5] = -float(xf[5])
+	work["new"].append(c)
+
 func _part_color(mi: MeshInstance3D, p: Dictionary) -> Array:
 	var m := mi.get_active_material(0)
 	if m is BaseMaterial3D:
@@ -469,7 +572,7 @@ func _delete() -> void:
 		_entry()["del"] = true
 	sel = ""
 	_commit()
-	info.text = "Smazáno (Krok zpět ji vrátí)."
+	info.text = "Smazáno (Ctrl+Z ji vrátí)."
 
 func _reset_part() -> void:
 	if sel == "" or sel.begins_with("new:"):
@@ -503,35 +606,182 @@ func _process(_d: float) -> void:
 	cam.look_at(target, Vector3.UP)
 	cam.near = maxf(0.01, dist * 0.02)
 
-## Orange box around the selected part.
+## Orange boxes around the selected parts, the arrows at the active one.
 func _show_box() -> void:
 	var im := ImmediateMesh.new()
 	_box_lines.mesh = im
-	if sel == "":
+	_gizmo.mesh = null
+	if sel == "" and sels.is_empty():
 		return
-	var e := _find(sel)
-	if e.is_empty():
+	if sel != "" and not sel in sels:
+		sels.append(sel)
+	var any := false
+	im.surface_begin(Mesh.PRIMITIVE_LINES)
+	for id in sels:
+		var e := _find(id)
+		if e.is_empty():
+			continue
+		var mi: MeshInstance3D = e[0]
+		var bb := _part_box(e).grow(extent * 0.004)
+		for a in 8:
+			for b in range(a + 1, 8):
+				var pa := bb.get_endpoint(a)
+				var pb := bb.get_endpoint(b)
+				var diff := (pa - pb).abs()
+				var axes := int(diff.x > 0.00001) + int(diff.y > 0.00001) + int(diff.z > 0.00001)
+				if axes == 1:
+					im.surface_add_vertex(mi.global_transform * pa)
+					im.surface_add_vertex(mi.global_transform * pb)
+					any = true
+	if not any:
+		im.surface_add_vertex(Vector3.ZERO)
+		im.surface_add_vertex(Vector3.ZERO)
+	im.surface_end()
+	var e0 := _find(sel)
+	if e0.is_empty():
 		sel = ""
+		sels = sels.filter(func(x): return not _find(x).is_empty())
 		return
-	var mi: MeshInstance3D = e[0]
+	_draw_gizmo()
+	var bone := String(e0[1].get("bone", ""))
+	info.text = "Vybráno: %s%s%s" % [sel, (" + %d dalších" % (sels.size() - 1)) if sels.size() > 1 else "", ("  (kloub %s)" % bone) if bone != "" else ""]
+
+func _part_box(e: Array) -> AABB:
 	var tris: PackedVector3Array = e[1]["tris"]
 	var bb := AABB(tris[0], Vector3.ZERO)
-	for p in tris:
-		bb = bb.expand(p)
-	bb = bb.grow(extent * 0.004)
-	im.surface_begin(Mesh.PRIMITIVE_LINES)
-	for a in 8:
-		for b in range(a + 1, 8):
-			var pa := bb.get_endpoint(a)
-			var pb := bb.get_endpoint(b)
-			var diff := (pa - pb).abs()
-			var axes := int(diff.x > 0.00001) + int(diff.y > 0.00001) + int(diff.z > 0.00001)
-			if axes == 1:
-				im.surface_add_vertex(mi.global_transform * pa)
-				im.surface_add_vertex(mi.global_transform * pb)
+	for q in tris:
+		bb = bb.expand(q)
+	return bb
+
+## Where the arrows start: the middle of everything selected.
+func _pivot() -> Vector3:
+	var c := Vector3.ZERO
+	var n := 0
+	for id in sels:
+		var e := _find(id)
+		if e.is_empty():
+			continue
+		c += (e[0] as MeshInstance3D).global_transform * _part_box(e).get_center()
+		n += 1
+	return c / maxf(1.0, n)
+
+func _arrow_len() -> float:
+	return dist * 0.22
+
+## Three arrows (red x, green y, blue z) from the selection; the one under the mouse is brighter.
+func _draw_gizmo() -> void:
+	var im := ImmediateMesh.new()
+	var pv := _pivot()
+	var L := _arrow_len()
+	var t := L * 0.035
+	im.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	for k in 3:
+		var ax := Vector3.ZERO
+		ax[k] = 1.0
+		var col: Color = AXIS_COL[k].lightened(0.45) if k == _hover_axis or k == _axis_drag else AXIS_COL[k]
+		# a thin box along the axis and a fatter head (a cube) at the tip
+		var side1 := Vector3.UP if k != 1 else Vector3.RIGHT
+		var side2 := ax.cross(side1)
+		var tip := pv + ax * L
+		var head := 3.2 if mode == "posun" else (2.6 if mode == "velikost" else 2.0)
+		for seg in [[pv, tip - ax * t * head, t], [tip - ax * t * head * 2.0, tip, t * head]]:
+			var a: Vector3 = seg[0]
+			var b: Vector3 = seg[1]
+			var w: float = seg[2]
+			var c := [a + (side1 + side2) * w, a + (side1 - side2) * w, a + (-side1 - side2) * w, a + (-side1 + side2) * w]
+			var d := [b + (side1 + side2) * w, b + (side1 - side2) * w, b + (-side1 - side2) * w, b + (-side1 + side2) * w]
+			for i in 4:
+				var j := (i + 1) % 4
+				for v in [c[i], c[j], d[j], c[i], d[j], d[i]]:
+					im.surface_set_color(col)
+					im.surface_add_vertex(v)
+			for q in [c, d]:
+				for v in [q[0], q[1], q[2], q[0], q[2], q[3]]:
+					im.surface_set_color(col)
+					im.surface_add_vertex(v)
 	im.surface_end()
-	var bone := String(e[1].get("bone", ""))
-	info.text = "Vybraná kostka: %s%s" % [sel, ("  (drží se kloubu %s)" % bone) if bone != "" else ""]
+	_gizmo.mesh = im
+
+## Which arrow the mouse is on (screen distance to its line), or -1.
+func _axis_at(at: Vector2) -> int:
+	if sel == "":
+		return -1
+	var pv := _pivot()
+	var L := _arrow_len()
+	var k_best := -1
+	var d_best := 9.0
+	var s := Vector2(view.size) / svc.size
+	for k in 3:
+		var ax := Vector3.ZERO
+		ax[k] = 1.0
+		if cam.is_position_behind(pv) or cam.is_position_behind(pv + ax * L):
+			continue
+		var a := cam.unproject_position(pv) / s
+		var b := cam.unproject_position(pv + ax * L) / s
+		var d := Geometry2D.get_closest_point_to_segment(at, a, b).distance_to(at)
+		if d < d_best and at.distance_to(a) > 4.0:
+			d_best = d
+			k_best = k
+	return k_best
+
+## The arrow being dragged: how far along it the mouse moved (metres), from its screen direction.
+func _axis_delta(k: int, rel: Vector2) -> float:
+	var pv := _pivot()
+	var L := _arrow_len()
+	var ax := Vector3.ZERO
+	ax[k] = 1.0
+	var s := Vector2(view.size) / svc.size
+	var a := cam.unproject_position(pv) / s
+	var b := cam.unproject_position(pv + ax * L) / s
+	var dir := b - a
+	if dir.length() < 2.0:
+		return 0.0
+	return rel.dot(dir.normalized()) * (L / dir.length())
+
+func _apply_axis(k: int, rel: Vector2) -> void:
+	var ax := Vector3.ZERO
+	ax[k] = 1.0
+	var d := _axis_delta(k, rel)
+	if mode == "posun":
+		_group(func():
+			var e := _find(sel)
+			if not e.is_empty():
+				_shift(e[0], ax * d))
+	elif mode == "velikost":
+		var f := clampf(1.0 + d / maxf(_arrow_len() * 0.5, 0.001), 0.8, 1.25)
+		_group(func():
+			var e := _find(sel)
+			if e.is_empty():
+				return
+			# the part's own axis that points most along the dragged one
+			var m := _to_mesh(e[0], ax).abs()
+			var i := 0 if m.x >= m.y and m.x >= m.z else (1 if m.y >= m.z else 2)
+			var xf := _xf(_entry())
+			xf[6 + i] = clampf(float(xf[6 + i]) * f, 0.02, 50.0))
+	else:
+		var deg := (rel.x - rel.y) * 0.6
+		_group(func():
+			var e := _find(sel)
+			if e.is_empty():
+				return
+			var ma := _to_mesh(e[0], ax).normalized()
+			var xf := _xf(_entry())
+			var r := Basis.from_euler(Vector3(float(xf[3]), float(xf[4]), float(xf[5])) * (PI / 180.0))
+			r = Basis(ma, deg_to_rad(deg)) * r
+			var eu := r.get_euler() * (180.0 / PI)
+			xf[3] = snappedf(eu.x, 0.01)
+			xf[4] = snappedf(eu.y, 0.01)
+			xf[5] = snappedf(eu.z, 0.01))
+
+func _set_mode(m: String) -> void:
+	mode = m
+	status.text = "Režim: " + MODE_NAMES[m]
+	_show_box()
+	_show_hint()
+
+func _show_hint() -> void:
+	if _hint:
+		_hint.text = "%s · Levé: výběr (Shift = přidat), tah za šipku = %s, tah kostky = posun · Pravé: otáčet pohled · Střední: posun pohledu · Kolečko: zoom\nG / S / R: posun / velikost / otáčení · Ctrl+D: kopie · M: zrcadlo · Del: smazat · Ctrl+Z / Ctrl+Y: zpět / znovu · F: zaměřit výběr · Ctrl+S: uložit" % [MODE_NAMES[mode], {"posun": "posun po ose", "velikost": "velikost po ose", "otaceni": "otáčení kolem osy"}[mode]]
 
 func _ray(at: Vector2) -> Array:
 	var p := at * (Vector2(view.size) / svc.size)
@@ -558,50 +808,115 @@ func _view_input(ev: InputEvent) -> void:
 	if ev is InputEventMouseButton:
 		if ev.button_index == MOUSE_BUTTON_WHEEL_UP:
 			dist = maxf(extent * 0.15, dist * 0.9)
+			_show_box()
 		elif ev.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			dist = minf(extent * 8.0, dist * 1.1)
+			_show_box()
 		elif ev.button_index == MOUSE_BUTTON_RIGHT:
 			_orbit = ev.pressed
+		elif ev.button_index == MOUSE_BUTTON_MIDDLE:
+			_pan = ev.pressed
 		elif ev.button_index == MOUSE_BUTTON_LEFT:
 			if ev.pressed:
+				var k := _axis_at(ev.position)
+				if k >= 0:
+					_axis_drag = k
+					_push()
+					return
 				var id := _pick(ev.position)
-				if id != "" and id == sel:
-					# drag the selected part across the screen
-					var e := _find(sel)
+				if id != "" and id in sels and not ev.shift_pressed:
+					# drag the selection across the screen
+					var e := _find(id)
+					sel = id
 					_drag = true
 					_push()
 					_drag_plane = Plane(-cam.global_transform.basis.z, e[0].global_transform * (e[1]["center"] as Vector3))
 					var r := _ray(ev.position)
 					var hit = _drag_plane.intersects_ray(r[0], r[1])
 					_drag_last = hit if hit != null else Vector3.ZERO
+				elif ev.shift_pressed and id != "":
+					if id in sels:
+						sels.erase(id)
+						sel = sels[-1] if not sels.is_empty() else ""
+					else:
+						sels.append(id)
+						sel = id
+					_show_box()
 				else:
 					sel = id
+					sels = [id] if id != "" else []
 					_show_box()
 					if id == "":
 						info.text = "Klikni na kostku v obrázku."
-					else:
-						status.text = "Vybráno. Táhni ji myší, nebo použij tlačítka."
 			else:
+				if _axis_drag >= 0:
+					_axis_drag = -1
+					_show_box()
 				if _drag:
 					_drag = false
-					_commit()
 	elif ev is InputEventMouseMotion:
 		if _orbit:
 			yaw -= ev.relative.x * 0.01
 			pitch = clampf(pitch + ev.relative.y * 0.01, -1.4, 1.4)
+			_show_box()
+		elif _pan:
+			var right := cam.global_transform.basis.x
+			var up := cam.global_transform.basis.y
+			target += (-right * ev.relative.x + up * ev.relative.y) * dist * 0.0025
+		elif _axis_drag >= 0:
+			var keep := _undo.size()
+			_batch = false
+			_apply_axis(_axis_drag, ev.relative * (3.0 if ev.ctrl_pressed else 1.0))
+			# (the whole drag is one step of undo)
+			while _undo.size() > keep:
+				_undo.pop_back()
 		elif _drag:
 			var r := _ray(ev.position)
 			var hit = _drag_plane.intersects_ray(r[0], r[1])
 			if hit != null:
-				var e := _find(sel)
-				if not e.is_empty():
-					_shift(e[0], hit - _drag_last)
-					_drag_last = hit
-					_commit()
+				var delta: Vector3 = hit - _drag_last
+				_drag_last = hit
+				var keep2 := _undo.size()
+				_group(func():
+					var e := _find(sel)
+					if not e.is_empty():
+						_shift(e[0], delta))
+				while _undo.size() > keep2:
+					_undo.pop_back()
+		else:
+			var h := _axis_at(ev.position)
+			if h != _hover_axis:
+				_hover_axis = h
+				if sel != "":
+					_draw_gizmo()
 
 func _input(ev: InputEvent) -> void:
-	if ev is InputEventKey and ev.pressed and ev.keycode == KEY_Z and ev.ctrl_pressed:
-		_undo_step()
+	if not (ev is InputEventKey and ev.pressed and not ev.echo):
+		return
+	if get_viewport().gui_get_focus_owner() is LineEdit:
+		return
+	var handled := true
+	match ev.keycode:
+		KEY_Z when ev.ctrl_pressed: _undo_step()
+		KEY_Y when ev.ctrl_pressed: _redo_step()
+		KEY_S when ev.ctrl_pressed: _save()
+		KEY_D when ev.ctrl_pressed: _each(_duplicate)
+		KEY_G: _set_mode("posun")
+		KEY_S: _set_mode("velikost")
+		KEY_R: _set_mode("otaceni")
+		KEY_M: _each(_mirror)
+		KEY_DELETE, KEY_X: _each(_delete)
+		KEY_ESCAPE:
+			sel = ""
+			sels = []
+			_show_box()
+		KEY_F:
+			if sel != "":
+				target = _pivot()
+				dist = maxf(extent * 0.3, dist * 0.6)
+				_show_box()
+		_: handled = false
+	if handled:
 		get_viewport().set_input_as_handled()
 
 # ---- test: change the rifle a little, take pictures, put everything back -----------------------------
@@ -626,6 +941,18 @@ func _selftest() -> void:
 	await get_tree().process_frame
 	get_viewport().get_texture().get_image().save_png("user://mod_1_after.png")
 	print("[MOD] work: %s" % JSON.stringify(work))
+	# the Svitky-style tools: an arrow drag, mirror, copy, undo
+	var x0: float = float(work["new"][0]["xf"][0])
+	_apply_axis(0, Vector2(40, 0))
+	var moved: bool = absf(float(work["new"][0]["xf"][0]) - x0) > 0.0001
+	_each(_mirror)
+	var after_mirror: int = work["new"].size()
+	sels = ["new:0"]
+	sel = "new:0"
+	_each(_duplicate)
+	var after_dup: int = work["new"].size()
+	_undo_step()
+	print("[MOD] tools: arrow moved %s, mirror -> %d new, copy -> %d new, undo -> %d new" % [moved, after_mirror, after_dup, work["new"].size()])
 	model_opt.select(0)
 	for i in model_opt.item_count:
 		if String(model_opt.get_item_metadata(i)) == "merc":

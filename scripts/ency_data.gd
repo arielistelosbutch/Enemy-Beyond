@@ -45,6 +45,7 @@ const ITEM_TEXT := {
 	"medkit": "Lékárnička: obvazy, morfin, zastavení krvácení. Padlého kamaráda postaví na nohy.",
 	"scanner": "Detektor pohybu. Pípá, když se něco hýbe. Neřekne co.",
 	"radio": "Vysílačka. Bez ní je tým jen pár lidí ve tmě.",
+	"nvg": "Noktovizor PVS-7, armádní kus z osmdesátých let. Stačí ho mít u sebe: L ho sklopí před oči. Ve tmě vidíš do dálky, jen zeleně a zrnitě. Do svítilny, ohně nebo plazmy se nedívej - oslepí tě.",
 	"vesta": "Balistická vesta s keramickými pláty. O pětinu menší zranění.",
 	"stit": "Ruční balistický štít s průzorem. Zastaví většinu střel zepředu.",
 	"pancir": "Pancíř ze slitin z trupu UFO. Těžký, ale plazmu vydrží.",

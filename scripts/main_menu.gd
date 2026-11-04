@@ -178,6 +178,9 @@ static var quick_size := ""     # "" = by mission type; or small / medium / larg
 static var quick_group := ""    # "" = by the scenario; else a group from Mission.GROUPS
 static var quick_map := 0       # index into QUICK_MAPS (0 = by the scenario)
 static var quick_night := true
+static var quick_time := 0      # index into QUICK_TIMES
+## Quick mission time of day: name, local hour.
+const QUICK_TIMES := [["noc", 23.5], ["svítání", 6.2], ["den", 14.0], ["soumrak", 19.3], ["náhodně", -1.0]]
 static var quick_merc := "copy"
 ## Maps for a quick mission: name, biome, terrain ("" = keep).
 const QUICK_MAPS := [["podle scénáře", "", ""], ["statek", "farm", "temperate"], ["městečko", "town", "temperate"],
@@ -186,8 +189,12 @@ const QUICK_MAPS := [["podle scénáře", "", ""], ["statek", "farm", "temperate
 static func quick_params(i: int) -> Dictionary:
 	var pp: Dictionary = QUICK[i][1].duplicate()
 	if not pp.is_empty():
-		pp["night"] = quick_night
-		pp["hour"] = 23.5 if quick_night else 14.0
+		var qh: float = QUICK_TIMES[quick_time][1]
+		if qh < 0.0:
+			qh = [23.5, 2.0, 6.2, 10.0, 14.0, 17.0, 19.3][randi() % 7]
+		pp["hour"] = qh
+		pp["night"] = qh < 6.5 or qh > 18.0
+		quick_night = pp["night"]
 		pp["id"] = -1
 		if quick_size != "":
 			pp["size"] = quick_size
@@ -219,7 +226,7 @@ func _show_quick() -> void:
 	for k in sizes.slice(1):
 		sn.append(MapGen.SIZE_NAMES[k])
 	_cycle(_box, "Velikost", sn, sizes.find(quick_size), func(i): quick_size = sizes[i])
-	_cycle(_box, "Čas", ["noc", "den"], 0 if quick_night else 1, func(i): quick_night = i == 0)
+	_cycle(_box, "Čas", QUICK_TIMES.map(func(e): return e[0]), quick_time, func(i): quick_time = i)
 	var dk := ["easy", "normal", "veteran"]
 	_cycle(_box, "Obtížnost", [Game.DIFF_NAMES["easy"], Game.DIFF_NAMES["normal"], "HARDCORE"], maxi(0, dk.find(Game.difficulty)), func(i): Game.difficulty = dk[i]; Game.save_settings())
 	var mk := Game.SKIRMISH_KINDS.keys()
@@ -366,7 +373,7 @@ func _show_merc() -> void:
 	_label("Hodnost: %s   (zkušenosti %d%s)" % [Game.RANKS[rk], xp, nxt], ACCENT, 9)
 	var tl := []
 	for t in m.get("talents", []):
-		tl.append(Game.TALENTS[t][0])
+		tl.append(Game.TALENTS[Game.TALENT_NEW.get(t, t)][0])
 	_label("Talenty: " + (", ".join(tl) if not tl.is_empty() else "zatím žádné"), TEXT, 8)
 	if int(m.get("talent_points", 0)) > 0:
 		_label("Za povýšení si vyber talent:", Color(0.6, 1.0, 0.6), 9)
@@ -855,7 +862,7 @@ func _show_loadout() -> void:
 	ab.add_theme_font_size_override("font_size", 8)
 	if cur.has("armor"):
 		UiSkin.item_icon(ab, cur["armor"], 22)
-	for g in [["ZBRANĚ (primární je na začátku v rukou)", ["rh", "side", "lh"]], ["OPASEK (3-6)", ["b0", "b1", "b2", "b3"]], ["BATOH", ["p0", "p1", "p2", "p3", "p4", "p5"]]]:
+	for g in [["ZBRANĚ (primární je na začátku v rukou)", ["rh", "side", "lh"]], ["OPASEK (3-6)", ["b0", "b1", "b2", "b3"]], ["BATOH", Game.pack_slots()]]:
 		var l := Label.new()
 		l.text = g[0]
 		l.add_theme_font_size_override("font_size", 8)
@@ -899,11 +906,11 @@ func _show_loadout() -> void:
 				return
 			var two := Game.two_handed(item)
 			var t: String = Game.ITEMS[item]["type"]
-			var order := ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]
+			var order := ["b0", "b1", "b2", "b3"] + Game.pack_slots()
 			if t == "shield":
-				order = ["lh", "p0", "p1", "p2", "p3", "p4", "p5"]
+				order = ["lh"] + Game.pack_slots()
 			elif t == "weapon" and two:
-				order = ["rh", "p0", "p1", "p2", "p3", "p4", "p5"]
+				order = ["rh"] + Game.pack_slots()
 			elif t == "weapon":
 				order = ["rh", "side"] + order
 			elif t == "melee":
@@ -1174,11 +1181,11 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "soundcheck", "dronetest", "airdeath", "fireshot", "abase":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "leaveany", "skyshot", "fireshot", "abase":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
-				"hour": 14.0 if Game.cmd_arg("day", "0") == "1" else 23.0, "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "terrain": Game.cmd_arg("terrain", "temperate"), "size": Game.cmd_arg("size", "medium"), "ufo": Game.cmd_arg("ufo", ""), "group": Game.cmd_arg("group", ""),
+				"hour": float(Game.cmd_arg("hour", "14.0" if Game.cmd_arg("day", "0") == "1" else "23.0")), "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "terrain": Game.cmd_arg("terrain", "temperate"), "size": Game.cmd_arg("size", "medium"), "ufo": Game.cmd_arg("ufo", ""), "group": Game.cmd_arg("group", ""), "research": Array(Game.cmd_arg("research", "").split(",", false)),
 				"habits": {String(Game.merc.get("name", "")): Game.cmd_arg("habits", "").split(",", false)} if Game.cmd_arg("habits", "") != "" else {}})
 		"basewalk", "basepass":
 			Net.play_solo()

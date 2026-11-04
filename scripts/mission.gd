@@ -210,6 +210,23 @@ const SAFE_LANDING := 45.0
 func landing_safe(p: Node3D) -> bool:
 	return t < SAFE_LANDING and map.get("evac", Vector3.ZERO) != Vector3.ZERO and p.global_position.distance_to(map["evac"]) < 25.0 and not mtype() in ["base", "home"]
 
+## (tests) A solid block in the world.
+func map_box(pos: Vector3, size: Vector3) -> StaticBody3D:
+	var sb := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = size
+	cs.shape = bs
+	sb.add_child(cs)
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = size
+	mi.mesh = bm
+	sb.add_child(mi)
+	add_child(sb)
+	sb.global_position = pos
+	return sb
+
 ## Played alone (nobody to drag you back up): the aliens go a little easier. Co-op gets it all.
 func solo() -> bool:
 	return roster().size() <= 1
@@ -266,7 +283,12 @@ func _ready() -> void:
 	if bed != "":
 		_loop_player(AudioStreamPlayer.new(), bed, -16.0)
 	if weather == "storm" or weather == "rain":
-		_loop_player(AudioStreamPlayer.new(), "storm" if weather == "storm" else "rain", -17.0 if weather == "storm" else -20.0)
+		# the rain is loud (it hides your steps - and theirs); under a roof it drums on the roof instead
+		_rain_out = AudioStreamPlayer.new()
+		_loop_player(_rain_out, "storm" if weather == "storm" else "rain", RAIN_DB)
+		_rain_roof = AudioStreamPlayer.new()
+		_loop_player(_rain_roof, "rain_roof", -60.0)
+		music.volume_db = -16
 	for snd in map["sounds"]:
 		var ap := AudioStreamPlayer3D.new()
 		ap.unit_size = 2.0
@@ -457,6 +479,10 @@ func _ufo_ambience() -> void:
 		big.global_position = map["ufo"] + Vector3(0, 2.0, 0)
 		_loop_player(big, "ufo_ship_ambience", -6.0)
 
+const RAIN_DB := -7.0
+var _rain_out: AudioStreamPlayer
+var _rain_roof: AudioStreamPlayer
+
 func _loop_player(ap: Node, sname: String, db: float) -> void:
 	ap.stream = Game.loop_stream(sname)
 	ap.volume_db = db
@@ -503,7 +529,7 @@ func _briefing_text() -> String:
 			task += "\n\nMaskáče: %s vzor." % Game.CAMO_NAMES.get(Game.camo, Game.camo)
 		return "%s\nOblast: %s, místní čas %02d:%02d (%s), mapa %s%s\n\n%s\n\n" % [
 			String(mp.get("type_name", "Mise")).to_upper(), mp.get("place", "?"), int(h), int(fmod(h, 1.0) * 60),
-			"noc" if mp.get("night", true) else "den", MapGen.SIZE_NAMES.get(mp.get("size", "medium"), "střední"), terr, flavor.get(mp.get("type", "crash"), "")] + task
+			PHASE_NAMES.get(phase(), "noc"), MapGen.SIZE_NAMES.get(mp.get("size", "medium"), "střední"), terr, flavor.get(mp.get("type", "crash"), "")] + task
 	var r := RandomNumberGenerator.new()
 	r.seed = Net.mission_seed
 	var day := r.randi_range(3, 27)
@@ -529,13 +555,87 @@ func _post_filter() -> void:
 	add_child(cl)
 	cl.visible = Game.retro
 
+## Night vision, only on this machine: the picture goes through the tube shader, and the
+## world gets a little light of its own (an intensifier sees what the eye does not).
+var nvg_on := false
+var _nvg_layer: CanvasLayer
+var _nvg_amb := 0.0
+func set_nvg(on: bool) -> void:
+	if on == nvg_on:
+		return
+	nvg_on = on
+	if _nvg_layer == null:
+		_nvg_layer = CanvasLayer.new()
+		_nvg_layer.layer = 1
+		_nvg_layer.name = "NvgFilter"
+		var cr := ColorRect.new()
+		cr.set_anchors_preset(Control.PRESET_FULL_RECT)
+		cr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var sm := ShaderMaterial.new()
+		sm.shader = preload("res://shaders/nvg.gdshader")
+		var me := local_player()
+		if me and Game.has_talent(me.merc, "nocni_oko"):
+			sm.set_shader_parameter("grain", 0.035)
+		cr.material = sm
+		_nvg_layer.add_child(cr)
+		add_child(_nvg_layer)
+	_nvg_layer.visible = on
+	# brighter by the darkness of the hour: at noon it only washes out
+	var add := 0.0
+	if on:
+		add = {"noc": 0.55, "soumrak": 0.25, "svitani": 0.25}.get(phase(), 0.05)
+	_amb_base += add - _nvg_amb
+	env.ambient_light_energy += add - _nvg_amb
+	_nvg_amb = add
+
+## The Night Eye talent: the eyes get used to the dark (only on this machine).
+func night_eyes() -> void:
+	var add: float = {"noc": 0.18, "soumrak": 0.08, "svitani": 0.08}.get(phase(), 0.0)
+	_amb_base += add
+	env.ambient_light_energy += add
+
 func set_retro(on: bool) -> void:
 	var f := get_node_or_null("RetroFilter")
 	if f:
 		f.visible = on
 
 func is_day() -> bool:
-	return not Net.mission_params.is_empty() and not Net.mission_params.get("night", true)
+	return phase() != "noc"
+
+## The local hour of the mission (the globe's clock; quick missions pick it in the menu).
+func hour() -> float:
+	var mp: Dictionary = Net.mission_params
+	if mp.is_empty():
+		return 23.0
+	return float(mp.get("hour", 23.0 if mp.get("night", true) else 14.0))
+
+## Night, dawn, day or dusk - from the hour (the "night" flag only as a fallback).
+## Dawn 5:00-7:30, day until 18:00, dusk until 20:30.
+func phase() -> String:
+	var mp: Dictionary = Net.mission_params
+	if mp.is_empty():
+		return "noc"
+	if not mp.has("hour"):
+		return "noc" if mp.get("night", true) else "den"
+	var h := hour()
+	if h >= 5.0 and h < 7.5: return "svitani"
+	if h >= 7.5 and h < 18.0: return "den"
+	if h >= 18.0 and h < 20.5: return "soumrak"
+	return "noc"
+
+const PHASE_NAMES := {"noc": "noc", "svitani": "svítání", "den": "den", "soumrak": "soumrak"}
+
+## The sun (or the moon) by the hour: it rises in the east, stands high at noon, sets in the west;
+## at dawn and dusk it hangs low and long shadows fall. The moon at night stands still.
+func _sky_light() -> void:
+	var ph := phase()
+	var h := hour()
+	if ph == "noc":
+		moon.rotation_degrees = Vector3(-38, 40, 0)
+		return
+	var k := clampf((h - 5.0) / 15.5, 0.0, 1.0)            # 5:00 east .. 20:30 west
+	var elev := maxf(6.0, 62.0 * sin(PI * k))
+	moon.rotation_degrees = Vector3(-elev, lerpf(-80.0, 80.0, k), 0)
 
 func _environment() -> void:
 	env = Environment.new()
@@ -569,17 +669,48 @@ func _environment() -> void:
 	moon.light_color = Color(0.55, 0.62, 0.9)
 	moon.light_energy = 0.12
 	moon.shadow_enabled = true
-	if is_day():
-		# overcast daylight: grey, flat, still uneasy
-		env.background_color = Color(0.42, 0.45, 0.5)
-		env.ambient_light_color = Color(0.55, 0.58, 0.62)
-		env.ambient_light_energy = 0.9
-		env.fog_light_color = Color(0.5, 0.52, 0.56)
-		env.fog_density = 0.025
-		env.volumetric_fog_density = 0.01
-		moon.light_color = Color(0.9, 0.9, 0.85)
-		moon.light_energy = 0.9
-	moon.rotation_degrees = Vector3(-35, 40, 0)
+	# the mist must not turn the moon into a second sun (a white disc in the fog)
+	moon.light_volumetric_fog_energy = 0.12
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 0.85
+	match phase():
+		"den":
+			# overcast daylight: grey, flat, still uneasy
+			env.background_color = Color(0.42, 0.45, 0.5)
+			env.ambient_light_color = Color(0.55, 0.58, 0.62)
+			env.ambient_light_energy = 0.9
+			env.fog_light_color = Color(0.5, 0.52, 0.56)
+			env.fog_density = 0.025
+			env.volumetric_fog_density = 0.01
+			moon.light_color = Color(0.9, 0.9, 0.85)
+			moon.light_energy = 0.9
+			env.adjustment_saturation = 0.9
+		"svitani":
+			# dawn: cold lilac sky, a pale pink sun low over the fields, mist still lying
+			env.background_color = Color(0.33, 0.3, 0.4)
+			env.ambient_light_color = Color(0.45, 0.45, 0.58)
+			env.ambient_light_energy = 0.55
+			env.fog_light_color = Color(0.4, 0.36, 0.44)
+			env.fog_density = 0.035
+			env.volumetric_fog_density = 0.02
+			moon.light_color = Color(1.0, 0.72, 0.6)
+			moon.light_energy = 0.55
+			moon.light_volumetric_fog_energy = 0.25
+			env.adjustment_saturation = 0.95
+		"soumrak":
+			# dusk: the sun goes down red behind the trees, the shadows grow long, the east is dark already
+			env.background_color = Color(0.3, 0.17, 0.13)
+			env.ambient_light_color = Color(0.5, 0.36, 0.34)
+			env.ambient_light_energy = 0.45
+			env.fog_light_color = Color(0.34, 0.21, 0.16)
+			env.fog_density = 0.03
+			env.volumetric_fog_density = 0.018
+			moon.light_color = Color(1.0, 0.5, 0.25)
+			moon.light_energy = 0.75
+			moon.light_volumetric_fog_energy = 0.25
+			env.adjustment_saturation = 1.1
+			env.adjustment_contrast = 1.05
+	_sky_light()
 	add_child(moon)
 	_weather_env()
 
@@ -601,9 +732,11 @@ func _weather_env() -> void:
 			# the torch only lights a grey wall
 			env.fog_density = 0.05 if vol else 0.14
 			env.volumetric_fog_density = 0.07
-			env.fog_light_color = Color(0.08, 0.09, 0.1) if not day else Color(0.6, 0.62, 0.64)
+			env.fog_light_color = Color(0.08, 0.09, 0.1) if not day else env.fog_light_color.lerp(Color(0.6, 0.62, 0.64), 0.5 if phase() == "den" else 0.25)
 			_wind_base = 0.25
 		"overcast":
+			if day and phase() != "den":
+				moon.light_energy *= 0.5       # the low sun hidden in the clouds
 			if not day:
 				moon.light_energy = 0.05
 				env.ambient_light_energy = 0.14
@@ -1096,6 +1229,10 @@ func _storm_fx(delta: float) -> void:
 			var q := PhysicsRayQueryParameters3D.create(me.global_position + Vector3(0, 1.8, 0), me.global_position + Vector3(0, 30, 0), 1)
 			var under := not get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 			rain.visible = not under
+			if _rain_out:
+				var tw := create_tween().set_parallel()
+				tw.tween_property(_rain_out, "volume_db", RAIN_DB - (12.0 if under else 0.0), 0.5)
+				tw.tween_property(_rain_roof, "volume_db", -9.0 if under else -60.0, 0.5)
 	if _flash_t > 0:
 		_flash_t -= delta
 		# a double flash: bright, dark, bright
@@ -1295,6 +1432,8 @@ func _objective_met() -> bool:
 func _show_done() -> void:
 	done_banner = true
 	Game.play_ui(self, "ping", -6)
+	if hud:
+		hud.message("ÚKOL SPLNĚN. Enter = odletět hned, transport vás vyzvedne (k lodi se vracet nemusíte).", 8.0)
 
 # ---- rockets, explosions, smoke and mines --------------------------------------------------
 @rpc("any_peer", "call_local", "reliable")
@@ -1839,11 +1978,14 @@ func _judge() -> void:
 	var standing := 0
 	var living := 0
 	var at_evac := 0
+	var done := objective_done()
 	for p in ps:
 		if not p.dead:
 			living += 1
-			if p.global_position.distance_to(map["evac"]) < 3.5 and p.wants_evac:
+			if p.wants_evac and (done or p.global_position.distance_to(map["evac"]) < 3.5):
 				at_evac += 1
+			elif done and p.downed:
+				at_evac += 1          # the transport picks up the wounded too
 		if not p.dead and (not p.downed or (guard_drone != null and guard_drone.can_rescue(p))):
 			standing += 1       # (the drone is about to bring him back)
 	if map.has("brain"):
@@ -1876,7 +2018,13 @@ func _judge() -> void:
 			"alienbase":
 				won = core_down()
 				why = "Řídicí jádro jejich základny je zničené. Bez něj jsou slepí a hluší." if won else "Jádro dál stojí. Základna vetřelců přežila."
-		_end.rpc(won, why)
+		_end.rpc(won, why, done)
+
+## Is the job done? Then Enter anywhere ends the mission - the transport comes for everybody.
+## Every machine knows it from the host's banner (_show_done), so the client's Enter works too.
+var _airlift := false
+func objective_done() -> bool:
+	return done_banner
 
 ## Won missions: everything the aliens dropped is picked up on the way out (no carrying needed).
 func _loot(success: bool) -> Dictionary:
@@ -1903,7 +2051,8 @@ func _loot(success: bool) -> Dictionary:
 	return out
 
 @rpc("authority", "call_local", "reliable")
-func _end(success: bool, why: String) -> void:
+func _end(success: bool, why: String, airlift := false) -> void:
+	_airlift = airlift
 	if finished:
 		return
 	finished = true
@@ -1930,7 +2079,7 @@ func _end(success: bool, why: String) -> void:
 		var purse := int(Game.merc.get("money", 0)) + pay
 		if pay > 0:
 			xp_text += "\nTvůj žold: +%d kr (máš %d kr)%s" % [pay, purse, ("  - z toho nálezy %d kr" % me.salvage) if me.salvage > 0 else ""]
-		var aboard: bool = me.global_position.distance_to(map["evac"]) < 3.5
+		var aboard: bool = _airlift or me.global_position.distance_to(map["evac"]) < 3.5
 		if me.dead or (me.downed and not aboard):
 			# the family is paid off: less when the body came home with the team
 			var cost := 80 if aboard else 250
@@ -1983,7 +2132,7 @@ func _end(success: bool, why: String) -> void:
 		for p in players():
 			tk += p.kills
 			tc += p.captures
-			if p.dead or (p.downed and p.global_position.distance_to(map["evac"]) >= 3.5):
+			if p.dead or (p.downed and not _airlift and p.global_position.distance_to(map["evac"]) >= 3.5):
 				lost += 1
 		camp = Campaign.mission_done(int(Net.mission_params.get("id", -1)), success, tk, tc, lost, civ_saved, civ_dead, crew_names, _loot(success), lost >= players().size(), kits, q)
 		Net.last_result = camp
@@ -2001,7 +2150,7 @@ func quality(success: bool) -> float:
 	var caps := 0
 	for p in players():
 		caps += p.captures
-		if p.dead or (p.downed and p.global_position.distance_to(map["evac"]) >= 3.5):
+		if p.dead or (p.downed and not _airlift and p.global_position.distance_to(map["evac"]) >= 3.5):
 			lost += 1
 	q -= 0.25 * float(lost) / maxf(1.0, float(players().size()))
 	for c in civilians():
@@ -2423,6 +2572,12 @@ func _spawn_objectives(rng: RandomNumberGenerator) -> void:
 				if d > bd and d > 25.0:
 					bd = d
 					best = sp
+			# (onto the walkable ground nearest the spot: never inside furniture or a roof)
+			var nm := get_world_3d().navigation_map
+			if NavigationServer3D.map_get_iteration_id(nm) > 0:
+				var snap := NavigationServer3D.map_get_closest_point(nm, best)
+				if snap.distance_to(best) < 3.0:
+					best = snap + Vector3(0, 0.3, 0)
 			spawner.spawn({"kind": "civ", "id": 50, "pos": best, "vip": true})
 			# hunters already near the beacon
 			for k in 2:

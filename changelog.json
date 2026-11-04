@@ -1,4 +1,19 @@
 {
+ "0.45": [
+  "Denní doby podle hodiny mise: noc, svítání (5:00-7:30), den a soumrak (18:00-20:30). Slunce putuje po obloze, při svítání a soumraku stojí nízko a vrhá dlouhé stíny, každá doba má svůj barevný filtr a mlhu. V Rychlé misi si čas vybereš (i náhodně).",
+  "Měsíc už v mlze nesvítí jako druhé slunce - ten velký bílý kotouč je pryč.",
+  "Noktovizor PVS-7 (L): stačí ho mít ve výstroji. Zelený zrnitý obraz v kulatém tubusu, ve tmě vidíš daleko. Jeden je ve skladu, další za 350 kr.",
+  "Nový výzkum Výsadkové batohy: v batohu 9 míst místo 6.",
+  "Talenty přepracované: Houževnatý +12 zdraví a +45 s krvácení (a konečně opravdu funguje), Mezek +15 kg, Pevná ruka i rychlejší míření, Železné nervy silněji proti psí. Nové: Šestý smysl (oko 'vidí tě' i na normal/veterán), Druhý dech (jednou za misi se zvedneš sám), Noční oko, Granátník (házíš o půlku dál). Rychlé ruce se spojily s Rychlým přebíjením, Lovec hlav s Tichým zabijákem - kdo je měl, nic neztratil.",
+  "Když je úkol splněný, stačí Enter kdekoli a transport vyzvedne všechny, i padlé. K lodi se musí jen ten, kdo chce odletět dřív.",
+  "V co-op host klikem na jméno určí, kdo poletí Sokolem, i když je stíhačka jen jedna.",
+  "Lezení: chytíš se okraje a vylezeš nahoru - na zídku, kontejner i na střechu domu (vyskoč a drž mezerník).",
+  "Záchranná mise: zachraňovaný se už neobjeví na střeše ani ve zdi.",
+  "Roubenka má dřevěnou střechu a dřevěné štíty.",
+  "Klik z pauzy, inventáře nebo menu zpátky do hry už nevystřelí.",
+  "Déšť je pořádně slyšet (přehluší i kroky) a pod střechou bubnuje do střechy.",
+  "Editor (jen v Godotu): Modelář po vzoru Svitků - šipky na posun, změnu velikosti a otáčení, výběr více dílů, zrcadlení, kopie, zpět/znovu, ostrý náhled."
+ ],
  "0.44": [
   "Dron Strážce, jen když hraješ sám: malý dron s červeným křížem nad tvým pravým ramenem. Pomalu tě léčí, ale nejvýš do půlky zdraví. Jednou za misi tě zvedne, když padneš, podruhé už ne. Pípne, když po tobě střílí něco, kam se nedíváš (vlevo, vpravo, za tebou). Nestřílí, horor zůstává.",
   "Solo je o kousek mírnější: o jednoho vetřelce méně a vetřelci tě zpozorní asi o pětinu pomaleji. V co-op zůstává plná síla.",

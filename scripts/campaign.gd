@@ -89,6 +89,8 @@ const RESEARCH := {
 	# materials and gear
 	"vesta": {"name": "Balistická vesta a štít", "cost": 200, "days": 3.0, "needs": {}, "branch": "material", "icon": "vesta",
 		"desc": "Keramické pláty v látkové vestě a ruční štít s průzorem. Vesta: o 20 % menší zranění. Štít v levé ruce zastaví většinu střel zepředu."},
+	"batohy": {"name": "Výsadkové batohy", "cost": 250, "days": 4.0, "needs": {}, "branch": "material", "icon": "a_pack",
+		"desc": "Větší batoh s rámem podle vzoru výsadkářů: místo šesti míst devět. Víc nábojů, víc lékárniček - jen to pořád váží."},
 	"vysilacky": {"name": "Helmové vysílačky", "cost": 200, "days": 3.0, "needs": {}, "branch": "material", "icon": "radio",
 		"desc": "Vysílačka zabudovaná do helmy: mluvíš do éteru bez ruky na vysílačce. Odolnější proti rušení."},
 	"slitiny": {"name": "Vetřelecké slitiny", "cost": 300, "mk": 20, "days": 5.0, "needs": {"loot": "slitiny"}, "branch": "material", "icon": "a_pack",
@@ -156,7 +158,7 @@ const SHOP := {
 	"rocket": 150, "grenade": 60, "smoke_grenade": 50, "mine": 90, "flare": 20, "medkit": 160,
 	"laser_pistol": 300, "laser_rifle": 600, "laser_cannon": 900,
 	"rifle": 250, "sniper": 450, "sniper_clip": 35, "shotgun": 250, "magnum": 220, "autocannon": 600, "minigun": 750, "rocket_launcher": 650,
-	"knife": 60, "stun_baton": 180, "scanner": 300, "radio": 40, "plasma_rifle": 900, "plasma_cell": 90,
+	"knife": 60, "stun_baton": 180, "scanner": 300, "radio": 40, "nvg": 350, "plasma_rifle": 900, "plasma_cell": 90,
 	"vesta": 300, "stit": 350, "pancir": 900,
 }
 const LOCKED_BY := {"mine": "zenijni", "smoke_grenade": "zenijni", "autocannon": "tezke", "ac_clip": "tezke",

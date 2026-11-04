@@ -521,7 +521,7 @@ func _launch_jets(fl: Dictionary) -> void:
 	if Net.is_online():
 		if _pick.is_empty():
 			_pick = {1: true}
-		_lbl(box, "Kdo usedne do Sokolů (připraveno %d):" % ready, ACCENT, 9)
+		_lbl(box, "Kdo usedne do Sokolů (připraveno %d) - klikni na jméno:" % ready, ACCENT, 9)
 		for id in Net.roster:
 			var pid: int = id
 			var on: bool = _pick.get(pid, false)
@@ -529,6 +529,9 @@ func _launch_jets(fl: Dictionary) -> void:
 				if _pick.get(pid, false):
 					_pick.erase(pid)
 				elif _pick.size() < ready:
+					_pick[pid] = true
+				else:
+					_pick.erase(_pick.keys()[0])   # all seats taken: the first one hands his Sokol over
 					_pick[pid] = true
 				_launch_jets(fl), 9)
 	else:

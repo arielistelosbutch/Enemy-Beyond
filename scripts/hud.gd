@@ -427,7 +427,7 @@ func _draw_hud() -> void:
 	if p.spin > 0.05 and rid == "minigun":
 		c.draw_rect(Rect2(mid.x - 20, mid.y + 14, 40 * p.spin, 3), Color(1, 0.6, 0.2))
 	_stance_icon(c, Vector2(132, sz.y - 36), p)
-	if Game.easy():
+	if Game.easy() or Game.has_talent(p.merc, "sesty_smysl"):
 		_eye_icon(c, Vector2(132, sz.y - 86), p)    # only on easy: on normal and hardcore you never know who is watching
 	if Game.mic_live:
 		_text(c, Vector2(10, sz.y - 62), "MIKROFON ZAPNUTÝ (Tab)", Color(0.5, 1.0, 0.5), 8)
@@ -448,7 +448,7 @@ func _draw_hud() -> void:
 	if ot != "":
 		_text(c, Vector2(mid.x - ot.length() * 2.4, 12), ot, ACCENT, 9)
 	if mission().done_banner:
-		var bt := Game.shipify("MISE SPLNĚNA - můžete odletět (všichni živí Enter v Kondoru)")
+		var bt := Game.shipify("MISE SPLNĚNA - Enter kdekoli = odlet (transport vyzvedne všechny)")
 		c.draw_rect(Rect2(mid.x - 160, 16, 320, 16), Color(0, 0, 0, 0.55))
 		_text(c, Vector2(mid.x - bt.length() * 2.6, 28), bt, Color(0.5, 1.0, 0.55), 10)
 	var v: Node = mission().vip()
@@ -770,7 +770,7 @@ func _build_inventory() -> void:
 	var groups := [["V RUKOU a ŠTÍT  (LTM = použít / střílet, PTM = mířit)", ["rh", "lh"]],
 		["ZBRANĚ - 1 primární, 2 sekundární (jednoruční); Q = primární a zpět", ["back", "side"]],
 		["OPASEK - rychlý: klávesy 3 4 5 6 (do rukou, náboje nabijí)", ["b0", "b1", "b2", "b3"]],
-		["BATOH - pomalý: stojíš a hrabeš se (granáty, světlice... i odtud fungují svou klávesou)", ["p0", "p1", "p2", "p3", "p4", "p5"]]]
+		["BATOH - pomalý: stojíš a hrabeš se (granáty, světlice... i odtud fungují svou klávesou)", Game.pack_slots()]]
 	var names := {"rh": "v rukou - jedna věc, zbraň oběma rukama", "lh": "štít (jen s jednoruční zbraní)", "back": "primární zbraň (klávesa 1)", "side": "sekundární zbraň - pistole, revolver, nůž (klávesa 2)"}
 	for g in groups:
 		var gl := _lbl(left, g[0], FRAME, 8)
@@ -782,7 +782,7 @@ func _build_inventory() -> void:
 		left.add_child(row)
 		for sl in g[1]:
 			var slot: String = sl
-			inv_buttons[slot] = _btn(row, "", func(): _slot_clicked(slot), Vector2(86 if g[1].size() == 4 else (176 if g[1].size() == 2 else 116), 32))
+			inv_buttons[slot] = _btn(row, "", func(): _slot_clicked(slot), Vector2(86 if g[1].size() == 4 else (176 if g[1].size() == 2 else 116), 32 if g[1].size() < 9 else 24))
 			inv_buttons[slot].tooltip_text = names.get(slot, "")
 	inv_info = _lbl(left, "", TEXT, 9)
 	var hint := _lbl(left, "Přetáhni věc (nebo klikni na ni a pak na místo), kam ji dát. Přetažení mimo okno ji zahodí před tebe. Z batohu to trvá a stojíš. I zavře.", FRAME, 8)
@@ -830,6 +830,7 @@ func _keys_text(p: Node) -> String:
 		"Enter  v lodi: připraven (start mise i odlet)",
 		"V    rána zblízka (%s)" % ("nemáš nůž ani obušek" if melee == "" else Game.ITEMS[p.inv[melee]["id"]]["short"]),
 		"F    svítilna na helmě",
+		"L    noktovizor (%s)" % where.call("nvg"),
 		"N / Caps Lock   mluvit (nahlas, kdo je blízko)",
 		"Tab  mikrofon stále zapnutý / vypnout (%s)" % ("ZAPNUTO" if Game.mic_live else "vypnuto"),
 		"T    držet = vysílačka (%s)" % ("helma" if Game.has_research("vysilacky") else where.call("radio")),
@@ -844,7 +845,14 @@ func _open_inventory() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_refresh_inventory()
 
+## Back from a menu into the game: the click that closed it must not fire the gun
+## (the player waits until the button is let go, and a moment more).
+var fire_block_until := 0
+func _back_to_game() -> void:
+	fire_block_until = Time.get_ticks_msec() + 350
+
 func _close_inventory() -> void:
+	_back_to_game()
 	inventory_open = false
 	held_slot = ""
 	inv_panel.visible = false
@@ -871,6 +879,12 @@ var _drag_from := ""
 var _drag_start := Vector2.ZERO
 var _dragged := false
 func _input(event: InputEvent) -> void:
+	# the window lost the mouse (alt-tab...): a click only takes it back, it does not shoot
+	if event is InputEventMouseButton and event.pressed and not inventory_open and not paused and not is_instance_valid(_screen) \
+			and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not mission().finished and Game.autotest() == "":
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		_back_to_game()
+		return
 	if not inventory_open or not (event is InputEventMouseButton) or event.button_index != MOUSE_BUTTON_LEFT:
 		return
 	var p := me()
@@ -1167,6 +1181,7 @@ func open_screen(c: Control) -> void:
 	inventory_open = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	c.set("on_close", func():
+		_back_to_game()
 		paused = false
 		inventory_open = false
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED)
@@ -1178,6 +1193,7 @@ func _pause() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func _resume() -> void:
+	_back_to_game()
 	paused = false
 	inventory_open = false
 	pause_panel.visible = false

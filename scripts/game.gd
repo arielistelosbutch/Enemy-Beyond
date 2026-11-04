@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.44 prototyp"
-const VERSION_NUM := "0.44"
+const VERSION := "0.45 prototyp"
+const VERSION_NUM := "0.45"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -51,6 +51,7 @@ const ITEMS := {
 	"pancir": {"name": "Slitinový pancíř", "short": "Pancíř", "weight": 7, "type": "armor", "protect": 0.62},
 	"scanner": {"name": "Detektor pohybu", "short": "Detektor", "weight": 4, "type": "scanner"},
 	"radio": {"name": "Vysílačka", "short": "Vysílačka", "weight": 1, "type": "radio"},
+	"nvg": {"name": "Noktovizor PVS-7", "short": "Noktovizor", "weight": 1, "type": "nvg"},
 }
 
 ## How many rounds the weapon itself holds.
@@ -174,7 +175,13 @@ func slot_refuse(slot: String, id: String) -> String:
 			if two_handed(id): return "Do sekundárního slotu patří jen jednoruční zbraň (pistole, revolver, nůž...)."
 	return ""
 
-const SLOTS := ["rh", "lh", "back", "side", "b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]
+const SLOTS := ["rh", "lh", "back", "side", "b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]
+
+## The backpack's places: six, nine with the researched paratrooper pack (výzkum "batohy").
+func pack_slots() -> Array:
+	if has_research("batohy"):
+		return ["p0", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]
+	return ["p0", "p1", "p2", "p3", "p4", "p5"]
 const SLOT_NAMES := {"rh": "V rukou", "lh": "Štít", "back": "Primární zbraň", "side": "Sekundární zbraň", "b": "Opasek", "p": "Batoh"}
 
 # ---- the mercenaries (kept between sessions in user://merc.cfg) ----
@@ -233,7 +240,7 @@ func _setup_input() -> void:
 		"pause": [KEY_ESCAPE], "prone": [KEY_Z, KEY_Y], "melee": [KEY_V], "smoke": [KEY_X], "mine": [KEY_B],
 		"primary": [KEY_1], "secondary": [KEY_2],
 		"belt1": [KEY_3], "belt2": [KEY_4], "belt3": [KEY_5], "belt4": [KEY_6],
-		"talk": [KEY_CAPSLOCK, KEY_N], "radio_talk": [KEY_T, KEY_K], "mic_toggle": [KEY_TAB], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
+		"talk": [KEY_CAPSLOCK, KEY_N], "radio_talk": [KEY_T, KEY_K], "mic_toggle": [KEY_TAB], "nvg": [KEY_L], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
 	}
 	for action in keys:
 		if not InputMap.has_action(action):
@@ -377,23 +384,33 @@ func apply_look(model: Node, look: Dictionary) -> void:
 const RANKS := ["Nováček", "Vojín", "Svobodník", "Desátník", "Četař", "Rotný", "Rotmistr", "Poručík", "Kapitán"]
 const RANK_XP := [0, 120, 300, 550, 850, 1250, 1750, 2400, 3200]
 const TALENTS := {
-	"pevna_ruka": ["Pevná ruka", "Zbraň se méně třese (−35 % chvění)."],
-	"mezek": ["Mezek", "Unese o 10 kg víc."],
-	"rychle_prebiti": ["Rychlé přebíjení", "Přebíjení o třetinu rychlejší."],
-	"rychle_ruce": ["Rychlé ruce", "Přendávání výstroje o třetinu rychlejší."],
-	"kocici_krok": ["Kočičí krok", "Kroky jsou poloviční hluk."],
+	"pevna_ruka": ["Pevná ruka", "Zbraň se méně třese (−35 % chvění) a míříš o polovinu rychleji."],
+	"mezek": ["Mezek", "Unese o 15 kg víc."],
+	"rychle_prebiti": ["Rychlé ruce", "Přebíjení i přendávání výstroje o třetinu rychlejší."],
+	"kocici_krok": ["Kočičí krok", "Kroky jsou poloviční hluk (i ve sprintu)."],
 	"felcar": ["Felčar", "Lékárnička léčí dvojnásob, ošetření spolubojovníka trvá 2 s."],
-	"zelezne_nervy": ["Železné nervy", "Strach roste o 40 % pomaleji."],
+	"zelezne_nervy": ["Železné nervy", "Strach roste o 40 % pomaleji a psí útoky tě skoro neberou."],
 	"sprinter": ["Sprinter", "Sprint méně vyčerpává, dech se uklidní rychleji."],
-	"houzevnaty": ["Houževnatý", "+5 zdraví a o 30 s delší vykrvácení."],
+	"houzevnaty": ["Houževnatý", "+12 zdraví a o 45 s delší vykrvácení."],
 	"strelec": ["Střelec", "O čtvrtinu menší rozptyl všech zbraní."],
-	"tichy_zabijak": ["Tichý zabiják", "Nůž zezadu zabíjí na jednu ránu a nedělá hluk."],
+	"tichy_zabijak": ["Tichý zabiják", "Nůž zezadu zabíjí na jednu ránu a nedělá hluk; obušek omračuje o polovinu silněji."],
 	"tezka_vaha": ["Těžká váha", "Těžké zbraně zpomalují jen napůl."],
-	"lovec_hlav": ["Lovec hlav", "Obušek omračuje o polovinu silněji."],
+	"sesty_smysl": ["Šestý smysl", "Cítíš, když tě vetřelci vidí: oko vlevo dole i na obtížnosti normal a veterán."],
+	"druhy_dech": ["Druhý dech", "Jednou za misi se po pádu sám zvedneš (za 6 s, s třetinou zdraví)."],
+	"nocni_oko": ["Noční oko", "Ve tmě vidíš víc než ostatní (oči si zvyknou), noktovizor ti nezrní."],
+	"granatnik": ["Granátník", "Granáty, kouř i světlice hodíš o polovinu dál."],
 }
+## Talents that were replaced by better ones (old saves keep what they had, under the new name).
+const TALENT_NEW := {"rychle_ruce": "rychle_prebiti", "lovec_hlav": "tichy_zabijak"}
 
 func has_talent(m: Dictionary, id: String) -> bool:
-	return id in m.get("talents", [])
+	var t: Array = m.get("talents", [])
+	if id in t:
+		return true
+	for old in TALENT_NEW:
+		if TALENT_NEW[old] == id and old in t:
+			return true
+	return false
 
 func rank_of(m: Dictionary) -> int:
 	var xp := int(m.get("xp", 0))
@@ -432,6 +449,8 @@ const STAT_NAMES := {"accuracy": "Přesnost", "reactions": "Reakce", "strength":
 
 ## Three talents on offer (stable until one is picked).
 func talent_offer() -> Array:
+	if merc.has("offer"):
+		merc["offer"] = (merc["offer"] as Array).filter(func(o): return TALENTS.has(o) and not has_talent(merc, o))
 	if merc.has("offer") and not merc["offer"].is_empty():
 		return merc["offer"]
 	var pool := []
@@ -684,7 +703,7 @@ func sick_text(m: Dictionary) -> String:
 const STASH := {"sniper": 1, "sniper_clip": 3, "rifle": 1, "pistol": 1, "shotgun": 1, "magnum": 1, "autocannon": 1, "minigun": 1, "rocket_launcher": 1,
 	"stun_baton": 1, "knife": 1, "rifle_clip": 4, "pistol_clip": 3, "shells": 3, "magnum_rounds": 3, "ac_clip": 3,
 	"minigun_belt": 2, "rocket": 3, "grenade": 3, "smoke_grenade": 2, "mine": 2, "flare": 4, "medkit": 1, "scanner": 1, "radio": 4,
-	"vesta": 1, "stit": 1, "pancir": 1}
+	"vesta": 1, "stit": 1, "pancir": 1, "nvg": 1}
 const STASH_VETERAN := {"sniper": 1, "sniper_clip": 2, "rifle": 1, "pistol": 1, "shotgun": 1, "magnum": 1, "autocannon": 1, "minigun": 1, "rocket_launcher": 1,
 	"stun_baton": 1, "knife": 1, "rifle_clip": 2, "pistol_clip": 2, "shells": 2, "magnum_rounds": 2, "ac_clip": 1,
 	"minigun_belt": 1, "rocket": 1, "grenade": 1, "smoke_grenade": 1, "mine": 1, "flare": 2, "medkit": 1, "scanner": 1, "radio": 4,
@@ -753,7 +772,7 @@ func valid_loadout(vet: bool) -> Dictionary:
 			to = "p"
 		if to == "p":
 			to = ""
-			for ps in ["p0", "p1", "p2", "p3", "p4", "p5", "b0", "b1", "b2", "b3"]:
+			for ps in pack_slots() + ["b0", "b1", "b2", "b3"]:
 				if not out.has(ps) and not src.has(ps):
 					to = ps
 					break
@@ -769,14 +788,14 @@ func valid_loadout(vet: bool) -> Dictionary:
 		out["armor"] = arm
 	# older saved loadouts: the pistol in the pack becomes the secondary weapon
 	if not out.has("side"):
-		for ps in ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
+		for ps in ["b0", "b1", "b2", "b3"] + pack_slots():
 			if out.has(ps) and ITEMS[out[ps]]["type"] == "weapon" and slot_refuse("side", out[ps]) == "":
 				out["side"] = out[ps]
 				out.erase(ps)
 				break
 	# everybody gets a radio (older saved loadouts did not have one): first free belt/pack slot
 	if not "radio" in out.values() and int(left.get("radio", 0)) > 0:
-		for slot in ["b0", "b1", "b2", "b3", "p0", "p1", "p2", "p3", "p4", "p5"]:
+		for slot in ["b0", "b1", "b2", "b3"] + pack_slots():
 			if not out.has(slot):
 				out[slot] = "radio"
 				break

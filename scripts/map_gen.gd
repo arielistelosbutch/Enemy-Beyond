@@ -234,6 +234,8 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 
 # ---- primitives ----------------------------------------------------------------
 func box(pos: Vector3, size: Vector3, material: Material, collide := true, rot_y := 0.0) -> Node3D:
+	if material == Game.mat("roof", 1.0):
+		collide = true       # roofs can be climbed onto
 	if material == Game.mat("roof", 1.0) and size.y < 0.2 and minf(size.x, size.z) >= 2.5 and rot_y == 0.0:
 		# a flat roof: a perch for the flying ones
 		var top := pos + Vector3(0, size.y / 2, 0)
@@ -392,6 +394,15 @@ func _wood_roof(n: Node3D, c: Vector3, w: float, d: float) -> void:
 		info["wood_roofs"] = []
 	info["wood_roofs"].append({"node": n, "rect": Rect2(c.x - 0.3, c.z - 0.3, w + 0.6, d + 0.6)})
 
+## Swaps a model's materials by their names (e.g. tiles for shingles on a cabin).
+func _retexture(n: Node, swap: Dictionary) -> void:
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		var m: MeshInstance3D = mi
+		for i in m.mesh.get_surface_count():
+			var src := m.mesh.surface_get_material(i)
+			if src and swap.has(src.resource_name):
+				m.set_surface_override_material(i, swap[src.resource_name])
+
 var _cars: Array = []
 ## A parked car right in front of a door: towed away (the streets are laid before the houses).
 func _clear_doors() -> void:
@@ -412,6 +423,9 @@ func _prop(name: String, p: Vector3, yaw := 0.0, cover := true) -> Node3D:
 	if name.begins_with("car"):
 		_cars.append(n)
 	if name == "house_roof":
+		# solid: a merc who climbs up stands on the tiles (and they stop bullets from above)
+		for mi in n.find_children("*", "MeshInstance3D", true, false):
+			(mi as MeshInstance3D).create_trimesh_collision()
 		# a pitched roof over the flat slab: the flier sits on the ridge instead (height found later)
 		info["roofs"] = info["roofs"].filter(func(r): return Vector2(r.x - p.x, r.z - p.z).length() > 5.5 or absf(r.y - p.y) > 0.6)
 		info["roofs"].append(p + Vector3(0, -100.0, 0))     # y < -50: "ask the ray"
@@ -914,7 +928,7 @@ func _house(o: Vector3) -> void:
 	_cover(c + Vector3(3.6, 0, -1.0)); _cover(c + Vector3(1.0, 0, 1.0)); _cover(c + Vector3(6.5, 0, 4.5))
 	info["waypoints"].append(c + Vector3(2, 0, 3))
 	info["waypoints"].append(c + Vector3(6, 0, 1.5))
-	info["vip_spots"].append(c + Vector3(6.5, 0.3, 5.0))
+	info["vip_spots"].append(c + Vector3(5.4, 0.3, 3.9))      # by the sofa, not in it
 
 ## The village green: the chapel, a lamp, the bus stop, a cross.
 func _chapel(o: Vector3) -> void:
@@ -1251,6 +1265,8 @@ func _cabin(o: Vector3) -> void:
 	var up := c + Vector3(0, h, 0)
 	var cr := _prop("house_roof", c + Vector3(w / 2, h, d / 2), 0.0, false)
 	cr.scale = Vector3(w / 8.0, 1.0, d / 6.0)
+	# a log cabin: wooden shingles and log gables, not the village house's tiles and plaster
+	_retexture(cr, {"VRoofTile": Game.mat("planks", 1.0), "VPlaster": Game.mat("bark", 0.6)})
 	_wood_roof(cr, c, w, d)
 	# porch
 	box(c + Vector3(w / 2, 0.15, -1.0), Vector3(w, 0.1, 1.8), Game.mat("planks", 1.0))
@@ -1260,10 +1276,12 @@ func _cabin(o: Vector3) -> void:
 	box(c + Vector3(w - 1.0, 0.45, d - 1.0), Vector3(1.2, 0.9, 0.8), Game.mat("planks", 1.0))
 	_lamp(c + Vector3(w / 2, 2.2, 2.0), 0.9)
 	_prop("woodpile", c + Vector3(w + 1.2, 0, 2.0), PI / 2)
-	_cover(c + Vector3(w / 2, 0, -2.4)); _cover(up + Vector3(3.0, 0.1, d * 0.75))
+	_cover(c + Vector3(w / 2, 0, -2.4)); _cover(up + Vector3(3.0, 0.1, d / 2 + 0.6))
 	info["waypoints"].append(c + Vector3(w / 2, 0, 2.0))
-	info["waypoints"].append(up + Vector3(4.0, 0.1, d * 0.75))
-	info["vip_spots"].append(up + Vector3(2.0, 0.3, d - 0.9))
+	info["waypoints"].append(up + Vector3(4.0, 0.1, d / 2 + 0.6))
+	# the one to rescue waits downstairs in the back corner (under the gable roof the loft is low
+	# by the walls: standing there, the head went through the roof)
+	info["vip_spots"].append(c + Vector3(1.0, 0.3, d - 1.0))
 
 ## A warehouse: a tall hall of corrugated sheet, crates and shelves inside, a gallery along
 ## the back wall up a steel stair.

@@ -63,4 +63,8 @@ pair coop_heal    coophealhost coophealclient "RESULT coopheal host ok" "client 
 pair coop_base    lbhost lbclient       "start_mission"            "RESULT lb lbclient players 2" 7903
 pair coop_wipe    coopwipehost coopwipeclient "globe ready"     "END\\] leave"                  7904
 run airdeath    150 h "RESULT airdeath ok"                 --autotest=airdeath --group=levite
+run vipcheck    200 h "RESULT vipcheck [0-9]+ spots, 0 bad" --autotest=vipcheck --mtype=rescue
+run climb       200 x "RESULT climb ok"                    --autotest=climb --mtype=terror --biome=farm
+run leaveany    150 h "RESULT leaveany early_block true done true finished true" --autotest=leaveany
+run ui_bigpack  200 x "m_result: 0 probl"                  --autotest=uimission --research=batohy
 echo -e "\n==== VELKÝ TEST: $pass OK, $fail CHYB ====\n$report"
