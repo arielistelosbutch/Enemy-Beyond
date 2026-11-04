@@ -120,6 +120,7 @@ func _panel(title: String) -> void:
 	p.custom_minimum_size = Vector2(300, 0)
 	add_child(p)
 	# the content scrolls when it would not fit on the screen
+	_menu_prev_want = Vector2.ZERO
 	_scroll = ScrollContainer.new()
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	p.add_child(_scroll)
@@ -782,6 +783,7 @@ func _refresh_preview() -> void:
 		Game.apply_look(_cr_model, _cr["look"])
 
 var _lobby_t := 0.0
+var _menu_prev_want := Vector2.ZERO     # the size before the last change (no flip-flopping between two)
 func _process(delta: float) -> void:
 	_lobby_t += delta
 	if _lobby_t > 0.15 and Net.is_online() and _status and is_instance_valid(_status) and _status.text.begins_with("Hráči"):
@@ -791,8 +793,12 @@ func _process(delta: float) -> void:
 	if _scroll and is_instance_valid(_scroll) and _box and is_instance_valid(_box):
 		var p := _scroll.get_parent() as Control
 		var room := 344.0 - (p.position.y - 8.0) - 22.0
-		var want := Vector2(_box.get_combined_minimum_size().x, minf(_box.get_combined_minimum_size().y, room))
-		if _scroll.custom_minimum_size != want:
+		var need := _box.get_combined_minimum_size()
+		# taller than the screen: the scrollbar takes room on the right - count it in, so the text
+		# does not re-wrap when it appears (that flipped the size back and forth every frame)
+		var want := Vector2(need.x + (10.0 if need.y > room else 0.0), minf(need.y, room))
+		if _scroll.custom_minimum_size != want and want != _menu_prev_want:
+			_menu_prev_want = _scroll.custom_minimum_size
 			_scroll.custom_minimum_size = want
 			p.size = Vector2.ZERO
 		p.position.x = roundf((640.0 - p.size.x) / 2.0)
@@ -1073,6 +1079,34 @@ func _autotest() -> void:
 			else:
 				Campaign.load_campaign()
 			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+		"menuflicker":
+			# every menu panel must settle: its size may not keep changing frame after frame
+			if not Campaign.has_save():
+				Campaign.new_campaign("normal")
+				Campaign.active = false
+			var bad := 0
+			for e in [["newcamp_easy", "easy"], ["newcamp_normal", "normal"], ["newcamp_vet", "veteran"], ["quick", ""], ["campaign", ""], ["settings", ""], ["news", ""]]:
+				match String(e[0]):
+					"quick": _show_quick()
+					"campaign": _show_campaign()
+					"settings": _show_settings()
+					"news": _show_news()
+					_:
+						_new_diff = e[1]
+						_show_new_campaign()
+				for f in 20: await get_tree().process_frame
+				var changes := 0
+				var last := _scroll.custom_minimum_size
+				for f in 60:
+					await get_tree().process_frame
+					if _scroll.custom_minimum_size != last:
+						changes += 1
+						last = _scroll.custom_minimum_size
+				print("[FLICKER] %s: %d changes in 60 frames" % [e[0], changes])
+				if changes > 1:
+					bad += 1
+			print("RESULT menuflicker %d unstable" % bad)
+			get_tree().quit()
 		"ui":
 			# every menu screen, checked for text sticking out of the screen
 			var shots := [["main", func(): _show_main("Tohle je dlouhá zpráva hlavního menu, která by se měla zalomit a nevylézt z okna ven.")],

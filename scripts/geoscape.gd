@@ -397,8 +397,15 @@ func _build_side() -> void:
 	for i in (0 if Campaign.viewer else SPEEDS.size()):
 		var k := i
 		_btn(row, SPEED_NAMES[i], func(): speed = k, 8).custom_minimum_size = Vector2(44, 14)
-	info_lbl = _lbl(side, "", TEXT, 8)
-	info_lbl.custom_minimum_size = Vector2(196, 112)
+	# the details of what is selected: takes whatever room is left and scrolls if it needs more
+	var isc := ScrollContainer.new()
+	isc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	isc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	isc.custom_minimum_size = Vector2(196, 40)
+	side.add_child(isc)
+	info_lbl = _lbl(isc, "", TEXT, 8)
+	info_lbl.custom_minimum_size = Vector2(186, 0)
+	info_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var entries := [["Základna", _show_base], ["Výzkum", _show_research], ["Zbrojnice", _show_armory],
 			["Výstroj", func(): _menu_screen("loadout")], ["Žoldák", func(): _menu_screen("merc")],
 			["Úpravy zbraní", func(): _menu_screen("mods")],
@@ -428,15 +435,15 @@ func _update_text() -> void:
 		rs = "%s %d %%" % [rr["name"], int(float(r["progress"]) / Campaign.research_days(r["current"]) * 100)]
 	if not Campaign.kondor_ready():
 		rs += "   Kondor za %d h" % Campaign.kondor_hours()
-	var co := "" if Campaign.viewer else "\nTvoje peníze: %d kr (žold, jen pro tebe)" % Net.my_money()
+	var co := "\nOsobní majetek: %d kr" % Net.my_money()
 	if Net.is_online():
-		co = "\nCo-op: %d hráčů, tvoje peníze %d kr" % [Net.roster.size(), Net.my_money()] if Campaign.viewer else "\nCo-op: %d hráčů připojeno" % Net.roster.size()
+		co += "\nCo-op: %d hráčů připojeno" % Net.roster.size()
 	var air := []
 	for c in Campaign.crafts():
 		air.append("%s %s" % [("Sokol" if int(c.get("n", 1)) == 1 else "%d× Sokol" % int(c.get("n", 1))) if c["kind"] == "jet" else Campaign.CRAFT_NAMES[c["kind"]].capitalize(), "letí k cíli" if c["state"] == "out" else ("u cíle" if c["state"] in ["arrived", "ambush"] else "se vrací")])
 	if not air.is_empty():
 		co += "\nVe vzduchu: " + ", ".join(air)
-	status_lbl.text = "%s\nRozpočet základny: %d kr   Mk-115: %d g   Důvěra: %d %%\nVýzkum: %s   Rychlost: %s%s" % [Campaign.date_text(), int(d["credits"]), Campaign.moskovium(), int(d["trust"]), rs, SPEED_NAMES[speed], co]
+	status_lbl.text = "%s\nRozpočet základny: %d kr   Důvěra: %d %%\nMk-115: %d g   Výzkum: %s   Rychlost: %s%s" % [Campaign.date_text(), int(d["credits"]), int(d["trust"]), Campaign.moskovium(), rs, SPEED_NAMES[speed], co]
 	var fl := _selected_flight()
 	if not fl.is_empty():
 		var left2: float = (float(fl["until"]) - float(d["day"])) * 24.0
@@ -857,6 +864,11 @@ func _ui_check(tag: String) -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	Game.ui_audit(self, tag)
+	# the side panel clips what does not fit (so the audit cannot see it): measure it here
+	var need := side.get_combined_minimum_size().y
+	var have := (side.get_parent() as Control).size.y - 8.0
+	if need > have:
+		print("[UI] %s: postranní panel přetéká o %.0f px (potřebuje %.0f, má %.0f)" % [tag, need - have, need, have])
 	if DisplayServer.get_name() != "headless":
 		get_viewport().get_texture().get_image().save_png("user://ui_%s.png" % tag)
 
