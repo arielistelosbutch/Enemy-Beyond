@@ -589,6 +589,9 @@ func taken(dmg: float) -> float:
 	var kind: String = mission.hit_kind if mission else ""
 	var w: Dictionary = R.get("weak", {})
 	var k := float(w.get(kind, 1.0))
+	var base := race.trim_suffix("_velitel")
+	if Campaign.AUTOPSY_BONUS.has(base) and Game.has_research(Campaign.AUTOPSY_BONUS[base]):
+		k *= 1.2           # the laboratory found where it is soft
 	if kind == "explosion" and k > 1.0:
 		return dmg * k       # armour does not stop a blast from tearing it apart
 	return dmg * float(R["armor"]) * k

@@ -35,45 +35,82 @@ const MTYPES := {
 		"text": "Radar hlásí loď nad roklí. Míří na NÁS. Bránit základnu do posledního vetřelce."},
 }
 
-# ---- research (own projects) ---------------------------------------------------------------
+# ---- research: a tree - each project needs what came before it ---------------------------------
+## needs: research (id or list), corpse (race: a body brought home), live (race, or "officer"),
+## loot (alien item brought home), seen (race met), kills, captures.
+## branch: the row band in the tree; icon: picture in the tree (assets/icons).
+const BRANCHES := {"bio": "Biologie", "psi": "Výslechy a psionika", "zbrane": "Zbraně", "material": "Materiály a výbava", "lode": "Lodě a technika"}
 const RESEARCH := {
-	"pitva": {"name": "Pitva šedáka", "cost": 150, "days": 3.0, "needs": {"kills": 1},
+	# biology: autopsies - each race on the table teaches where to hit it
+	"pitva": {"name": "Pitva šeďáka", "cost": 150, "days": 3.0, "needs": {"corpse": "grey"}, "branch": "bio", "icon": "race_grey",
 		"desc": "Kde mají slabá místa? Všechny zbraně +15 % poškození proti vetřelcům."},
-	"zenijni": {"name": "Ženijní výbava", "cost": 150, "days": 2.0, "needs": {},
-		"desc": "Odemkne nášlapné miny a kouřové granáty ve zbrojnici."},
-	"tezke": {"name": "Těžké zbraně", "cost": 300, "days": 4.0, "needs": {},
-		"desc": "Odemkne autokanón, minigun, raketomet a odstřelovací pušku."},
-	"detektor": {"name": "Citlivější detektor", "cost": 200, "days": 3.0, "needs": {},
-		"desc": "Detektor pohybu vidí na 35 m místo 25 m a méně se plete."},
-	"slitiny": {"name": "Vetřelecké slitiny", "cost": 300, "mk": 20, "days": 5.0, "needs": {"loot": "slitiny"},
-		"desc": "Pláty do vest z trupu UFO: +8 zdraví všem žoldákům."},
-	"medicina": {"name": "Polní medicína", "cost": 250, "days": 4.0, "needs": {},
-		"desc": "Lékárnička na 4 použití, padlý žoldák vykrvácí o 20 s později."},
-	"vyslech": {"name": "Výslech zajatce", "cost": 400, "days": 6.0, "needs": {"captures": 1},
-		"desc": "Co ví živý šedák? Odhalí, odkud přicházejí (připraví útok na jejich základnu)."},
-	"pitva_lihnoun": {"name": "Pitva Líhnouna", "cost": 300, "days": 4.0, "needs": {"seen": "lihnoun"},
+	"medicina": {"name": "Polní medicína", "cost": 250, "days": 4.0, "needs": {"research": "pitva"}, "branch": "bio", "icon": "medkit",
+		"desc": "Co jsme se naučili na stole, pomůže i našim: lékárnička na 4 použití, padlý žoldák vykrvácí o 20 s později."},
+	"pitva_levit": {"name": "Pitva Levita", "cost": 200, "days": 3.0, "needs": {"research": "pitva", "corpse": "levit"}, "branch": "bio", "icon": "race_levit",
+		"desc": "Orgán, který ho nese, je jeho slabina. Levité dostávají o 20 % víc."},
+	"pitva_ohar": {"name": "Pitva Ohaře", "cost": 200, "days": 3.0, "needs": {"research": "pitva", "corpse": "ohar"}, "branch": "bio", "icon": "race_ohar",
+		"desc": "Pod pláty je tělo překvapivě měkké. Ohaři dostávají o 20 % víc."},
+	"pitva_jestetan": {"name": "Pitva Ještěřana", "cost": 250, "days": 4.0, "needs": {"research": "pitva", "corpse": "jestetan"}, "branch": "bio", "icon": "race_jestetan",
+		"desc": "Šupiny drží kulky, ale ne všude. Ještěřani dostávají o 20 % víc."},
+	"pitva_lihnoun": {"name": "Pitva Líhnouna", "cost": 300, "days": 4.0, "needs": {"research": "pitva_jestetan", "corpse": "lihnoun"}, "branch": "bio", "icon": "race_lihnoun",
 		"desc": "Kde mezi pláty je měkko. Zbraně dávají Líhnounům a Nakaženým o 30 % víc. Ošetření nakaženého zabere polovinu času."},
-	"psi_clona": {"name": "Psionická clona", "cost": 450, "days": 6.0, "needs": {"seen": "grey_velitel"},
-		"desc": "Kovová síťka pod helmou a cvičení soustředění. Kněz se do mysli dostane mnohem hůř."},
-	"vysilacky": {"name": "Helmové vysílačky", "cost": 200, "days": 3.0, "needs": {},
-		"desc": "Vysílačka zabudovaná do helmy: mluvíš do éteru bez ruky na vysílačce. Odolnější proti rušení."},
-	"laser": {"name": "Laserové zbraně", "cost": 400, "days": 5.0, "needs": {"loot": "a_pistol"},
-		"desc": "Rozebraná plazmová pistole vetřelců ukázala, jak uchovat obrovskou energii v malém článku. Naše verze: laserová pistole a puška. Žádné zásobníky - článek se dobíjí sám."},
-	"laser_tezky": {"name": "Laserový kanón", "cost": 600, "mk": 15, "days": 6.0, "needs": {"research": "laser", "loot": "a_heavy"},
+	"pitva_bijec": {"name": "Pitva Bijce", "cost": 300, "days": 4.0, "needs": {"research": "pitva", "corpse": "bijec"}, "branch": "bio", "icon": "race_bijec",
+		"desc": "Oblek k němu přirostl - ale švy zůstaly. Bijci dostávají o 20 % víc."},
+	"pitva_nador": {"name": "Pitva Nádoru", "cost": 250, "days": 3.0, "needs": {"research": "pitva_bijec", "corpse": "nador"}, "branch": "bio", "icon": "race_nador",
+		"desc": "Proč vstává z mrtvých. Nádory dostávají o 20 % víc."},
+	"pitva_ohnivec": {"name": "Rozbor Ohnivce", "cost": 300, "days": 4.0, "needs": {"research": "pitva_bijec", "corpse": "ohnivec"}, "branch": "bio", "icon": "race_ohnivec",
+		"desc": "Skála, která žije. Ohnivci dostávají o 20 % víc."},
+	"pitva_myslodej": {"name": "Pitva Mysloděje", "cost": 400, "days": 5.0, "needs": {"research": "psi_clona", "corpse": "myslodej"}, "branch": "bio", "icon": "race_myslodej",
+		"desc": "Skoro jen mozek. Myslodějové dostávají o 20 % víc a psionický útok slábne."},
+	# interrogations and the mind
+	"vyslech": {"name": "Výslech zajatce", "cost": 400, "days": 6.0, "needs": {"live": "any"}, "branch": "psi", "icon": "radio",
+		"desc": "Co ví živý vetřelec? Odhalí, odkud přicházejí (připraví útok na jejich základnu)."},
+	"psi_clona": {"name": "Psionická clona", "cost": 450, "days": 6.0, "needs": {"research": "vyslech", "seen": "grey_velitel"}, "branch": "psi", "icon": "race_grey_velitel",
+		"desc": "Kovová síťka pod helmou a cvičení soustředění. Velitelé a Myslodějové se do mysli dostanou mnohem hůř."},
+	"vyslech_velitel": {"name": "Výslech velitele", "cost": 600, "days": 7.0, "needs": {"research": "vyslech", "live": "officer"}, "branch": "psi", "icon": "race_bijec_velitel",
+		"desc": "Velitel ví víc než voják. Vede k signálu z Marsu."},
+	"signal": {"name": "Signál z Marsu", "cost": 600, "days": 6.0, "needs": {"research": "vyslech_velitel"}, "branch": "psi", "icon": "mars",
+		"desc": "Zajatý velitel pořád opakuje jedno slovo a ukazuje do nebe. Radar zachytil úzký paprsek mířící na Mars. Tam je jejich velín - a v něm to, co je všechny řídí."},
+	# weapons
+	"zenijni": {"name": "Ženijní výbava", "cost": 150, "days": 2.0, "needs": {}, "branch": "zbrane", "icon": "mine",
+		"desc": "Odemkne nášlapné miny a kouřové granáty ve zbrojnici."},
+	"tezke": {"name": "Těžké zbraně", "cost": 300, "days": 4.0, "needs": {}, "branch": "zbrane", "icon": "autocannon",
+		"desc": "Odemkne autokanón, minigun, raketomet a odstřelovací pušku."},
+	"rozbor_plazma": {"name": "Plazmová zbraň vetřelců", "cost": 250, "days": 3.0, "needs": {"loot": "a_pistol"}, "branch": "zbrane", "icon": "a_pistol",
+		"desc": "Rozebraná plazmová pistole. Ukořistěné zbraně vetřelců přestanou zlobit v rukou žoldáků a otevře se cesta k laseru."},
+	"laser": {"name": "Laserové zbraně", "cost": 400, "days": 5.0, "needs": {"research": "rozbor_plazma"}, "branch": "zbrane", "icon": "laser_rifle",
+		"desc": "Naše verze jejich energetického článku: laserová pistole a puška. Žádné zásobníky - článek se dobíjí sám."},
+	"laser_tezky": {"name": "Laserový kanón", "cost": 600, "mk": 15, "days": 6.0, "needs": {"research": "laser", "loot": "a_heavy"}, "branch": "zbrane", "icon": "laser_cannon",
 		"desc": "Těžký laser podle zbraně Bijců. Na obrněné cíle a stroje."},
-	"signal": {"name": "Signál z Marsu", "cost": 600, "days": 6.0, "needs": {"research": "vyslech"},
-		"desc": "Zajatec pořád opakuje jedno slovo a ukazuje do nebe. Radar zachytil úzký paprsek mířící na Mars. Tam je jejich velín - a v něm to, co je všechny řídí."},
-	"orel": {"name": "Hvězdná loď Orel", "cost": 2500, "mk": 120, "days": 10.0, "needs": {"research": "signal"},
-		"desc": "Kondor s motorem na Moskovium 115 a trupem z vetřeleckých slitin. Doletí na Mars a zpátky. Odemkne poslední misi."},
-	"kondor": {"name": "Transportér Kondor", "cost": 500, "days": 5.0, "needs": {"research": "pitva"},
-		"desc": "Místo pomalého vrtulníku Čáp rychlý transportér s krátkými křídly a dvěma motory. Na misi doletí asi třikrát rychleji."},
-	"vesta": {"name": "Balistická vesta a štít", "cost": 200, "days": 3.0, "needs": {},
+	"plazma": {"name": "Plazmová puška", "cost": 700, "mk": 30, "days": 8.0, "needs": {"research": ["laser", "vyslech", "moskovium"], "loot": "a_rifle"}, "branch": "zbrane", "icon": "plasma_rifle",
+		"desc": "Vlastní zbraň postavená podle zabavené plazmové pušky. Tou se dá udolat cokoli."},
+	# materials and gear
+	"vesta": {"name": "Balistická vesta a štít", "cost": 200, "days": 3.0, "needs": {}, "branch": "material", "icon": "vesta",
 		"desc": "Keramické pláty v látkové vestě a ruční štít s průzorem. Vesta: o 20 % menší zranění. Štít v levé ruce zastaví většinu střel zepředu."},
-	"pancir": {"name": "Slitinový pancíř", "cost": 500, "mk": 25, "days": 6.0, "needs": {"research": "slitiny"},
+	"vysilacky": {"name": "Helmové vysílačky", "cost": 200, "days": 3.0, "needs": {}, "branch": "material", "icon": "radio",
+		"desc": "Vysílačka zabudovaná do helmy: mluvíš do éteru bez ruky na vysílačce. Odolnější proti rušení."},
+	"slitiny": {"name": "Vetřelecké slitiny", "cost": 300, "mk": 20, "days": 5.0, "needs": {"loot": "slitiny"}, "branch": "material", "icon": "a_pack",
+		"desc": "Pláty do vest z trupu UFO: +8 zdraví všem žoldákům."},
+	"pancir": {"name": "Slitinový pancíř", "cost": 500, "mk": 25, "days": 6.0, "needs": {"research": ["slitiny", "vesta"]}, "branch": "material", "icon": "pancir",
 		"desc": "Pláty z jejich slitiny přes celé tělo: o 38 % menší zranění. Je těžší, ale vidět je na každém žoldákovi."},
-	"plazma": {"name": "Plazmová puška", "cost": 700, "mk": 30, "days": 8.0, "needs": {"research": "vyslech", "loot": "a_rifle"},
-		"desc": "Vlastní zbraň postavená podle zabavené plazmové pistole."},
+	"moskovium": {"name": "Moskovium 115", "cost": 350, "days": 5.0, "needs": {"loot": "moskovium"}, "branch": "material", "icon": "plasma_cell",
+		"desc": "Prvek, který pohání jejich lodě i zbraně. Bez něj nepostavíme plazmu ani loď na Mars."},
+	# craft and machines
+	"rozbor_diskoll": {"name": "Rozbor Diskollu", "cost": 250, "days": 4.0, "needs": {"corpse": "diskoll"}, "branch": "lode", "icon": "race_diskoll",
+		"desc": "Vrak létajícího disku. Diskolly dostávají o 20 % víc."},
+	"detektor": {"name": "Citlivější detektor", "cost": 200, "days": 3.0, "needs": {"research": "rozbor_diskoll"}, "branch": "lode", "icon": "scanner",
+		"desc": "Podle čidel Diskollu: detektor pohybu vidí na 35 m místo 25 m a méně se plete."},
+	"rozbor_kolos": {"name": "Rozbor Kolosu", "cost": 450, "days": 5.0, "needs": {"research": "rozbor_diskoll", "corpse": "kolos"}, "branch": "lode", "icon": "race_kolos",
+		"desc": "Trosky chodícího stroje. Kolosové dostávají o 20 % víc."},
+	"kondor": {"name": "Transportér Kondor", "cost": 500, "days": 5.0, "needs": {"research": "slitiny"}, "branch": "lode", "icon": "dropship",
+		"desc": "Místo pomalého vrtulníku Čáp rychlý transportér s krátkými křídly, slitinovým trupem a dvěma motory. Na misi doletí asi třikrát rychleji."},
+	"orel": {"name": "Hvězdná loď Orel", "cost": 2500, "mk": 120, "days": 10.0, "needs": {"research": ["signal", "moskovium", "pancir", "kondor"]}, "branch": "lode", "icon": "dropship",
+		"desc": "Kondor s motorem na Moskovium 115 a trupem z vetřeleckých slitin. Doletí na Mars a zpátky. Odemkne poslední misi."},
 }
+
+## Research that makes a race take more damage (an autopsy / a wreck taken apart).
+const AUTOPSY_BONUS := {"levit": "pitva_levit", "ohar": "pitva_ohar", "jestetan": "pitva_jestetan", "bijec": "pitva_bijec",
+	"nador": "pitva_nador", "ohnivec": "pitva_ohnivec", "myslodej": "pitva_myslodej", "diskoll": "rozbor_diskoll", "kolos": "rozbor_kolos"}
 
 ## The archive: what the mercenaries have learned about each kind (own texts).
 const RACE_INFO := {
@@ -176,7 +213,7 @@ func has_save() -> bool:
 func new_campaign() -> void:
 	data = {
 		"day": 0.0, "credits": 1200, "trust": 60, "month": 0,
-		"research": {"done": [], "current": "", "progress": 0.0},
+		"research": {"done": [], "current": "", "progress": 0.0}, "bodies_v34": true,
 		"armory": {}, "missions": [], "next_mission": 0.15, "next_id": 1,
 		"stats": {"kills": 0, "captures": 0, "missions": 0, "won": 0},
 		"base": [], "log": ["Kampaň začala. Základna v rokli na Vysočině je v provozu."],
@@ -201,6 +238,14 @@ func load_campaign() -> bool:
 	data = cf.get_value("campaign", "data", {})
 	if not data.is_empty() and not data.has("cid"):
 		data["cid"] = str(randi())
+	if not data.is_empty() and not data.has("bodies_v34"):
+		# older saves did not keep bodies: count every race met (with kills) as one brought home
+		data["bodies_v34"] = true
+		var found: Dictionary = data.get("found", {})
+		if int(data.get("stats", {}).get("kills", 0)) > 0:
+			for r in data.get("seen_races", []):
+				found["corpse_" + String(r)] = maxi(1, int(found.get("corpse_" + String(r), 0)))
+		data["found"] = found
 	active = not data.is_empty()
 	return active
 
@@ -824,7 +869,7 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 		found[k] = int(found.get(k, 0)) + int(loot[k])
 		if k == "moskovium":
 			data["moskovium"] = moskovium() + int(loot[k])
-		got.append("%s %d%s" % [LOOT_NAMES[k], int(loot[k]), " g" if k == "moskovium" else "x"])
+		got.append("%s %d%s" % [loot_name(k), int(loot[k]), " g" if k == "moskovium" else "x"])
 	data["found"] = found
 	# the archive learns what the team has met
 	var seen: Array = data.get("seen_races", [])
@@ -886,29 +931,78 @@ func researched(id: String) -> bool:
 	return (active or viewer) and id in data["research"]["done"]
 
 func research_available(id: String) -> bool:
-	var r: Dictionary = RESEARCH[id]
 	if researched(id) or data["research"]["current"] == id:
 		return false
-	var n: Dictionary = r["needs"]
-	var st: Dictionary = data["stats"]
-	if n.has("kills") and int(st["kills"]) < int(n["kills"]): return false
-	if n.has("captures") and int(st["captures"]) < int(n["captures"]): return false
-	if n.has("missions") and int(st["missions"]) < int(n["missions"]): return false
-	if n.has("research") and not researched(n["research"]): return false
-	if n.has("seen") and not n["seen"] in data.get("seen_races", []): return false
-	if n.has("loot") and int(data.get("found", {}).get(n["loot"], 0)) <= 0: return false
+	for c in needs_list(id):
+		if not c[1]:
+			return false
 	return true
 
-func needs_text(id: String) -> String:
+## Every condition of a project: [text, met].
+func needs_list(id: String) -> Array:
 	var n: Dictionary = RESEARCH[id]["needs"]
+	var st: Dictionary = data.get("stats", {})
+	var found: Dictionary = data.get("found", {})
+	var out := []
+	var reqs: Array = []
+	if n.has("research"):
+		reqs = n["research"] if n["research"] is Array else [n["research"]]
+	for r in reqs:
+		out.append(["výzkum: " + RESEARCH[r]["name"], researched(r)])
+	if n.has("corpse"):
+		out.append(["tělo: " + race_name(n["corpse"]), int(found.get("corpse_" + String(n["corpse"]), 0)) > 0])
+	if n.has("live"):
+		var lv := String(n["live"])
+		var ok := false
+		var what := "živý zajatec"
+		if lv == "any":
+			ok = int(st.get("captures", 0)) > 0
+		elif lv == "officer":
+			what = "živý velitel (nebo Mysloděj)"
+			for k in found:
+				if String(k).begins_with("live_") and (String(k).ends_with("_velitel") or String(k) == "live_myslodej") and int(found[k]) > 0:
+					ok = true
+		else:
+			what = "živý " + race_name(lv)
+			ok = int(found.get("live_" + lv, 0)) > 0
+		out.append([what, ok])
+	if n.has("loot"):
+		out.append(["kořist: " + loot_name(n["loot"]), int(found.get(n["loot"], 0)) > 0])
+	if n.has("seen"):
+		out.append(["setkání: " + race_name(n["seen"]), n["seen"] in data.get("seen_races", [])])
+	if n.has("kills"):
+		out.append(["zabitý vetřelec", int(st.get("kills", 0)) >= int(n["kills"])])
+	if n.has("captures"):
+		out.append(["živý zajatec", int(st.get("captures", 0)) >= int(n["captures"])])
+	return out
+
+func needs_text(id: String) -> String:
 	var parts := []
-	if n.has("kills"): parts.append("zabitého vetřelce")
-	if n.has("captures"): parts.append("živého zajatce")
-	if n.has("missions"): parts.append("%d mise" % int(n["missions"]))
-	if n.has("research"): parts.append("výzkum " + RESEARCH[n["research"]]["name"])
-	if n.has("seen"): parts.append("setkání: " + RACE_INFO[n["seen"]][0])
-	if n.has("loot"): parts.append("kořist: " + LOOT_NAMES[n["loot"]])
+	for c in needs_list(id):
+		if not c[1]:
+			parts.append(c[0])
 	return "vyžaduje: " + ", ".join(parts) if not parts.is_empty() else ""
+
+## What a project leads to (the ones that list it).
+func leads_to(id: String) -> Array:
+	var out := []
+	for k in RESEARCH:
+		var n: Dictionary = RESEARCH[k]["needs"]
+		if n.has("research"):
+			var reqs: Array = n["research"] if n["research"] is Array else [n["research"]]
+			if id in reqs:
+				out.append(k)
+	return out
+
+func race_name(r: String) -> String:
+	return String(RACE_INFO[r][0]) if RACE_INFO.has(r) else r
+
+func loot_name(k: String) -> String:
+	if k.begins_with("corpse_"):
+		return "tělo: " + race_name(k.substr(7))
+	if k.begins_with("live_"):
+		return "živý zajatec: " + race_name(k.substr(5))
+	return String(LOOT_NAMES.get(k, k))
 
 func start_research(id: String) -> bool:
 	if not research_available(id) or data["research"]["current"] != "":

@@ -57,7 +57,13 @@ func _ready() -> void:
 	Net.note.connect(_on_note)
 	Campaign.mission_found.connect(func(m): Game.play_ui(self, "radar_alert", -4); _alert("RADAR: %s\n%s\n%s" % [Campaign.MTYPES[m["type"]]["name"], m["place"], Campaign.MTYPES[m["type"]]["text"]]); selected = int(m["id"]); _focus(m))
 	Campaign.flight_found.connect(func(f): Game.play_ui(self, "radar_ping", -4); _alert("RADAR: UFO V LETU\n%s nad oblastí %s.\nVyber ho na glóbu a vyšli stíhačku Sokol, než zmizí." % [Campaign.UFO_NAMES[f["kind"]], Campaign.nearest_place(float(f["lat"]), float(f["lon"]))]); selected = int(f["id"]); _focus(f))
-	Campaign.research_done.connect(func(id): Game.play_ui(self, "research_done", -3); _alert("VÝZKUM DOKONČEN\n%s\n%s" % [Campaign.RESEARCH[id]["name"], Campaign.RESEARCH[id]["desc"]]))
+	Campaign.research_done.connect(func(id):
+		Game.play_ui(self, "research_done", -3)
+		_alert("VÝZKUM DOKONČEN\n%s\n%s" % [Campaign.RESEARCH[id]["name"], Campaign.RESEARCH[id]["desc"]])
+		var ent: String = EncyData.for_research(id)
+		if ent != "" and popup:
+			var box: VBoxContainer = popup.get_child(0)
+			_btn(box, "Otevřít v encyklopedii", func(): _show_archive(ent), 9))
 	Campaign.report.connect(func(txt): Game.play_ui(self, "warning_alarm" if String(txt).begins_with("KONEC") or "MÍNUSU" in String(txt) else "money", -6); _alert(txt))
 	# the hum of the control room under everything
 	var hum := AudioStreamPlayer.new()
@@ -396,7 +402,7 @@ func _build_side() -> void:
 	var entries := [["Základna", _show_base], ["Výzkum", _show_research], ["Zbrojnice", _show_armory],
 			["Výstroj", func(): _menu_screen("loadout")], ["Žoldák", func(): _menu_screen("merc")],
 			["Úpravy zbraní", func(): _menu_screen("mods")],
-			["Hlášení", _show_log], ["Archiv vetřelců", _show_archive]]
+			["Hlášení", _show_log], ["Encyklopedie", func(): _show_archive()]]
 	if Campaign.viewer:
 		# a co-op client: the host's globe, read-only; buying with own money
 		_lbl(side, "Díváš se na základnu hostitele. Misi spouští on.", FRAME, 8)
@@ -713,47 +719,15 @@ func _show_log() -> void:
 	_lbl(box, "\n".join(log.slice(max(0, log.size() - 14))), TEXT, 8)
 	_btn(box, "Zavřít", _close_popup)
 
-func _show_archive() -> void:
-	var outer := _overlay("ARCHIV VETŘELCŮ", 470)
-	var box := _scroll(outer, 268)
-	var seen: Array = Campaign.data.get("seen_races", [])
-	if seen.is_empty():
-		_lbl(box, "Zatím prázdný. Co tým potká na misích, to se tu objeví.", FRAME, 8)
-	for r in Campaign.RACE_INFO:
-		if not r in seen:
-			continue
-		_lbl(box, Campaign.RACE_INFO[r][0].to_upper(), ACCENT, 9)
-		var l := _lbl(box, Campaign.RACE_INFO[r][1], TEXT, 8)
-		l.custom_minimum_size = Vector2(425, 0)
-	_lbl(outer, "Neznámých druhů: %d" % (Campaign.RACE_INFO.size() - seen.size()), FRAME, 8)
-	_btn(outer, "Zavřít", _close_popup)
+func _show_archive(entry := "") -> void:
+	_close_popup()
+	Encyclopedia.open(self, entry)
 
 func _show_research() -> void:
-	var outer := _overlay("VÝZKUM", 470)
-	var r: Dictionary = Campaign.data["research"]
-	_lbl(outer, "Kredity: %d. Laboratoře: %d (každá další zrychluje o polovinu). Najednou jde jen jeden projekt." % [int(Campaign.data["credits"]), Campaign.count("laborator")], FRAME, 8)
-	var box := _scroll(outer, 270)
-	for id in Campaign.RESEARCH:
-		var rr: Dictionary = Campaign.RESEARCH[id]
-		var key: String = id
-		var state := ""
-		if Campaign.researched(id):
-			state = "HOTOVO"
-		elif r["current"] == id:
-			state = "probíhá %d %%" % int(float(r["progress"]) / float(rr["days"]) * 100)
-		elif not Campaign.research_available(id):
-			state = Campaign.needs_text(id)
-		var row := HBoxContainer.new()
-		box.add_child(row)
-		var mk_txt := (", %d g Mk-115" % int(rr["mk"])) if rr.has("mk") else ""
-		var l := _lbl(row, "%s - %d kr%s, %d dní\n%s %s" % [rr["name"], rr["cost"], mk_txt, int(rr["days"]), rr["desc"], ("[" + state + "]") if state != "" else ""], TEXT if state == "" else FRAME, 8)
-		l.custom_minimum_size = Vector2(380, 0)
-		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		if state == "" and not Campaign.viewer:
-			_btn(row, "Zahájit", func():
-				if Campaign.start_research(key): Game.play_ui(self, "ui_confirm", -6); _show_research()
-				else: _alert("Nelze\nNedostatek kreditů, nebo už běží jiný výzkum."), 8)
-	_btn(outer, "Zavřít", _close_popup)
+	_close_popup()
+	var rs := ResearchScreen.open(self)
+	rs.on_changed = func(): _update_text()
+	rs.on_close = func(): _update_text()
 
 func _show_armory() -> void:
 	var box := _overlay("ZBROJNICE - NÁKUP", 470)
@@ -874,6 +848,24 @@ func _autotest() -> void:
 			e[1].call()
 			await _ui_check(e[0])
 			_close_popup()
+			for c in get_children():
+				if c is ResearchScreen or c is Encyclopedia:
+					c.queue_free()
+		# the tree half done, the encyclopedia on an autopsy and a weapon
+		Campaign.data["research"]["done"] = ["pitva", "medicina", "pitva_levit", "zenijni", "tezke", "rozbor_plazma", "vesta", "slitiny", "vyslech"]
+		Campaign.data["research"]["current"] = "laser"
+		Campaign.data["research"]["progress"] = 2.0
+		Campaign.data["found"] = {"corpse_grey": 3, "corpse_levit": 1, "a_pistol": 2, "slitiny": 10}
+		for e2 in [["geo_tree", func(): _show_research()], ["geo_ency_autopsy", func(): _show_archive("autopsy_levit")],
+				["geo_ency_race", func(): _show_archive("race_bijec_velitel")], ["geo_ency_item", func(): _show_archive("item_a_pistol")],
+				["geo_ency_craft", func(): _show_archive("ufo_scout")], ["geo_ency_grey", func(): _show_archive("autopsy_grey")]]:
+			e2[1].call()
+			await get_tree().create_timer(0.6).timeout
+			await _ui_check(e2[0])
+			for c in get_children():
+				if c is ResearchScreen or c is Encyclopedia:
+					c.queue_free()
+			await get_tree().process_frame
 		get_tree().quit()
 		return
 	if Game.autotest() == "campair":

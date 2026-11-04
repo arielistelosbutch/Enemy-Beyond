@@ -1,4 +1,11 @@
 {
+ "0.35": [
+  "Výzkum je strom: projekty na sebe navazují v pěti větvích (biologie, výslechy a psionika, zbraně, materiály, lodě). Každý projekt je políčko s obrázkem, šipky ukazují, co z čeho vede. Zelené je hotové, oranžové probíhá, modré jde zahájit hned, šedé je zamčené - a vpravo je přesně vidět, co ještě chybí (✔/✘).",
+  "Pitvy: na stůl musí tým přivézt tělo dané rasy (mrtví vetřelci se po vyhrané misi berou domů, omráčení jako živí zajatci). Každá pitva odhalí slabiny rasy - dostává o 20 % víc. Diskoll a Kolos se rozebírají jako vraky.",
+  "Nově: Výslech velitele (živý velitel nebo Mysloděj) vede k Signálu z Marsu. Plazmová zbraň vetřelců (z ukořistěné pistole) vede k laseru. Moskovium 115 se musí nejdřív prozkoumat, než z něj postavíme plazmu a Orla. Detektor se zlepšuje podle čidel z Diskollu, Kondor potřebuje slitinový trup.",
+  "Encyklopedie místo archivu: Vetřelci, Pitvy a výslechy, Stroje a lodě vetřelců, Zbraně a výbava, Naše letadla, Objevy. Každý záznam má text a model, který se pomalu otáčí - živí tvorové na fialovém pozadí, pitvy leží na kovovém stole s průhledným tělem a vidět jsou orgány.",
+  "Záznamy se odemykají tím, co tým potká, přiveze nebo prozkoumá. Po dokončení výzkumu jde rovnou otevřít jeho záznam."
+ ],
  "0.34": [
   "Vetřelci konečně bojují: když je někdo trefí z dálky, vědí odkud to přišlo a řeknou to ostatním. Záblesk výstřelu prozradí střelce. Už se nedá v klidu vystřílet celá posádka z rampy Čápa - kryjí se, přibližují od krytu ke krytu a palba se vrací.",
   "Lepší mušky: plazma letí asi dvakrát rychleji, vetřelci míří s předstihem na toho, kdo běží, a přesněji. Ze sníženého místa (za parapetem) střílejí od očí.",

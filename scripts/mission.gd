@@ -1520,6 +1520,12 @@ func _loot(success: bool) -> Dictionary:
 	var r := RandomNumberGenerator.new()
 	r.seed = Net.mission_seed + 77
 	for a in aliens():
+		# the bodies (and the living) go home on the Kondor for the laboratory
+		if a.captured:
+			out["live_" + a.race] = int(out.get("live_" + a.race, 0)) + 1
+		elif a.dead:
+			out["corpse_" + a.race] = int(out.get("corpse_" + a.race, 0)) + 1
+	for a in aliens():
 		if a.dead and Campaign.RACE_WEAPON.has(a.race) and r.randf() < 0.6:
 			var w: String = Campaign.RACE_WEAPON[a.race]
 			out[w] = int(out.get(w, 0)) + 1

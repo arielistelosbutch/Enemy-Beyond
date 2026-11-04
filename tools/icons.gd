@@ -124,10 +124,18 @@ func _init() -> void:
 		all.append([id, ITEM_SIZE, views.get(id, Vector3(1, 0.35, 0.18))])
 	for id in crafts:
 		all.append([id, CRAFT_SIZE, Vector3(0.9, 1.1, 1.3) if id.begins_with("ufo") else Vector3(1.1, 1.2, 0.9)])
+	# portraits of the races (the research tree, the encyclopedia), the Mars HQ
+	for r in ["grey", "grey_velitel", "diskoll", "levit", "ohar", "jestetan", "jestetan_velitel", "lihnoun", "zombie",
+			"bijec", "bijec_velitel", "nador", "ohnivec", "myslodej", "kolos", "mozek"]:
+		all.append(["race_" + r, Vector2i(64, 64), Vector3(0.55, 0.12, -1.0), r])
+	all.append(["mars", Vector2i(64, 64), Vector3(0.7, 0.5, -1.0), "mars_hq"])
+	var only := OS.get_cmdline_user_args()
+	if not only.is_empty():
+		all = all.filter(func(e3): return String(e3[0]) in only or (only.has("races") and String(e3[0]).begins_with("race_")) or (only.has("races") and e3[0] == "mars"))
 	for e2 in all:
 		var id: String = e2[0]
 		sv.size = e2[1] * 2      # rendered at double size, scaled down for smooth edges
-		var path := "res://assets/models/%s.glb" % id
+		var path := "res://assets/models/%s.glb" % (e2[3] if e2.size() > 3 else id)
 		var m: Node3D = load(path).instantiate() if ResourceLoader.exists(path) else _stand_in(id)
 		root3.add_child(m)
 		await process_frame

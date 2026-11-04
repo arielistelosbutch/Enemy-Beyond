@@ -2536,6 +2536,8 @@ func psi_blast(dmg: float) -> void:
 		return
 	if Game.has_research("psi_clona"):
 		dmg *= 0.6
+	if Game.has_research("pitva_myslodej"):
+		dmg *= 0.75
 	mission.hud.psi_flash()
 	Game.play_ui(self, "psi", 0)
 	mission.hud.message("Hlava ti třeští. Teče ti krev z nosu.", 3.0)
