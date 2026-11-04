@@ -610,7 +610,7 @@ func _far_point(rng: RandomNumberGenerator, min_d: float) -> Vector3:
 ## creature each group brings. "from": campaign month from which the group appears.
 const GROUPS := {
 	"sedaci": {"name": "Šeďáci", "soldier": "grey", "officer": "grey_velitel", "beast": "diskoll", "terror": "diskoll", "from": 0},
-	"levite": {"name": "Levité", "soldier": "levit", "officer": "levit", "beast": "ohar", "terror": "ohar", "from": 0},
+	"levite": {"name": "Levité", "soldier": "levit", "officer": "levit_velitel", "beast": "ohar", "terror": "ohar", "from": 0},
 	"jestetani": {"name": "Ještěřani", "soldier": "jestetan", "officer": "jestetan_velitel", "beast": "lihnoun", "terror": "lihnoun", "from": 1},
 	"bijci": {"name": "Bijci", "soldier": "bijec", "officer": "bijec_velitel", "beast": "nador", "terror": "ohnivec", "from": 2},
 	"myslodejove": {"name": "Myslodějové", "soldier": "bijec", "officer": "myslodej", "beast": "kolos", "terror": "kolos", "from": 3},
@@ -1101,7 +1101,7 @@ func _director(delta: float) -> void:
 		var p: Node = ps[randi() % ps.size()]
 		var behind: Vector3 = p.global_transform.basis.z.rotated(Vector3.UP, randf_range(-1.0, 1.0))
 		var pos: Vector3 = p.global_position + behind * randf_range(10.0, 25.0) + Vector3(0, 0.5, 0)
-		var pick := ["rustle", "rustle", "distant", "creak"]
+		var pick := ["rustle", "rustle", "creak", "creak"]
 		if _cows > 0 and t > 30.0 and randf() < 0.3:
 			pick = ["cow"]
 			_cows -= 1
@@ -1214,9 +1214,10 @@ var _nav_dirty := 0.0
 func hit_breakable(i: int, dmg: float, kind: String) -> void:
 	if not multiplayer.is_server() or i < 0 or i >= map.get("breakables", []).size():
 		return
-	var n: Node3D = map["breakables"][i]
-	if not is_instance_valid(n) or n.get_meta("broken", false):
+	var n0 = map["breakables"][i]
+	if not is_instance_valid(n0) or n0.get_meta("broken", false):
 		return
+	var n: Node3D = n0
 	var k: float = BREAK_MULT.get(kind, BREAK_MULT["bullet"]).get(String(n.get_meta("break_kind")), 0.0)
 	if k <= 0.0:
 		return
@@ -1231,7 +1232,7 @@ func blast_breakables(p: Vector3, radius: float, dmg: float) -> void:
 		return
 	var arr: Array = map.get("breakables", [])
 	for i in arr.size():
-		var n: Node3D = arr[i]
+		var n = arr[i]
 		if is_instance_valid(n) and not n.get_meta("broken", false):
 			var d: float = n.global_position.distance_to(p)
 			if d < radius + 1.0:
@@ -1239,9 +1240,10 @@ func blast_breakables(p: Vector3, radius: float, dmg: float) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func _break(i: int) -> void:
-	var n: Node3D = map["breakables"][i]
-	if not is_instance_valid(n) or n.get_meta("broken", false):
+	var n0 = map["breakables"][i]
+	if not is_instance_valid(n0) or n0.get_meta("broken", false):
 		return
+	var n: Node3D = n0
 	n.set_meta("broken", true)
 	var kind := String(n.get_meta("break_kind"))
 	var at := n.global_position

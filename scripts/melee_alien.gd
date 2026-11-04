@@ -162,11 +162,15 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 				prey = by
 				state = S.COMBAT
 				lurking = false
+				_charging = true      # hurt: no more creeping
+				_charge_prey = by
 		_:
 			if by and by.has_method("is_player"):
 				prey = by
 				state = S.COMBAT
 				lurking = false
+				_charging = true      # hurt: no more creeping
+				_charge_prey = by
 
 func stun(amount: float, from: Vector3, by: Node) -> void:
 	if race == "zombie":
@@ -175,6 +179,7 @@ func stun(amount: float, from: Vector3, by: Node) -> void:
 	super.stun(amount, from, by)
 
 func _retreat(secs: float) -> void:
+	_charging = false
 	retreat_t = secs
 	state = S.LURK
 	prey = null
@@ -336,8 +341,17 @@ func _hunt_somebody() -> void:
 	else:
 		_go_lurk(true)
 
+var _charging := false
+var _charge_prey: Node = null
+@rpc("authority", "call_local", "reliable")
+func _charge_fx() -> void:
+	Game.play_at(mission, "roar" if race == "ohar" else "hiss", global_position + Vector3.UP, 4 if race == "ohar" else 2)
+
 func _hunt(delta: float) -> void:
 	lurking = false
+	if not is_instance_valid(prey) or prey != _charge_prey:
+		_charging = false
+		_charge_prey = prey
 	if not is_instance_valid(prey) or prey.dead or (prey.has_method("is_player") and prey.downed and race != "lihnoun") \
 			or (not prey.has_method("is_player") and prey.infected):
 		prey = null
@@ -368,7 +382,19 @@ func _hunt(delta: float) -> void:
 	if repath_t <= 0:
 		repath_t = 0.25
 		_go(_snap(pp))
-	_walk(run_spd, delta)
+	var spd := run_spd
+	var pc: Array = R.get("pounce", [])
+	if not pc.is_empty():
+		# creep in low and quiet - then, close enough, the mad dash
+		if not _charging and d > float(pc[0]):
+			spd = walk_spd * 1.15
+			lurking = true
+		else:
+			if not _charging:
+				_charging = true
+				_charge_fx.rpc()
+			spd = run_spd * float(pc[1])
+	_walk(spd, delta)
 
 func _strike_tick(delta: float) -> void:
 	velocity.x = 0; velocity.z = 0

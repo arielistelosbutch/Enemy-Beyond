@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.33 prototyp"
-const VERSION_NUM := "0.33"
+const VERSION := "0.34 prototyp"
+const VERSION_NUM := "0.34"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {

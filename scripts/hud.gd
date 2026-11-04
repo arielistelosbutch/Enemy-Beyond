@@ -108,6 +108,61 @@ func psi_flash() -> void:
 	tw.tween_property(r, "color:a", 0.0, 2.5).set_ease(Tween.EASE_IN)
 	tw.tween_callback(r.queue_free)
 
+## Under a grey officer's illusion: a violet haze at the edges that will not go away until it ends.
+func psi_haze(secs: float) -> void:
+	var r := ColorRect.new()
+	r.set_anchors_preset(Control.PRESET_FULL_RECT)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sm := ShaderMaterial.new()
+	var sh := Shader.new()
+	sh.code = """shader_type canvas_item;
+uniform float k = 1.0;
+void fragment() {
+	vec2 c = UV - vec2(0.5);
+	float v = smoothstep(0.25, 0.75, length(c) * 1.2);
+	float p = 0.75 + 0.25 * sin(TIME * 2.3 + UV.y * 6.0);
+	COLOR = vec4(0.5, 0.12, 0.7, v * 0.6 * p * k + 0.06 * k);
+}"""
+	sm.shader = sh
+	r.material = sm
+	add_child(r)
+	psi_flash()
+	var tw := create_tween()
+	tw.tween_interval(maxf(0.5, secs - 1.5))
+	tw.tween_method(func(x: float): sm.set_shader_parameter("k", x), 1.0, 0.0, 1.5)
+	tw.tween_callback(r.queue_free)
+
+## Knocked out: almost black, until somebody brings you round.
+var _ko_rect: ColorRect
+func ko_dark(on: bool) -> void:
+	if on:
+		if _ko_rect == null:
+			_ko_rect = ColorRect.new()
+			_ko_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+			_ko_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			add_child(_ko_rect)
+			move_child(_ko_rect, 0)      # under the messages
+		_ko_rect.color = Color(0, 0, 0, 0)
+		create_tween().tween_property(_ko_rect, "color:a", 0.93, 0.8)
+	elif _ko_rect:
+		var r := _ko_rect
+		_ko_rect = null
+		var tw := create_tween()
+		tw.tween_property(r, "color:a", 0.0, 1.5)
+		tw.tween_callback(r.queue_free)
+
+## Ještěřan's flash trap: the world goes white, then slowly comes back.
+func blind_flash(k: float) -> void:
+	var r := ColorRect.new()
+	r.color = Color(1.0, 0.98, 0.93, clampf(k, 0.0, 1.0))
+	r.set_anchors_preset(Control.PRESET_FULL_RECT)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(r)
+	var tw := create_tween()
+	tw.tween_interval(0.6 + k * 1.4)
+	tw.tween_property(r, "color:a", 0.0, 2.5 + k * 2.5).set_ease(Tween.EASE_IN)
+	tw.tween_callback(r.queue_free)
+
 func damage_flash(from: Vector3) -> void:
 	flash_t = 0.6
 	var p := me()

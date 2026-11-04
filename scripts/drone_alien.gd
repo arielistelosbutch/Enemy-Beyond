@@ -65,6 +65,8 @@ func _physics_process(delta: float) -> void:
 
 func _think(delta: float) -> void:
 	super._think(delta)
+	if race == "diskoll" and not dead:
+		_scan(delta)
 	if race != "kolos" or dead:
 		return
 	# roof cannon: a heavy bolt at whatever it is fighting, every few seconds
@@ -102,3 +104,52 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 		var ex: Array = R.get("explode", [4.0, 50.0])
 		var at := global_position + Vector3(0, float(R.get("hover", 0.0)) + (1.8 if race == "kolos" else 0.0), 0)
 		get_tree().create_timer(0.6).timeout.connect(func(): mission.explode(at, float(ex[0]), float(ex[1]), "-", true))
+
+# ---- Diskoll: the greys' eyes ---------------------------------------------------------------
+## It maps the ground under it and tells the greys where everybody is.
+var _scan_t := 1.0
+var _mark_cd := {}
+func _scan(delta: float) -> void:
+	_scan_t -= delta
+	if _scan_t > 0.0:
+		return
+	_scan_t = 0.6
+	for p in mission.players():
+		if p.dead or p.downed:
+			continue
+		var d := global_position.distance_to(p.global_position)
+		var sees := visible_to(p) or (d < 24.0 and _los(p.global_position + Vector3(0, 1.0, 0)))
+		if not sees:
+			continue
+		var told := 0
+		for a in mission.aliens():
+			if a != self and not a.dead and a.tac == "grey" and a.global_position.distance_to(global_position) < 80.0:
+				a.intel(p)
+				told += 1
+		var k := String(p.name)
+		if told > 0 and mission.t > float(_mark_cd.get(k, -99.0)):
+			_mark_cd[k] = mission.t + 15.0
+			_mark_fx.rpc(k, p.global_position)
+
+@rpc("authority", "call_local", "reliable")
+func _mark_fx(who: String, at: Vector3) -> void:
+	Game.play_at(mission, "radar_ping", global_position, 0)
+	# a thin green sweep from the disc to the man it marked
+	var mi := MeshInstance3D.new()
+	var from := global_position + Vector3(0, float(R.get("hover", 0.0)), 0)
+	var to := at + Vector3(0, 1.0, 0)
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.02, 0.02, from.distance_to(to))
+	mi.mesh = bm
+	mi.material_override = Game.color_mat(Color(0.3, 1.0, 0.5), true)
+	mission.add_child(mi)
+	mi.global_position = (from + to) / 2.0
+	if from.distance_to(to) > 0.1:
+		mi.look_at(to, Vector3.UP if absf((to - from).normalized().y) < 0.95 else Vector3.RIGHT)
+	var tw := mi.create_tween()
+	tw.tween_interval(0.35)
+	tw.tween_callback(mi.queue_free)
+	var me: Node = mission.local_player()
+	if me and String(me.name) == who:
+		Game.play_ui(me, "radar_ping", -6)
+		mission.hud.message("Ten disk tě zaměřil - šeďáci teď vědí, kde jsi.", 3.0)

@@ -1105,6 +1105,7 @@ func _physics_process(delta: float) -> void:
 	if not is_multiplayer_authority():
 		_remote_visuals()
 		return
+	_illusion_tick(delta)
 	_fit_body_shape()
 	if dead or mission.finished:
 		velocity = Vector3.ZERO
@@ -2218,6 +2219,9 @@ func _downed(delta: float) -> void:
 	if bleed_left <= 0:
 		dead = true
 		wants_evac = false
+		if ko:
+			ko = false
+			mission.hud.ko_dark(false)
 		mission.hud.message("Vykrvácel jsi.", 8.0)
 		return
 	_evac_input(global_position.distance_to(mission.map["evac"]) < 3.5, mission.hud.inventory_open)
@@ -2237,6 +2241,11 @@ func _downed(delta: float) -> void:
 			global_position = global_position.lerp(target, delta * 6.0)
 			return
 		carried_by = 0
+	if ko:
+		# out cold: no crawling
+		velocity = Vector3(0, velocity.y - GRAVITY * delta, 0)
+		move_and_slide()
+		return
 	# crawl
 	var iv := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var dir := (transform.basis * Vector3(iv.x, 0, iv.y)).normalized()
@@ -2252,6 +2261,9 @@ func revived(by: String) -> void:
 	carried_by = 0
 	infected = false
 	healed_t = 0.0
+	if ko:
+		ko = false
+		mission.hud.ko_dark(false)
 	hp = max(8.0, max_hp * 0.3)
 	bleeding = 0
 	crouching = true
@@ -2440,6 +2452,82 @@ func psi_attack(roll: float) -> void:
 		_panic_dir = Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
 		mission.hud.message("Hlas ti šeptá: UTEČ.", 3.0)
 	Game.play_ui(self, "heartbeat", 0)
+
+## The grey officer's illusion: for a while one teammate looks like a grey to you.
+## You can see something is wrong (the violet haze) - but not what.
+var _illusion_t := 0.0
+var _illusion_of: Node = null
+var _illusion_m: Node3D
+var _illusion_anim: AnimationPlayer
+@rpc("any_peer", "call_local", "reliable")
+func psi_illusion(ally: String, secs: float, roll: float) -> void:
+	if not is_multiplayer_authority() or dead or downed:
+		return
+	var brave := float(merc.get("bravery", 40)) / 100.0
+	var resist := brave * 0.5 + (0.15 if Game.has_talent(merc, "zelezne_nervy") else 0.0) + (0.3 if Game.has_research("psi_clona") else 0.0)
+	Game.play_ui(self, "psi", -4)
+	if roll < resist:
+		mission.hud.psi_flash()
+		mission.hud.message("Něco se ti snažilo vlézt do hlavy. Odolal jsi.", 3.0)
+		return
+	var a: Node = mission.actors.get_node_or_null(ally)
+	if a == null or a == self:
+		return
+	_end_illusion()
+	_illusion_of = a
+	_illusion_t = secs
+	_illusion_m = Game.model("grey")
+	a.add_child(_illusion_m)
+	_illusion_m.scale = Vector3.ONE * 1.3
+	_illusion_anim = _illusion_m.find_child("AnimationPlayer", true, false)
+	if _illusion_anim:
+		for an in _illusion_anim.get_animation_list():
+			_illusion_anim.get_animation(an).loop_mode = Animation.LOOP_LINEAR
+		_illusion_anim.play("aim")
+	a.body.visible = false
+	a.label.visible = false
+	stress = min(100.0, stress + 15.0)
+	mission.hud.psi_haze(secs)
+	Game.play_ui(self, "whisper", -6)
+
+func _illusion_tick(delta: float) -> void:
+	if _illusion_t <= 0.0:
+		return
+	_illusion_t -= delta
+	if _illusion_t <= 0.0 or not is_instance_valid(_illusion_of) or _illusion_of.dead or dead:
+		_end_illusion()
+		return
+	if _illusion_anim:
+		var sp := Vector2(_illusion_of.velocity.x, _illusion_of.velocity.z).length()
+		var want := "run" if sp > 3.0 else ("walk" if sp > 0.3 else "aim")
+		if _illusion_anim.current_animation != want and _illusion_anim.has_animation(want):
+			_illusion_anim.play(want, 0.2)
+
+func _end_illusion() -> void:
+	_illusion_t = 0.0
+	if is_instance_valid(_illusion_m):
+		_illusion_m.queue_free()
+	_illusion_m = null
+	if is_instance_valid(_illusion_of):
+		_illusion_of.body.visible = true
+		_illusion_of.label.visible = not Game.veteran()
+	_illusion_of = null
+
+## Ještěřan officer: a blow to the back of the head - out cold (no bleeding yet, but helpless).
+var ko := false
+@rpc("any_peer", "call_local", "reliable")
+func knock_out() -> void:
+	if not is_multiplayer_authority() or dead or downed:
+		return
+	hp = 0
+	downed = true
+	ko = true
+	bleed_left = BLEED_OUT * 3.0
+	crouching = true
+	light_on = false
+	Game.play_ui(self, "baton_hit", 0)
+	mission.hud.ko_dark(true)
+	mission.hud.message("Ránu do týla jsi neviděl přicházet... Tma. Někdo tě musí ošetřit.", 6.0)
 
 ## Mysloděj tears at your mind: real pain, blood from the nose.
 @rpc("any_peer", "call_local", "reliable")

@@ -77,20 +77,21 @@ const RESEARCH := {
 
 ## The archive: what the mercenaries have learned about each kind (own texts).
 const RACE_INFO := {
-	"grey": ["Šeďák", "Drobný, fyzicky slabý, ale rychlý a chytrý. Plazmová pistole. Využívá terén: vystřelí, zmizí a vrátí se odjinud. Padlé žoldáky odtahuje do tmy."],
-	"grey_velitel": ["Šeďák velitel", "Šeďák v přiléhavé uniformě s vysokým límcem. Psionik: vidí-li tě kterýkoli vetřelec, může ti vnutit paniku. Živý zajatec je pro výzkum velká kořist."],
-	"diskoll": ["Diskoll", "Létající disk, doprovod Šeďáků. Rychlý, střílí krátké a nemilosrdně přesné dávky. Nedá se omráčit. Plazma a výbuchy ho trhají na kusy, kulky odráží."],
-	"levit": ["Levit", "Létající mutant, nahoře člověk, dole pulzující orgán, který ho drží ve vzduchu. Tvář bez rtů, plná zubů. Ve vzduchu je rychlý, zbraň drží pevně."],
-	"ohar": ["Ohař", "Zmutovaný čtyřnohý vlk, z obličeje mu místo čenichu roste kostěná čepel, na plecích a hřbetu má pancéřové pláty. Rychlý, vytrvalý a hloupý: běží rovnou na to, co vidí nebo slyší."],
-	"jestetan": ["Ještěřan", "Vysoký ještěří voják s dlouhým krkem a těžkým ocasem. Pomalý, ale velmi odolný. Prsní krunýř. Kde jsou Ještěřani, bývají i Líhnouni."],
-	"jestetan_velitel": ["Ještěřan velitel", "Ještěřan v plné zbroji od helmy po holeně. Na pušku skoro nereaguje - na něj těžké zbraně."],
-	"lihnoun": ["Líhnoun", "Téměř černý dravec. Číhá ve tmě, pak přiběhne po čtyřech rychleji, než utečeš. Zblízka zabíjí dvěma drápy. Do oběti vloží zárodek: civilista se za pár vteřin zvedne jako Nakažený, žoldák, který s ním vykrvácí, taky. Nikdy nechoď sám."],
+	"grey": ["Šeďák", "Drobný, fyzicky slabý, ale rychlý a chytrý. Plazmová pistole. Do očí se nestřílí: obejde tě a pálí do zad. Diskolly mu hlásí, kde stojíš. Padlé žoldáky odtahuje do tmy."],
+	"grey_velitel": ["Šeďák velitel", "Šeďák v přiléhavé uniformě s vysokým límcem. Psionik: vidí-li tě kterýkoli vetřelec, může ti vnutit paniku - nebo ti vnutí, že tvůj kamarád je jeden z nich. Když se ti obraz zbarví do fialova, nevěř ničemu, co vidíš. Živý zajatec je pro výzkum velká kořist."],
+	"diskoll": ["Diskoll", "Létající disk, doprovod Šeďáků. Rychlý, střílí krátké a nemilosrdně přesné dávky. Hlavně ale vidí: koho zaměří, o tom vědí všichni Šeďáci v okolí. Nedá se omráčit. Plazma a výbuchy ho trhají na kusy, kulky odráží."],
+	"levit_velitel": ["Levit velitel", "Větší Levit s rudě žhnoucími tryskami. Ve vzduchu neuvěřitelně rychlý a obratný, nosí raketomet. Kde přistane, tam už za vteřinu není."],
+	"levit": ["Levit", "Létající mutant, nahoře člověk, dole pulzující orgán, který ho drží ve vzduchu. Tvář bez rtů, plná zubů. Na tryskách vyletí na střechu nebo do okna v patře, vystřelí a už je jinde. Dívej se nahoru."],
+	"ohar": ["Ohař", "Zmutovaný čtyřnohý vlk, z obličeje mu místo čenichu roste kostěná čepel, na plecích a hřbetu má pancéřové pláty. Loví sluchem: tiše se přikrade, a když je blízko, vyrazí šílenou rychlostí."],
+	"jestetan": ["Ještěřan", "Vysoký ještěří lovec s dlouhým krkem a těžkým ocasem. Pomalý, ale velmi odolný a těžce vyzbrojený: kulomet, minigun nebo plazmové dělo, k tomu plazmové granáty. Na cestách nechává oslepující pasti. Starší kusy se umí skrýt v maskování - pak uvidíš jen dvě oči."],
+	"jestetan_velitel": ["Ještěřan velitel", "Ještěřan v plné zbroji od helmy po holeně, vždy v maskování. Na pušku skoro nereaguje - na něj těžké zbraně. Rád se připlíží zezadu, omráčí tě úderem do týla a odnese do lodi. Nikdy nechoď sám."],
+	"lihnoun": ["Líhnoun", "Téměř černý dravec. Číhá ve tmě, plíží se blíž a pak přiběhne po čtyřech rychleji, než utečeš. Zblízka zabíjí dvěma drápy. Do oběti vloží zárodek: civilista se za pár vteřin zvedne jako Nakažený, žoldák, který s ním vykrvácí, taky. Plazma ho pálí víc než kulky."],
 	"zombie": ["Nakažený", "To, co zbylo z oběti Líhnouna. Pomalý, neúnavný. Když padne - nebo když uplyne čas - vyleze z něj nový Líhnoun."],
-	"bijec": ["Bijec", "Vysoký mutant, celé tělo jen svaly v tmavě modrém biologickém obleku, který k němu přirostl jako druhá kůže. Tmavě fialová tvář. Těžká plazmová karabina, krátké dávky, skoro se neschovává."],
-	"bijec_velitel": ["Bijec velitel", "Bijec v krvavě rudém obleku. Odolnější, střílí delší dávky."],
+	"bijec": ["Bijec", "Vysoký mutant, celé tělo jen svaly v tmavě modrém biologickém obleku, který k němu přirostl jako druhá kůže. Nejlepší voják vetřelců: plazmová puška, kulomet, minigun nebo plazmové dělo a plazmové granáty. Postupuje od krytu ke krytu, dokud tě nenajde."],
+	"bijec_velitel": ["Bijec velitel", "Bijec v krvavě rudém obleku. Strašně odolný, přesný, s těžkým plazmovým minigunem. Rány se mu hojí a jeho řev žene ostatní kupředu."],
 	"nador": ["Nádor", "Vznášející se pulzující nádor plný žil a mrtvých očí. Plivá kyselinu obloukem. Když padne, NENÍ mrtvý: leží na zemi a za chvíli se znovu zvedne. Musíš ho rozstřílet podruhé."],
-	"ohnivec": ["Ohnivec", "Plazící se hromada černé skály s žhavými spárami. Plivá roztavenou lávu, kdo stojí vedle něj, hoří. Kulky a plazma ho skoro neberou - na něj granát, raketa, autokanón."],
-	"myslodej": ["Mysloděj", "Fialový rubáš, který se vznáší, jako by v něm nic nebylo. Ve skutečnosti velmi hubený tvor, který už nepotřebuje končetiny: zbraň drží myslí ve vzduchu vedle sebe. Ovládá mysli: vnutí paniku, převezme ruce, způsobí bolest, a vlastní posílí a zahojí. Zabij ho první."],
+	"ohnivec": ["Ohnivec", "Plazící se hromada černé skály s žhavými spárami. Plivá roztavenou lávu, kdo stojí vedle něj, hoří, a když ho chvíli nikdo netrefí, žár mu rány zacelí. Kulky a plazma ho skoro neberou - na něj granát, raketa, autokanón."],
+	"myslodej": ["Mysloděj", "Fialový rubáš, který se vznáší, jako by v něm nic nebylo. Ve skutečnosti velmi hubený tvor, který už nepotřebuje končetiny: plazmovou pistoli drží myslí ve vzduchu vedle sebe. Přímému boji se vyhýbá. Ovládá mysli: vnutí paniku, převezme ruce, způsobí bolest - a vlastní posílí, zahojí a vyburcuje. Zabij ho první."],
 	"kolos": ["Kolos", "Chodící válečný stroj na třech nohách. Vepředu dvě plazmové hlavice, na střeše plazmové dělo. Přesný, rychlý a smrtící, ale je to jen stroj: jde rovnou za tím, co naposledy viděl. Při zničení exploduje."],
 }
 
@@ -127,7 +128,7 @@ const SHOP_MK := {"plasma_rifle": 25, "plasma_cell": 3, "laser_cannon": 6, "panc
 ## What the team brings home from a won mission (collected automatically).
 const LOOT_NAMES := {"a_pistol": "Plazmová pistole vetřelců", "a_rifle": "Plazmová puška vetřelců", "a_heavy": "Těžká plazma vetřelců",
 	"slitiny": "Vetřelecké slitiny", "moskovium": "Moskovium 115"}
-const RACE_WEAPON := {"grey": "a_pistol", "grey_velitel": "a_pistol", "levit": "a_rifle", "jestetan": "a_rifle", "jestetan_velitel": "a_rifle",
+const RACE_WEAPON := {"grey": "a_pistol", "grey_velitel": "a_pistol", "levit": "a_rifle", "levit_velitel": "a_rifle", "jestetan": "a_rifle", "jestetan_velitel": "a_rifle",
 	"bijec": "a_heavy", "bijec_velitel": "a_heavy", "myslodej": "a_heavy"}
 
 # ---- places (approximate, for mission names) --------------------------------------------------

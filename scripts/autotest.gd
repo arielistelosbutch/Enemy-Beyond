@@ -55,6 +55,8 @@ func _process(delta: float) -> void:
 		"arsenal": _arsenal(p)
 		"town": _town(p)
 		"zoo": _zoo(p)
+		"tactics": _tactics(p)
+		"cloakshot": _cloakshot(p)
 		"voice": _voice_test(p)
 		"club": _club(p)
 		"uimission": _ui_mission(p)
@@ -103,7 +105,7 @@ func _process(delta: float) -> void:
 			if t > 25.0:
 				out("RESULT players=%d aliens=%d" % [m().players().size(), m().aliens().size()])
 				get_tree().quit()
-	if t > 120.0 and mode != "campaign":
+	if t > 120.0 and mode != "campaign" and mode != "tactics":
 		out("TIMEOUT")
 		get_tree().quit()
 
@@ -389,7 +391,7 @@ func _town(p: Node) -> void:
 		get_tree().quit()
 
 ## Line-up of the whole roster for screenshots (frozen, lit).
-const ZOO := ["grey", "grey_velitel", "diskoll", "levit", "ohar", "jestetan", "jestetan_velitel", "lihnoun", "bijec", "bijec_velitel", "nador", "ohnivec", "myslodej", "kolos"]
+const ZOO := ["grey", "grey_velitel", "diskoll", "levit", "levit_velitel", "ohar", "jestetan", "jestetan_velitel", "lihnoun", "bijec", "bijec_velitel", "nador", "ohnivec", "myslodej", "kolos"]
 ## Fake speech into the voice system: snippets get stored, an alien plays one back.
 var _vt := 0.0
 func _voice_test(p: Node) -> void:
@@ -1311,4 +1313,89 @@ func _stuntest(p: Node) -> void:
 		if a.dead:
 			break
 	out("RESULT stuntest captured=%s" % a.captured)
+	get_tree().quit()
+
+## AI tactics: the merc snipes from the Kondor's ramp; the aliens must answer (cover, return
+## fire, flanking, their race's tricks). Logs [TAC] events from the aliens.
+var _tac_t := 0.0
+var _tac_hp := 0.0
+var _snipes := 0
+func _tactics(p: Node) -> void:
+	if p == null or not m().go or m().hud._brief_t >= 0:
+		return
+	if step == 0:
+		step = 1
+		m().hud.inventory_open = false
+		p.hp = 5000.0
+		_tac_hp = p.hp
+		p.set_physics_process(false)
+		p.global_position = m().map["evac"] + Vector3(0, 0.3, 0)
+		if Game.cmd_arg("spot", "") == "open":
+			p.global_position = NavigationServer3D.map_get_closest_point(p.get_world_3d().navigation_map, m().map["ufo"] + (m().map["evac"] - m().map["ufo"]) * 0.5) + Vector3(0, 0.3, 0)
+		if Game.cmd_arg("spot", "") == "ufo":
+			p.global_position = NavigationServer3D.map_get_closest_point(p.get_world_3d().navigation_map, m().map["ufo"] + (m().map["evac"] - m().map["ufo"]).normalized() * 22.0) + Vector3(0, 0.3, 0)
+		m().t += 70.0       # past the quiet start
+		Engine.time_scale = float(Game.cmd_arg("ts", "3"))
+		out("TAC start at %s" % p.global_position)
+	_tac_t -= get_process_delta_time()
+	if _tac_t <= 0.0 and step == 1:
+		_tac_t = 4.0
+		var eye: Vector3 = p.global_position + Vector3(0, 1.5, 0)
+		var best: Node = null
+		for a in m().aliens():
+			if a.dead or a.husk:
+				continue
+			var d: float = a.global_position.distance_to(p.global_position)
+			if d > 80.0:
+				continue
+			var q := PhysicsRayQueryParameters3D.create(eye, a.global_position + Vector3(0, 1.0, 0), 1)
+			if p.get_world_3d().direct_space_state.intersect_ray(q).is_empty() and (best == null or d < best.global_position.distance_to(p.global_position)):
+				best = a
+		if best and _snipes < int(Game.cmd_arg("snipes", "999")):
+			_snipes += 1
+			_aim_at(p, best.global_position + Vector3(0, 1.0, 0))
+			m().noise(p.global_position, 60.0)
+			best.damage(12.0, p.global_position + Vector3(0, 1.5, 0), p)
+			out("TAC snipe %s %s d%.0f hp %.0f" % [best.name, best.race, best.global_position.distance_to(p.global_position), best.hp])
+		var st := []
+		for a in m().aliens():
+			st.append("%s:%s/%s d%.0f sh%d%s%s" % [a.name, a.S.keys()[a.state], a.phase, a.global_position.distance_to(p.global_position), a.shots_fired, " x" if a.dead else "", " K" if a.has_method("_knows") and a._knows(p) else ""])
+		out("   " + ", ".join(st) + " | php %.0f started %s" % [p.hp, m().started()])
+	if t > float(Game.cmd_arg("secs", "150")):
+		var fired := 0
+		var lines := []
+		for a in m().aliens():
+			fired += a.shots_fired
+			lines.append("%s %s %s/%s d%.0f shots %d%s%s" % [a.name, a.race, a.S.keys()[a.state], a.phase, a.global_position.distance_to(p.global_position), a.shots_fired, " DEAD" if a.dead else "", " AIR" if a.airborne else ""])
+		for l in lines:
+			out("  " + l)
+		out("RESULT tactics shots %d player lost %.0f hp downed %s" % [fired, _tac_hp - p.hp, p.downed])
+		Engine.time_scale = 1.0
+		get_tree().quit()
+
+## Pictures: a lizard officer cloaked / uncloaked, a Levit officer up on its jets.
+func _cloakshot(p: Node) -> void:
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.inventory_open = false
+	p.set_meta("ghost", true)
+	p.hp = 1000.0
+	p.set_physics_process(false)
+	var shots := 0
+	for a in m().aliens():
+		a.set_physics_process(false)
+		var fwd: Vector3 = -a.global_transform.basis.z
+		p.global_position = a.global_position + fwd * 3.2 - Vector3(0, 0.0, 0)
+		_aim_at(p, a.global_position + Vector3(0, float(a.R["h"]) * 0.7, 0))
+		for k in [0.0, 1.0]:
+			a.cloak = k > 0.5
+			a._cloak_k = 1.0 - k
+			for f in 90:
+				a._cloak_tick(0.05)
+				a._jet_tick(0.05)
+				await get_tree().process_frame
+			get_viewport().get_texture().get_image().save_png("user://cloak_%s_%d.png" % [a.race, int(k)])
+			shots += 1
+	out("RESULT cloakshot %d" % shots)
 	get_tree().quit()

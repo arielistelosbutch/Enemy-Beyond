@@ -16,7 +16,7 @@ var info := {
 	"player_spawns": [], "alien_spawns": [], "waypoints": [], "cover": [],
 	"evac": Vector3.ZERO, "ufo": Vector3.ZERO, "lights": [], "surfaces": [], "size": BLOCK * N,
 	"elec_lights": [], "sounds": [], "barn": Vector3.ZERO, "house": Vector3.ZERO,
-	"cows": [], "circle": Vector3.ZERO, "truck": Vector3.ZERO, "breakables": [], "landmarks": [], "vip_spots": [],
+	"windows": [], "roofs": [], "cows": [], "circle": Vector3.ZERO, "truck": Vector3.ZERO, "breakables": [], "landmarks": [], "vip_spots": [],
 }
 var _circle_done := false
 var _truck_done := false
@@ -221,6 +221,14 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 
 # ---- primitives ----------------------------------------------------------------
 func box(pos: Vector3, size: Vector3, material: Material, collide := true, rot_y := 0.0) -> Node3D:
+	if material == Game.mat("roof", 1.0) and size.y < 0.2 and minf(size.x, size.z) >= 2.5 and rot_y == 0.0:
+		# a flat roof: a perch for the flying ones
+		var top := pos + Vector3(0, size.y / 2, 0)
+		info["roofs"].append(top)
+		if maxf(size.x, size.z) > 6.0:
+			var ax := Vector3(size.x / 2 - 1.2, 0, 0) if size.x > size.z else Vector3(0, 0, size.z / 2 - 1.2)
+			info["roofs"].append(top + ax)
+			info["roofs"].append(top - ax)
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = size
@@ -370,6 +378,10 @@ func _prop(name: String, p: Vector3, yaw := 0.0, cover := true) -> Node3D:
 	root.add_child(n)
 	n.position = p
 	n.rotation.y = yaw
+	if name == "house_roof":
+		# a pitched roof over the flat slab: the flier sits on the ridge instead (height found later)
+		info["roofs"] = info["roofs"].filter(func(r): return Vector2(r.x - p.x, r.z - p.z).length() > 5.5 or absf(r.y - p.y) > 0.6)
+		info["roofs"].append(p + Vector3(0, -100.0, 0))     # y < -50: "ask the ray"
 	if cover:
 		_cover(p + Vector3(sin(yaw + PI / 2), 0, cos(yaw + PI / 2)) * 1.3)
 	return n
@@ -703,6 +715,18 @@ func _wall(start: Vector3, length: float, along_x: bool, h: float, material: Mat
 			var mid := a + pw * (k + 0.5)
 			var pos := start + (Vector3(mid, h / 2, 0) if along_x else Vector3(0, h / 2, mid))
 			out.append(box(pos, Vector3(pw, h, 0.25) if along_x else Vector3(0.25, h, pw), material))
+	# windows: firing positions for the aliens (both sides), and cover beside them
+	for g in gaps:
+		if g.size() > 2 and g[1] - g[0] >= 0.7:
+			var midw: float = (g[0] + g[1]) / 2.0
+			var cw := start + (Vector3(midw, 0, 0) if along_x else Vector3(0, 0, midw))
+			var nrm := Vector3(0, 0, 1) if along_x else Vector3(1, 0, 0)
+			var alongv := Vector3(1, 0, 0) if along_x else Vector3(0, 0, 1)
+			info["windows"].append({"c": cw, "n": nrm, "sill": float(g[2]), "w": float(g[1] - g[0])})
+			var off: float = (g[1] - g[0]) / 2.0 + 0.55
+			for sd in [-1.0, 1.0]:
+				_cover(cw + nrm * 0.55 * sd + alongv * off)
+				_cover(cw + nrm * 0.55 * sd - alongv * off)
 	# lintels above door/window gaps, sills below windows
 	for g in gaps:
 		var mid2: float = (g[0] + g[1]) / 2.0
@@ -773,19 +797,13 @@ func _house(o: Vector3) -> void:
 	var h := 3.0
 	var m := Game.mat("plaster")
 	box(c + Vector3(w / 2, 0.05, d / 2), Vector3(w, 0.1, d), Game.mat("planks", 0.5), false)
-	_wall(c, w, true, h, m, [[3.0, 4.2]], "brick")
-	_wall(c + Vector3(0, 0, d), w, true, h, m, [[1.5, 2.7], [5.5, 6.5]], "brick")
+	_wall(c, w, true, h, m, [[3.0, 4.2], [0.9, 1.9, 0.9], [6.1, 7.1, 0.9]], "brick")
+	_wall(c + Vector3(0, 0, d), w, true, h, m, [[1.5, 2.7], [5.5, 6.5], [3.6, 4.6, 0.9]], "brick")
 	_wall(c, d, false, h, m, [[2.5, 3.5]], "brick")
-	_wall(c + Vector3(w, 0, 0), d, false, h, m, [], "brick")
+	_wall(c + Vector3(w, 0, 0), d, false, h, m, [[3.5, 4.5, 0.9]], "brick")
 	_wall(c + Vector3(4.6, 0, 0), d, false, h, Game.mat("wallpaper", 1.0), [[2.0, 3.2]], "wood")
 	box(c + Vector3(w / 2, h + 0.05, d / 2), Vector3(w, 0.1, d), Game.mat("planks", 0.5), false)    # ceiling
 	_prop("house_roof", c + Vector3(w / 2, h, d / 2), 0.0, false)
-	# windows on the solid parts of the walls (front, back, right side)
-	for wx in [1.4, 6.6]:
-		_prop("window", c + Vector3(wx, 1.55, -0.13), 0.0, false)
-	_prop("window", c + Vector3(4.1, 1.55, d + 0.13), PI, false)
-	_prop("window", c + Vector3(w + 0.13, 1.55, 1.3), -PI / 2, false)
-	_prop("window", c + Vector3(w + 0.13, 1.55, 4.7), -PI / 2, false)
 	# the living room: sofa, the TV still on, a bookshelf, a rug; the kitchen across the wall
 	_rug(c + Vector3(6.3, 0, 3.0), Vector2(2.4, 1.8), Color(0.5, 0.15, 0.12))
 	box(c + Vector3(6.3, 0.25, 3.0), Vector3(1.0, 0.5, 0.6), Game.mat("planks", 1.0), false)
