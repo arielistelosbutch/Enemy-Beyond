@@ -5,7 +5,7 @@ extends RefCounted
 
 const BLOCK := 12.0
 var N := 7                 # blocks per side: see SIZES
-const SIZES := {"small": 6, "medium": 7, "large": 9, "huge": 11, "colossal": 14}
+const SIZES := {"small": 8, "medium": 10, "large": 12, "huge": 15, "colossal": 18}
 const SIZE_NAMES := {"small": "malá", "medium": "střední", "large": "velká", "huge": "obrovská", "colossal": "kolosální"}
 var terrain := "temperate"   # temperate / snow (loud steps, snowfall) / desert
 
@@ -25,7 +25,9 @@ var biome := "farm"
 var mtype := "crash"
 var ufo_kind := "scout"
 
+var _t0 := 0
 func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
+	_t0 = Time.get_ticks_msec()
 	rng.seed = map_seed
 	biome = params.get("biome", "farm")
 	mtype = params.get("type", "crash")
@@ -89,6 +91,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	info["ufo"] = Vector3((ux + 1) * BLOCK, 0, (uz + 1) * BLOCK)
 	var sx := rng.randi_range(0, N - 1)
 	grid[sx][0] = "sky"
+	_lay_roads(grid, ux, uz)
 	# the landmarks of each kind of place first, then the fill around them
 	var extra := maxi(0, (N * N - 49) / 12)     # bigger maps: more of everything
 	var farm := ["house", "barn", "house2", "garden", "ruin" if rng.randf() < 0.5 else "orchard"]
@@ -119,6 +122,12 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 			farm = ["hangar", "hangar", "barracks", "barracks", "radar", "house2", "sandbags", "sandbags", "containers", "tanks", "yard"]
 			for i in extra:
 				farm.append(["sandbags", "barracks", "yard"][i % 3])
+		"desert":
+			farm = ["ruin", "rocks", "rocks", "cabin" if rng.randf() < 0.6 else "ruin"]
+			if rng.randf() < 0.5:
+				farm.append("fuel")
+			for i in extra:
+				farm.append(["rocks", "ruin", "dunes"][i % 3])
 		"industrial":
 			farm = ["warehouse", "warehouse", "containers", "containers", "tanks", "yard", "yard", "fuel"]
 			for i in maxi(0, (N * N - 49) / 6):
@@ -130,20 +139,21 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 			if grid[x][z] == "":
 				grid[x][z] = f
 				break
-	for tries in 50:
-		var rx := rng.randi_range(0, N - 1)
-		var rz := rng.randi_range(1, N - 1)
-		if grid[rx][rz] == "":
-			grid[rx][rz] = "road"
-			break
-	var fill := ["field", "field", "pasture", "pasture", "forest", "forest", "road", "orchard", "garden"]
+	# the fill: only what belongs to this kind of place (no single road pieces - roads are lines)
+	var fill := ["field", "field", "pasture", "pasture", "forest", "forest", "orchard", "garden", "meadow", "meadow", "meadow"]
 	match biome:
-		"forest": fill = ["forest", "forest", "forest", "forest", "forest", "rocks", "pasture", "road", "stream"]
-		"town": fill = ["street", "street", "street", "pasture", "house", "road", "garden", "house2"]
-		"mountain": fill = ["forest", "forest", "rocks", "rocks", "pasture", "road"]
-		"industrial": fill = ["yard", "yard", "street", "street", "containers", "parking", "road"]
-		"base": fill = ["yard", "sandbags", "street", "pasture", "rocks", "forest"]
+		"forest": fill = ["forest", "forest", "forest", "forest", "forest", "rocks", "pasture", "stream", "meadow", "meadow"]
+		"town": fill = ["garden", "house", "house2", "parking", "garden", "meadow", "house2"]
+		"mountain": fill = ["forest", "forest", "rocks", "rocks", "pasture", "meadow", "meadow"]
+		"industrial": fill = ["yard", "yard", "containers", "parking", "yard"]
+		"base": fill = ["yard", "sandbags", "pasture", "rocks", "forest"]
 		"polar": fill = ["pasture", "pasture", "icespires", "rocks", "icelake"]
+		"desert": fill = ["dunes", "dunes", "dunes", "rocks"]
+	if terrain == "desert":
+		# sand: no fields, meadows, gardens or woods
+		for i in fill.size():
+			if fill[i] in ["field", "pasture", "forest", "orchard", "garden"]:
+				fill[i] = "dunes"
 	for x in N:
 		for z in N:
 			if grid[x][z] == "":
@@ -156,10 +166,18 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 				info["landmarks"].append([grid[x][z], o])
 			match grid[x][z]:
 				"field": _field(o)
+				"dunes": _dunes(o)
+				"meadow": _meadow(o)
+				"road_ns": _road(o, false)
+				"road_ew": _road(o, true)
+				"road_x": _road(o, false, true)
+				"street_ns": _street(o, false)
+				"street_ew": _street(o, true)
+				"street_x": _street(o, false, true)
 				"pasture": _pasture(o)
 				"forest": _forest(o)
-				"road": _road(o)
-				"street": _street(o)
+				"road": _road(o, false)
+				"street": _street(o, false)
 				"house": _house(o)
 				"barn": _barn(o)
 				"chapel": _chapel(o)
@@ -191,14 +209,14 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 					_ground(o, "concrete" if biome == "industrial" else "grass")
 					if biome != "industrial" and biome != "base":
 						_grass(o, 700, "dry", 0.5, 1.1)
-	if Game.autotest() != "": print("[MAP] tiles done")
+	if Game.autotest() != "": print("[MAP] tiles done %d ms" % (Time.get_ticks_msec() - _t0))
 	_ufo(Vector3((ux + 1) * BLOCK, 0, (uz + 1) * BLOCK))
 	if Game.autotest() != "": print("[MAP] ufo done")
 	_blood_trail()
 	if Game.autotest() != "": print("[MAP] trail done")
 	_borders()
 	nav.bake_navigation_mesh(false)
-	if Game.autotest() != "": print("[MAP] nav done")
+	if Game.autotest() != "": print("[MAP] nav done %d ms" % (Time.get_ticks_msec() - _t0))
 	return info
 
 # ---- primitives ----------------------------------------------------------------
@@ -413,6 +431,9 @@ func _hay(p: Vector3) -> void:
 	_cover(p + Vector3(1.2, 0, 0)); _cover(p + Vector3(-1.2, 0, 0))
 
 func _pasture(o: Vector3) -> void:
+	if terrain == "desert":
+		_dunes(o)      # no meadows, cows or trees in the sand
+		return
 	if biome == "polar":
 		# open snow: a few stones, a snow drift
 		_ground(o, "snow")
@@ -474,6 +495,9 @@ func _cow(p: Vector3, dead: bool) -> void:
 	_cover(p + Vector3(1.3, 0, 0))
 
 func _forest(o: Vector3) -> void:
+	if terrain == "desert":
+		_dunes(o)      # no meadows, cows or trees in the sand
+		return
 	_ground(o, "grass")
 	for i in rng.randi_range(5, 9):
 		var p := _jit(o, 1.0)
@@ -487,14 +511,66 @@ func _forest(o: Vector3) -> void:
 	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
 
 ## Town street: asphalt, a pavement, street lamps that die when they come close.
-func _street(o: Vector3) -> void:
+## Roads are laid as whole lines across the map (like the old game's road pieces): each piece knows
+## which way it runs (ew = east-west) and a crossing has both.
+func _lay_roads(grid: Array, ux: int, uz: int) -> void:
+	var kind := "street" if biome in ["town", "industrial", "base"] else "road"
+	var cols := 0
+	var rows := 0
+	match biome:
+		"town": cols = 2 if N >= 9 else 1; rows = 1
+		"industrial": cols = 1; rows = 1
+		"base": cols = 1
+		"polar": cols = 0
+		"desert": cols = 1 if rng.randf() < 0.6 else 0
+		_: cols = 1 if rng.randf() < 0.5 else 0; rows = 1 - cols if rng.randf() < 0.85 else 0
+	var used_c := []
+	for i in cols:
+		for t in 20:
+			var c := rng.randi_range(0, N - 1)
+			if c == ux or c == ux + 1 or c in used_c or (c - 1) in used_c or (c + 1) in used_c:
+				continue
+			used_c.append(c)
+			for z in N:
+				if grid[c][z] == "":
+					grid[c][z] = kind + "_ns"
+			break
+	for i in rows:
+		for t in 20:
+			var r := rng.randi_range(1, N - 1)
+			if r == uz or r == uz + 1:
+				continue
+			for x in N:
+				if grid[x][r] == "":
+					grid[x][r] = kind + "_ew"
+				elif String(grid[x][r]).ends_with("_ns"):
+					grid[x][r] = kind + "_x"
+			break
+
+## A point of a north-south road piece, turned for an east-west one.
+func _rp(o: Vector3, lp: Vector3, ew: bool) -> Vector3:
+	return o + (Vector3(lp.z, lp.y, BLOCK - lp.x) if ew else lp)
+
+func _rs(sz: Vector3, ew: bool) -> Vector3:
+	return Vector3(sz.z, sz.y, sz.x) if ew else sz
+
+func _street(o: Vector3, ew := false, cross := false) -> void:
 	_ground(o, "dirt")
-	box(o + Vector3(BLOCK / 2, 0.01, BLOCK / 2), Vector3(5.0, 0.04, BLOCK), Game.color_mat(Color(0.1, 0.1, 0.11)), false)
-	box(o + Vector3(BLOCK / 2, 0.04, BLOCK / 2), Vector3(0.15, 0.01, BLOCK), Game.color_mat(Color(0.6, 0.6, 0.5)), false)
-	for sx in [-1, 1]:
-		box(o + Vector3(BLOCK / 2 + sx * 3.4, 0.08, BLOCK / 2), Vector3(1.6, 0.16, BLOCK), Game.mat("plaster", 1.0), false)
-	for z in [2.5, 9.5]:
-		var lp := o + Vector3(BLOCK / 2 + (3.9 if z < 5 else -3.9), 0, z)
+	var asph := Game.color_mat(Color(0.1, 0.1, 0.11))
+	for dir in ([false, true] if cross else [ew]):
+		box(_rp(o, Vector3(BLOCK / 2, 0.01, BLOCK / 2), dir), _rs(Vector3(5.0, 0.04, BLOCK), dir), asph, false)
+		if not cross:
+			box(_rp(o, Vector3(BLOCK / 2, 0.04, BLOCK / 2), dir), _rs(Vector3(0.15, 0.01, BLOCK), dir), Game.color_mat(Color(0.6, 0.6, 0.5)), false)
+	# pavements: along both sides, or the four corners at a crossing
+	if cross:
+		for cx in [1.2, BLOCK - 1.2]:
+			for cz in [1.2, BLOCK - 1.2]:
+				box(o + Vector3(cx, 0.08, cz), Vector3(2.4, 0.16, 2.4), Game.mat("plaster", 1.0), false)
+	else:
+		for sx in [-1, 1]:
+			box(_rp(o, Vector3(BLOCK / 2 + sx * 3.4, 0.08, BLOCK / 2), ew), _rs(Vector3(1.6, 0.16, BLOCK), ew), Game.mat("plaster", 1.0), false)
+	for z in ([2.5, 9.5] if not cross else [1.2]):
+		var lp := _rp(o, Vector3(BLOCK / 2 + (3.9 if z < 5 else -3.9), 0, z), ew) if not cross else o + Vector3(1.2, 0, 1.2)
 		cyl(lp + Vector3(0, 2.0, 0), 0.06, 0.08, 4.0, Game.color_mat(Color(0.15, 0.16, 0.17)), true, 6)
 		var lens := box(lp + Vector3(0, 4.0, 0), Vector3(0.4, 0.1, 0.25), Game.color_mat(Color(1.0, 0.85, 0.55), true), false)
 		var l := OmniLight3D.new()
@@ -506,47 +582,79 @@ func _street(o: Vector3) -> void:
 		l.set_meta("base", 1.4)
 		l.set_meta("lens", lens)
 		info["elec_lights"].append(l)
-	# a parked car
-	if rng.randf() < 0.6:
-		var c := o + Vector3(BLOCK / 2 + 1.4, 0, rng.randf_range(3, 9))
-		var car := _prop(["car_blue", "car_red", "car_beige"][rng.randi() % 3], c, PI if rng.randf() < 0.5 else 0.0)
+	# a parked car, along the street
+	if not cross and rng.randf() < 0.6:
+		var c := _rp(o, Vector3(BLOCK / 2 + 1.4, 0, rng.randf_range(3, 9)), ew)
+		var car := _prop(["car_blue", "car_red", "car_beige"][rng.randi() % 3], c, (PI if rng.randf() < 0.5 else 0.0) + (PI / 2 if ew else 0.0))
 		car.rotation.y += rng.randf_range(-0.15, 0.15)
-	if not _stop_done and rng.randf() < 0.5:
+	if not cross and not _stop_done and rng.randf() < 0.5:
 		_stop_done = true
-		_prop("bus_stop", o + Vector3(BLOCK / 2 - 4.6, 0, 6.0), -PI / 2)
+		_prop("bus_stop", _rp(o, Vector3(BLOCK / 2 - 4.6, 0, 6.0), ew), -PI / 2 + (PI / 2 if ew else 0.0))
 	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
 
-func _road(o: Vector3) -> void:
+func _road(o: Vector3, ew := false, cross := false) -> void:
 	_ground(o, "grass")
-	box(o + Vector3(BLOCK / 2, 0.01, BLOCK / 2), Vector3(3.5, 0.04, BLOCK), Game.mat("dirt", 0.5), false)
-	for z in [2.0, 8.0]:
-		_prop("pole", o + Vector3(BLOCK / 2 - 2.6, 0, z), PI / 2, false)
-	if not _cross_done and rng.randf() < 0.6:
-		_cross_done = true
-		_prop("cross", o + Vector3(BLOCK / 2 + 3.0, 0, BLOCK / 2 + 3.5), PI / 2)
-	if not _truck_done:
+	for dir in ([false, true] if cross else [ew]):
+		box(_rp(o, Vector3(BLOCK / 2, 0.01, BLOCK / 2), dir), _rs(Vector3(3.5, 0.04, BLOCK), dir), Game.mat("dirt", 0.5), false)
+	if not cross:
+		for z in [2.0, 8.0]:
+			_prop("pole", _rp(o, Vector3(BLOCK / 2 - 2.6, 0, z), ew), PI / 2 + (PI / 2 if ew else 0.0), false)
+		if not _cross_done and rng.randf() < 0.6:
+			_cross_done = true
+			_prop("cross", _rp(o, Vector3(BLOCK / 2 + 3.0, 0, BLOCK / 2 + 3.5), ew), PI / 2 + (PI / 2 if ew else 0.0))
+	if not _truck_done and not cross:
 		_truck_done = true
-		_truck(o + Vector3(BLOCK / 2 + 0.6, 0, BLOCK / 2))
+		_truck(_rp(o, Vector3(BLOCK / 2 + 0.6, 0, BLOCK / 2), ew), ew)
+	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
+
+## Nothing much: open grass (snow, sand) - room to breathe, and nowhere to hide.
+func _meadow(o: Vector3) -> void:
+	if terrain == "desert":
+		_dunes(o)
+		return
+	_ground(o, "grass")
+	if terrain != "snow":
+		_grass(o, rng.randi_range(250, 600), "grass", 0.5, 1.1)
+	if rng.randf() < 0.25:
+		var p := _jit(o, 2.0)
+		cyl(p + Vector3(0, 0.3, 0), 0.4, 0.6, 0.6, Game.mat("rock", 0.5), true, 6)
+	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
+
+## Desert: sand in long low dunes, a few stones, dry tufts, sometimes a bleached wreck.
+func _dunes(o: Vector3) -> void:
+	_ground(o, "sand")
+	for i in rng.randi_range(2, 4):
+		var p := _jit(o, 2.0)
+		var d := box(p + Vector3(0, 0.15, 0), Vector3(rng.randf_range(3.0, 6.0), 0.6, rng.randf_range(1.5, 2.5)), Game.mat("sand", 0.5), true, rng.randf() * PI)
+		d.rotation.z = rng.randf_range(-0.08, 0.08)
+	for i in rng.randi_range(1, 3):
+		var p2 := _jit(o, 1.0)
+		var r := rng.randf_range(0.3, 0.9)
+		cyl(p2 + Vector3(0, r * 0.4, 0), r * 0.6, r, r * 0.9, Game.mat("rock", 0.5), true, 6).rotation.y = rng.randf() * PI
+	if rng.randf() < 0.15:
+		_prop(["car_beige", "car_red"][rng.randi() % 2], _jit(o, 3.0), rng.randf() * TAU)
+	_grass(o, 160, "dry", 0.3, 0.7)
 	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
 
 ## The farmer's pickup: engine dead, headlights still on, driver's door open,
 ## the radio hissing to nobody.
-func _truck(p: Vector3) -> void:
+func _truck(p: Vector3, ew := false) -> void:
 	info["truck"] = p
+	var ry := PI / 2 if ew else 0.0
+	var tp := func(v: Vector3) -> Vector3: return p + (Vector3(v.z, v.y, -v.x) if ew else v)
 	var paint := Game.color_mat(Color(0.35, 0.12, 0.10))
 	var dark := Game.color_mat(Color(0.05, 0.05, 0.06))
 	var glass := Game.color_mat(Color(0.1, 0.14, 0.16))
-	box(p + Vector3(0, 0.8, 0), Vector3(1.9, 0.7, 4.6), paint)
-	box(p + Vector3(0, 1.45, -0.4), Vector3(1.8, 0.65, 1.6), glass)
-	box(p + Vector3(0, 1.8, -0.4), Vector3(1.85, 0.08, 1.7), paint, false)
+	box(tp.call(Vector3(0, 0.8, 0)), Vector3(1.9, 0.7, 4.6), paint, true, ry)
+	box(tp.call(Vector3(0, 1.45, -0.4)), Vector3(1.8, 0.65, 1.6), glass, true, ry)
+	box(tp.call(Vector3(0, 1.8, -0.4)), Vector3(1.85, 0.08, 1.7), paint, false, ry)
 	for wx in [-0.95, 0.95]:
 		for wz in [-1.5, 1.5]:
-			cyl(p + Vector3(wx, 0.38, wz), 0.38, 0.38, 0.3, dark, false, 8).rotation.z = PI / 2
+			cyl(tp.call(Vector3(wx, 0.38, wz)), 0.38, 0.38, 0.3, dark, false, 8).rotation = Vector3(0, ry, PI / 2)
 	# open door
-	var door := box(p + Vector3(-1.35, 1.1, -0.9), Vector3(0.08, 1.0, 1.1), paint, false, 0.9)
-	door.position.x -= 0.2
+	box(tp.call(Vector3(-1.55, 1.1, -0.9)), Vector3(0.08, 1.0, 1.1), paint, false, 0.9 + ry)
 	for hx in [-0.6, 0.6]:
-		var lens := box(p + Vector3(hx, 0.95, -2.32), Vector3(0.3, 0.2, 0.05), Game.color_mat(Color(1.0, 0.95, 0.75), true), false)
+		var lens := box(tp.call(Vector3(hx, 0.95, -2.32)), Vector3(0.3, 0.2, 0.05), Game.color_mat(Color(1.0, 0.95, 0.75), true), false, ry)
 		var sl := SpotLight3D.new()
 		sl.light_color = Color(1.0, 0.93, 0.75)
 		sl.light_energy = 2.5
@@ -554,13 +662,13 @@ func _truck(p: Vector3) -> void:
 		sl.spot_angle = 24.0
 		sl.shadow_enabled = hx < 0
 		root.add_child(sl)
-		sl.position = p + Vector3(hx, 0.95, -2.4)
-		sl.rotation.x = -0.08
+		sl.position = tp.call(Vector3(hx, 0.95, -2.4))
+		sl.rotation = Vector3(-0.08, ry, 0)
 		sl.set_meta("base", 2.5)
 		sl.set_meta("lens", lens)
 		info["elec_lights"].append(sl)
-	info["sounds"].append({"name": "static", "pos": p + Vector3(0, 1.3, -0.5), "db": -14.0})
-	_cover(p + Vector3(1.6, 0, 0.5)); _cover(p + Vector3(-1.8, 0, 1.5))
+	info["sounds"].append({"name": "static", "pos": tp.call(Vector3(0, 1.3, -0.5)), "db": -14.0})
+	_cover(tp.call(Vector3(1.6, 0, 0.5))); _cover(tp.call(Vector3(-1.8, 0, 1.5)))
 
 ## Walls with openings: segments along an axis; gaps are [from, to] in metres.
 ## Gaps are [from, to] (a doorway) or [from, to, sill] (a window: wall below the sill).
@@ -941,6 +1049,9 @@ func _ruin(o: Vector3) -> void:
 
 ## A garden: shed, vegetable beds, a hedge and a picket fence.
 func _garden(o: Vector3) -> void:
+	if terrain == "desert":
+		_dunes(o)      # no meadows, cows or trees in the sand
+		return
 	_ground(o, "grass")
 	_grass(o, 500)
 	var s := o + Vector3(1.0, 0, 1.0)
@@ -966,6 +1077,9 @@ func _garden(o: Vector3) -> void:
 
 ## Orchard: rows of low fruit trees, a ladder against one, crates of apples.
 func _orchard(o: Vector3) -> void:
+	if terrain == "desert":
+		_dunes(o)      # no meadows, cows or trees in the sand
+		return
 	_ground(o, "grass")
 	_grass(o, 700, "dry", 0.4, 0.9)
 	for ix in 3:
@@ -1019,7 +1133,7 @@ func _rocks(o: Vector3) -> void:
 		var rk := cyl(p + Vector3(0, r * 0.45, 0), r * rng.randf_range(0.4, 0.8), r, r * rng.randf_range(0.8, 1.4), Game.mat("rock", 0.5), true, 6)
 		rk.rotation.y = rng.randf() * PI
 		_cover(p + Vector3(r + 0.6, 0, 0)); _cover(p + Vector3(-r - 0.6, 0, 0))
-	for i in rng.randi_range(2, 4):
+	for i in (0 if terrain == "desert" else rng.randi_range(2, 4)):
 		var p2 := _jit(o, 1.0)
 		var h := rng.randf_range(5.0, 8.0)
 		cyl(p2 + Vector3(0, h / 2, 0), 0.15, 0.28, h, Game.mat("bark", 1.0), true, 6)

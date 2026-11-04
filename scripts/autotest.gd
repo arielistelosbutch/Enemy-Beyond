@@ -841,10 +841,10 @@ func _mapshot(p: Node) -> void:
 	var c := Vector3(size / 2, 0, size / 2)
 	m().env.fog_density = 0.0015
 	m().env.volumetric_fog_enabled = false
-	for i in 3:
-		var pos: Vector3 = [c + Vector3(-size * 0.55, size * 0.55, size * 0.75), c + Vector3(size * 0.6, size * 0.45, -size * 0.5), c + Vector3(0, size * 0.25, size * 0.2)][i]
+	for i in 4:
+		var pos: Vector3 = [c + Vector3(-size * 0.55, size * 0.55, size * 0.75), c + Vector3(size * 0.6, size * 0.45, -size * 0.5), c + Vector3(0, size * 0.25, size * 0.2), c + Vector3(0, size * 1.05, 0.01)][i]
 		cam.global_position = pos
-		cam.look_at(c if i < 2 else Vector3(m().map["ufo"]), Vector3.UP)
+		cam.look_at(c if i != 2 else Vector3(m().map["ufo"]), Vector3.UP)
 		cam.make_current()
 		await get_tree().create_timer(1.0).timeout
 		get_viewport().get_texture().get_image().save_png("user://map_%s_%d.png" % [Game.cmd_arg("biome", "farm"), i])

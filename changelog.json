@@ -1,4 +1,9 @@
 {
+ "0.33": [
+  "Mapy dávají smysl: silnice vedou jako celé cesty od kraje ke kraji mapy (na venkově jedna polní cesta, ve městě ulice s křižovatkami), už nekončí v baráku a nejsou to jednotlivé kousky.",
+  "Poušť je poušť: duny, kameny, ruiny, opuštěná benzinka - žádná pole, louky, stromy ani krávy uprostřed Sahary.",
+  "Mapy jsou větší, zhruba dvojnásobná plocha u každé velikosti. Ne na každém kusu mapy něco stojí: přibyly prázdné louky, kde není kde se schovat."
+ ],
  "0.32": [
   "Modelář (tlačítko v hlavním menu): každý model ve hře (zbraně, žoldák, vetřelci, UFO, lodě, kráva...) si můžu sám upravit. Kliknu na kostku a táhnu ji myší kam patří, nebo ji posunu, otočím, zvětším či zmenším tlačítky. Přebarvím ji z palety, přidám novou kostku, válec nebo kouli, zkopíruju nebo smažu. Kostky na postavách se drží svého kloubu, takže se hýbou s rukou nebo hlavou. Krok zpět (i Ctrl+Z) a Vše vrátit.",
   "Úpravy modelů se ukládají do složky modely vedle hry a hra je hned používá. Tu složku pošlu Claudovi a ten ji dá do hry natrvalo.",

@@ -696,8 +696,8 @@ func generate_mission() -> Dictionary:
 	var terr := terrain_at(lat, lon)
 	if biome == "polar":
 		terr = "snow"
-	if terr == "desert" and biome in ["forest", "mountain", "polar"]:
-		biome = "farm"
+	if terr == "desert" and biome in ["farm", "forest", "mountain", "polar"]:
+		biome = "desert"       # sand, rocks, ruins - not fields and cows
 	var id := int(data["next_id"])
 	data["next_id"] = id + 1
 	var exp_days: float = float(info["expire"]) * (1.0 + 0.4 * count("radar")) * rng.randf_range(0.8, 1.3)
