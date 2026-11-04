@@ -133,7 +133,7 @@ func _scan(delta: float) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func _mark_fx(who: String, at: Vector3) -> void:
-	Game.play_at(mission, "radar_ping", global_position, 0)
+	Game.play_at(mission, "diskoll_scan", global_position, 0)
 	# a thin green sweep from the disc to the man it marked
 	var mi := MeshInstance3D.new()
 	var from := global_position + Vector3(0, float(R.get("hover", 0.0)), 0)

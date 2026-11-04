@@ -35,6 +35,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	info["alarm_orange"] = []
 	info["entries"] = []
 	info["spinners"] = []
+	info["passages"] = []
 	attack = bool(params.get("attack", false))
 	blips = params.get("blips", [])
 	info["home"] = true
@@ -62,7 +63,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 		for i in cells.size():
 			if String(cells[i].get("type", "")) == "ubikace" and float(cells[i].get("days", 0.0)) <= 0.0:
 				var o := Vector3((i % gw) * BLOCK + IN, 0, (i / gw) * BLOCK + IN)
-				info["player_spawns"] = [o + Vector3(1.5, 0.3, 3.0), o + Vector3(4.6, 0.3, 3.0), o + Vector3(7.8, 0.3, 3.0), o + Vector3(1.5, 0.3, 6.4)]
+				info["player_spawns"] = [o + Vector3(4.4, 0.3, 2.8), o + Vector3(7.6, 0.3, 2.8), o + Vector3(6.0, 0.3, 4.2), o + Vector3(6.0, 0.3, 7.8)]
 				info["spawn_yaw"] = PI
 				break
 		info["alien_spawns"] = info["entries"].duplicate()
@@ -79,6 +80,9 @@ func _built(gx: int, gz: int) -> bool:
 	if gx < 0 or gz < 0 or gx >= gw or gz >= gh:
 		return false
 	return String(cells[gz * gw + gx].get("type", "")) != ""
+
+func _ready(gx: int, gz: int) -> bool:
+	return _built(gx, gz) and float(cells[gz * gw + gx].get("days", 0.0)) <= 0.0
 
 ## One facility: floor, walls with doorways towards built neighbours, ceiling, lights, furniture.
 func _room(gx: int, gz: int, kind: String, building: bool, params: Dictionary) -> void:
@@ -99,6 +103,12 @@ func _room(gx: int, gz: int, kind: String, building: bool, params: Dictionary) -
 	_wall(a + Vector3(0, 0, w), w, true, h, wall, gap if s else [])
 	_wall(a, w, false, h, wall, gap if we else [])
 	_wall(a + Vector3(w, 0, 0), w, false, h, wall, gap if e else [])
+	var dm := (DOOR[0] + DOOR[1]) / 2.0 - IN
+	if not building:
+		if n and _ready(gx, gz - 1): info["passages"].append({"c": a + Vector3(dm, 0, 0), "n": Vector3(0, 0, 1)})
+		if s and _ready(gx, gz + 1): info["passages"].append({"c": a + Vector3(dm, 0, w), "n": Vector3(0, 0, -1)})
+		if we and _ready(gx - 1, gz): info["passages"].append({"c": a + Vector3(0, 0, dm), "n": Vector3(1, 0, 0)})
+		if e and _ready(gx + 1, gz): info["passages"].append({"c": a + Vector3(w, 0, dm), "n": Vector3(-1, 0, 0)})
 	# ceiling (a hole over the lift), skirting light strips
 	if kind == "velin":
 		box(a + Vector3(w / 2 + 1.5, h + 0.1, w / 2), Vector3(w - 3.0, 0.2, w), Game.mat("base_wall", 0.5))
@@ -132,6 +142,7 @@ func _room(gx: int, gz: int, kind: String, building: bool, params: Dictionary) -
 		if we: _blockade(a + Vector3(0, 0, mid), false, 1.0)
 		if e: _blockade(a + Vector3(w, 0, mid), false, -1.0)
 		_workers(a, w)
+		info["sounds"].append({"name": "base_repair", "pos": a + Vector3(w / 2, 1.5, w / 2), "db": -8.0})
 		return
 	match kind:
 		"velin": _velin(a, w, h)
@@ -179,7 +190,7 @@ func _desk(p: Vector3, yaw: float, screen := Color(0.3, 1.0, 0.5)) -> void:
 		box(p + Vector3(0, 0.37, 0) + Vector3(cos(yaw), 0, -sin(yaw)) * sx, Vector3(0.06, 0.74, 0.7), _col(Color(0.35, 0.36, 0.4)), false, yaw)
 	var back := Vector3(-sin(yaw), 0, -cos(yaw)) * 0.2
 	box(p + back + Vector3(0, 1.0, 0), Vector3(0.55, 0.42, 0.35), _col(Color(0.82, 0.8, 0.74)), false, yaw)
-	box(p + back * 0.1 + Vector3(0, 1.02, 0) + Vector3(sin(yaw), 0, cos(yaw)) * 0.0, Vector3(0.44, 0.3, 0.02) if absf(sin(yaw)) < 0.5 else Vector3(0.02, 0.3, 0.44), Game.color_mat(screen, true), false, 0.0)
+	box(p + back + Vector3(0, 1.02, 0) + Vector3(sin(yaw), 0, cos(yaw)) * 0.19, Vector3(0.44, 0.3, 0.02) if absf(sin(yaw)) < 0.5 else Vector3(0.02, 0.3, 0.44), Game.color_mat(screen, true), false, 0.0)
 	_chair(p + Vector3(sin(yaw), 0, cos(yaw)) * 0.8, yaw + PI)
 
 func _chair(p: Vector3, yaw: float, col := Color(0.3, 0.45, 0.8)) -> void:
@@ -191,7 +202,7 @@ func _console(p: Vector3, yaw: float, screen := Color(0.3, 1.0, 0.5)) -> void:
 	box(p + Vector3(0, 0.5, 0), Vector3(1.4, 1.0, 0.6), _col(Color(0.7, 0.68, 0.64)), true, yaw)
 	var up := p + Vector3(0, 1.45, 0) + Vector3(-sin(yaw), 0, -cos(yaw)) * 0.2
 	box(up, Vector3(1.3, 0.8, 0.12), _col(Color(0.5, 0.5, 0.52)), false, yaw)
-	box(up + Vector3(sin(yaw), 0, cos(yaw)) * 0.07, Vector3(1.1, 0.6, 0.02) if absf(sin(yaw)) < 0.5 else Vector3(0.02, 0.6, 1.1), Game.color_mat(screen, true), false, 0.0)
+	box(up + Vector3(sin(yaw), 0, cos(yaw)) * 0.075, Vector3(1.1, 0.6, 0.02) if absf(sin(yaw)) < 0.5 else Vector3(0.02, 0.6, 1.1), Game.color_mat(screen, true), false, 0.0)
 
 func _barrel(p: Vector3) -> void:
 	cyl(p + Vector3(0, 0.45, 0), 0.32, 0.32, 0.9, _col(Color(0.38, 0.28, 0.2)), true, 10)
@@ -283,11 +294,13 @@ func _velin(a: Vector3, w: float, h: float) -> void:
 		var ang := k * TAU / 6.0
 		_chair(c + Vector3(cos(ang), 0, sin(ang)) * 1.9, -ang + PI / 2 + PI)
 	# wall consoles: the radar, the reports - and the main terminal (back to the globe)
-	_terminal(a + Vector3(w * 0.55, 0, 0.45), 0.0, "globe", "Velín: globus, mise, nákupy a stavby")
-	_monitor_wall(a + Vector3(w - 0.08, 0, w * 0.5), -PI / 2, 3)
-	_console(a + Vector3(w - 0.45, 0, w * 0.35), -PI / 2)
-	_console(a + Vector3(w - 0.45, 0, w * 0.7), -PI / 2, Color(1.0, 0.75, 0.3))
-	_console(a + Vector3(w * 0.4, 0, w - 0.45), PI, Color(0.3, 0.8, 1.0))
+	# (the middle of every wall is a doorway - all of it sits in the corners)
+	_terminal(a + Vector3(w * 0.76, 0, 0.45), 0.0, "globe", "Velín: globus, mise, nákupy a stavby")
+	_monitor_wall(a + Vector3(w - 0.08, 0, 1.6), -PI / 2, 1, 2.5)
+	_monitor_wall(a + Vector3(w - 0.08, 0, w - 1.6), -PI / 2, 1, 2.5)
+	_console(a + Vector3(w - 0.45, 0, 1.6), -PI / 2)
+	_console(a + Vector3(w - 0.45, 0, w - 1.6), -PI / 2, Color(1.0, 0.75, 0.3))
+	_console(a + Vector3(w * 0.78, 0, w - 0.45), PI, Color(0.3, 0.8, 1.0))
 
 func _hangar_hall(a: Vector3, w: float, h: float, transport: String) -> void:
 	# yellow dashed lines, a landing square, barrels, the craft in the middle, a ramp up (shut)
@@ -323,20 +336,21 @@ func _hangar_hall(a: Vector3, w: float, h: float, transport: String) -> void:
 	_cover(a + Vector3(1.5, 0, 2.5)); _cover(a + Vector3(w - 1.5, 0, w - 2.5))
 
 func _quarters(a: Vector3, w: float) -> void:
-	for row in 3:
-		for k in 3:
-			_bunk(a + Vector3(1.4 + k * 3.2, 0, 1.6 + row * 3.4), true)
-	for k in 4:
-		_cabinet(a + Vector3(w - 0.4, 0, 1.2 + k * 1.0), -PI / 2, Color(0.4, 0.42, 0.45))
+	# bunks in the corners and one in the middle: the doorways stay free
+	for bp in [Vector3(1.8, 0, 1.3), Vector3(1.8, 0, 2.7), Vector3(1.8, 0, w - 2.7), Vector3(1.8, 0, w - 1.3),
+			Vector3(w - 1.8, 0, w - 2.7), Vector3(w - 1.8, 0, w - 1.3), Vector3(w / 2, 0, w / 2)]:
+		_bunk(a + bp, true)
+	for k in 3:
+		_cabinet(a + Vector3(w - 0.4, 0, 0.9 + k * 0.95), -PI / 2, Color(0.4, 0.42, 0.45))
 
 func _lab(a: Vector3, w: float) -> void:
-	_terminal(a + Vector3(w * 0.5, 0, 0.45), 0.0, "research", "Laboratoř: strom výzkumu", Color(0.4, 1.0, 0.6))
-	_monitor_wall(a + Vector3(w * 0.5, 0, 0.08), 0.0, 1, 2.6)
-	_terminal(a + Vector3(0.45, 0, w * 0.5), PI / 2, "ency", "Encyklopedie", Color(0.6, 0.85, 1.0))
+	_terminal(a + Vector3(w * 0.76, 0, 0.45), 0.0, "research", "Laboratoř: strom výzkumu", Color(0.4, 1.0, 0.6))
+	_monitor_wall(a + Vector3(w * 0.76, 0, 0.08), 0.0, 1, 2.6)
+	_terminal(a + Vector3(0.45, 0, 2.2), PI / 2, "ency", "Encyklopedie", Color(0.6, 0.85, 1.0))
 	for k in 3:
 		_cabinet(a + Vector3(w - 0.4, 0, 1.0 + k * 1.0), -PI / 2, Color(0.3, 0.5, 0.85) if k != 1 else Color(0.2, 0.22, 0.25))
-	_desk(a + Vector3(2.4, 0, w - 1.2), PI)
-	_desk(a + Vector3(5.0, 0, w - 1.2), PI, Color(1.0, 0.8, 0.3))
+	_desk(a + Vector3(2.2, 0, w - 1.0), PI)
+	_desk(a + Vector3(1.0, 0, w - 3.0), PI / 2, Color(1.0, 0.8, 0.3))
 	# the autopsy table: steel, a lamp over it, something under a sheet
 	var t := a + Vector3(w * 0.6, 0, w * 0.55)
 	box(t + Vector3(0, 0.85, 0), Vector3(2.2, 0.08, 1.0), _col(Color(0.75, 0.78, 0.82)))
@@ -358,46 +372,46 @@ func _workshop(a: Vector3, w: float) -> void:
 	for k in 5:
 		var g: Node3D = Game.model(guns[k])
 		root.add_child(g)
-		g.position = a + Vector3(1.2 + k * 1.6, 1.5, 0.35)
+		g.position = a + Vector3(0.9 + k * 0.6, 1.5, 0.35)
 		g.rotation = Vector3(0, PI / 2, PI / 2 * 0.0)
 		g.rotation.z = PI / 2
-	box(a + Vector3(w / 2, 1.5, 0.15), Vector3(w - 1.0, 1.6, 0.08), _col(Color(0.4, 0.38, 0.35)), false)
+	box(a + Vector3(2.1, 1.5, 0.15), Vector3(3.2, 1.6, 0.08), _col(Color(0.4, 0.38, 0.35)), false)
 	for k in 2:
-		var b := a + Vector3(2.5 + k * 4.5, 0, w * 0.55)
-		box(b + Vector3(0, 0.9, 0), Vector3(2.6, 0.1, 1.1), _col(Color(0.5, 0.42, 0.32)))
-		box(b + Vector3(0, 0.45, 0), Vector3(2.4, 0.9, 0.9), _col(Color(0.3, 0.31, 0.34)), false)
+		var b := a + Vector3(3.2 + k * 3.6, 0, w * 0.55)
+		box(b + Vector3(0, 0.9, 0), Vector3(2.2, 0.1, 1.1), _col(Color(0.5, 0.42, 0.32)))
+		box(b + Vector3(0, 0.45, 0), Vector3(2.0, 0.9, 0.9), _col(Color(0.3, 0.31, 0.34)), false)
 		box(b + Vector3(-0.6, 1.05, 0.1), Vector3(0.5, 0.2, 0.3), _col(Color(0.7, 0.2, 0.15)), false)
 		box(b + Vector3(0.5, 1.0, -0.2), Vector3(0.8, 0.1, 0.25), _col(Color(0.25, 0.25, 0.27)), false)
-	for k in 4:
+	for k in 3:
 		_crate(a + Vector3(1.0 + k * 1.1, 0, w - 0.9), 0.9)
 	_cabinet(a + Vector3(w - 0.4, 0, w - 1.5), -PI / 2, Color(0.2, 0.22, 0.25))
 
 func _infirmary(a: Vector3, w: float) -> void:
-	for k in 4:
-		var b := a + Vector3(1.6 + k * 2.3, 0, 1.6)
+	for bx in [1.2, 2.8, w - 2.8, w - 1.2]:
+		var b := a + Vector3(bx, 0, 1.6)
 		box(b + Vector3(0, 0.55, 0), Vector3(1.0, 0.15, 2.1), _col(Color(0.92, 0.93, 0.95)))
 		box(b + Vector3(0, 0.25, 0), Vector3(0.9, 0.5, 2.0), _col(Color(0.6, 0.62, 0.66)), false)
 		box(b + Vector3(0, 0.66, -0.75), Vector3(0.7, 0.1, 0.35), _col(Color(1, 1, 1)), false)
-		box(b + Vector3(1.0, 1.1, 0), Vector3(0.04, 2.2, 2.2), _col(Color(0.55, 0.75, 0.75)), false)    # curtain
+		box(b + Vector3(0.8 if bx < w / 2 else -0.8, 1.1, 0), Vector3(0.04, 2.2, 2.2), _col(Color(0.55, 0.75, 0.75)), false)    # curtain
 	_cabinet(a + Vector3(w - 0.4, 0, w - 1.5), -PI / 2, Color(0.9, 0.9, 0.92))
 	_cabinet(a + Vector3(w - 0.4, 0, w - 2.5), -PI / 2, Color(0.9, 0.9, 0.92))
 	_desk(a + Vector3(2.0, 0, w - 1.0), PI)
 
 func _radar_room(a: Vector3, w: float, h: float) -> void:
 	# a big screen with the sweep, consoles in a row
-	box(a + Vector3(w / 2, 1.8, 0.2), Vector3(5.0, 2.4, 0.1), _col(Color(0.15, 0.17, 0.2)), false)
+	box(a + Vector3(2.0, 1.8, 0.2), Vector3(3.2, 2.4, 0.1), _col(Color(0.15, 0.17, 0.2)), false)
 	var scr := MeshInstance3D.new()
 	var cm := CylinderMesh.new()
 	cm.top_radius = 1.0; cm.bottom_radius = 1.0; cm.height = 0.02
 	scr.mesh = cm
 	scr.material_override = Game.color_mat(Color(0.2, 0.9, 0.35), true)
 	root.add_child(scr)
-	scr.position = a + Vector3(w / 2, 1.8, 0.27)
+	scr.position = a + Vector3(2.0, 1.8, 0.27)
 	scr.rotation.x = PI / 2
-	_monitor_wall(a + Vector3(0.08, 0, w * 0.5), PI / 2, 2)
+	_monitor_wall(a + Vector3(0.08, 0, w - 2.0), PI / 2, 2)
 	for k in 4:
-		_console(a + Vector3(1.8 + k * 2.2, 0, 3.0), PI)
-		_chair(a + Vector3(1.8 + k * 2.2, 0, 3.8), 0.0)
+		_console(a + Vector3(2.6 + k * 1.6, 0, 3.0), PI)
+		_chair(a + Vector3(2.6 + k * 1.6, 0, 3.8), 0.0)
 
 func _containment(a: Vector3, w: float, live: Array) -> void:
 	# glass cells along the walls, a chair with straps in each - and whoever we brought home alive
@@ -406,7 +420,7 @@ func _containment(a: Vector3, w: float, live: Array) -> void:
 	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	glass.emission_enabled = true
 	glass.emission = Color(0.1, 0.25, 0.5)
-	var spots := [Vector3(1.6, 0, 1.6), Vector3(4.2, 0, 1.6), Vector3(6.8, 0, 1.6), Vector3(1.6, 0, w - 1.6), Vector3(4.2, 0, w - 1.6), Vector3(6.8, 0, w - 1.6)]
+	var spots := [Vector3(1.6, 0, 1.6), Vector3(w - 1.6, 0, 1.6), Vector3(1.6, 0, w - 1.6), Vector3(w - 1.6, 0, w - 1.6)]
 	for i in spots.size():
 		var p: Vector3 = a + spots[i]
 		box(p + Vector3(0, 1.2, 1.15 * (1 if spots[i].z < w / 2 else -1)), Vector3(2.4, 2.4, 0.05), glass, true)
@@ -424,12 +438,12 @@ func _containment(a: Vector3, w: float, live: Array) -> void:
 				ap.play("idle")
 		else:
 			_chair(p, 0.0 if spots[i].z < w / 2 else PI, Color(0.55, 0.3, 0.6))
-	_terminal(a + Vector3(w - 0.45, 0, w / 2), -PI / 2, "ency", "Encyklopedie", Color(0.6, 0.85, 1.0))
+	_terminal(a + Vector3(w / 2, 0, w / 2), 0.0, "ency", "Encyklopedie", Color(0.6, 0.85, 1.0))
 
 func _stores(a: Vector3, w: float) -> void:
 	for k in 3:
-		_shelf(a + Vector3(2.0 + k * 3.0, 0, 2.5), true)
-		_shelf(a + Vector3(2.0 + k * 3.0, 0, 6.0), true)
+		_shelf(a + Vector3(2.6 + k * 2.4, 0, 2.6), true)
+		_shelf(a + Vector3(2.6 + k * 2.4, 0, w - 2.6), true)
 	for p in [Vector3(w - 1.0, 0, w - 1.0), Vector3(w - 1.8, 0, w - 1.0)]:
 		_barrel(a + p)
 
@@ -566,7 +580,7 @@ func _monitor_wall(p: Vector3, yaw: float, n: int, y := 2.0) -> void:
 		q.mesh = qm
 		q.material_override = mat
 		root.add_child(q)
-		q.position = c + out * 0.05
+		q.position = c + out * 0.06
 		q.rotation.y = yaw
 		for j in 2:
 			box(c + side * (j - 0.5) * 0.4 + Vector3(0, -0.9, 0) + out * 0.03, Vector3(0.03, 1.1, 0.03), _col(Color(0.08, 0.08, 0.09)), false)
@@ -574,11 +588,13 @@ func _monitor_wall(p: Vector3, yaw: float, n: int, y := 2.0) -> void:
 ## The range: booths on a firing line, man-shaped boards down the lanes, sandbags at the back,
 ## an ammo locker (E: magazines for whatever you hold).
 func _range(a: Vector3, w: float) -> void:
+	var lanes := [1.2, 2.7, w - 2.7, w - 1.2]     # the middle of the room is the way through
 	for k in 4:
-		var z := 1.3 + k * 2.4
+		var z: float = lanes[k]
 		# booth partitions and the counter
-		box(a + Vector3(1.6, 0.55, z), Vector3(0.5, 0.08, 1.8), _col(Color(0.45, 0.4, 0.33)))
-		box(a + Vector3(1.6, 0.8, z + 1.2), Vector3(1.4, 1.6, 0.06), _col(Color(0.5, 0.52, 0.56)), false)
+		box(a + Vector3(1.6, 0.55, z), Vector3(0.5, 0.08, 1.2), _col(Color(0.45, 0.4, 0.33)))
+		if k == 0 or k == 2:
+			box(a + Vector3(1.6, 0.8, z + 0.75), Vector3(1.4, 1.6, 0.06), _col(Color(0.5, 0.52, 0.56)), false)
 		# the target
 		var t := a + Vector3(w - 1.4 - (k % 2) * 2.0, 0, z)
 		box(t + Vector3(0, 0.6, 0), Vector3(0.06, 1.2, 0.06), _col(Color(0.3, 0.3, 0.32)), false)
@@ -588,6 +604,8 @@ func _range(a: Vector3, w: float) -> void:
 		box(t + Vector3(-0.03, 1.95, 0), Vector3(0.02, 0.24, 0.2), _col(Color(0.15, 0.15, 0.15)), false)
 		box(t + Vector3(-0.04, 1.55, 0), Vector3(0.02, 0.08, 0.08), _col(Color(0.8, 0.1, 0.1)), false)
 	for k in 10:
+		if k >= 3 and k <= 6:
+			continue
 		box(a + Vector3(w - 0.4, 0.2 + (k % 2) * 0.4, 0.6 + k * 1.0), Vector3(0.6, 0.4, 0.95), _col(Color(0.45, 0.4, 0.28)))
 	box(a + Vector3(1.0, 0.01, w / 2), Vector3(0.1, 0.02, w - 1.0), Game.color_mat(Color(0.9, 0.75, 0.1)), false)    # the firing line
 	_cabinet(a + Vector3(0.4, 0, w - 0.8), PI / 2, Color(0.25, 0.35, 0.2))

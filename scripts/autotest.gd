@@ -57,7 +57,9 @@ func _process(delta: float) -> void:
 		"zoo": _zoo(p)
 		"tactics": _tactics(p)
 		"basewalk": _basewalk(p)
+		"basepass": _passcheck(p)
 		"doorshot": _doorshot(p)
+		"passcheck": _passcheck(p)
 		"fireshot": _fireshot(p)
 		"abase": _abase(p)
 		"cloakshot": _cloakshot(p)
@@ -1453,6 +1455,68 @@ func _basewalk(p: Node) -> void:
 	p.global_position = tm["pos"] + Vector3(0, 0.3, 0)
 	out("near %s" % m().terminal_near(p.global_position).get("kind", "-"))
 	out("RESULT basewalk %d rooms" % n)
+	get_tree().quit()
+
+## Can a man walk through? Every door opened, every base doorway: a player-sized capsule swept
+## from 0.9 m before to 0.9 m behind; anything it bumps into is reported (with the culprit's name).
+func _passcheck(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().go:
+		return
+	step = 1
+	p.set_physics_process(false)
+	p.global_position = Vector3(0, -50, 0)
+	var ways: Array = []
+	for i in m().doors.size():
+		var d: Dictionary = m().doors[i]
+		m()._swing(d, 1.0, true)
+		ways.append({"c": d["c"], "n": Vector3(0, 0, 1).rotated(Vector3.UP, float(d["base"])), "what": "dveře %d" % i, "w": float(m().map["doors"][i]["w"])})
+	for ps in m().map.get("passages", []):
+		ways.append({"c": ps["c"], "n": ps["n"], "what": "průchod", "w": 2.4})
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var space: PhysicsDirectSpaceState3D = p.get_world_3d().direct_space_state
+	var cap := CapsuleShape3D.new()
+	cap.radius = 0.33
+	cap.height = 1.7
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = cap
+	q.collision_mask = 1 | 64 | 128
+	var bad := 0
+	for wy in ways:
+		var c: Vector3 = wy["c"]
+		var nrm: Vector3 = wy["n"]
+		var side := nrm.cross(Vector3.UP)
+		var ok := false
+		var hits := {}
+		# a man can sidestep: try the middle and a little to each side
+		for off in [0.0, -0.2, 0.2, -0.4, 0.4]:
+			if absf(off) > float(wy["w"]) / 2.0 - 0.3:
+				continue
+			var clear := true
+			for k in 10:
+				var t := -0.9 + k * 0.2
+				q.transform = Transform3D(Basis(), c + nrm * t + side * off + Vector3(0, 0.25 + 0.85 + 0.05, 0))
+				var r := space.intersect_shape(q, 4)
+				if not r.is_empty():
+					clear = false
+					for h in r:
+						var o: Object = h["collider"]
+						var nm := String(o.name)
+						if o is Node and (o as Node).get_parent(): nm += "<" + String((o as Node).get_parent().name)
+						for ch in (o as Node).get_children(): nm += "," + String(ch.name)
+						if o is Node and (o as Node).get_child_count() > 0 and (o as Node).get_child(-1) is MeshInstance3D:
+							var mi: MeshInstance3D = (o as Node).get_child(-1)
+							if mi.mesh is BoxMesh: nm += " box%s" % str((mi.mesh as BoxMesh).size)
+						hits[nm + " @" + str(snapped((o as Node3D).global_position, Vector3(0.1, 0.1, 0.1)))] = true
+					break
+			if clear:
+				ok = true
+				break
+		if not ok:
+			bad += 1
+			out("BLOCKED %s at %s: %s" % [wy["what"], str(snapped(c, Vector3(0.1, 0.1, 0.1))), hits.keys()])
+	out("RESULT passcheck %d ways, %d blocked" % [ways.size(), bad])
 	get_tree().quit()
 
 ## Doors and glass: a closed door, the same door opened by E, a window before and after a shot.

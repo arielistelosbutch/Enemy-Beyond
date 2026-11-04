@@ -1,4 +1,12 @@
 {
+ "0.40": [
+  "Nové zvuky ode mě: dveře (otevřít, zavřít, vyrazit), oheň (vzplanutí, praskání, hroutící se dřevo), plazmový kanón, minigun vetřelců, pípání plazmového granátu, záblesková past, zapnutí a vypnutí maskování, válečný řev Bijce, výpady Ohaře a Líhnouna, omráčení úderem, Diskollův sken, psi iluze, tryskový batoh Levitů, hukot a výbuch jádra, siréna a vyhozené pojistky na základně, svářečka, kladivo, sbíječka a ruch stavby, jeskyně základny vetřelců a dunění obří lodi.",
+  "Líhnoun čas od času zařve tak, že je to slyšet přes celou mapu. Víš, že tam někde je.",
+  "Na normální a hardcore obtížnosti zmizelo oko, které říkalo, jestli tě někdo vidí. Na snadné zůstává.",
+  "Průchody na základně jsou volné: konzole, palandy, lůžka, regály, cely i střelnice se přestěhovaly ke zdem a do rohů, nic už nestojí ve dveřích. Monitory nevisí v průchodech a obrazovky už neblikají.",
+  "Dveře na mapách: gauč, seno, traktor a sloup u benzínky už neblokují dveře; dveře nevedou do plotu na okraji mapy. Hlídá to nový test, který každými dveřmi protlačí postavu.",
+  "Nabídka stavby se už nevejde mimo obrazovku: řádky s popisem se zalamují a seznam se dá posouvat."
+ ],
  "0.39": [
   "Obří lodě (od 4. měsíce kampaně, přistání na obrovských mapách): Bitevník a Zásobovací loď. Osmiboké sály spojené krátkými chodbami: velitelský můstek s konzolemi a zelenými obrazovkami, pohonné jádro, laboratoř s nádržemi a operačním stolem s rameny, ubikace s fialovou podlahou, sklady s kostěnými klecemi, teleporty. Pohonné jádro jde rozstřílet - a vybuchne. Na palubě je o pět vetřelců víc.",
   "Základna vetřelců: po výzkumu Výslech zajatce se na globu objeví mise. Jeskyně ve fialové skále zarostlé jejich zahradou, sál s křesly a sudy, líheň se zajatými lidmi v klecích, sklady a velitelské centrum s řídicím jádrem. Úkol: zničit jádro a vrátit se k šachtě; zajaté vezměte s sebou. Všechny jeskyně jsou propojené, žádná chodba nekončí ve skále.",

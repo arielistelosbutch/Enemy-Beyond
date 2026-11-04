@@ -819,15 +819,24 @@ func _build_menu(idx: int) -> void:
 	if not Campaign.can_build_at(idx):
 		_alert("Nelze stavět\nTady je zatím jen zemina: zařízení musí sousedit s hotovým (jinak by k němu nevedla chodba).")
 		return
-	var box := _overlay("STAVBA", 380)
+	var box := _overlay("STAVBA", 440)
+	var list := _scroll(box, 268)
 	for f in ["laborator", "dilna", "osetrovna", "radar", "cela", "sklad", "strelnice"]:
 		var key: String = f
 		var fi: Dictionary = Campaign.FACILITIES[f]
-		_btn(box, "%s - %d kr, %d dní: %s" % [fi["name"], fi["cost"], int(fi["days"]), fi["desc"]], func():
+		# a row: the build button with name and price, the description wrapped beside it
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		list.add_child(row)
+		var b := _btn(row, "%s\n%d kr, %d dní" % [fi["name"], fi["cost"], int(fi["days"])], func():
 			if Campaign.build(idx, key): _show_base()
 			else: _alert("Nelze stavět\nNedostatek kreditů."), 8)
+		b.custom_minimum_size = Vector2(118, 30)
+		var d := _lbl(row, String(fi["desc"]), TEXT, 8)
+		d.custom_minimum_size = Vector2(290, 0)
+		d.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if f == "cela" and Campaign.count("cela") > 0:
-			box.get_child(box.get_child_count() - 1).disabled = true
+			b.disabled = true
 	_btn(box, "Zpět", _show_base)
 
 # ---- tests -----------------------------------------------------------------------------------------
@@ -869,7 +878,7 @@ func _autotest() -> void:
 		await get_tree().create_timer(0.6).timeout
 		await _ui_check("geo_flight")
 		for e in [["geo_research", _show_research], ["geo_base", _show_base], ["geo_armory", _show_armory],
-				["geo_archive", _show_archive], ["geo_log", _show_log], ["geo_build", func(): _build_menu(5)],
+				["geo_archive", _show_archive], ["geo_log", _show_log], ["geo_build", func(): _build_menu(2)],
 				["geo_alert", func(): _alert("VELMI DLOUHÉ HLÁŠENÍ\n" + "Tohle je velmi dlouhý text upozornění, který by se měl zalomit. ".repeat(8))]]:
 			e[1].call()
 			await _ui_check(e[0])

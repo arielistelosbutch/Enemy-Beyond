@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.39
+# Operace X - Enemy Beyond — prototyp 0.40
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.

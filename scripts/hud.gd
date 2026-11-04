@@ -427,7 +427,8 @@ func _draw_hud() -> void:
 	if p.spin > 0.05 and rid == "minigun":
 		c.draw_rect(Rect2(mid.x - 20, mid.y + 14, 40 * p.spin, 3), Color(1, 0.6, 0.2))
 	_stance_icon(c, Vector2(132, sz.y - 36), p)
-	_eye_icon(c, Vector2(132, sz.y - 86), p)
+	if Game.easy():
+		_eye_icon(c, Vector2(132, sz.y - 86), p)    # only on easy: on normal and hardcore you never know who is watching
 	if Game.mic_live:
 		_text(c, Vector2(10, sz.y - 62), "MIKROFON ZAPNUTÝ (Tab)", Color(0.5, 1.0, 0.5), 8)
 	if p.radio_up:

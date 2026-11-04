@@ -84,6 +84,8 @@ func i_am_ready() -> void:
 ## The local briefing has been read: into the ship (the ramp stays shut until all are ready).
 func brief_done() -> void:
 	go = true
+	if mtype() == "base" and indoor():
+		Game.play_ui(self, "fuse_out", -2)    # the fuses go: a clunk, a dying hum, the dark
 	if Game.autotest() != "":
 		i_am_ready()
 
@@ -213,6 +215,7 @@ func _ready() -> void:
 	if indoor():
 		_home_env()
 	_hang_doors()
+	_core_hums()
 	actors = Node3D.new()
 	actors.name = "Actors"
 	add_child(actors)
@@ -303,7 +306,7 @@ func _ready() -> void:
 func _wind_name() -> String:
 	var biome := String(Net.mission_params.get("biome", "farm"))
 	match String(map.get("terrain", "")):
-		"alienbase": return "ufo_hum"
+		"alienbase": return "cave_ambience"
 		"snow": return "polar"
 		"mars": return "mars"
 		"desert": return "night_silence"
@@ -399,6 +402,14 @@ func _ufo_ambience() -> void:
 	add_child(ins)
 	ins.global_position = map["ufo"] + Vector3(0, 1.2, 0)
 	_loop_player(ins, "ufo_interior", -4.0)
+	if String(map.get("ufo_kind", "")) in ["battleship", "supply"]:
+		# a whole ship around you: the big hull breathes everywhere inside
+		var big := AudioStreamPlayer3D.new()
+		big.unit_size = 10.0
+		big.max_distance = 40.0
+		add_child(big)
+		big.global_position = map["ufo"] + Vector3(0, 2.0, 0)
+		_loop_player(big, "ufo_ship_ambience", -6.0)
 
 func _loop_player(ap: Node, sname: String, db: float) -> void:
 	ap.stream = Game.loop_stream(sname)
@@ -1360,6 +1371,12 @@ func _break(i: int) -> void:
 		add_child(rub)
 		rub.global_position = Vector3(at.x, 0.09 + (at.y - sz.y / 2 if at.y - sz.y / 2 > 0.5 else 0.0), at.z)
 		rub.rotation.y = n.global_rotation.y
+	if kind == "wood" and fires.values().any(func(f): return (f["pos"] as Vector3).distance_to(at) < 5.0):
+		Game.play_at(self, "wood_collapse", at, 0)
+	if n.has_meta("explode") or n == map.get("core"):
+		Game.play_at(self, "core_explode", at, 8)
+		for c in n.get_children():
+			if c is AudioStreamPlayer3D: c.stop()
 	Game.play_at(self, "wood_break" if kind == "wood" or kind == "crate" else ("glass_break" if kind == "glass" else "explosion"), at, -4 if kind != "brick" else -10)
 	n.queue_free()
 	_nav_dirty = 2.0
@@ -1519,13 +1536,14 @@ func _fire_on(id: int, p: Vector3, size: float, life: float) -> void:
 	n.add_child(l)
 	l.position = Vector3(0, 1.0, 0)
 	var snd := AudioStreamPlayer3D.new()
-	snd.stream = Game.loop_stream("fire")
+	snd.stream = Game.loop_stream("fire_crackle")
 	snd.unit_size = 4.0
 	snd.max_distance = 40.0
 	snd.volume_db = -4.0
 	snd.bus = "SFX"
 	n.add_child(snd)
 	snd.play()
+	Game.play_at(self, "fire_ignite", p + Vector3.UP * 0.5, -2)
 	fires[id] = {"pos": p, "node": n, "light": l, "until": t + life, "size": size, "flames": fl, "smoke": sm}
 	# the smoke blocks sight like a smoke grenade, a little above the flames
 	smokes.append({"pos": p + Vector3(0, 0.6, 0), "until": t + life + 8.0})
@@ -2001,8 +2019,8 @@ func _radar_alarm(text: String) -> void:
 	hud.message(text, 6.0)
 	if _siren == null:
 		_siren = AudioStreamPlayer.new()
-		_siren.stream = Game.loop_stream("warning_alarm")
-		_siren.volume_db = -10.0
+		_siren.stream = Game.loop_stream("base_siren")
+		_siren.volume_db = -8.0
 		_siren.bus = "SFX"
 		add_child(_siren)
 	_siren.play()
@@ -2026,6 +2044,24 @@ func _alarm_tick(delta: float) -> void:
 			if is_instance_valid(r):
 				r.light_energy = move_toward(r.light_energy, 2.2 if on else 0.0, delta * 9.0)
 
+## A worker's machine noise: one looping player, on while the tool works.
+func _work_loop(wk: Dictionary, sname: String, on: bool, db: float) -> void:
+	var ap: AudioStreamPlayer3D = wk.get("snd")
+	if ap == null:
+		ap = AudioStreamPlayer3D.new()
+		ap.stream = Game.loop_stream(sname)
+		ap.volume_db = db
+		ap.unit_size = 3.0
+		ap.max_distance = 30.0
+		ap.bus = "SFX"
+		add_child(ap)
+		ap.global_position = wk["pos"]
+		wk["snd"] = ap
+	if on and not ap.playing:
+		ap.play(randf() * 2.0)
+	elif not on and ap.playing:
+		ap.stop()
+
 ## The builders behind the tape: welding flicker and crackle, hammer blows, the jackhammer's rattle.
 var _work_t := {}
 func _workers_tick(delta: float) -> void:
@@ -2039,20 +2075,19 @@ func _workers_tick(delta: float) -> void:
 				var l: OmniLight3D = wk["light"]
 				l.light_energy = (randf_range(0.6, 2.4) if on else 0.0)
 				(wk["sparks"] as CPUParticles3D).emitting = on
+				_work_loop(wk, "weld_loop", on, -8.0)
 				if on and t <= 0.0:
 					t = randf_range(0.25, 0.5)
-					Game.play_at(self, "zap", wk["pos"], -14)
+					Game.play_at(self, "zap", wk["pos"], -22)
 			"hammer":
 				if t <= 0.0:
 					t = 0.7 if randf() < 0.8 else 2.5
-					Game.play_at(self, "knock", wk["pos"], -8)
+					Game.play_at(self, "hammer", wk["pos"], -6)
 					node.rotation.x = 0.12
 				node.rotation.x = move_toward(node.rotation.x, 0.0, delta * 0.6)
 			"drill":
 				var burst := fmod(Time.get_ticks_msec() * 0.001, 5.0) < 2.2
-				if burst and t <= 0.0:
-					t = 0.075
-					Game.play_at(self, "knock", wk["pos"], -12)
+				_work_loop(wk, "jackhammer", burst, -6.0)
 				node.position.y = (randf_range(0.0, 0.025) if burst else 0.0) + float(wk.get("y0", node.position.y if not wk.has("y0") else wk["y0"]))
 				if not wk.has("y0"):
 					wk["y0"] = node.position.y
@@ -2103,6 +2138,19 @@ func _hang_doors() -> void:
 		if spec.get("open", false):
 			_swing(d, 1.0, true)
 
+## Power cores (big ship, alien base) hum until somebody breaks them.
+func _core_hums() -> void:
+	for b in map.get("breakables", []):
+		if is_instance_valid(b) and (b.has_meta("explode") or b == map.get("core")):
+			var ap := AudioStreamPlayer3D.new()
+			ap.stream = Game.loop_stream("core_hum")
+			ap.volume_db = -2.0
+			ap.unit_size = 4.0
+			ap.max_distance = 35.0
+			ap.bus = "SFX"
+			b.add_child(ap)
+			ap.play()
+
 func _swing(d: Dictionary, side: float, instant := false) -> void:
 	d["open"] = side != 0.0
 	var want: float = float(d["base"]) + side * 1.65
@@ -2147,9 +2195,10 @@ func _door_state(i: int, side: float, slam: bool) -> void:
 	if not is_instance_valid(d["body"]):
 		return
 	_swing(d, side)
-	Game.play_at(self, "door_creak", d["c"] + Vector3(0, 1.2, 0), -4 if not slam else 0)
 	if slam:
-		Game.play_at(self, "knock", d["c"] + Vector3(0, 1.2, 0), 0)
+		Game.play_at(self, "door_bash", d["c"] + Vector3(0, 1.2, 0), 0)
+	else:
+		Game.play_at(self, "door_open" if side != 0.0 else "door_close", d["c"] + Vector3(0, 1.2, 0), -3)
 
 ## Host: an alien at a shut door shoves it open (loudly).
 var _door_t := 0.0

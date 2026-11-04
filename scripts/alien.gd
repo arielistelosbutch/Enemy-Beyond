@@ -1210,7 +1210,7 @@ func _warcry_tick(delta: float) -> void:
 @rpc("authority", "call_local", "reliable")
 func _warcry_fx() -> void:
 	var at := global_position + Vector3(0, 2.0, 0)
-	Game.play_at(mission, "roar", at, 6)
+	Game.play_at(mission, "bijec_warcry", at, 6)
 	var me: Node = mission.local_player()
 	if me and me.global_position.distance_to(global_position) < 35.0:
 		me.stress = minf(100.0, me.stress + 8.0)
@@ -1430,7 +1430,7 @@ func _other_prey(t: Node) -> Node:
 
 @rpc("authority", "call_local", "reliable")
 func _grab_fx(at: Vector3) -> void:
-	Game.play_at(mission, "baton_hit", at, 2)
+	Game.play_at(mission, "ko_hit", at, 2)
 
 # ---- brutes: no cover, no fear - straight at whatever it saw last -------------------------
 var _brute_repath := 0.0
@@ -1563,11 +1563,10 @@ func _jet_tick(delta: float) -> void:
 		_was_flying = flying
 		if _jet_snd == null:
 			_jet_snd = AudioStreamPlayer3D.new()
-			_jet_snd.stream = Game.loop_stream("rocket_fly")
+			_jet_snd.stream = Game.loop_stream("levit_jet")
 			_jet_snd.unit_size = 5.0
 			_jet_snd.max_distance = 60.0
-			_jet_snd.volume_db = -6.0
-			_jet_snd.pitch_scale = 1.4
+			_jet_snd.volume_db = -4.0
 			_jet_snd.bus = "SFX"
 			add_child(_jet_snd)
 			_jet_light = OmniLight3D.new()
@@ -1637,7 +1636,7 @@ func _lob(from: Vector3, v: Vector3) -> void:
 		get_tree().create_timer(0.9 + k * 0.45).timeout.connect(func():
 			if not is_instance_valid(rb):
 				return
-			Game.play_at(mission, "ping", rb.global_position, 2)
+			Game.play_at(mission, "plasma_grenade_beep", rb.global_position, 2)
 			l.light_energy = 4.0
 			var me: Node = mission.local_player()
 			if k == 0 and me and not me.dead and me.global_position.distance_to(rb.global_position) < 9.0:
@@ -1726,8 +1725,7 @@ func _trap_go(id: String, p: Vector3) -> void:
 	var n := mission.get_node_or_null("Trap_" + id)
 	if n:
 		n.queue_free()
-	Game.play_at(mission, "zap", p, 6)
-	Game.play_at(mission, "burst", p, 2)
+	Game.play_at(mission, "flash_trap", p, 6)
 	var l := OmniLight3D.new()
 	l.light_color = Color(1.0, 0.97, 0.9)
 	l.light_energy = 40.0
@@ -1762,10 +1760,14 @@ void fragment() {
 	ALPHA = f * k * 0.35;
 }"""
 
+var _cloak_snd := false
 func _cloak_tick(delta: float) -> void:
 	if not R.has("cloak"):
 		return
 	var want := 1.0 if cloak and not dead else 0.0
+	if cloak != _cloak_snd:
+		_cloak_snd = cloak
+		Game.play_at(mission, "cloak_on" if cloak else "cloak_off", global_position + Vector3.UP, -6)
 	if absf(_cloak_k - want) < 0.001 and _cloak_eyes != null:
 		return
 	if _cloak_eyes == null:
@@ -1992,14 +1994,14 @@ func _fire(p: Node) -> void:
 ## Every machine: the heavy gun's roar (one sound for the burst, not for every bolt).
 @rpc("authority", "call_local", "reliable")
 func _gun_fx(g: String) -> void:
-	Game.play_at(mission, "minigun_fire", global_position + Vector3(0, 1.2, 0), 0)
+	Game.play_at(mission, "alien_minigun", global_position + Vector3(0, 1.2, 0), 0)
 
 @rpc("authority", "call_local", "reliable")
 func _plasma(from: Vector3, dir: Vector3, power := 1.0, kind := "plasma", quiet := false) -> void:
 	# the big ones (and the drones) fire the heavy plasma, ten takes so it never repeats
 	if kind == "rocket":
 		Game.play_at(mission, "missile_launch", from, 2)
-	elif not quiet: Game.play_at(mission, ("plasma_heavy" if power >= 1.3 else "plasma") if kind == "plasma" else ("acid_spit" if kind == "acid" else "lunge"), from, -2 + (power - 1.0) * 2.0)
+	elif not quiet: Game.play_at(mission, ("plasma_cannon" if power >= 1.9 else "plasma_heavy" if power >= 1.3 else "plasma") if kind == "plasma" else ("acid_spit" if kind == "acid" else "lunge"), from, -2 + (power - 1.0) * 2.0)
 	var bolt := Node3D.new()
 	bolt.set_script(BoltScript)
 	bolt.power = power

@@ -31,7 +31,32 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	_voice(delta)
+	if race == "lihnoun" and not dead and multiplayer.is_server():
+		# now and then its roar carries over the whole map: you know it is out there
+		_roar_t -= delta
+		if _roar_t <= 0.0:
+			_roar_t = randf_range(70.0, 130.0)
+			_roar_fx.rpc()
 	super._physics_process(delta)
+
+var _roar_t := randf_range(25.0, 50.0)
+@rpc("authority", "call_local", "reliable")
+func _roar_fx() -> void:
+	if mission == null or not mission.is_inside_tree():
+		return
+	var p := AudioStreamPlayer3D.new()
+	p.stream = Game.sound("lihnoun_roar")
+	p.volume_db = 4.0
+	p.unit_size = 30.0
+	p.max_distance = 260.0
+	p.bus = "SFX"
+	mission.add_child(p)
+	p.global_position = global_position + Vector3.UP
+	p.play()
+	p.finished.connect(p.queue_free)
+	var me: Node = mission.local_player()
+	if me and not me.dead:
+		me.stress = minf(100.0, me.stress + 4.0)
 
 ## Every machine: the sound the creature makes near the local player.
 func _voice(delta: float) -> void:
@@ -345,7 +370,7 @@ var _charging := false
 var _charge_prey: Node = null
 @rpc("authority", "call_local", "reliable")
 func _charge_fx() -> void:
-	Game.play_at(mission, "roar" if race == "ohar" else "hiss", global_position + Vector3.UP, 4 if race == "ohar" else 2)
+	Game.play_at(mission, "ohar_charge" if race == "ohar" else ("lihnoun_charge" if race == "lihnoun" else "hiss"), global_position + Vector3.UP, 4 if race == "ohar" else 2)
 
 func _hunt(delta: float) -> void:
 	lurking = false

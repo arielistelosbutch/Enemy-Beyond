@@ -2476,7 +2476,7 @@ func psi_illusion(ally: String, secs: float, roll: float) -> void:
 		return
 	var brave := float(merc.get("bravery", 40)) / 100.0
 	var resist := brave * 0.5 + (0.15 if Game.has_talent(merc, "zelezne_nervy") else 0.0) + (0.3 if Game.has_research("psi_clona") else 0.0)
-	Game.play_ui(self, "psi", -4)
+	Game.play_ui(self, "psi_illusion", -4)
 	if roll < resist:
 		mission.hud.psi_flash()
 		mission.hud.message("Něco se ti snažilo vlézt do hlavy. Odolal jsi.", 3.0)
@@ -2536,7 +2536,7 @@ func knock_out() -> void:
 	bleed_left = BLEED_OUT * 3.0
 	crouching = true
 	light_on = false
-	Game.play_ui(self, "baton_hit", 0)
+	Game.play_ui(self, "ko_hit", 0)
 	mission.hud.ko_dark(true)
 	mission.hud.message("Ránu do týla jsi neviděl přicházet... Tma. Někdo tě musí ošetřit.", 6.0)
 

@@ -732,6 +732,10 @@ func _wall(start: Vector3, length: float, along_x: bool, h: float, material: Mat
 		for g in gaps:
 			if g.size() == 2 and g[1] - g[0] <= 1.65 and rng.randf() < 0.8:
 				var md: float = (g[0] + g[1]) / 2.0
+				var dc: Vector3 = start + (Vector3(md, 0, 0) if along_x else Vector3(0, 0, md))
+				var lim := float(info.get("size", BLOCK * N))
+				if minf(minf(dc.x, dc.z), minf(lim - dc.x, lim - dc.z)) < 1.8:
+					continue    # a door onto the map's edge would only open into the fence
 				info["doors"].append({"c": start + (Vector3(md, 0, 0) if along_x else Vector3(0, 0, md)), "along_x": along_x,
 					"w": float(g[1] - g[0]), "h": minf(2.15, h - 0.05), "open": rng.randf() < 0.3})
 	# glass in the windows of houses: sight goes through, a shot or a stone breaks it
@@ -839,7 +843,7 @@ func _house(o: Vector3) -> void:
 	var m := Game.mat("plaster")
 	box(c + Vector3(w / 2, 0.05, d / 2), Vector3(w, 0.1, d), Game.mat("planks", 0.5), false)
 	_wall(c, w, true, h, m, [[3.0, 4.2], [0.9, 1.9, 0.9], [6.1, 7.1, 0.9]], "brick")
-	_wall(c + Vector3(0, 0, d), w, true, h, m, [[1.5, 2.7], [5.5, 6.5], [3.6, 4.6, 0.9]], "brick")
+	_wall(c + Vector3(0, 0, d), w, true, h, m, [[1.5, 2.7], [5.5, 6.5, 0.9], [3.6, 4.6, 0.9]], "brick")
 	_wall(c, d, false, h, m, [[2.5, 3.5]], "brick")
 	_wall(c + Vector3(w, 0, 0), d, false, h, m, [[3.5, 4.5, 0.9]], "brick")
 	_wall(c + Vector3(4.6, 0, 0), d, false, h, Game.mat("wallpaper", 1.0), [[2.0, 3.2]], "wood")
@@ -928,9 +932,9 @@ func _barn(o: Vector3) -> void:
 	var br := _prop("house_roof", c + Vector3(w / 2, h, d / 2), 0.0, false)
 	br.scale = Vector3(w / 8.0, 1.2, d / 6.0)
 	if rng.randf() < 0.6:
-		_prop("tractor", c + Vector3(w + 1.2, 0, d / 2 + 1.0), rng.randf_range(-0.4, 0.4))
+		_prop("tractor", c + Vector3(w + 2.4, 0, d - 0.6), rng.randf_range(-0.3, 0.3))    # off the side door
 	for i in 3:
-		box(c + Vector3(1.5 + i * 1.6, 0.6, d - 1.5), Vector3(1.4, 1.2, 1.4), Game.mat("hay", 1.0))
+		box(c + Vector3([1.2, 2.7, w - 1.3][i], 0.6, d - 1.5), Vector3(1.4, 1.2, 1.4), Game.mat("hay", 1.0))    # by the walls, not in the doorway
 	_cover(c + Vector3(3.0, 0, d - 3.0)); _cover(c + Vector3(7.5, 0, 2.0))
 	info["waypoints"].append(c + Vector3(w / 2, 0, d / 2))
 	# a handheld radio on the floor - someone called for help from here
@@ -1385,7 +1389,7 @@ func _fuel(o: Vector3) -> void:
 	box(s + Vector3(1.8, 0.05, 2.0), Vector3(3.6, 0.1, 4.0), Game.mat("tiles", 0.5), false)
 	_wall(s, 3.6, true, 3.0, m, [], "brick")
 	_wall(s + Vector3(0, 0, 4.0), 3.6, true, 3.0, m, [], "brick")
-	_wall(s, 4.0, false, 3.0, m, [[0.4, 1.6, 0.6], [2.4, 3.4]], "brick")
+	_wall(s, 4.0, false, 3.0, m, [[0.3, 1.3, 0.6], [1.8, 2.8]], "brick")    # the door clear of the canopy pillar
 	_wall(s + Vector3(3.6, 0, 0), 4.0, false, 3.0, m, [], "brick")
 	box(s + Vector3(1.8, 3.05, 2.0), Vector3(3.8, 0.1, 4.2), Game.mat("roof", 1.0), false)
 	box(s + Vector3(1.4, 0.5, 1.2), Vector3(0.6, 1.0, 1.8), Game.mat("planks", 1.0))
