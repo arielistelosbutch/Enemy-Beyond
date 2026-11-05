@@ -1650,6 +1650,9 @@ func _break(i: int) -> void:
 		for c in n.get_children():
 			if c is AudioStreamPlayer3D: c.stop()
 	Game.play_at(self, "wood_break" if kind == "wood" or kind == "crate" else ("glass_break" if kind == "glass" else "explosion"), at, -4 if kind != "brick" else -10)
+	for dn in n.get_meta("deco", []):
+		if is_instance_valid(dn):
+			(dn as Node).queue_free()       # the window frame on a wall piece that is gone
 	n.queue_free()
 	_nav_dirty = 2.0
 

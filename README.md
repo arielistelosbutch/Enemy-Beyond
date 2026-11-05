@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.54
+# Operace X - Enemy Beyond — prototyp 0.55
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,10 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.55
+- Editor Mapové díly: každý díl mapy jde otevřít, upravit (zdi, okna, nábytek, rekvizity, světla, značky pro vetřelce) a uložit jako novou variantu, kterou pak mapy používají (`dilky/<druh>/*.json`).
+- Budovy s rámy oken, parapety, zárubněmi a sokly; stodola, sklad, kasárna, polární chata a benzínka s novou výbavou; nový nábytek uvnitř domů a hospody.
 
 ## Novinky 0.54
 - Vojáci se hýbou podle Mixama: chůze, běh a plížení do všech směrů, sprint, leh, plazení, raněný na zemi, šest smrtí, skok, šplhání, míření, přebíjení vleže, hrabání v batohu, panika. Ruce: přebíjení, hody, nůž, obušek, pažba, dveře, škubnutí při zásahu.

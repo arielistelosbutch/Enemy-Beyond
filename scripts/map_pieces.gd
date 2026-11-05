@@ -100,6 +100,15 @@ static func capture(mg, kind: String, o: Vector3) -> Dictionary:
 			e.erase("_lens")
 			if idx.has(ln):
 				e["lens"] = idx[ln]
+		if e.has("_na"):
+			var hosts: Array = e["_na"]
+			e.erase("_na")
+			var na := []
+			for hn in hosts:
+				if idx.has(hn):
+					na.append(idx[hn])
+			if not na.is_empty():
+				e["na"] = na
 	for key in mg.info:
 		var v = mg.info[key]
 		if v is Array:
@@ -234,6 +243,8 @@ static func _ser(mg, n: Node3D, pxf: Transform3D, o: Vector3, els: Array, idx: D
 			return
 		_put_xf(e, xf, o)
 		e["c"] = false
+		if n.has_meta("deco_of"):
+			e["_na"] = n.get_meta("deco_of")
 		idx[n] = els.size()
 		els.append(e)
 		return
@@ -331,6 +342,13 @@ static func build(mg, d: Dictionary, o: Vector3) -> Array:
 				var li := int(e.get("lens", -1))
 				if nodes[i] and li >= 0 and li < nodes.size() and nodes[li]:
 					(nodes[i] as Node).set_meta("lens", nodes[li])
+			"box", "cyl", "ball", "model":
+				if e.has("na") and nodes[i]:
+					var hosts := []
+					for hi in e["na"]:
+						if int(hi) >= 0 and int(hi) < nodes.size() and nodes[int(hi)]:
+							hosts.append(nodes[int(hi)])
+					mg._deco(nodes[i], hosts)
 			"woodroof":
 				var ri := int(e.get("i", -1))
 				if ri >= 0 and ri < nodes.size() and nodes[ri]:

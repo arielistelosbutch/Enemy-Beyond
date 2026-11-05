@@ -74,6 +74,8 @@ run animator   150 x "RESULT animator click true imported true turned true keyed
 run locktest   120 h "RESULT locktest follows true turned true body true root true fp true" --autotest=locktest
 run beltthrow  120 h "RESULT beltthrow started true belt_used true pack_kept true" --autotest=beltthrow
 run mocapgame  200 h "RESULT mocapgame 15 of 15" --autotest=mocapgame
+run tileround  300 h "RESULT tileround ok 38 bad 0" --autotest=tileround
+run tileeditor 150 x "RESULT tileeditor parts [0-9]+ click true moved true turned true stretched true follows true model true mirror true delete true undo true saved true picked true built true" --autotest=tileeditor
 run leaveany    150 h "RESULT leaveany early_block true done true finished true" --autotest=leaveany
 run suit        100 h "RESULT suittest down true"        --autotest=suittest --group=sedaci --mtype=crash
 run levgrab     100 h "RESULT levgrab ko true carried true" --autotest=levgrab --group=levite --mtype=crash

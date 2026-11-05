@@ -25,6 +25,8 @@ var _truck_done := false
 
 var biome := "farm"
 var capturing := false        # (MapPieces.capture: the editor takes a block down into data)
+var _into: Node3D = null      # box() / cyl() build into this node instead of the map (a table knocked over as one)
+static var _box_meshes := {}
 var _cap_calls: Array = []
 var mtype := "crash"
 var ufo_kind := "scout"
@@ -247,9 +249,57 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	_borders()
 	_clear_doors()
 	_untangle()
+	if Game.autotest() != "zfight":
+		_merge_static()
 	nav.bake_navigation_mesh(false)
 	if Game.autotest() != "": print("[MAP] nav done %d ms" % (Time.get_ticks_msec() - _t0))
 	return info
+
+## 0.55: the blocks that only decorate (frames, plinths, boards, the small parts of furniture: they
+## stop nothing and never change) are joined into one mesh per material and per 24 m square - far
+## fewer things for the graphics card to draw. Anything the game still looks for stays as it is.
+func _merge_static() -> void:
+	var t0 := Time.get_ticks_msec()
+	var keep := {}
+	for l in info["elec_lights"] + info["lights"]:
+		if is_instance_valid(l) and (l as Node).has_meta("lens"):
+			keep[l.get_meta("lens")] = true
+	for r in info.get("wood_roofs", []):
+		keep[r["node"]] = true
+	var groups := {}
+	var before := 0
+	for n in root.get_children():
+		if not n is MeshInstance3D:
+			continue
+		var mi := n as MeshInstance3D
+		if not mi.mesh is BoxMesh or not mi.visible or keep.has(mi) or not mi.get_meta_list().is_empty() or mi.material_override == null:
+			continue
+		if mi.material_override is BaseMaterial3D and (mi.material_override as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
+			continue
+		var key := "%d|%d|%d" % [int(floor(mi.position.x / 24.0)), int(floor(mi.position.z / 24.0)), mi.material_override.get_instance_id()]
+		if not groups.has(key):
+			groups[key] = []
+		groups[key].append(mi)
+		before += 1
+	var after := 0
+	for key in groups:
+		var lst: Array = groups[key]
+		if lst.size() < 2:
+			after += 1
+			continue
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for mi in lst:
+			st.append_from((mi as MeshInstance3D).mesh, 0, (mi as MeshInstance3D).transform)
+		var out := MeshInstance3D.new()
+		out.mesh = st.commit()
+		out.material_override = (lst[0] as MeshInstance3D).material_override
+		out.name = "Merged"
+		root.add_child(out)
+		for mi in lst:
+			(mi as Node).free()
+		after += 1
+	if Game.autotest() != "": print("[MAP] merged %d decorations into %d meshes (%d ms)" % [before, after, Time.get_ticks_msec() - t0])
 
 # ---- primitives ----------------------------------------------------------------
 func box(pos: Vector3, size: Vector3, material: Material, collide := true, rot_y := 0.0) -> Node3D:
@@ -266,13 +316,23 @@ func box(pos: Vector3, size: Vector3, material: Material, collide := true, rot_y
 	if maxf(size.x, size.z) < 3.0 and size.y >= 0.15 and size.y < 3.0 and pos.y + size.y / 2.0 > 0.3:
 		_small.append(Vector3(pos.x, maxf(size.x, size.z) / 2.0, pos.z))   # (x, radius, z): crates, pallets...
 	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
+	var bm: BoxMesh
 	if material == Game.mat("wheat", 1.0):
+		bm = BoxMesh.new()
+		bm.size = size
 		bm.subdivide_depth = int(size.z)
 		bm.subdivide_width = int(size.x)
+	else:
+		# one mesh for all the blocks of the same size (thousands of window frames, planks...)
+		var bk := "%.3f|%.3f|%.3f" % [size.x, size.y, size.z]
+		if not _box_meshes.has(bk):
+			var nb := BoxMesh.new()
+			nb.size = size
+			_box_meshes[bk] = nb
+		bm = _box_meshes[bk]
 	mi.mesh = bm
 	mi.material_override = material
+	var par: Node3D = _into if _into else root
 	if collide:
 		var sb := StaticBody3D.new()
 		sb.collision_layer = 1
@@ -282,11 +342,11 @@ func box(pos: Vector3, size: Vector3, material: Material, collide := true, rot_y
 		cs.shape = shape
 		sb.add_child(cs)
 		sb.add_child(mi)
-		root.add_child(sb)
+		par.add_child(sb)
 		sb.position = pos
 		sb.rotation.y = rot_y
 		return sb
-	root.add_child(mi)
+	par.add_child(mi)
 	mi.position = pos
 	mi.rotation.y = rot_y
 	# a thin floor you walk on without colliding (road, path, floorboards): remember its sound
@@ -306,6 +366,7 @@ func cyl(pos: Vector3, r_top: float, r_bot: float, h: float, material: Material,
 	cm.rings = 1
 	mi.mesh = cm
 	mi.material_override = material
+	var par: Node3D = _into if _into else root
 	if collide:
 		var sb := StaticBody3D.new()
 		var cs := CollisionShape3D.new()
@@ -315,12 +376,25 @@ func cyl(pos: Vector3, r_top: float, r_bot: float, h: float, material: Material,
 		cs.shape = shape
 		sb.add_child(cs)
 		sb.add_child(mi)
-		root.add_child(sb)
+		par.add_child(sb)
 		sb.position = pos
 		return sb
-	root.add_child(mi)
+	par.add_child(mi)
 	mi.position = pos
 	return mi
+
+## A decoration that belongs to a breakable part (a window frame on the wall around it): when
+## any of @a hosts breaks, it goes with it (Mission._break).
+func _deco(n: Node3D, hosts: Array) -> void:
+	var hs := []
+	for h in hosts:
+		if h is StaticBody3D and is_instance_valid(h):
+			hs.append(h)
+			var lst: Array = h.get_meta("deco", [])
+			lst.append(n)
+			h.set_meta("deco", lst)
+	if not hs.is_empty():
+		n.set_meta("deco_of", hs)
 
 func _ground(o: Vector3, tex: String) -> void:
 	if terrain == "mars":
@@ -1030,6 +1104,11 @@ func _wall(start: Vector3, length: float, along_x: bool, h: float, material: Mat
 	for g in gaps:
 		cuts.append(g[0]); cuts.append(g[1])
 	cuts.append(length)
+	var along := Vector3(1, 0, 0) if along_x else Vector3(0, 0, 1)
+	var at := func(u: float, y: float) -> Vector3: return start + along * u + Vector3(0, y, 0)
+	var sz := func(u: float, y: float, t: float) -> Vector3: return Vector3(u, y, t) if along_x else Vector3(t, y, u)
+	var left_of := {}       # gap start -> the wall piece that ends there
+	var right_of := {}      # gap end -> the piece that starts there
 	for i in range(0, cuts.size(), 2):
 		var a: float = cuts[i]
 		var b: float = cuts[i + 1]
@@ -1040,8 +1119,12 @@ func _wall(start: Vector3, length: float, along_x: bool, h: float, material: Mat
 		var pw := (b - a) / pieces
 		for k in pieces:
 			var mid := a + pw * (k + 0.5)
-			var pos := start + (Vector3(mid, h / 2, 0) if along_x else Vector3(0, h / 2, mid))
-			out.append(box(pos, Vector3(pw, h, 0.25) if along_x else Vector3(0.25, h, pw), material))
+			var piece := box(at.call(mid, h / 2), sz.call(pw, h, 0.25), material)
+			out.append(piece)
+			if k == pieces - 1:
+				left_of[snappedf(b, 0.001)] = piece
+			if k == 0:
+				right_of[snappedf(a, 0.001)] = piece
 	# doors in the doorways of houses (the mission hangs them after the paths are baked)
 	if kind != "":
 		for g in gaps:
@@ -1054,6 +1137,7 @@ func _wall(start: Vector3, length: float, along_x: bool, h: float, material: Mat
 				info["doors"].append({"c": start + (Vector3(md, 0, 0) if along_x else Vector3(0, 0, md)), "along_x": along_x,
 					"w": float(g[1] - g[0]), "h": minf(2.15, h - 0.05), "open": rng.randf() < 0.3})
 	# glass in the windows of houses: sight goes through, a shot or a stone breaks it
+	var panes := {}
 	if kind != "":
 		for g in gaps:
 			if g.size() > 2:
@@ -1065,6 +1149,7 @@ func _wall(start: Vector3, length: float, along_x: bool, h: float, material: Mat
 					var pane := box(gp, Vector3(gw2, top - g[2], 0.04) if along_x else Vector3(0.04, top - g[2], gw2), _glass_mat())
 					pane.collision_layer = 128
 					_breakable(pane, "glass")
+					panes[snappedf(float(g[0]), 0.001)] = pane
 	# windows: firing positions for the aliens (both sides), and cover beside them
 	for g in gaps:
 		if g.size() > 2 and g[1] - g[0] >= 0.7:
@@ -1078,6 +1163,8 @@ func _wall(start: Vector3, length: float, along_x: bool, h: float, material: Mat
 				_cover(cw + nrm * 0.55 * sd + alongv * off)
 				_cover(cw + nrm * 0.55 * sd - alongv * off)
 	# lintels above door/window gaps, sills below windows
+	var lintel_of := {}
+	var sill_of := {}
 	for g in gaps:
 		var mid2: float = (g[0] + g[1]) / 2.0
 		var w: float = g[1] - g[0]
@@ -1085,14 +1172,107 @@ func _wall(start: Vector3, length: float, along_x: bool, h: float, material: Mat
 		var top := 2.0 if sill > 0.0 else 2.2
 		if h > top + 0.05:
 			var pos2 := start + (Vector3(mid2, (top + h) / 2, 0) if along_x else Vector3(0, (top + h) / 2, mid2))
-			out.append(box(pos2, Vector3(w, h - top, 0.25) if along_x else Vector3(0.25, h - top, w), material))
+			var ln := box(pos2, Vector3(w, h - top, 0.25) if along_x else Vector3(0.25, h - top, w), material)
+			out.append(ln)
+			lintel_of[snappedf(float(g[0]), 0.001)] = ln
 		if sill > 0.0:
 			var pos3 := start + (Vector3(mid2, sill / 2, 0) if along_x else Vector3(0, sill / 2, mid2))
-			out.append(box(pos3, Vector3(w, sill, 0.25) if along_x else Vector3(0.25, sill, w), material))
+			var sn := box(pos3, Vector3(w, sill, 0.25) if along_x else Vector3(0.25, sill, w), material)
+			out.append(sn)
+			sill_of[snappedf(float(g[0]), 0.001)] = sn
 	if kind != "":
 		for b in out:
 			_breakable(b, kind)
+	# 0.55: frames round the windows and doors, a ledge under each window, the window cross, and a
+	# plinth along the foot of house walls (decoration: it does not stop anything)
+	if kind != "" and h >= 2.0:
+		var white := kind == "brick" or String(material.get_meta("tex", "")) == "barn"
+		var frame_m: Material = Game.color_mat(Color(0.84, 0.83, 0.78)) if white else (Game.color_mat(Color(0.28, 0.19, 0.12)) if kind == "wood" else Game.color_mat(Color(0.36, 0.38, 0.41), false, 0.4, 0.6))
+		var fw := 0.08
+		var dep := 0.31
+		for g in gaps:
+			var g0: float = g[0]
+			var g1: float = g[1]
+			var k0 := snappedf(g0, 0.001)
+			var lp = left_of.get(k0, null)
+			var rp = right_of.get(snappedf(g1, 0.001), null)
+			var lt = lintel_of.get(k0, null)
+			if g.size() > 2:
+				var s0: float = g[2]
+				var t0 := minf(2.0, h - 0.05)
+				var hh := t0 - s0
+				_deco(box(at.call(g0 + fw / 2 - 0.005, s0 + hh / 2), sz.call(fw, hh, dep), frame_m, false), [lp])
+				_deco(box(at.call(g1 - fw / 2 + 0.005, s0 + hh / 2), sz.call(fw, hh, dep), frame_m, false), [rp])
+				_deco(box(at.call((g0 + g1) / 2, t0 - fw / 2 + 0.005), sz.call(g1 - g0 - 2 * fw + 0.02, fw, dep - 0.01), frame_m, false), [lt])
+				# the ledge: a little wider than the window, sticking out on both sides
+				_deco(box(at.call((g0 + g1) / 2, s0 + 0.02), sz.call(g1 - g0 + 0.16, 0.05, 0.43), frame_m, false), [sill_of.get(k0, null)])
+				# the cross in the glass (it goes when the pane breaks)
+				var pane = panes.get(k0, null)
+				if pane != null and g1 - g0 >= 0.75:
+					_deco(box(at.call((g0 + g1) / 2, s0 + hh / 2), sz.call(0.045, hh - 0.04, 0.06), frame_m, false), [pane])
+					_deco(box(at.call((g0 + g1) / 2, s0 + hh * 0.62), sz.call(g1 - g0 - 2 * fw + 0.02, 0.045, 0.055), frame_m, false), [pane])
+			else:
+				var t1 := minf(2.2, h - 0.05)
+				# the door frame round the opening, on the wall (not in the way of the door)
+				_deco(box(at.call(g0 - fw / 2 + 0.005, t1 / 2), sz.call(fw, t1, 0.32), frame_m, false), [lp])
+				_deco(box(at.call(g1 + fw / 2 - 0.005, t1 / 2), sz.call(fw, t1, 0.32), frame_m, false), [rp])
+				if h > t1 + fw:
+					_deco(box(at.call((g0 + g1) / 2, t1 + fw / 2 - 0.005), sz.call(g1 - g0 + 2 * fw - 0.01, fw, 0.30), frame_m, false), [lt])
+		if kind == "brick":
+			# the plinth: in runs between the doors (it stays when the wall above it breaks: a foundation)
+			var pm := Game.color_mat(Color(0.4, 0.38, 0.35))     # (inside the same band reads as a skirting)
+			var ph := 0.36 if along_x else 0.35
+			var pd := 0.31 if along_x else 0.33
+			var ext := 0.16 if along_x else 0.15
+			var runs := [[0.0, length]]
+			for g in gaps:
+				if g.size() == 2:
+					var nr := []
+					for r in runs:
+						if g[1] <= r[0] or g[0] >= r[1]:
+							nr.append(r)
+						else:
+							if g[0] > r[0]: nr.append([r[0], g[0] - 0.01])
+							if g[1] < r[1]: nr.append([g[1] + 0.01, r[1]])
+					runs = nr
+			for r in runs:
+				var ra: float = r[0] - (ext if r[0] <= 0.001 else 0.0)
+				var rb: float = r[1] + (ext if r[1] >= length - 0.001 else 0.0)
+				if rb - ra > 0.1:
+					box(at.call((ra + rb) / 2, ph / 2 + 0.006), sz.call(rb - ra, ph, pd), pm, false)
 	return out
+
+## 0.55: the outside of a box-shaped building (c the corner, w x d, walls h high): boards on the
+## corners, a band where the walls meet the roof, and per style a little more (decoration only).
+func _exterior(c: Vector3, w: float, d: float, h: float, style: String) -> void:
+	var trim: Material
+	match style:
+		"barn", "hut": trim = Game.color_mat(Color(0.86, 0.85, 0.8))
+		"metal": trim = Game.color_mat(Color(0.3, 0.32, 0.34), false, 0.5, 0.5)
+		_: trim = Game.color_mat(Color(0.55, 0.55, 0.52))
+	# corner boards (a little thicker than the walls: no faces in the same plane)
+	for cx in [0.0, w]:
+		for cz in [0.0, d]:
+			box(c + Vector3(cx, (h - 0.012) / 2 + 0.006, cz), Vector3(0.36, h - 0.024, 0.37), trim, false)
+	# the band under the roof
+	box(c + Vector3(w / 2, h - 0.128, 0), Vector3(w + 0.02, 0.24, 0.34), trim, false)
+	box(c + Vector3(w / 2, h - 0.128, d), Vector3(w + 0.02, 0.24, 0.34), trim, false)
+	box(c + Vector3(0, h - 0.138, d / 2), Vector3(0.35, 0.22, d + 0.02), trim, false)
+	box(c + Vector3(w, h - 0.138, d / 2), Vector3(0.35, 0.22, d + 0.02), trim, false)
+	match style:
+		"metal":
+			# downpipes at the front corners, a dark kick plate along the foot
+			for cx in [0.35, w - 0.35]:
+				cyl(c + Vector3(cx, h / 2, -0.24), 0.06, 0.06, h, trim, false, 6)
+				box(c + Vector3(cx, 0.12, -0.36), Vector3(0.14, 0.08, 0.3), trim, false)
+			box(c + Vector3(w / 2, 0.2, 0), Vector3(w - 0.4, 0.4, 0.3), Game.mat("concrete", 1.0), false)
+			box(c + Vector3(w / 2, 0.2, d), Vector3(w - 0.4, 0.4, 0.3), Game.mat("concrete", 1.0), false)
+			box(c + Vector3(0, 0.19, d / 2), Vector3(0.31, 0.38, d - 0.4), Game.mat("concrete", 1.0), false)
+			box(c + Vector3(w, 0.19, d / 2), Vector3(0.31, 0.38, d - 0.4), Game.mat("concrete", 1.0), false)
+		"barn":
+			# a white band halfway up, like the boards of an old barn
+			box(c + Vector3(w / 2, 1.2, 0), Vector3(w - 0.4, 0.12, 0.3), trim, false)
+			box(c + Vector3(w / 2, 1.2, d), Vector3(w - 0.4, 0.12, 0.3), trim, false)
 
 static var _glass: StandardMaterial3D
 func _glass_mat() -> Material:
@@ -1168,10 +1348,10 @@ func _house(o: Vector3) -> void:
 	# the living room: sofa, the TV still on, a bookshelf, a rug; the kitchen across the wall
 	_rug(c + Vector3(6.3, 0, 3.0), Vector2(2.4, 1.8), Color(0.5, 0.15, 0.12))
 	box(c + Vector3(6.3, 0.25, 3.0), Vector3(1.0, 0.5, 0.6), Game.mat("planks", 1.0), false)
-	_sofa(c + Vector3(6.3, 0, 4.9), 0.0, Color(0.55, 0.3, 0.35))
-	_tv_unit(c + Vector3(6.3, 0, 0.45), PI)
-	_bookshelf(c + Vector3(7.6, 0, 2.2), PI / 2)
-	_kitchen(c + Vector3(0.45, 0, 4.4), false, 1.2)
+	_sofa(c + Vector3(6.3, 0.1, 4.9), 0.0, Color(0.55, 0.3, 0.35))
+	_tv_unit(c + Vector3(6.3, 0.1, 0.45), PI)
+	_bookshelf(c + Vector3(7.6, 0.1, 2.2), PI / 2)
+	_kitchen(c + Vector3(0.45, 0.1, 4.4), false, 1.2)
 	# the yard: a well, firewood, washing on the line or the hen house
 	_prop("well", o + Vector3(1.0, 0, 10.9), rng.randf() * TAU)
 	_prop("woodpile", o + Vector3(11.2, 0, 6.0), PI / 2)
@@ -1180,9 +1360,19 @@ func _house(o: Vector3) -> void:
 	else:
 		_prop("coop", o + Vector3(6.5, 0, 10.8), PI)
 	# the kitchen: table knocked over, a chair in the doorway, the lamp still on
-	var t := box(c + Vector3(2.0, 0.45, 2.6), Vector3(1.6, 0.08, 1.0), Game.mat("planks", 1.0), false, 0.4)
-	t.rotation.z = 1.35
-	box(c + Vector3(3.6, 0.25, 0.6), Vector3(0.45, 0.5, 0.45), Game.mat("planks", 1.0), false, 0.7).rotation.x = 1.5
+	var tipped := Node3D.new()
+	root.add_child(tipped)
+	tipped.position = c + Vector3(2.0, 0.6, 2.6)
+	tipped.rotation = Vector3(PI / 2, 0.4, 0)
+	_into = tipped
+	_table(Vector3.ZERO, Vector2(1.6, 1.0))
+	var fallen := Node3D.new()
+	root.add_child(fallen)
+	fallen.position = c + Vector3(3.6, 0.31, 0.6)
+	fallen.rotation = Vector3(1.5, 0.7, 0)
+	_into = fallen
+	_house_chair(Vector3.ZERO)
+	_into = null
 	var lamp := OmniLight3D.new()
 	lamp.light_color = Color(1.0, 0.78, 0.5)
 	lamp.light_energy = 1.1
@@ -1204,6 +1394,7 @@ func _house(o: Vector3) -> void:
 	# outside: an empty kennel and a snapped chain
 	var k := c + Vector3(-1.2, 0, -1.6)
 	box(k + Vector3(0, 0.45, 0), Vector3(0.9, 0.9, 1.1), Game.mat("planks", 1.0))
+	box(k + Vector3(0, 0.93, 0.05), Vector3(1.1, 0.06, 1.3), Game.mat("roof", 1.0), false)
 	box(k + Vector3(0, 0.25, -0.56), Vector3(0.4, 0.5, 0.02), Game.color_mat(Color(0.02, 0.02, 0.02)), false)
 	box(k + Vector3(0.3, 0.03, -1.1), Vector3(0.04, 0.04, 0.9), Game.color_mat(Color(0.4, 0.4, 0.42)), false, 0.3)
 	_cover(c + Vector3(3.6, 0, -1.0)); _cover(c + Vector3(1.0, 0, 1.0)); _cover(c + Vector3(6.5, 0, 4.5))
@@ -1245,6 +1436,25 @@ func _barn(o: Vector3) -> void:
 	_wall(c, d, false, h, m, [], "wood")
 	_wall(c + Vector3(w, 0, 0), d, false, h, m, [[3.0, 4.2]], "wood")
 	var bceil := box(c + Vector3(w / 2, h + 0.05, d / 2), Vector3(w, 0.1, d), Game.mat("planks", 0.5), false)
+	_exterior(c, w, d, h, "barn")
+	# the two halves of the big sliding door, pushed open along the front wall: red boards in a
+	# white frame with the cross brace
+	for side in [-1.0, 1.0]:
+		var dx := 3.5 - 0.8 if side < 0 else 6.5 + 0.8
+		var dp := c + Vector3(dx, 0, -0.24)
+		box(dp + Vector3(0, 1.75, 0), Vector3(1.5, 3.5, 0.1), m, false)
+		for fy in [0.07, 3.43]:
+			box(dp + Vector3(0, fy, -0.02), Vector3(1.48, 0.12, 0.12), Game.color_mat(Color(0.86, 0.85, 0.8)), false)
+		for fx in [-0.685, 0.685]:
+			box(dp + Vector3(fx, 1.75, -0.025), Vector3(0.12, 3.24, 0.11), Game.color_mat(Color(0.86, 0.85, 0.8)), false)
+		var brace := Node3D.new()
+		root.add_child(brace)
+		brace.position = dp + Vector3(0, 1.75, -0.03)
+		brace.rotation.z = atan2(3.3, 1.3) * side
+		_into = brace
+		box(Vector3.ZERO, Vector3(0.11, 3.45, 0.1), Game.color_mat(Color(0.86, 0.85, 0.8)), false)
+		_into = null
+	box(c + Vector3(5.0, 3.62, -0.3), Vector3(4.6, 0.14, 0.14), Game.color_mat(Color(0.25, 0.25, 0.27), false, 0.6, 0.5), false)    # the rail
 	var br := _prop("house_roof", c + Vector3(w / 2, h, d / 2), 0.0, false)
 	br.scale = Vector3(w / 8.0, 1.2, d / 6.0)
 	_wood_roof(br, c, w, d)
@@ -1368,14 +1578,16 @@ func _house2(o: Vector3) -> void:
 	var rf := _prop("house_roof", c + Vector3(w / 2, 2 * h, d / 2), 0.0, false)
 	rf.scale = Vector3(w / 8.0, 1.0, d / 6.0)
 	# furniture: kitchen table, sofa, wardrobe and beds upstairs
-	box(c + Vector3(2.0, 0.4, 2.2), Vector3(1.6, 0.8, 1.0), Game.mat("planks", 1.0))
-	box(c + Vector3(6.4, 0.4, d - 1.0), Vector3(2.0, 0.8, 0.9), Game.color_mat(Color(0.32, 0.2, 0.16)))
-	box(up + Vector3(0.6, 1.0, 1.8), Vector3(0.6, 2.0, 1.4), Game.mat("planks", 1.0))
-	box(up + Vector3(2.4, 0.25, 1.2), Vector3(1.6, 0.5, 2.0), Game.color_mat(Color(0.5, 0.48, 0.42)), false)
-	box(up + Vector3(3.0, 0.25, d - 1.4), Vector3(2.0, 0.5, 1.6), Game.color_mat(Color(0.45, 0.4, 0.45)), false)
+	_table(c + Vector3(2.0, 0.1, 2.2), Vector2(1.6, 1.0))
+	for ch in [[Vector3(1.0, 0.1, 2.2), -PI / 2], [Vector3(3.0, 0.1, 2.2), PI / 2], [Vector3(2.0, 0.1, 1.4), PI]]:
+		_house_chair(c + (ch[0] as Vector3), float(ch[1]))
+	_sofa(c + Vector3(6.4, 0.1, d - 0.65), 0.0, Color(0.32, 0.2, 0.16))
+	_wardrobe(up + Vector3(0.45, 0.1, 1.8), -PI / 2)
+	_bed(up + Vector3(2.4, 0.1, 1.2), 0.0, Color(0.5, 0.48, 0.42), false)
+	_bed(up + Vector3(3.0, 0.1, d - 1.4), PI / 2, Color(0.45, 0.4, 0.45), false)
 	_lamp(c + Vector3(2.0, 2.5, 3.0))
 	_lamp(up + Vector3(3.0, 2.5, 5.0), 0.8)
-	_kitchen(c + Vector3(0.45, 0, 5.0), false, 2.0)
+	_kitchen(c + Vector3(0.45, 0.1, 5.0), false, 2.0)
 	_rug(c + Vector3(2.0, 0, 2.2), Vector2(2.6, 1.8), Color(0.25, 0.3, 0.5))
 	_rug(up + Vector3(3.0, 0.0, 5.8), Vector2(2.0, 1.4), Color(0.5, 0.35, 0.2))
 	_prop("woodpile", o + Vector3(11.2, 0, 6.0), PI / 2)
@@ -1584,6 +1796,12 @@ func _warehouse(o: Vector3) -> void:
 	_wall(c, d, false, h, m, [], "metal")      # (half a metre from the next block: a door here led into its wall)
 	_wall(c + Vector3(w, 0, 0), d, false, h, m, [[5.0, 6.0, 1.6]], "metal")
 	box(c + Vector3(w / 2, h + 0.05, d / 2), Vector3(w + 0.4, 0.1, d + 0.4), m, false)
+	_exterior(c, w, d, h, "metal")
+	# the roller shutter's drum over the big door, a sign board, a lamp over the side door
+	box(c + Vector3(5.5, 2.45, -0.33), Vector3(4.3, 0.42, 0.4), Game.color_mat(Color(0.3, 0.32, 0.34), false, 0.5, 0.5), false)
+	box(c + Vector3(5.5, 4.4, -0.17), Vector3(4.0, 0.9, 0.06), Game.color_mat(Color(0.12, 0.25, 0.45)), false)
+	box(c + Vector3(5.5, 4.4, -0.205), Vector3(3.2, 0.25, 0.02), Game.color_mat(Color(0.85, 0.85, 0.8)), false)
+	_lamp(c + Vector3(9.5, 2.6, -0.35), 0.7, 4.0, Color(1.0, 0.85, 0.6))
 	_trusses(c, w, d, h)
 	# gallery at 3 m along the back wall
 	var gy := 3.0
@@ -1692,14 +1910,31 @@ func _fuel(o: Vector3) -> void:
 	_ground(o, "asphalt")
 	var cp := o + Vector3(4.0, 0, 6.0)
 	box(cp + Vector3(0, 4.2, 0), Vector3(7.0, 0.35, 5.0), Game.color_mat(Color(0.85, 0.85, 0.8)), false)
-	box(cp + Vector3(0, 4.0, 2.52), Vector3(7.0, 0.3, 0.05), Game.color_mat(Color(0.8, 0.15, 0.1), true), false)
+	var red_glow := Game.color_mat(Color(0.8, 0.15, 0.1), true)
+	box(cp + Vector3(0, 4.0, 2.52), Vector3(7.0, 0.3, 0.05), red_glow, false)
+	box(cp + Vector3(0, 4.0, -2.52), Vector3(7.0, 0.3, 0.05), red_glow, false)
+	box(cp + Vector3(3.52, 4.0, 0), Vector3(0.05, 0.3, 4.9), red_glow, false)
+	box(cp + Vector3(-3.52, 4.0, 0), Vector3(0.05, 0.3, 4.9), red_glow, false)
 	for px in [-3.0, 3.0]:
 		for pz in [-2.0, 2.0]:
 			box(cp + Vector3(px, 2.0, pz), Vector3(0.3, 4.0, 0.3), Game.color_mat(Color(0.8, 0.8, 0.78)))
+			box(cp + Vector3(px, 0.4, pz), Vector3(0.34, 0.8, 0.34), Game.color_mat(Color(0.75, 0.12, 0.1)), false)     # the red foot
 	for px2 in [-1.2, 1.2]:
 		box(cp + Vector3(px2, 0.15, 0), Vector3(1.0, 0.3, 2.6), Game.mat("concrete", 0.5))
+		box(cp + Vector3(px2, 0.32, 0), Vector3(1.04, 0.04, 2.64), Game.color_mat(Color(0.85, 0.75, 0.1)), false)      # yellow kerb edge
 		box(cp + Vector3(px2, 1.0, 0), Vector3(0.6, 1.6, 0.4), Game.color_mat(Color(0.75, 0.12, 0.1)))
+		for side in [-1.0, 1.0]:
+			# the dial (still lit), the nozzle in its holster, the hose hanging down
+			box(cp + Vector3(px2, 1.45, 0.205 * side), Vector3(0.44, 0.3, 0.02), Game.color_mat(Color(0.15, 0.35, 0.2), true), false)
+			box(cp + Vector3(px2, 1.05, 0.21 * side), Vector3(0.46, 0.04, 0.02), Game.color_mat(Color(0.9, 0.9, 0.88)), false)
+			box(cp + Vector3(px2 + 0.31 * side, 0.95, 0), Vector3(0.06, 0.22, 0.12), Game.color_mat(Color(0.12, 0.12, 0.12)), false)
+			cyl(cp + Vector3(px2 + 0.34 * side, 0.6, 0.04), 0.02, 0.02, 0.6, Game.color_mat(Color(0.08, 0.08, 0.08)), false, 5)
 		_cover(cp + Vector3(px2, 0, 1.6))
+	# the price board on its pole by the road
+	cyl(o + Vector3(1.0, 2.0, 11.2), 0.08, 0.08, 4.0, Game.color_mat(Color(0.6, 0.6, 0.6), false, 0.5, 0.5), false, 6)
+	box(o + Vector3(1.0, 3.6, 11.2), Vector3(1.3, 1.4, 0.12), Game.color_mat(Color(0.85, 0.85, 0.8)), false)
+	for k in 3:
+		box(o + Vector3(1.0, 3.95 - k * 0.38, 11.13), Vector3(1.0, 0.24, 0.02), Game.color_mat(Color(0.1, 0.1, 0.1)), false)
 	var lt := SpotLight3D.new()
 	lt.light_color = Color(0.95, 0.97, 1.0)
 	lt.light_energy = 2.0
@@ -1790,6 +2025,12 @@ func _barracks(o: Vector3) -> void:
 	_wall(c, d, false, h, m, [[2.0, 3.4]], "brick")
 	_wall(c + Vector3(w, 0, 0), d, false, h, m, [], "brick")
 	box(c + Vector3(w / 2, h + 0.05, d / 2), Vector3(w + 0.3, 0.1, d + 0.3), Game.mat("roof", 1.0), false)
+	_exterior(c, w, d, h, "concrete")
+	# a little roof over the door, a lamp under it, a step
+	box(c + Vector3(5.2, 2.55, -0.7), Vector3(2.2, 0.1, 1.2), Game.mat("roof", 1.0), false)
+	for px in [4.25, 6.15]:
+		box(c + Vector3(px, 1.25, -1.2), Vector3(0.1, 2.5, 0.1), Game.color_mat(Color(0.3, 0.32, 0.34), false, 0.5, 0.5), false)
+	_lamp(c + Vector3(5.2, 2.35, -0.5), 0.6, 4.0, Color(0.9, 0.95, 1.0))
 	for i in 4:
 		box(c + Vector3(1.2 + i * 2.6, 0.6, d - 1.0), Vector3(0.9, 1.2, 1.9), Game.color_mat(Color(0.3, 0.33, 0.28)))
 		box(c + Vector3(1.2 + i * 2.6, 0.9, 0.5), Vector3(0.8, 1.8, 0.45), Game.mat("metal", 0.5))
@@ -1843,44 +2084,143 @@ func _sandbags(o: Vector3) -> void:
 	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
 
 # ---- furniture (own pieces; boxes with a little detail) -----------------------------------------
+## Furniture (0.55: made of more than one block each): @a p the middle of the foot, @a yaw turns it.
+func _at(p: Vector3, yaw: float, l: Vector3) -> Vector3:
+	return p + Basis(Vector3.UP, yaw) * l
+
 func _sofa(p: Vector3, yaw: float, col: Color) -> void:
 	var m := Game.color_mat(col)
-	var b := Basis(Vector3.UP, yaw)
-	box(p + b * Vector3(0, 0.25, 0), Vector3(2.0, 0.5, 0.9) if absf(sin(yaw)) < 0.5 else Vector3(0.9, 0.5, 2.0), m)
-	box(p + b * Vector3(0, 0.6, 0.38), Vector3(2.0, 0.6, 0.18) if absf(sin(yaw)) < 0.5 else Vector3(0.18, 0.6, 2.0), m, false)
-	for sx in [-0.95, 0.95]:
-		box(p + b * Vector3(sx, 0.45, 0.0), Vector3(0.14, 0.4, 0.9) if absf(sin(yaw)) < 0.5 else Vector3(0.9, 0.4, 0.14), m, false)
+	var m2 := Game.color_mat(col.lightened(0.12))
+	var dark := Game.color_mat(col.darkened(0.45))
+	box(_at(p, yaw, Vector3(0, 0.23, 0)), Vector3(1.96, 0.3, 0.86), m, true, yaw)            # the frame (solid)
+	box(_at(p, yaw, Vector3(0, 0.04, 0)), Vector3(1.86, 0.08, 0.76), dark, false, yaw)       # the dark gap under it
+	for sx in [-0.43, 0.43]:
+		box(_at(p, yaw, Vector3(sx, 0.45, -0.07)), Vector3(0.84, 0.15, 0.64), m2, false, yaw)    # seat cushions
+		box(_at(p, yaw, Vector3(sx, 0.68, 0.2)), Vector3(0.82, 0.42, 0.16), m2, false, yaw)      # back cushions
+	box(_at(p, yaw, Vector3(0, 0.62, 0.35)), Vector3(1.96, 0.5, 0.16), m, false, yaw)          # the back
+	for sx in [-0.9, 0.9]:
+		box(_at(p, yaw, Vector3(sx, 0.55, 0)), Vector3(0.16, 0.36, 0.86), m, false, yaw)        # arms
 
 func _tv_unit(p: Vector3, yaw: float) -> void:
 	var wood := Game.mat("planks", 1.0)
-	box(p + Vector3(0, 0.9, 0), Vector3(1.8, 1.8, 0.45), wood, true, yaw)
-	var tv := box(p + Vector3(0, 1.0, 0) + Basis(Vector3.UP, yaw) * Vector3(0, 0, -0.24), Vector3(0.7, 0.5, 0.05), Game.color_mat(Color(0.05, 0.08, 0.1)), false, yaw)
+	var dark := Game.color_mat(Color(0.12, 0.1, 0.09))
+	# a low sideboard with two doors, the old box television on it
+	box(_at(p, yaw, Vector3(0, 0.3, 0)), Vector3(1.6, 0.6, 0.45), wood, true, yaw)
+	box(_at(p, yaw, Vector3(0, 0.3, -0.226)), Vector3(0.012, 0.5, 0.01), dark, false, yaw)
+	for sx in [-0.08, 0.08]:
+		box(_at(p, yaw, Vector3(sx, 0.42, -0.235)), Vector3(0.03, 0.08, 0.03), Game.color_mat(Color(0.7, 0.65, 0.5), false, 0.6, 0.4), false, yaw)
+	box(_at(p, yaw, Vector3(0.15, 0.85, 0.02)), Vector3(0.66, 0.5, 0.42), Game.color_mat(Color(0.16, 0.15, 0.14)), false, yaw)     # the set
+	var tv := box(_at(p, yaw, Vector3(0.12, 0.86, -0.195)), Vector3(0.5, 0.38, 0.02), Game.color_mat(Color(0.05, 0.08, 0.1)), false, yaw)
 	tv.set_meta("screen", true)
+	box(_at(p, yaw, Vector3(0.4, 0.75, -0.195)), Vector3(0.06, 0.18, 0.02), Game.color_mat(Color(0.3, 0.3, 0.3)), false, yaw)     # knobs
+	cyl(_at(p, yaw, Vector3(-0.5, 0.75, 0.0)), 0.07, 0.1, 0.3, Game.color_mat(Color(0.6, 0.5, 0.3)), false, 8)                    # a vase
 	var glow := OmniLight3D.new()
 	glow.light_color = Color(0.5, 0.65, 1.0)
 	glow.light_energy = 0.5
 	glow.omni_range = 3.0
 	glow.set_meta("flicker", true)
 	root.add_child(glow)
-	glow.position = p + Vector3(0, 1.0, 0) + Basis(Vector3.UP, yaw) * Vector3(0, 0, -0.6)
+	glow.position = _at(p, yaw, Vector3(0.12, 0.9, -0.6))
 	info["lights"].append(glow)
 
 func _bookshelf(p: Vector3, yaw: float) -> void:
-	box(p + Vector3(0, 1.0, 0), Vector3(1.6, 2.0, 0.35), Game.mat("planks", 1.0), true, yaw)
-	var cols := [Color(0.5, 0.15, 0.12), Color(0.15, 0.25, 0.45), Color(0.6, 0.55, 0.3), Color(0.2, 0.35, 0.2)]
+	var wood := Game.mat("planks", 1.0)
+	box(_at(p, yaw, Vector3(0, 1.0, 0.08)), Vector3(1.6, 2.0, 0.19), wood, true, yaw)        # the back half (solid)
+	for sx in [-0.78, 0.78]:
+		box(_at(p, yaw, Vector3(sx, 1.0, -0.09)), Vector3(0.04, 2.0, 0.17), wood, false, yaw)
+	var cols := [Color(0.5, 0.15, 0.12), Color(0.15, 0.25, 0.45), Color(0.6, 0.55, 0.3), Color(0.2, 0.35, 0.2), Color(0.35, 0.28, 0.22)]
 	for k in 4:
-		box(p + Vector3(0, 0.3 + k * 0.45, 0) + Basis(Vector3.UP, yaw) * Vector3(0, 0, -0.18), Vector3(1.4, 0.3, 0.02), Game.color_mat(cols[k]), false, yaw)
+		var y0 := 0.14 + k * 0.46
+		box(_at(p, yaw, Vector3(0, y0, -0.09)), Vector3(1.52, 0.035, 0.17), wood, false, yaw)
+		# books: a few blocks of different heights and colours on each shelf
+		var x := -0.72
+		var j := 0
+		while x < 0.66:
+			var bw := rng.randf_range(0.18, 0.42)
+			var bh := rng.randf_range(0.24, 0.36)
+			if x + bw > 0.74:
+				bw = 0.74 - x
+			if rng.randf() < 0.82:
+				box(_at(p, yaw, Vector3(x + bw / 2, y0 + 0.018 + bh / 2, -0.07)), Vector3(bw - 0.01, bh, 0.14), Game.color_mat(cols[(k + j) % cols.size()]), false, yaw)
+			x += bw
+			j += 1
+	box(_at(p, yaw, Vector3(0, 1.985, -0.09)), Vector3(1.52, 0.03, 0.17), wood, false, yaw)
 
 func _kitchen(p: Vector3, along_x: bool, length: float) -> void:
-	# a counter along a wall, a stove, a tall fridge at its end
+	# a counter along a wall (doors, handles, a sink, a stove with its rings), a tall fridge at its end
 	var top := Game.color_mat(Color(0.75, 0.72, 0.65))
 	var cab := Game.mat("planks", 1.0)
-	var sz := Vector3(length, 0.9, 0.6) if along_x else Vector3(0.6, 0.9, length)
-	box(p + Vector3(0, 0.45, 0), sz, cab)
-	box(p + Vector3(0, 0.92, 0), sz + Vector3(0.04, -0.86, 0.04), top, false)
-	var end := p + (Vector3(length / 2 + 0.4, 0, 0) if along_x else Vector3(0, 0, length / 2 + 0.4))
+	var dark := Game.color_mat(Color(0.1, 0.1, 0.1))
+	var steel := Game.color_mat(Color(0.7, 0.72, 0.74), false, 0.7, 0.35)
+	var u := Vector3(1, 0, 0) if along_x else Vector3(0, 0, 1)
+	var sz := Vector3(length, 0.86, 0.6) if along_x else Vector3(0.6, 0.86, length)
+	box(p + Vector3(0, 0.43, 0), sz, cab)
+	box(p + Vector3(0, 0.89, 0), sz + Vector3(0.04, -0.82, 0.04), top, false)
+	box(p + Vector3(0, 0.07, 0), (Vector3(length - 0.02, 0.12, 0.62) if along_x else Vector3(0.62, 0.12, length - 0.02)), dark, false)       # the plinth under it
+	# door lines and handles on both long sides (the wall hides one of them)
+	var doors := maxi(1, int(length / 0.6))
+	for i in doors:
+		var cu := -length / 2 + (i + 0.5) * length / doors
+		for side in [-1.0, 1.0]:
+			var face := (Vector3(0, 0, 0.301 * side) if along_x else Vector3(0.301 * side, 0, 0))
+			if i > 0:
+				box(p + u * (cu - length / doors / 2) + face + Vector3(0, 0.48, 0), (Vector3(0.012, 0.7, 0.01) if along_x else Vector3(0.01, 0.7, 0.012)), dark, false)
+			box(p + u * (cu + 0.18) + face * 1.03 + Vector3(0, 0.74, 0), (Vector3(0.12, 0.025, 0.02) if along_x else Vector3(0.02, 0.025, 0.12)), steel, false)
+	# the sink with its tap, the stove with four rings
+	var sk := p + u * (length / 4)
+	box(sk + Vector3(0, 0.9, 0), Vector3(0.44, 0.04, 0.36) if along_x else Vector3(0.36, 0.04, 0.44), steel, false)
+	box(sk + Vector3(0, 0.905, 0), Vector3(0.36, 0.04, 0.28) if along_x else Vector3(0.28, 0.04, 0.36), dark, false)
+	cyl(sk + Vector3(0, 1.0, 0) + (Vector3(0, 0, 0.2) if along_x else Vector3(0.2, 0, 0)), 0.015, 0.015, 0.2, steel, false, 6)
+	var st := p - u * (length / 4)
+	box(st + Vector3(0, 0.9, 0), Vector3(0.5, 0.03, 0.5), dark, false)
+	for rx in [-0.11, 0.11]:
+		for rz in [-0.11, 0.11]:
+			cyl(st + Vector3(rx, 0.92, rz), 0.07, 0.07, 0.01, Game.color_mat(Color(0.25, 0.25, 0.25)), false, 10)
+	var end := p + u * (length / 2 + 0.4)
 	box(end + Vector3(0, 0.95, 0), Vector3(0.7, 1.9, 0.65), Game.color_mat(Color(0.88, 0.88, 0.84)))     # fridge
-	box(p + Vector3(0, 0.97, 0) + (Vector3(-length / 4, 0, 0) if along_x else Vector3(0, 0, -length / 4)), Vector3(0.5, 0.04, 0.5), Game.color_mat(Color(0.1, 0.1, 0.1)), false)
+	for side in [-1.0, 1.0]:
+		var fface := (Vector3(0, 0, 0.326 * side) if along_x else Vector3(0.326 * side, 0, 0))
+		box(end + fface + Vector3(0, 1.25, 0), (Vector3(0.66, 0.012, 0.01) if along_x else Vector3(0.01, 0.012, 0.66)), Game.color_mat(Color(0.55, 0.55, 0.52)), false)
+		box(end + fface * 1.04 + u * 0.24 + Vector3(0, 1.0, 0), (Vector3(0.025, 0.3, 0.025)), steel, false)
+
+## A table: the top on four legs (the top stops you, the legs do not).
+func _table(p: Vector3, size: Vector2, yaw := 0.0, mat: Material = null, hgt := 0.76) -> void:
+	var m: Material = mat if mat else Game.mat("planks", 1.0)
+	box(_at(p, yaw, Vector3(0, hgt - 0.03, 0)), Vector3(size.x, 0.06, size.y), m, true, yaw)
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			box(_at(p, yaw, Vector3(sx * (size.x / 2 - 0.07), (hgt - 0.06) / 2, sz * (size.y / 2 - 0.07))), Vector3(0.06, hgt - 0.06, 0.06), m, false, yaw)
+
+## A chair facing @a yaw (its back behind it).
+func _house_chair(p: Vector3, yaw := 0.0, mat: Material = null) -> void:
+	var m: Material = mat if mat else Game.mat("planks", 1.0)
+	box(_at(p, yaw, Vector3(0, 0.44, 0)), Vector3(0.42, 0.05, 0.42), m, true, yaw)
+	for sx in [-0.18, 0.18]:
+		for sz in [-0.18, 0.18]:
+			box(_at(p, yaw, Vector3(sx, 0.21, sz)), Vector3(0.04, 0.42, 0.04), m, false, yaw)
+	box(_at(p, yaw, Vector3(0, 0.72, 0.19)), Vector3(0.42, 0.5, 0.04), m, false, yaw)
+
+## A bed: the frame, the mattress, a pillow, a blanket over two thirds, the headboard.
+func _bed(p: Vector3, yaw: float, col: Color, single := true) -> void:
+	var wood := Game.mat("planks", 1.0)
+	var w := 1.0 if single else 1.6
+	box(_at(p, yaw, Vector3(0, 0.17, 0)), Vector3(w, 0.34, 2.0), wood, true, yaw)
+	box(_at(p, yaw, Vector3(0, 0.42, 0)), Vector3(w - 0.08, 0.16, 1.92), Game.color_mat(Color(0.82, 0.8, 0.74)), false, yaw)
+	box(_at(p, yaw, Vector3(0, 0.52, 0.32)), Vector3(w - 0.04, 0.06, 1.3), Game.color_mat(col), false, yaw)
+	for k in (1 if single else 2):
+		var px := 0.0 if single else (-0.38 + k * 0.76)
+		box(_at(p, yaw, Vector3(px, 0.55, -0.72)), Vector3(0.55, 0.1, 0.32), Game.color_mat(Color(0.9, 0.88, 0.84)), false, yaw)
+	box(_at(p, yaw, Vector3(0, 0.55, -1.02)), Vector3(w + 0.04, 1.1, 0.06), wood, false, yaw)
+
+## A wardrobe: two doors, two handles.
+func _wardrobe(p: Vector3, yaw: float) -> void:
+	var wood := Game.mat("planks", 1.0)
+	var dark := Game.color_mat(Color(0.12, 0.1, 0.09))
+	box(_at(p, yaw, Vector3(0, 1.0, 0)), Vector3(1.4, 2.0, 0.6), wood, true, yaw)
+	box(_at(p, yaw, Vector3(0, 1.02, -0.301)), Vector3(0.012, 1.84, 0.01), dark, false, yaw)
+	for sx in [-0.06, 0.06]:
+		box(_at(p, yaw, Vector3(sx, 1.05, -0.315)), Vector3(0.025, 0.16, 0.03), Game.color_mat(Color(0.7, 0.65, 0.5), false, 0.6, 0.4), false, yaw)
+	box(_at(p, yaw, Vector3(0, 2.02, 0)), Vector3(1.46, 0.05, 0.64), wood, false, yaw)
 
 func _rug(p: Vector3, size: Vector2, col: Color) -> void:
 	box(p + Vector3(0, 0.115, 0), Vector3(size.x, 0.01, size.y), Game.color_mat(col), false)
@@ -1950,12 +2290,11 @@ func _pub(o: Vector3) -> void:
 	# tables
 	for ix in 2:
 		for iz in 2:
-			var tp := c + Vector3(1.6 + ix * 2.6, 0, 1.8 + iz * 2.8)
-			box(tp + Vector3(0, 0.75, 0), Vector3(1.2, 0.06, 0.8), Game.mat("planks", 1.0), false)
-			box(tp + Vector3(0, 0.38, 0), Vector3(0.12, 0.75, 0.12), Game.mat("planks", 1.0))
+			var tp := c + Vector3(1.6 + ix * 2.6, 0.1, 1.8 + iz * 2.8)
+			_table(tp, Vector2(1.2, 0.8))
 			for sx in [-0.8, 0.8]:
-				box(tp + Vector3(sx, 0.45, 0), Vector3(0.4, 0.9, 0.4), Game.mat("planks", 1.0), false)
-	_kitchen(c + Vector3(9.8, 0, 2.4), false, 2.6)
+				_house_chair(tp + Vector3(sx, 0, 0), -PI / 2 if sx < 0 else PI / 2)
+	_kitchen(c + Vector3(9.8, 0.1, 2.4), false, 2.6)
 	# beer garden
 	for i in 2:
 		var bp := o + Vector3(2.5 + i * 5.0, 0, 10.4)
@@ -2081,6 +2420,9 @@ func _polar_hut(o: Vector3) -> void:
 	_wall(up, 5.0, false, 2.6, m, [], "metal")
 	_wall(up + Vector3(6.0, 0, 0), 5.0, false, 2.6, m, [[2.0, 3.0, 0.9]], "metal")
 	box(c + Vector3(3.0, 3.0, 2.5), Vector3(6.4, 0.15, 5.4), Game.color_mat(Color(0.85, 0.85, 0.85)), false)
+	_exterior(up, 6.0, 5.0, 2.6, "hut")
+	box(c + Vector3(2.95, 0.08, -0.4), Vector3(1.8, 0.16, 0.6), Game.mat("planks", 1.0), false)     # the step to the door
+	box(c + Vector3(2.95, 2.75, -0.55), Vector3(2.0, 0.08, 0.9), Game.color_mat(Color(0.85, 0.85, 0.85)), false)    # over the door
 	box(up + Vector3(1.0, 0.5, 4.2), Vector3(1.6, 1.0, 0.7), Game.mat("metal", 0.5))
 	cyl(c + Vector3(7.0, 2.5, 4.5), 0.05, 0.05, 5.0, Game.color_mat(Color(0.3, 0.3, 0.3)), false, 6)
 	_lamp(up + Vector3(3.0, 2.3, 2.5), 0.8, 5.0, Color(0.95, 0.98, 1.0))

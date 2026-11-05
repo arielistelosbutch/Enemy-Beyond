@@ -1,4 +1,11 @@
 {
+ "0.55": [
+  "Nový editor Mapové díly: každý díl mapy (statek, stodola, hospoda, sklad, les...) si otevřu, klikám na zdi, okna, nábytek i značky (kryt, trasa vetřelců, dveře, okna, místo pro civilistu) a posouvám je jako v Modeláři. Uložená varianta se pak objevuje na mapách.",
+  "Budovy prošly předělávkou: okna mají rámy, parapety a křížky, dveře zárubně, domy sokl. Když se zeď rozstřílí, rám zmizí s ní.",
+  "Stodola má bílé lemování a odsunutá posuvná vrata, sklad plechové rohy, okapy, ceduli a buben vrat, kasárna stříšku nad dveřmi, polární chata schod a stříšku, benzínka červené pruhy, stojany s pistolemi a cenovou tabuli.",
+  "Uvnitř je nový nábytek: sedačky s polštáři, postele, skříně, knihovny plné knih, kuchyně se dřezem, sporákem a lednicí, stoly a židle. Na statku je převržený stůl a židle.",
+  "Ozdoby se při stavbě mapy spojují dohromady, aby hra zvládla víc detailů bez zpomalení."
+ ],
  "0.54": [
   "Vojáci se konečně hýbou jako lidi: chůze, běh a plížení v podřepu do všech čtyř směrů, sprint, leh a plazení, lezení po čtyřech pro raněné, šest různých smrtí, skok, šplhání přes překážky, míření ve stoje i v podřepu, přebíjení vleže, hrabání v batohu a panika. Všechno z Mixama, převedené na naše žoldáky.",
   "Ruce taky: přebíjení ve stoje i v podřepu, hod granátu ve stoje i v podřepu, bodnutí nožem, rána obuškem, úder pažbou, otevírání dveří a čtyři různá škubnutí, když někoho trefí.",

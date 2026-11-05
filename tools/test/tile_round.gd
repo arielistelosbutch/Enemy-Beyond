@@ -10,8 +10,8 @@ func _sig(mg, nav: Node3D) -> Dictionary:
 	var parts := []
 	var counts := {}
 	for n in nav.find_children("*", "", true, false):
-		if n is MultiMeshInstance3D:
-			continue
+		if n is MultiMeshInstance3D or n.get_class() == "Node3D":
+			continue          # (grass grows anew; holders are flattened into their parts)
 		var c: String = n.get_class()
 		counts[c] = counts.get(c, 0) + 1
 		if n is MeshInstance3D and (n as MeshInstance3D).is_visible_in_tree():

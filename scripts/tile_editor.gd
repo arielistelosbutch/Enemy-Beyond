@@ -47,6 +47,7 @@ var _undo := []
 var _redo := []
 var _clip := []
 var _pick_ground := false
+var _show_notes := true
 
 var svc: SubViewportContainer
 var view: SubViewport
@@ -239,6 +240,7 @@ func _build_toolbar(parent: Node) -> void:
 	EdUI.btn(bar, "Zaměřit (F)", _focus, "Přiblížit na výběr (nic vybráno = celý díl)")
 	EdUI.check(bar, "Mřížka", true, func(on): _grid.visible = on)
 	EdUI.check(bar, "Noc", false, func(on): _set_night(on), "Jak díl vypadá v noci (svítí jen lampy a oheň)")
+	EdUI.check(bar, "Značky", true, func(on): _show_notes = on, "Ukázat značky (kryt, trasy, dveře, okna...)")
 	_terrain_opt = EdUI.opt(bar, [["temperate", "Léto"], ["snow", "Sníh"], ["desert", "Poušť"]], func(t):
 		terrain = String(t)
 		_rebuild_all())
@@ -1107,6 +1109,7 @@ func _copies(ids: Array, off: Vector3) -> Array:
 		if String(ne.get("k", "")) in ["woodroof", "grass"]:
 			continue
 		ne.erase("lens")
+		ne.erase("na")
 		_els().append(ne)
 		var j := _els().size() - 1
 		var f := _frame(i)
@@ -1137,6 +1140,7 @@ func _mirror_sel() -> void:
 		if String(ne.get("k", "")) in ["woodroof", "grass"]:
 			continue
 		ne.erase("lens")
+		ne.erase("na")
 		_els().append(ne)
 		var j := _els().size() - 1
 		var f := _frame(i)
@@ -1182,6 +1186,7 @@ func _copy() -> void:
 		if String(ne.get("k", "")) in ["woodroof", "grass"]:
 			continue
 		ne.erase("lens")
+		ne.erase("na")
 		_clip.append(ne)
 	status.text = "Zkopírováno %d částí (Ctrl+V vloží, i do jiného dílu)." % _clip.size()
 
@@ -1222,6 +1227,15 @@ func _delete_sel() -> void:
 				e["lens"] = remap[int(e["lens"])]
 			else:
 				e.erase("lens")
+		if e.has("na"):
+			var na := []
+			for hi in e["na"]:
+				if remap.has(int(hi)):
+					na.append(remap[int(hi)])
+			if na.is_empty():
+				e.erase("na")
+			else:
+				e["na"] = na
 		if String(e.get("k", "")) == "woodroof":
 			if not remap.has(int(e.get("i", -1))):
 				continue
@@ -1669,7 +1683,7 @@ func _draw_overlay() -> void:
 	ov.line(Vector3(BLOCK, y0, BLOCK), Vector3(0, y0, BLOCK), edge, 1.5)
 	ov.line(Vector3(0, y0, BLOCK), Vector3(0, y0, 0), edge, 1.5)
 	# notes, lights, the invisible parts
-	for i in _els().size():
+	for i in (_els().size() if _show_notes else 0):
 		var e: Dictionary = _els()[i]
 		var k := String(e.get("k", ""))
 		match k:
@@ -1812,13 +1826,21 @@ func _selftest() -> void:
 func _shots() -> void:
 	await get_tree().process_frame
 	var n := 0
+	_show_notes = Game.cmd_arg("notes", "1") == "1"
+	_grid.visible = _show_notes
 	for k in String(Game.cmd_arg("kinds", "house,house2,barn,warehouse,pub,cabin")).split(","):
 		_load(k, "", 1)
 		target = Vector3(6, 1.0, 6)
 		dist = 19.0
 		yaw = PI + 0.7
 		pitch = -0.55
-		if n == 0:
+		if Game.cmd_arg("cam", "") != "":
+			var cv := Game.cmd_arg("cam", "").split_floats(",")
+			target = Vector3(cv[0], cv[1], cv[2])
+			dist = cv[3]
+			yaw = cv[4]
+			pitch = cv[5]
+		if n == 0 and _show_notes:
 			for i in _els().size():
 				if _kind_of(i) == "door":
 					_set_sel([i])
