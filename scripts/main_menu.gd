@@ -1031,7 +1031,7 @@ func _refresh_lobby() -> void:
 		lines.append("%s %s%s%s" % ["*" if id == 1 else "-", Net.roster[id]["name"], money, talk])
 	var bars := int(clampf(Game.mic_level * 60.0, 0.0, 12.0))
 	var mic := "Mikrofon vypnutý (Nastavení)" if Game.voice_mode == "off" else "Tvůj mikrofon: [%s%s] %s" % ["|".repeat(bars), " ".repeat(12 - bars),
-		"VYSÍLÁŠ" if Net.get_node("LobbyVoice").talking else ("drž N / Caps Lock" if Game.voice_mode == "ptt" else "ticho")]
+		"VYSÍLÁŠ" if Net.get_node("LobbyVoice").talking else ("drž Tab" if Game.voice_mode == "ptt" else "ticho")]
 	_status.text = "Hráči (%d/%d):\n%s\n%s" % [Net.roster.size(), Net.MAX_PLAYERS, "\n".join(lines), mic] + ("\n" + _last_note if _last_note != "" else "")
 
 ## Money between teammates (host included): agree who buys what and help each other out.
@@ -1095,10 +1095,18 @@ func _show_main_msg(t: String) -> void:
 # ---- headless tests -------------------------------------------------------------
 func _autotest() -> void:
 	match Game.autotest():
-		"animator", "animatorshots":
+		"mocapview", "mocapinstall", "tilesurvey", "tileround":
+			var mv := Node.new() if Game.autotest() == "mocapinstall" else Node3D.new()
+			mv.set_script(load({"mocapview": "res://tools/test/mocap_preview.gd", "mocapinstall": "res://tools/test/mocap_install.gd",
+				"tilesurvey": "res://tools/test/tile_survey.gd", "tileround": "res://tools/test/tile_round.gd"}[Game.autotest()]))
+			get_tree().root.add_child.call_deferred(mv)
+			queue_free()
+		"animator", "animatorshots", "animmixamo":
 			get_tree().change_scene_to_file("res://scenes/Animator.tscn")
 		"workshop", "wsclick", "animtest", "animshots":
 			get_tree().change_scene_to_file("res://scenes/Workshop.tscn")
+		"tileeditor", "tileshots":
+			get_tree().change_scene_to_file("res://scenes/TileEditor.tscn")
 		"modeler", "modclick", "modspeed":
 			get_tree().change_scene_to_file("res://scenes/Modeler.tscn")
 		"geo", "campaign", "campair", "uigeo":
@@ -1184,7 +1192,7 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "aitest", "latetest", "gunshots", "topshot", "shieldtest", "locktest", "fireshot", "abase":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "aitest", "latetest", "gunshots", "topshot", "shieldtest", "locktest", "mocapgame", "beltthrow", "fireshot", "abase":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",

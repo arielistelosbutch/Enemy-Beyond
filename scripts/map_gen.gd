@@ -24,6 +24,8 @@ var _circle_done := false
 var _truck_done := false
 
 var biome := "farm"
+var capturing := false        # (MapPieces.capture: the editor takes a block down into data)
+var _cap_calls: Array = []
 var mtype := "crash"
 var ufo_kind := "scout"
 
@@ -179,6 +181,12 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	for x in N:
 		for z in N:
 			var o := Vector3(x * BLOCK, 0, z * BLOCK)
+			var dsg: Dictionary = {} if grid[x][z] in ["sky", "ufo"] else MapPieces.pick(self, grid[x][z])
+			if not dsg.is_empty():
+				if grid[x][z] in ["house2", "ruin", "garden", "orchard", "stream", "rocks", "cabin", "warehouse", "containers", "tanks", "yard", "fuel", "hangar", "barracks", "radar", "sandbags", "shop", "pub", "park", "parking", "icelake", "icespires", "polarhut"]:
+					info["landmarks"].append([grid[x][z], o])
+				MapPieces.build(self, dsg, o)
+				continue
 			if grid[x][z] in ["house2", "ruin", "garden", "orchard", "stream", "rocks", "cabin", "warehouse", "containers", "tanks", "yard", "fuel", "hangar", "barracks", "radar", "sandbags", "shop", "pub", "park", "parking", "icelake", "icespires", "polarhut"]:
 				info["landmarks"].append([grid[x][z], o])
 			match grid[x][z]:
@@ -247,7 +255,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 func box(pos: Vector3, size: Vector3, material: Material, collide := true, rot_y := 0.0) -> Node3D:
 	if material == Game.mat("roof", 1.0):
 		collide = true       # roofs can be climbed onto
-	if material == Game.mat("roof", 1.0) and size.y < 0.2 and minf(size.x, size.z) >= 2.5 and rot_y == 0.0:
+	if material == Game.mat("roof", 1.0) and size.y < 0.2 and minf(size.x, size.z) >= 2.5 and rot_y == 0.0 and not capturing:
 		# a flat roof: a perch for the flying ones
 		var top := pos + Vector3(0, size.y / 2, 0)
 		info["roofs"].append(top)
@@ -368,6 +376,8 @@ static func _grass_mat(kind: String) -> ShaderMaterial:
 
 ## Scatters blades over a block. `keep` filters positions (e.g. not on the road).
 func _grass(o: Vector3, count: int, kind := "grass", min_h := 0.6, max_h := 1.3, keep := Callable()) -> void:
+	if capturing:
+		_cap_calls.append(["grass", o, count, kind, min_h, max_h])
 	if not Game.grass or terrain == "snow" or terrain == "mars":
 		return
 	if terrain == "desert":
@@ -415,6 +425,10 @@ func _retexture(n: Node, swap: Dictionary) -> void:
 			var src := m.mesh.surface_get_material(i)
 			if src and swap.has(src.resource_name):
 				m.set_surface_override_material(i, swap[src.resource_name])
+	var keep: Dictionary = n.get_meta("retex", {})
+	for key in swap:
+		keep[key] = MapPieces.mat_spec(swap[key])
+	n.set_meta("retex", keep)
 
 var _cars: Array = []
 var _small: Array = []
@@ -555,6 +569,7 @@ func _prop(name: String, p: Vector3, yaw := 0.0, cover := true) -> Node3D:
 		# solid: a merc who climbs up stands on the tiles (and they stop bullets from above)
 		for mi in n.find_children("*", "MeshInstance3D", true, false):
 			(mi as MeshInstance3D).create_trimesh_collision()
+	if name == "house_roof" and not capturing:
 		# a pitched roof over the flat slab: the flier sits on the ridge instead (height found later)
 		info["roofs"] = info["roofs"].filter(func(r): return Vector2(r.x - p.x, r.z - p.z).length() > 5.5 or absf(r.y - p.y) > 0.6)
 		info["roofs"].append(p + Vector3(0, -100.0, 0))     # y < -50: "ask the ray"
@@ -909,8 +924,13 @@ func _smolder(fp: Vector3) -> void:
 	root.add_child(fire)
 	fire.position = fp + Vector3(0, 0.6, 0)
 	info["lights"].append(fire)
+	_flame_fx(fp, 20)
+	info["sounds"].append({"name": "fire", "pos": fp, "db": -18.0})
+
+## Flames (the light and the sound are separate).
+func _flame_fx(fp: Vector3, amount := 20) -> Node3D:
 	var fl := CPUParticles3D.new()
-	fl.amount = 20
+	fl.amount = amount
 	fl.lifetime = 0.9
 	fl.direction = Vector3.UP
 	fl.spread = 15.0
@@ -930,7 +950,7 @@ func _smolder(fp: Vector3) -> void:
 	fl.mesh = fq
 	root.add_child(fl)
 	fl.position = fp
-	info["sounds"].append({"name": "fire", "pos": fp, "db": -18.0})
+	return fl
 
 ## Room around the Kondor: bare ground and a little grass, nothing to fly into.
 func _open(o: Vector3) -> void:
@@ -1082,6 +1102,7 @@ func _glass_mat() -> Material:
 		_glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		_glass.roughness = 0.05
 		_glass.metallic_specular = 0.9
+		_glass.set_meta("spec", ["glass"])
 	return _glass
 
 ## Something that shots or blasts can break (see Mission.hit_breakable). The map is the same
@@ -1404,27 +1425,7 @@ func _ruin(o: Vector3) -> void:
 		root.add_child(fire)
 		fire.position = fp + Vector3(0, 0.5, 0)
 		info["lights"].append(fire)
-		var fl := CPUParticles3D.new()
-		fl.amount = 24
-		fl.lifetime = 0.9
-		fl.direction = Vector3.UP
-		fl.spread = 15.0
-		fl.initial_velocity_min = 0.6
-		fl.initial_velocity_max = 1.4
-		fl.gravity = Vector3(0, 0.5, 0)
-		fl.scale_amount_min = 0.6
-		fl.scale_amount_max = 1.2
-		var fq := QuadMesh.new()
-		fq.size = Vector2(0.3, 0.4)
-		var fmat := StandardMaterial3D.new()
-		fmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		fmat.albedo_color = Color(1.0, 0.55, 0.15, 0.8)
-		fmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		fmat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-		fq.material = fmat
-		fl.mesh = fq
-		root.add_child(fl)
-		fl.position = fp
+		_flame_fx(fp, 24)
 		info["sounds"].append({"name": "fire", "pos": fp, "db": -16.0})
 	if rng.randf() < 0.6:
 		# a burnt-out car in front

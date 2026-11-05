@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.53 prototyp"
-const VERSION_NUM := "0.53"
+const VERSION := "0.54 prototyp"
+const VERSION_NUM := "0.54"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -219,7 +219,7 @@ func _ready() -> void:
 	_setup_input()
 	load_merc()
 
-## Tab: the microphone stays open (talks whenever you speak) until Tab again.
+## M: the microphone stays open (talks whenever you speak) until M again. (Tab held = talk.)
 var mic_live := false
 signal mic_toggled(on: bool)
 func _input(event: InputEvent) -> void:
@@ -235,12 +235,12 @@ func _setup_input() -> void:
 		"move_forward": [KEY_W, KEY_UP], "move_back": [KEY_S, KEY_DOWN],
 		"move_left": [KEY_A], "move_right": [KEY_D],
 		"sprint": [KEY_SHIFT], "crouch": [KEY_C, KEY_CTRL], "jump": [KEY_SPACE],
-		"reload": [KEY_R], "flashlight": [KEY_F], "use": [KEY_E], "heal": [KEY_H],
+		"reload": [KEY_R], "flashlight": [KEY_F], "use": [KEY_E], "heal": [KEY_X],
 		"grenade": [KEY_G], "flare": [KEY_7], "swap": [KEY_Q], "inventory": [KEY_I],
-		"pause": [KEY_ESCAPE], "prone": [KEY_Z, KEY_Y], "melee": [KEY_V], "smoke": [KEY_X], "mine": [KEY_B],
+		"pause": [KEY_ESCAPE], "prone": [KEY_Z, KEY_Y], "melee": [KEY_V], "smoke": [KEY_H], "mine": [KEY_B],
 		"primary": [KEY_1], "secondary": [KEY_2],
 		"belt1": [KEY_3], "belt2": [KEY_4], "belt3": [KEY_5], "belt4": [KEY_6],
-		"talk": [KEY_CAPSLOCK, KEY_N], "radio_talk": [KEY_T, KEY_K], "mic_toggle": [KEY_TAB], "nvg": [KEY_L], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
+		"talk": [KEY_TAB], "radio_talk": [KEY_T, KEY_K], "mic_toggle": [KEY_M], "nvg": [KEY_N], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
 	}
 	for action in keys:
 		if not InputMap.has_action(action):
@@ -249,6 +249,12 @@ func _setup_input() -> void:
 			var ev := InputEventKey.new()
 			ev.physical_keycode = k
 			InputMap.action_add_event(action, ev)
+	# Tab is held to talk: it must not also jump between the buttons of a menu
+	for ui in ["ui_focus_next", "ui_focus_prev"]:
+		if InputMap.has_action(ui):
+			for ev in InputMap.action_get_events(ui):
+				if ev is InputEventKey and ((ev as InputEventKey).keycode == KEY_TAB or (ev as InputEventKey).physical_keycode == KEY_TAB):
+					InputMap.action_erase_event(ui, ev)
 	for pair in [["fire", MOUSE_BUTTON_LEFT], ["aim", MOUSE_BUTTON_RIGHT]]:
 		if not InputMap.has_action(pair[0]):
 			InputMap.add_action(pair[0])
@@ -834,7 +840,7 @@ var render_scale := 1.0    # 3D resolution (1 = native, sharp; lower = faster)
 var grass := true          # grass blades swaying in the wind
 var fullscreen := false
 var seen_version := ""     # the newest version whose "what's new" the player has seen
-var voice_mode := "ptt"    # "off", "ptt" (hold Caps Lock / N), "open" (voice activation)
+var voice_mode := "ptt"    # "off", "ptt" (hold Tab), "open" (voice activation)
 var mic_gate := 0.03       # voice activation threshold (open mic)
 var friendly_fire := true   # host's choice: bullets hit teammates too
 var mic_gain := 1.0        # own microphone loudness (x0.5 .. x4)
@@ -871,6 +877,7 @@ func mat(tex_name: String, scale := 0.5, emission := Color.BLACK) -> ShaderMater
 	m.set_shader_parameter("emission_energy", 1.0 if emission != Color.BLACK else 0.0)
 	m.set_shader_parameter("jitter", 1.0 if wobble else 0.0)
 	m.set_meta("tex", tex_name)
+	m.set_meta("spec", ["t", tex_name, scale, [emission.r, emission.g, emission.b, emission.a]])
 	_materials[key] = m
 	return m
 
@@ -933,6 +940,7 @@ func color_mat(c: Color, emission := false, metal := 0.0, rough := 1.0) -> Shade
 		m.set_shader_parameter("emission_color", Color(c.r, c.g, c.b))
 		m.set_shader_parameter("emission_energy", 2.0)
 	m.set_shader_parameter("jitter", 1.0 if wobble else 0.0)
+	m.set_meta("spec", ["c", [snappedf(c.r, 0.001), snappedf(c.g, 0.001), snappedf(c.b, 0.001), snappedf(c.a, 0.001)], emission, metal, rough])
 	_materials[key] = m
 	return m
 
@@ -952,8 +960,11 @@ func model(mname: String) -> Node3D:
 		mi.material_override = color_mat(Color(0.3, 0.3, 0.3))
 		var holder := Node3D.new()
 		holder.add_child(mi)
+		mi.owner = holder
+		holder.set_meta("model", mname)
 		return holder
 	var n: Node3D = _models[mname].instantiate()
+	n.set_meta("model", mname)
 	if model_mods.has(mname):
 		ModelMods.apply(n, model_mods[mname])
 	_restyle(n)

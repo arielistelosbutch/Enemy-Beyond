@@ -1,4 +1,12 @@
 {
+ "0.54": [
+  "Vojáci se konečně hýbou jako lidi: chůze, běh a plížení v podřepu do všech čtyř směrů, sprint, leh a plazení, lezení po čtyřech pro raněné, šest různých smrtí, skok, šplhání přes překážky, míření ve stoje i v podřepu, přebíjení vleže, hrabání v batohu a panika. Všechno z Mixama, převedené na naše žoldáky.",
+  "Ruce taky: přebíjení ve stoje i v podřepu, hod granátu ve stoje i v podřepu, bodnutí nožem, rána obuškem, úder pažbou, otevírání dveří a čtyři různá škubnutí, když někoho trefí.",
+  "Zbraň se drží v ruce po celou dobu akce: úchop se vezme na začátku pohybu, takže puška při přebíjení nemíří do nebe.",
+  "Editor Animace ukazuje i varianty pohybů (dozadu, doleva, doprava, smrt 2–6) a umí načíst pohyb z Mixama přímo ze složky animace/Maximo, včetně ZIPů se sety.",
+  "Nové ovládání: lékárnička je na X, granát z opasku na G, kouřový granát na H, noční vidění na N a mluví se podržením Tabu.",
+  "Pohyby z Mixama jsou jen v balíčku hry, ve zdrojácích na GitHubu nejsou."
+ ],
  "0.53": [
   "Moje úpravy modelů z Modeláře jsou ve hře: puška, pistole, magnum, nůž, mimozemské zbraně, Šedivák velitel, civilistka a Sokol. K tomu nové držení zbraní a přebíjení zvenku.",
   "Modelář je mnohem rychlejší: velké modely se otevřou za zlomek vteřiny místo desítek vteřin, díl jde chytit hned po kliknutí a tažení je plynulé.",

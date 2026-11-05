@@ -20,11 +20,14 @@ const BONE_NAMES := {"root": "Celé tělo (posun)", "hips": "Pánev", "spine": "
 	"forearm.R": "Pravý loket", "hand.R": "Pravá ruka", "thigh.L": "Levé stehno", "shin.L": "Levé koleno",
 	"thigh.R": "Pravé stehno", "shin.R": "Pravé koleno"}
 const BODY := [["idle", "Stání"], ["walk", "Chůze"], ["run", "Běh"], ["sprint", "Sprint"], ["crouch", "Podřep"],
-	["crouch_walk", "Chůze v podřepu"], ["prone", "Leh"], ["prone_crawl", "Plazení"], ["downed", "Raněný na zemi"],
-	["crawl_idle", "Raněný na čtyřech"], ["crawl_hurt", "Raněný leze"], ["dead", "Smrt (pád)"]]
-const LOOPS := ["idle", "walk", "run", "sprint", "crouch", "crouch_walk", "prone", "prone_crawl", "downed", "crawl_idle", "crawl_hurt"]
-const HANDS := [["hold", "Držení (postoj)"], ["reload", "Přebíjení"], ["strike", "Úder (nůž, obušek, pažba)"], ["heal", "Ošetřování"],
-	["dig", "Hrabání v batohu"], ["throw", "Hod (granát, světlice)"]]
+	["crouch_walk", "Chůze v podřepu"], ["prone", "Leh"], ["prone_crawl", "Plazení"],
+	["crawl_idle", "Raněný na zemi (na čtyřech)"], ["crawl_hurt", "Raněný leze po čtyřech"], ["dead", "Smrt (pád)"],
+	["jump", "Skok (ve vzduchu)"], ["climb", "Šplhání na římsu"], ["idle_aim", "Míření vestoje"], ["crouch_aim", "Míření v podřepu"],
+	["prone_reload", "Přebíjení vleže"], ["dig", "Hrabání v batohu (celé tělo)"], ["panic", "Panika (sesypání)"]]
+const LOOPS := ["jump", "idle_aim", "crouch_aim", "dig", "panic", "idle", "walk", "run", "sprint", "crouch", "crouch_walk", "prone", "prone_crawl", "downed", "crawl_idle", "crawl_hurt"]
+const HANDS := [["hold", "Držení (postoj)"], ["reload", "Přebíjení"], ["reload_crouch", "Přebíjení v podřepu"], ["strike", "Úder (nůž, obušek, pažba)"],
+	["heal", "Ošetřování"], ["dig", "Hrabání v batohu"], ["throw", "Hod (granát, světlice)"], ["throw_crouch", "Hod v podřepu"],
+	["use", "Použití (dveře, terminál)"], ["hit_1", "Zásah 1"], ["hit_2", "Zásah 2"], ["hit_3", "Zásah 3"], ["hit_4", "Zásah 4 (do zad)"]]
 const EMOTES := [["salute", "Pozdrav (J)"], ["atease", "Pohov (U)"], ["hips", "Ruce v bok"]]
 const EYES := [["reload", "Přebíjení"], ["reload1", "Přebíjení po náboji"], ["strike", "Úder"], ["throw", "Hod"],
 	["heal", "Ošetřování"], ["dig", "Hrabání v batohu"]]
@@ -42,6 +45,7 @@ var _ac := {}                # the clip being edited
 var _saved_json := ""        # what is on disk (to know if it changed)
 var _from_game := false      # nothing saved yet: read from the game
 var _from_template := false  # eyes view: nothing saved, a pattern shown
+var _from_vse := false       # hands: this item has none of its own, the one for everything is shown
 var t := 0.0
 var playing := false
 var speed := 1.0
@@ -197,6 +201,8 @@ func _ready() -> void:
 		_selftest.call_deferred()
 	elif Game.autotest() == "animatorshots":
 		_shots.call_deferred()
+	elif Game.autotest() == "animmixamo":
+		_mixamo_test.call_deferred()
 
 # ---- panels ---------------------------------------------------------------------------------------
 func _build_left(parent: Node) -> void:
@@ -250,6 +256,7 @@ func _build_left(parent: Node) -> void:
 	from_opt.tooltip_text = "Vezme jinou hotovou animaci (třeba přebíjení jiné zbraně) nebo vzor jako začátek - pak ji jen upravíš."
 	from_opt.item_selected.connect(func(i): _start_from(String(from_opt.get_item_metadata(i))))
 	fr.add_child(from_opt)
+	EdUI.btn(g, "Načíst z Mixamo…", _mixamo_dialog, "Pohyb z Mixamo (FBX ze složky animace/Maximo, i ze ZIPů) převede na žoldáka. Nic se neuloží, dokud nedáš Ctrl+S.").size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	EdUI.btn(g, "Uložit pro všechny věci", _save_for_all, "Uloží tuhle animaci jako společnou pro každou věc (věci bez vlastní animace ji použijí)").size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	EdUI.btn(g, "Vrátit původní ze hry", func(): EdUI.ask(self, "Smazat upravenou animaci a vrátit původní pohyb ze hry?", _revert, "Vrátit"), "Smaže soubor s úpravou").size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
@@ -370,6 +377,14 @@ func _fill_acts() -> void:
 	add_head.call("CELÉ TĚLO")
 	for e in BODY:
 		add.call("body", e[0], e[1])
+		# its other movements: going back and to the sides, the variants (a death picked at random)
+		for suf in [["_back", "dozadu"], ["_left", "doleva"], ["_right", "doprava"]]:
+			if FileAccess.file_exists(AnimClips.path_of("tp_body_%s%s" % [e[0], suf[0]])):
+				add.call("body", String(e[0]) + suf[0], "      ↳ %s" % suf[1])
+		for k in range(2, 10):
+			if not FileAccess.file_exists(AnimClips.path_of("tp_body_%s_%d" % [e[0], k])):
+				break
+			add.call("body", "%s_%d" % [e[0], k], "      ↳ varianta %d" % k)
 	add_head.call("PÓZY")
 	for e in EMOTES:
 		add.call("emote", e[0], e[1])
@@ -492,6 +507,7 @@ func _open(k: String, a: String, it: String) -> void:
 	var own := AnimClips.get_clip(clip_id)
 	_from_game = own.is_empty()
 	_from_template = false
+	_from_vse = false
 	if not own.is_empty():
 		_ac = own.duplicate(true)
 		_saved_json = JSON.stringify(_ac)
@@ -501,7 +517,7 @@ func _open(k: String, a: String, it: String) -> void:
 	_undo.clear()
 	_redo.clear()
 	t = 0.0
-	playing = kind == "body" and act in LOOPS
+	playing = kind == "body" and _base_act(act) in LOOPS
 	lock = bool(Game.tweaks.get("lock/" + (show if show != "" else item), true))
 	_build_scene(show)
 	_fill_acts()
@@ -533,13 +549,14 @@ func _start_clip() -> Dictionary:
 		if a and a.has_animation(act):
 			c = import_animation(a.get_animation(act), s, name)
 		m.free()
-		c["smycka"] = act in LOOPS
+		c["smycka"] = _base_act(act) in LOOPS
 		return c
-	if kind == "hand" and act in ["reload", "strike"] and item != "vse":
+	if kind == "hand" and item != "vse":
 		# from the clip for everything, if there is one
 		var fall := AnimClips.get_clip("tp_%s_vse" % act)
 		if not fall.is_empty():
 			c = fall.duplicate(true)
+			_from_vse = true
 	if kind == "eyes":
 		var fall2 := AnimClips.find("fp", act, item)
 		if not fall2.is_empty():
@@ -548,7 +565,7 @@ func _start_clip() -> Dictionary:
 			# the game's own hand-made movement cannot be shown here: a pattern to start from
 			c = _template()
 			_from_template = true
-	if kind == "hand":
+	if kind == "hand" and not _from_vse:
 		c["delka"] = {"reload": 1.5, "strike": 0.45, "heal": 2.0, "dig": 2.0, "throw": 0.6, "hold": 1.2}.get(act, 1.0)
 		c["smycka"] = act in ["hold", "heal", "dig"]
 	if kind == "emote":
@@ -736,12 +753,26 @@ static func _reduce(times: Array, vals: Array, a: int, b: int, tol: float, keep:
 	_reduce(times, vals, a, worst, tol, keep)
 	_reduce(times, vals, worst, b, tol, keep)
 
+## The game's movement a variant belongs to ("walk_back" -> "walk", "dead_3" -> "dead").
+func _base_act(a: String) -> String:
+	for suf in ["_back", "_left", "_right"]:
+		if a.ends_with(suf):
+			return a.trim_suffix(suf)
+	var cut := a.rfind("_")
+	if cut > 0 and a.substr(cut + 1).is_valid_int():
+		return a.substr(0, cut)
+	return a
+
 func _title() -> String:
 	var lists := {"body": BODY, "hand": HANDS, "emote": EMOTES, "eyes": EYES}
 	var nm := act
+	var ba := _base_act(act) if kind == "body" else act
 	for e in lists[kind]:
-		if e[0] == act:
+		if e[0] == ba:
 			nm = e[1]
+	if ba != act:
+		var suf := act.substr(ba.length())
+		nm += " " + {"_back": "dozadu", "_left": "doleva", "_right": "doprava"}.get(suf, "– varianta " + suf.substr(1))
 	var it := ""
 	if kind in ["hand", "eyes"]:
 		it = " – " + (String(Game.ITEMS[item]["name"]) if Game.ITEMS.has(item) else "všechno")
@@ -796,6 +827,7 @@ func _redo_step() -> void:
 	_changed()
 
 func _changed() -> void:
+	_lock_ok = false
 	_fill_events()
 	_sync_ui()
 
@@ -842,11 +874,6 @@ func _build_scene(show := "") -> void:
 	model = Game.model("merc")
 	model.scale = Vector3(-1, 1, 1)
 	world.add_child(model)
-	if kind == "body" and act in ["prone", "prone_crawl", "dead"]:
-		# as the game lays him down: on the belly (prone) or on the back (dead)
-		var dead := act == "dead"
-		model.rotation.x = PI / 2 if dead else -PI / 2
-		model.position = Vector3(0, 0.18, -0.9 if dead else 0.9)
 	Game.apply_look(model, Game.merc.get("look", {}))
 	for gname in ["Gear_Scanner", "Gear_Plate", "Gear_Grenade", "Gear_Flare"]:
 		var gn := model.find_child(gname, true, false)
@@ -856,7 +883,7 @@ func _build_scene(show := "") -> void:
 	ap = model.find_child("AnimationPlayer", true, false)
 	if ap:
 		ap.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
-		var base := act if kind == "body" else ("crouch" if act in ["dig", "heal"] else "idle")
+		var base := _base_act(act) if kind == "body" else ("crouch" if act in ["dig", "heal"] else "idle")
 		if ap.has_animation(base):
 			ap.play(base)
 	var it := show if show != "" else (item if item != "vse" else "")
@@ -895,6 +922,10 @@ func _pose_now() -> Dictionary:
 func _apply_pose() -> void:
 	if sk == null:
 		return
+	# as the game lays him down for these (on the belly / on the back), unless the movement does it itself
+	var lie := kind == "body" and act in ["prone", "prone_crawl", "dead"] and not bool(_ac.get("vlastni_poloha", false))
+	model.rotation.x = (PI / 2 if act == "dead" else -PI / 2) if lie else 0.0
+	model.position = Vector3(0, 0.18, -0.9 if act == "dead" else 0.9) if lie else Vector3.ZERO
 	if ap and ap.current_animation != "":
 		var base_len := ap.current_animation_length
 		ap.seek(fmod(t, base_len) if kind != "body" else minf(t, base_len), true)
@@ -936,6 +967,12 @@ func _find_lock_rel() -> bool:
 		return false
 	var it := String(holder.get_meta("item"))
 	var hold := Game.tweak_pose("hold/" + it, PlayerScript.hold_want(it, "", 0, 0.0))
+	if kind == "hand":
+		# as the game does: the thing is taken into the hand as the action starts (its first moment)
+		var keep_t := t
+		t = 0.0
+		hold = _pose_now()
+		t = keep_t
 	var keep := {}
 	for bn in hold:
 		var i := sk.find_bone(bn)
@@ -1042,7 +1079,7 @@ func _process(delta: float) -> void:
 	if playing:
 		_sync_fields()
 	time_lbl.text = "%.2f / %.2f s%s" % [t, d, "   ▶" if playing else ""]
-	title_lbl.text = "%s%s" % [_title(), "  *neuloženo" if _dirty() else ("  (vzor – zatím neuloženo)" if _from_template else ("  (ze hry)" if _from_game else "  (upraveno)"))]
+	title_lbl.text = "%s%s" % [_title(), "  *neuloženo" if _dirty() else ("  (vzor – zatím neuloženo)" if _from_template else ("  (společná pro všechno)" if _from_vse else ("  (ze hry)" if _from_game else "  (upraveno)")))]
 	tl.queue_redraw()
 	_draw_overlay()
 
@@ -1102,7 +1139,9 @@ func _sync_ui() -> void:
 	_updating = false
 	_sync_fields()
 	sel_lbl.text = (BONE_NAMES.get(sel, sel) if kind != "eyes" else {"zbran": "Zbraň (celá)", "ruka": "Levá ruka"}.get(sel, "Díl: " + sel))
-	if _from_template:
+	if _from_vse:
+		info_lbl.text = "Tahle věc nemá vlastní - ukazuje se společná pro všechno (tp_%s_vse), stejně jako ve hře. Uložením vznikne vlastní: %s." % [act, clip_id]
+	elif _from_template:
 		info_lbl.text = "Zobrazený je VZOR (hra má zatím vlastní pohyb). Po uložení vznikne %s." % clip_id
 	elif _from_game:
 		info_lbl.text = "Původní ze hry – po uložení vznikne %s" % clip_id
@@ -1291,6 +1330,121 @@ func _stretch_dialog() -> void:
 	d.canceled.connect(d.queue_free)
 	add_child(d)
 	d.popup_centered()
+
+# ---- Mixamo ----------------------------------------------------------------------------------------
+const MIXAMO_DIR := "res://animace/Maximo"
+
+## Every Mixamo movement in the folder: loose FBX files and those inside downloaded ZIP packs.
+func _mixamo_list() -> Array:
+	var dir := ProjectSettings.globalize_path(MIXAMO_DIR)
+	var out := []
+	if not DirAccess.dir_exists_absolute(dir):
+		return out
+	for f in DirAccess.get_files_at(dir):
+		if f.to_lower().ends_with(".fbx"):
+			out.append([f.get_basename(), dir.path_join(f), ""])
+		elif f.to_lower().ends_with(".zip"):
+			var z := ZIPReader.new()
+			if z.open(dir.path_join(f)) == OK:
+				for inner in z.get_files():
+					if inner.to_lower().ends_with(".fbx") and not inner.get_file().begins_with("copzombie"):
+						out.append(["%s  ·  %s" % [inner.get_file().get_basename(), f.get_basename()], dir.path_join(f), inner])
+				z.close()
+	out.sort_custom(func(a, b): return String(a[0]).naturalnocasecmp_to(String(b[0])) < 0)
+	return out
+
+func _mixamo_dialog() -> void:
+	if kind == "eyes" or kind == "emote":
+		status.text = "Z Mixamo jde načíst pohyb těla nebo rukou zvenku (vlevo 'Postava zvenku')."
+		return
+	var items := _mixamo_list()
+	var d := ConfirmationDialog.new()
+	d.title = "Pohyb z Mixamo"
+	d.ok_button_text = "Načíst"
+	d.cancel_button_text = "Zrušit"
+	var vb := VBoxContainer.new()
+	vb.custom_minimum_size = Vector2(520, 460)
+	d.add_child(vb)
+	var info := Label.new()
+	info.text = ("Soubory ze složky animace/Maximo (i uvnitř ZIPů). Pohyb se převede na žoldáka a otevře tady -\n"
+		+ "nic se neuloží, dokud nedáš Ctrl+S (Zpět vrátí původní).") if not items.is_empty() else "Ve složce animace/Maximo nejsou žádné FBX ani ZIPy z Mixamo."
+	vb.add_child(info)
+	var flt := LineEdit.new()
+	flt.placeholder_text = "hledat (walk, death, crawl...)"
+	vb.add_child(flt)
+	var lst := ItemList.new()
+	lst.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vb.add_child(lst)
+	var keep := CheckBox.new()
+	keep.text = "Bez posunu z místa (chůze, běh, plazení - hra posouvá postavu sama)"
+	keep.button_pressed = kind == "body" and _base_act(act) in LOOPS
+	vb.add_child(keep)
+	var shown := []
+	var fill := func(q: String):
+		lst.clear()
+		shown.clear()
+		for e in items:
+			if q == "" or String(e[0]).to_lower().contains(q.to_lower()):
+				lst.add_item(String(e[0]))
+				shown.append(e)
+	fill.call("")
+	flt.text_changed.connect(func(q): fill.call(q))
+	var go := func():
+		var sel_i := lst.get_selected_items()
+		if sel_i.is_empty():
+			return
+		var e: Array = shown[sel_i[0]]
+		d.hide()
+		d.queue_free()
+		_mixamo_load(e, keep.button_pressed)
+	d.confirmed.connect(go)
+	lst.item_activated.connect(func(_i): go.call())
+	d.canceled.connect(d.queue_free)
+	add_child(d)
+	d.popup_centered()
+
+## Converts one Mixamo movement and opens it here (unsaved).
+func _mixamo_load(e: Array, in_place: bool) -> void:
+	var path: String = e[1]
+	if String(e[2]) != "":
+		var z := ZIPReader.new()
+		if z.open(path) != OK:
+			status.text = "ZIP nejde otevřít."
+			return
+		var bytes := z.read_file(e[2])
+		z.close()
+		path = OS.get_user_data_dir().path_join("mixamo_tmp.fbx")
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		f.store_buffer(bytes)
+		f.close()
+	var tmp := Node3D.new()
+	add_child(tmp)
+	var sc := Mocap.load_fbx(path, tmp)
+	if sc == null:
+		tmp.queue_free()
+		status.text = "Soubor nejde přečíst (je to FBX z Mixamo?)."
+		return
+	var tgt: Node3D = Game.model("merc")
+	tmp.add_child(tgt)
+	var clip := Mocap.convert(sc, tgt.find_child("Skeleton3D", true, false), _title(), in_place)
+	tmp.queue_free()
+	if clip.is_empty():
+		status.text = "V souboru není pohyb s kostrou Mixamo."
+		return
+	if kind == "hand":
+		# hands seen from outside: only the arms and the upper body, the legs keep walking as in the game
+		for tr in clip["stopy"].keys():
+			if not tr in ["spine", "neck", "head"] + Mocap.ARMS:
+				clip["stopy"].erase(tr)
+		clip.erase("vlastni_poloha")
+	_push()
+	clip["smycka"] = bool(_ac.get("smycka", false))
+	_ac = clip
+	t = 0.0
+	playing = true
+	_lock_ok = false
+	_changed()
+	status.text = "Načteno z Mixamo: %s - ZATÍM NEULOŽENO. Prohlédni si to (mezerník), Ctrl+S uloží, Zpět vrátí původní." % String(e[0]).get_slice("  ·  ", 0)
 
 ## Help for what is open now.
 func _howto() -> String:
@@ -1875,14 +2029,26 @@ func _selftest() -> void:
 	var turned := absf(float(v1[0]) - float(v0[0])) + absf(float(v1[1]) - float(v0[1])) + absf(float(v1[2]) - float(v0[2])) > 20.0
 	var keyed := AnimClips.key_index(AnimClips.track(_ac, "forearm.R"), 0.3) >= 0
 	# a key moved in time
-	var moved_to := AnimClips.move_key(_ac, "forearm.R", 0.3, 0.5)
+	# a free moment on the track (the movements from Mixamo have many keys)
+	var free_t := -1.0
+	var trk := AnimClips.track(_ac, "forearm.R")
+	for k in range(35, 95):
+		var ft := k / 100.0
+		var clear := true
+		for key in trk:
+			if absf(float(key["t"]) - ft) < 0.03:
+				clear = false
+		if clear:
+			free_t = ft
+			break
+	var moved_to := AnimClips.move_key(_ac, "forearm.R", 0.3, free_t)
 	# the knife in a blow: locked, it turns with the hand
 	_open("hand", "strike", "knife")
 	await get_tree().process_frame
 	t = 0.0
 	_apply_pose()
 	var q0 := item_node.global_transform.basis.get_rotation_quaternion() if item_node else Quaternion()
-	t = 0.2
+	t = float(_ac.get("delka", 0.4)) * 0.5
 	_apply_pose()
 	var q1 := item_node.global_transform.basis.get_rotation_quaternion() if item_node else Quaternion()
 	var follows := q0.angle_to(q1) > 0.2
@@ -1901,12 +2067,31 @@ func _selftest() -> void:
 	_apply_fp()
 	var fp_moved := holder.position.distance_to(g0) > 0.01
 	get_viewport().get_texture().get_image().save_png("user://anim_fp.png")
-	print("RESULT animator click %s imported %s turned %s keyed %s moved %s follows %s fp %s" % [clicked, imported, turned, keyed, absf(moved_to - 0.5) < 0.001, follows, fp_moved])
+	print("RESULT animator click %s imported %s turned %s keyed %s moved %s follows %s fp %s" % [clicked, imported, turned, keyed, free_t > 0.0 and absf(moved_to - free_t) < 0.001, follows, fp_moved])
+	get_tree().quit()
+
+## A Mixamo movement loaded the way Ari's button does it (--fbx=<file>, or a ZIP with --inner=):
+## converted, open, unsaved; a picture user://anim_mixamo.png.
+func _mixamo_test() -> void:
+	await get_tree().process_frame
+	_open("body", "dead", "vse")
+	var f := Game.cmd_arg("fbx", "")
+	_mixamo_load(["test", f, Game.cmd_arg("inner", "")], false)
+	var n := 0
+	for tr in _ac.get("stopy", {}):
+		n += (_ac["stopy"][tr] as Array).size()
+	playing = false
+	t = float(_ac.get("delka", 1.0)) * 0.9
+	_select("spine")
+	for i in 6:
+		await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png("user://anim_mixamo.png")
+	print("RESULT animmixamo keys %d dirty %s own_pose %s tipped %s" % [n, _dirty(), _ac.get("vlastni_poloha", false), model.rotation.x != 0.0])
 	get_tree().quit()
 
 ## Pictures of the editor: user://anim_<n>.png
 func _shots() -> void:
-	var list := [["body", "walk", "vse", 0.35], ["hand", "strike", "knife", 0.2], ["eyes", "reload", "pistol", 0.5], ["body", "prone_crawl", "vse", 0.3], ["eyes", "reload", "shotgun", 0.42]]
+	var list := [["body", "walk", "vse", 0.35], ["hand", "strike", "knife", 0.2], ["eyes", "reload", "pistol", 0.5], ["body", "prone_crawl", "vse", 0.3], ["eyes", "reload", "shotgun", 0.42], ["hand", "reload", "rifle", 1.0], ["body", "walk", "show:rifle", 0.4], ["body", "dead_4", "vse", 2.0]]
 	for i in list.size():
 		var e: Array = list[i]
 		var t0 := Time.get_ticks_usec()

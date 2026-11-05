@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.53
+# Operace X - Enemy Beyond — prototyp 0.54
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,11 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.54
+- Vojáci se hýbou podle Mixama: chůze, běh a plížení do všech směrů, sprint, leh, plazení, raněný na zemi, šest smrtí, skok, šplhání, míření, přebíjení vleže, hrabání v batohu, panika. Ruce: přebíjení, hody, nůž, obušek, pažba, dveře, škubnutí při zásahu.
+- Nové ovládání: lékárnička X, granát z opasku G, kouřový H, noční vidění N, mluví se podržením Tabu.
+- Pohyby z Mixama (`animace/tp_body_*` a akce rukou) nejsou ve zdrojácích kvůli licenci Mixama, jsou jen v balíčku hry (`update/*.pck`). Kdo hru staví ze zdrojáků, má místo nich původní pohyby.
 
 ## Spuštění
 Otevři složku v Godotu 4.7 a dej F5. Hlavní scéna je `scenes/Main.tscn`.

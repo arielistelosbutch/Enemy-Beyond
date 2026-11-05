@@ -107,6 +107,8 @@ func _process(delta: float) -> void:
 		"topshot": _topshot(p)
 		"shieldtest": _shieldtest(p)
 		"locktest": _locktest(p)
+		"mocapgame": _mocapgame(p)
+		"beltthrow": _beltthrow(p)
 		"fireshot": _fireshot(p)
 		"abase": _abase(p)
 		"cloakshot": _cloakshot(p)
@@ -1760,7 +1762,7 @@ func _locktest(p: Node) -> void:
 	var hand_of := func() -> Transform3D: return sk.global_transform * sk.get_bone_global_pose(sk.find_bone("hand.R"))
 	# where the knife is this frame (the bone attachment catches up only after the skeleton updates)
 	var gun_of := func() -> Transform3D: return sk.global_transform * sk.get_bone_global_pose(sk.find_bone("spine")) * p.body_gun.transform
-	var rel0: Transform3D = p._lock_rel
+	var rel0 := Transform3D()
 	var b0: Basis = gun_of.call().basis
 	# a blow: the knife follows the hand (its place in the hand stays, the knife itself turns)
 	p._melee("rh", Game.ITEMS["knife"])
@@ -1774,6 +1776,8 @@ func _locktest(p: Node) -> void:
 		p.act = 2
 		still.call()
 		var rel: Transform3D = hand_of.call().affine_inverse() * gun_of.call()
+		if i == 0:
+			rel0 = p._lock_rel      # (taken into the hand as the blow starts)
 		worst = maxf(worst, rel.origin.distance_to(rel0.origin))
 		turned = maxf(turned, gun_of.call().basis.get_rotation_quaternion().angle_to(b0.get_rotation_quaternion()))
 	p.act = 0
@@ -1785,7 +1789,9 @@ func _locktest(p: Node) -> void:
 	clip["smycka"] = true
 	still.call()
 	var bid := "tp_body_" + String(p.body_anim.current_animation)
+	var had := AnimClips.get_clip(bid).duplicate(true)      # (an installed one comes back afterwards)
 	AnimClips.save_clip(bid, clip)
+	p._bclip_name = ""
 	await get_tree().create_timer(0.5).timeout
 	for i in 3:
 		still.call()
@@ -1795,6 +1801,8 @@ func _locktest(p: Node) -> void:
 	var ri := sk.find_bone("root")
 	var up: float = sk.get_bone_pose_position(ri).y - sk.get_bone_rest(ri).origin.y
 	AnimClips.delete_clip(bid)
+	if not had.is_empty():
+		AnimClips.save_clip(bid, had)
 	# a blow from the eyes-view editor
 	var fc := AnimClips.new_clip("fp", "test")
 	AnimClips.set_key(fc, "zbran", 0.0, [0, 0, 0, 0, 0, 0])
@@ -1811,6 +1819,89 @@ func _locktest(p: Node) -> void:
 		ymax = maxf(ymax, p.gun.position.y)
 	AnimClips.delete_clip("fp_strike_knife")
 	out("RESULT locktest follows %s turned %s body %s root %s fp %s" % [worst < 0.02, turned > 0.3, absf(off.z - 40.0) < 2.0, absf(up - 0.3) < 0.02, ymax - y0 > 0.08])
+	get_tree().quit()
+
+## G throws the grenade on the belt (here a smoke one), not one from the pack.
+func _beltthrow(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	for s in p.inv.keys():
+		if String(s).begins_with("b") or String(s).begins_with("p"):
+			p.inv.erase(s)
+	p.inv["b1"] = {"id": "smoke_grenade"}
+	p.inv["p0"] = {"id": "grenade"}
+	p._throw_belt_grenade()
+	var started: bool = p.busy > 0.0 and String(p.busy_text).begins_with("Házím")
+	await get_tree().create_timer(1.5).timeout
+	out("RESULT beltthrow started %s belt_used %s pack_kept %s" % [started, not p.inv.has("b1"), p.inv.has("p0")])
+	get_tree().quit()
+
+## The Mixamo movements in the game, seen from outside: walking each way, crouching, lying,
+## crawling wounded, dying. Pictures user://mocap_<n>.png; checks that the body follows the clips.
+func _mocapgame(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.hp = 9999.0
+	for a in m().aliens():
+		a.set_physics_process(false)
+	p.body.visible = true
+	p.set_physics_process(false)
+	var cam := Camera3D.new()
+	m().add_child(cam)
+	if m().hud is CanvasItem:
+		(m().hud as CanvasItem).visible = false
+	elif m().hud.has_method("hide"):
+		m().hud.hide()
+	# out of the ship, on open ground
+	var base: Vector3 = p.global_position + p.global_transform.basis * Vector3(0, 0, -9.0)
+	var hit: Dictionary = p.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(base + Vector3.UP * 20.0, base + Vector3.DOWN * 20.0))
+	if not hit.is_empty():
+		base = hit["position"]
+	cam.global_position = base + p.global_transform.basis * Vector3(1.6, 1.5, -3.4)
+	cam.look_at(base + Vector3(0, 0.8, 0))
+	cam.make_current()
+	var shots := [["chuze", Vector3(0, 0, -2.6), {}], ["vzad", Vector3(0, 0, 2.6), {}], ["vlevo", Vector3(-2.6, 0, 0), {}],
+		["podrep", Vector3(0, 0, -1.3), {"crouching": true}], ["plazeni", Vector3(0, 0, -0.7), {"prone": true}],
+		["raneny", Vector3(0, 0, -0.5), {"downed": true}], ["smrt", Vector3.ZERO, {"dead": true}],
+		["skok", Vector3.ZERO, {"act": 8}], ["splhani", Vector3.ZERO, {"act": 7}], ["panika", Vector3.ZERO, {"panic": "drop"}],
+		["batoh", Vector3.ZERO, {"act": 3}], ["prebijeni_vleze", Vector3.ZERO, {"prone": true, "act": 1}],
+		["mireni", Vector3.ZERO, {"aiming": true}], ["dvere", Vector3.ZERO, {"act": 6}], ["zasah", Vector3.ZERO, {"hit": true}]]
+	var ok := 0
+	for i in shots.size():
+		var e: Array = shots[i]
+		for k in ["crouching", "prone", "downed", "dead", "aiming"]:
+			p.set(k, bool((e[2] as Dictionary).get(k, false)))
+		p.act = int((e[2] as Dictionary).get("act", 0))
+		p.panic = String((e[2] as Dictionary).get("panic", ""))
+		if (e[2] as Dictionary).get("hit", false):
+			p._hit_id = "tp_hit_1_vse"
+			p._hit_t = 0.0
+		p.held = "rifle"
+		p.global_position = base
+		p._last_body_pos = base
+		var vel: Vector3 = p.global_transform.basis * (e[1] as Vector3)
+		for f in 75:
+			p.global_position += vel / 60.0
+			p._animate_body(1.0 / 60.0)
+			p.global_position -= vel / 60.0      # (on the spot, the camera stays on him)
+			p._last_body_pos = p.global_position
+		cam.make_current()
+		for f in 3:
+			await get_tree().process_frame
+			p.global_position += vel / 60.0
+			p._animate_body(1.0 / 60.0)
+			p.global_position -= vel / 60.0
+			p._last_body_pos = p.global_position
+		if DisplayServer.get_name() != "headless":
+			get_viewport().get_texture().get_image().save_png("user://mocap_%d_%s.png" % [i, e[0]])
+		print("[MOCAP] %s: body %s at %.2f s, hit %s" % [e[0], p._bclip_id, p._bclip_t, p._hit_id])
+		if p._bclip_id.begins_with("tp_body_") or (e[2] as Dictionary).has("act") or (e[2] as Dictionary).has("hit"):
+			ok += 1
+	out("RESULT mocapgame %d of %d use the movements" % [ok, shots.size()])
 	get_tree().quit()
 
 ## A firefight to measure them: a squad against a merc who cannot die, standing at a house corner.

@@ -72,6 +72,8 @@ run mod_click   100 x "RESULT modclick sel '(Rifle:[0-9]+)' \(want '\1'\)"   --a
 run mod_speed   300 x "RESULT modspeed ok" --autotest=modspeed
 run animator   150 x "RESULT animator click true imported true turned true keyed true moved true follows true fp true" --autotest=animator
 run locktest   120 h "RESULT locktest follows true turned true body true root true fp true" --autotest=locktest
+run beltthrow  120 h "RESULT beltthrow started true belt_used true pack_kept true" --autotest=beltthrow
+run mocapgame  200 h "RESULT mocapgame 15 of 15" --autotest=mocapgame
 run leaveany    150 h "RESULT leaveany early_block true done true finished true" --autotest=leaveany
 run suit        100 h "RESULT suittest down true"        --autotest=suittest --group=sedaci --mtype=crash
 run levgrab     100 h "RESULT levgrab ko true carried true" --autotest=levgrab --group=levite --mtype=crash

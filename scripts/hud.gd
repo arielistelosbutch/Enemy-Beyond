@@ -395,9 +395,9 @@ func _draw_hud() -> void:
 			var t2 := ""
 			var in_hand: bool = p.item_in("lh").get("id", "") == "medkit" or p.item_in("rh").get("id", "") == "medkit"
 			if in_hand:
-				t2 = ("H - OŠETŘIT %s" if ht.downed else "H - obvázat %s") % ht.display_name
+				t2 = ("X - OŠETŘIT %s" if ht.downed else "X - obvázat %s") % ht.display_name
 			elif p.has_medkit():
-				t2 = "H - vzít lékárničku do ruky (pak H ošetří %s)" % ht.display_name
+				t2 = "X - vzít lékárničku do ruky (pak X ošetří %s)" % ht.display_name
 			elif ht.downed:
 				t2 = "nemáš lékárničku"
 			if ht.downed:
@@ -410,7 +410,7 @@ func _draw_hud() -> void:
 		var it: Dictionary = mission().nearest_pickup(p.global_position)["item"]
 		_text(c, Vector2(mid.x - 60, mid.y + 44), "E - sebrat: " + Game.ITEMS[it["id"]]["name"], TEXT, 9)
 	if p.bleeding > 0:
-		_text(c, base + Vector2(0, -12), "KRVÁCÍŠ (-%.1f zdraví/s) - H lékárnička (do ruky, pak H)" % p.bleeding, RED, 9)
+		_text(c, base + Vector2(0, -12), "KRVÁCÍŠ (-%.1f zdraví/s) - X lékárnička (do ruky, pak X)" % p.bleeding, RED, 9)
 	# hands, bottom: left hand on the left, right hand on the right
 	var right := Vector2(sz.x - 160, sz.y - 30)
 	_hand_text(c, p, "rh", right)
@@ -823,16 +823,16 @@ func _keys_text(p: Node) -> String:
 		"2    sekundární zbraň (%s)" % hand.call("side") if p.item_in("rh").get("home", "") != "side" else "2    sekundární zbraň - znovu 2 ji uklidí",
 		"Q    primární do rukou / znovu Q: zpět, co jsi držel",
 		"3-6  věc z opasku do rukou / nabít",
-		"G granát %d   X kouř %d   B mina %d   7 světlice %d" % [p.inv.values().filter(func(it): return it["id"] == "grenade").size(), p.inv.values().filter(func(it): return it["id"] == "smoke_grenade").size(), p.inv.values().filter(func(it): return it["id"] == "mine").size(), p.inv.values().filter(func(it): return it["id"] == "flare").size()],
+		"G granát z opasku (%d výbušné)   H kouřový %d   B mina %d   7 světlice %d" % [p.inv.values().filter(func(it): return it["id"] == "grenade").size(), p.inv.values().filter(func(it): return it["id"] == "smoke_grenade").size(), p.inv.values().filter(func(it): return it["id"] == "mine").size(), p.inv.values().filter(func(it): return it["id"] == "flare").size()],
 		"Backspace  zahodit, co máš v ruce",
-		"H    lékárnička - do rukou, pak ošetří (%s)" % where.call("medkit"),
+		"X    lékárnička - do rukou, pak ošetří (%s)" % where.call("medkit"),
 		"E    táhnout padlého / sebrat / civilista",
 		"Enter  v lodi: připraven (start mise i odlet)",
 		"V    rána zblízka (%s)" % ("nemáš nůž ani obušek" if melee == "" else Game.ITEMS[p.inv[melee]["id"]]["short"]),
 		"F    svítilna na helmě",
-		"L    noktovizor (%s)" % where.call("nvg"),
-		"N / Caps Lock   mluvit (nahlas, kdo je blízko)",
-		"Tab  mikrofon stále zapnutý / vypnout (%s)" % ("ZAPNUTO" if Game.mic_live else "vypnuto"),
+		"N    noktovizor (%s)" % where.call("nvg"),
+		"Tab  držet = mluvit (nahlas, kdo je blízko)",
+		"M    mikrofon stále zapnutý / vypnout (%s)" % ("ZAPNUTO" if Game.mic_live else "vypnuto"),
 		"T    držet = vysílačka (%s)" % ("helma" if Game.has_research("vysilacky") else where.call("radio")),
 		"C  kleknout   Y  lehnout   Shift  sprint",
 	]
@@ -1040,7 +1040,7 @@ static func settings_ui(box: Control) -> void:
 	vm.add_theme_font_size_override("font_size", 9)
 	var modes := ["ptt", "open", "off"]
 	for i in modes.size():
-		vm.add_item(["Mikrofon: při stisku (Caps Lock / N)", "Mikrofon: stále zapnutý (podle hlasitosti)", "Mikrofon: vypnutý"][i])
+		vm.add_item(["Mikrofon: při stisku (Tab)", "Mikrofon: stále zapnutý (podle hlasitosti)", "Mikrofon: vypnutý"][i])
 		if Game.voice_mode == modes[i]:
 			vm.select(i)
 	vm.item_selected.connect(func(i): Game.voice_mode = modes[i]; Game.save_settings())

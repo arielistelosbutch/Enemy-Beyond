@@ -131,7 +131,7 @@ func setup(data: Dictionary) -> void:
 	var cfg := SceneReplicationConfig.new()
 	for prop in [":position", ":rotation", ":pitch", ":crouching", ":light_on", ":hp", ":downed", ":dead", ":wounded",
 			":bleed_left", ":carried_by", ":wants_evac", ":kills", ":held", ":panic", ":gear",
-			":held_l", ":held_back", ":prone", ":sprinting", ":captures", ":infected", ":act", ":emote", ":bleeding"]:
+			":held_l", ":held_back", ":prone", ":sprinting", ":captures", ":infected", ":act", ":emote", ":bleeding", ":aiming"]:
 		cfg.add_property(NodePath("." + prop))
 		cfg.property_set_replication_mode(NodePath("." + prop), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	sync.replication_config = cfg
@@ -491,6 +491,7 @@ func _animate_body(delta: float) -> void:
 	_last_body_pos = global_position
 	_body_speed = lerp(_body_speed, moved.length() / max(delta, 0.001), 0.2)
 	var want := "idle"
+	var has := func(n: String) -> bool: return not AnimClips.get_clip("tp_body_" + n).is_empty()
 	if dead:
 		want = "dead"
 	elif downed:
@@ -498,39 +499,74 @@ func _animate_body(delta: float) -> void:
 		want = "crawl_hurt" if _body_speed > 0.15 else "crawl_idle"
 	elif prone:
 		want = "prone_crawl" if _body_speed > 0.2 else "prone"
+		if act == 1 and has.call("prone_reload"):
+			want = "prone_reload"
+	elif act == 7 and has.call("climb"):
+		want = "climb"
+	elif act == 8 and has.call("jump"):
+		want = "jump"
+	elif panic == "drop" and has.call("panic"):
+		want = "panic"
+	elif act == 3 and _body_speed < 0.3 and has.call("dig"):
+		want = "dig"
 	elif sprinting:
 		want = "sprint"
-	elif crouching or (act >= 3 and _body_speed < 0.3):
+	elif crouching or ((act == 3 or act == 4) and _body_speed < 0.3):
 		want = "crouch_walk" if _body_speed > 0.3 else "crouch"
+		if want == "crouch" and aiming and has.call("crouch_aim"):
+			want = "crouch_aim"
 	elif _body_speed > 3.2:
 		want = "run"
 	elif _body_speed > 0.3:
 		want = "walk"
-	if not body_anim.has_animation(want):
-		want = "downed" if dead or downed else "idle"
-	if body_anim.current_animation != want:
-		body_anim.play(want, 0.25)
+	elif aiming and has.call("idle_aim"):
+		want = "idle_aim"
+	_body_want = want
+	# the model's own movement under it (a movement made only in the editor stands on its nearest one)
+	var play := want
+	if not body_anim.has_animation(play):
+		play = {"prone_reload": "prone", "climb": "crouch", "jump": "idle", "panic": "crouch", "dig": "crouch",
+			"idle_aim": "idle", "crouch_aim": "crouch"}.get(want, "downed" if dead or downed else "idle")
+		if not body_anim.has_animation(play):
+			play = "idle"
+	if body_anim.current_animation != play:
+		body_anim.play(play, 0.25)
 	body_anim.advance(0.0 if dead and body_anim.current_animation_position > 0.3 else delta)
-	_body_clip(delta)
+	_body_clip(delta, moved)
 	# dead: on the back. wounded: upright on all fours. prone: on the belly, arms ahead.
 	var rx := PI / 2 if dead else (-PI / 2 if prone and not downed else 0.0)
+	var lay := dead or (prone and not downed)
+	if bool(AnimClips.get_clip(_bclip_id if _bclip_id != "" else "tp_body_" + String(body_anim.current_animation)).get("vlastni_poloha", false)):
+		# a movement (from Mixamo) that lies down or falls by itself
+		rx = 0.0
+		lay = false
 	merc_model.rotation.x = lerp_angle(merc_model.rotation.x, rx, delta * 6.0)
-	merc_model.position.y = lerp(merc_model.position.y, 0.18 if (dead or (prone and not downed)) else 0.0, delta * 6.0)
-	merc_model.position.z = lerp(merc_model.position.z, -0.9 if dead else (0.9 if prone and not downed else 0.0), delta * 6.0)
-	if not (dead or downed or prone or sprinting):
+	merc_model.position.y = lerp(merc_model.position.y, 0.18 if lay else 0.0, delta * 6.0)
+	merc_model.position.z = lerp(merc_model.position.z, (-0.9 if dead else 0.9) if lay else 0.0, delta * 6.0)
+	if not (dead or downed or prone or sprinting) and not _body_want in FULL_BODY:
 		_hold_pose(delta)
 		_emote_pose(delta)
+	_hit_overlay(delta)
 	# the long gun sits in the right hand (follows the arms in every pose), not on the belly
 	if _sk and _hand_r >= 0 and body_gun:
 		var hand := _sk.global_transform * _sk.get_bone_global_pose(_hand_r)
 		var posed := not (dead or downed or prone or sprinting) and emote == 0
 		if act != 0 and posed and _lock_item == held and bool(Game.tweaks.get("lock/" + held, true)):
-			# locked in the hand (Animace): the thing turns with the hand in every movement
+			# locked in the hand (Animace): the thing turns with the hand in every movement - taken
+			# into the hand as the action starts (its first moment), where the game would hold it
+			if _lock_act != act:
+				_lock_act = act
+				var si2 := _bone("spine")
+				if si2 >= 0 and body_gun.get_parent() is BoneAttachment3D:
+					var w2: Transform3D = _sk.global_transform * _sk.get_bone_global_pose(si2) * _gun_local
+					w2.origin = hand.origin + hand.basis.y.normalized() * -0.05
+					_lock_rel = hand.affine_inverse() * w2
 			_gun_to(hand * _lock_rel)
 		else:
 			if body_gun.transform.basis != _gun_local.basis:
 				body_gun.transform = _gun_local
 			body_gun.global_position = hand.origin + hand.basis.y.normalized() * -0.05
+			_lock_act = 0
 			if act == 0 and posed and held != "":
 				# how it sits in the hand while just holding it (this frame's spine, not the lagging attachment)
 				var si := _bone("spine")
@@ -553,6 +589,7 @@ func _animate_body(delta: float) -> void:
 ## The held thing: where it is locked to the hand, and how it sat when it was put there.
 var _lock_rel := Transform3D()
 var _lock_item := "?"
+var _lock_act := 0
 var _gun_local := Transform3D()
 
 ## Puts the held thing at a world transform, against this frame's pose of the trunk.
@@ -564,15 +601,50 @@ func _gun_to(w: Transform3D) -> void:
 		body_gun.global_transform = w
 
 ## A body movement changed in the editor (Animace, tp_body_<name>) wins over the model's own.
+## Walking may have its own movement for going back and to the sides (tp_body_walk_back, _left,
+## _right), a movement may have variants (tp_body_dead_2, _3...: one picked at random each time),
+## and a movement that knows its own pace ("rychlost", from Mixamo) is played as fast as he goes.
 var _bclip_name := ""
+var _bclip_id := ""
 var _bclip_t := 0.0
-func _body_clip(delta: float) -> void:
-	var cur := String(body_anim.current_animation)
-	if cur != _bclip_name:
+var _bclip_dir := ""
+const FULL_BODY := ["climb", "panic", "dig", "prone_reload"]      # movements of the whole man (the hands too)
+var _body_want := ""
+func _body_clip(delta: float, moved: Vector3) -> void:
+	var cur := _body_want if _body_want != "" else String(body_anim.current_animation)
+	# which way he goes, seen from himself (forward is -Z)
+	var dir := ""
+	if cur in ["walk", "run", "crouch_walk"] and moved.length() > 0.001:
+		var loc := global_transform.basis.inverse() * moved
+		if absf(loc.x) > absf(loc.z) * 1.2:
+			dir = "_left" if loc.x < 0.0 else "_right"
+		elif loc.z > 0.0:
+			dir = "_back"
+	if cur != _bclip_name or dir != _bclip_dir:
+		var keep_t := cur == _bclip_name
 		_bclip_name = cur
-		_bclip_t = 0.0
-	_bclip_t += delta
-	var clip := AnimClips.get_clip("tp_body_" + cur)
+		_bclip_dir = dir
+		_bclip_id = "tp_body_" + cur
+		if dir != "" and not AnimClips.get_clip(_bclip_id + dir).is_empty():
+			_bclip_id += dir
+		var variants := [_bclip_id]
+		for k in range(2, 10):
+			if AnimClips.get_clip("tp_body_%s_%d" % [cur, k]).is_empty():
+				break
+			variants.append("tp_body_%s_%d" % [cur, k])
+		_bclip_id = variants[randi() % variants.size()]
+		if not keep_t:
+			_bclip_t = 0.0
+	var clip := AnimClips.get_clip(_bclip_id)
+	var rate := 1.0
+	var pace := float(clip.get("rychlost", 0.0))
+	if pace > 0.1 and _body_speed > 0.1:
+		rate = clampf(_body_speed / pace, 0.6, 1.8)
+	if clip.get("natahnout", false) and cur == "climb":
+		rate = float(clip.get("delka", 1.0)) / MANTLE_TIME      # over the pull-up's own time
+	elif clip.get("natahnout", false) and cur == "prone_reload":
+		rate = float(clip.get("delka", 1.0)) / maxf(0.5, float(Game.ITEMS.get(held, {}).get("reload", 2.0)))
+	_bclip_t += delta * rate
 	if clip.is_empty() or _sk == null:
 		return
 	var t := AnimClips.clip_time(clip, _bclip_t)
@@ -710,7 +782,7 @@ static func hold_want(r: String, l: String, act: int, _act_t: float) -> Dictiona
 		want.merge(POSE_RADIO_L, true)
 		want["upperarm.R"] = Vector3(0.15, 0, -0.2)
 		want["forearm.R"] = Vector3(0.5, 0, 0)
-	if act >= 3:
+	if act == 3 or act == 4:
 		# down on one knee at the pack / over the wounded: both hands low in front, working
 		var w := sin(_act_t * (6.0 if act == 3 else 7.0))
 		want["upperarm.R"] = Vector3(0.9 + 0.15 * w, 0, -0.15)
@@ -727,10 +799,20 @@ func _hold_pose(delta: float) -> void:
 	var want := hold_want(held, held_l, act, _act_t)
 	want = Game.tweak_pose("hold/" + (held if held != "" else "nic"), want)
 	# an animation made in the Dílna (Animace) for this action and item wins
-	var ca: String = {1: "reload", 2: "strike", 3: "dig", 4: "heal", 5: "throw"}.get(act, "hold")
-	var clip := AnimClips.find("tp", ca, held)
+	var ca: String = {1: "reload", 2: "strike", 3: "dig", 4: "heal", 5: "throw", 6: "use"}.get(act, "hold")
+	var clip := {}
+	if crouching and act != 0:
+		clip = AnimClips.find("tp", ca + "_crouch", held)      # its own movement down on one knee, if there is one
+	if clip.is_empty():
+		clip = AnimClips.find("tp", ca, held)
 	if not clip.is_empty():
-		want.merge(AnimClips.pose(clip, AnimClips.clip_time(clip, _act_t)), true)
+		var ct := _act_t
+		if clip.get("natahnout", false) and act != 0:
+			# over the action's own time: the reload of this gun, the blow, the throw
+			var rule: Dictionary = Game.ITEMS.get(held, {})
+			var d: float = {1: float(rule.get("reload", 1.6)), 2: (maxf(0.35, float(rule.get("rate", 0.5)) * 0.75) if rule.get("blunt", false) else 0.36), 5: 0.6, 6: 0.8}.get(act, float(clip.get("delka", 1.0)))
+			ct = _act_t * float(clip.get("delka", 1.0)) / maxf(0.1, d)
+		want.merge(AnimClips.pose(clip, AnimClips.clip_time(clip, ct)), true)
 	for bn in want:
 		var i := _bone(bn)
 		if i >= 0:
@@ -821,7 +903,11 @@ func _emote_clip(what: String, t: float) -> Dictionary:
 		return {}
 	return AnimClips.pose(clip, AnimClips.clip_time(clip, maxf(0.0, t)))
 
+var _use_t := 0.0            # a door, a terminal, a hand to a friend: the arm reaches out
+var _air_t := 0.0            # how long off the ground (a jump, a fall)
 ## Owner: what the hands are doing, for the others to see.
+## 0 nothing, 1 reloading, 2 a blow, 3 digging in the pack, 4 healing, 5 throwing, 6 using
+## (a door...), 7 climbing up a ledge, 8 in the air
 func _act_tick() -> void:
 	var a := 0
 	if busy > 0 and busy_total > 0 and busy_text.begins_with("Přebíj"):
@@ -834,6 +920,15 @@ func _act_tick() -> void:
 		a = 4
 	elif busy > 0 and busy_text.begins_with("Házím"):
 		a = 5
+	elif _mantle_t >= 0.0:
+		a = 7
+	elif _use_t > 0.0:
+		a = 6
+	elif _air_t > 0.18:
+		a = 8
+	var dt := get_physics_process_delta_time()
+	_use_t = maxf(0.0, _use_t - dt)
+	_air_t = (_air_t + dt) if not is_on_floor() and _mantle_t < 0.0 else 0.0
 	if a != act:
 		act = a
 		_act_t = 0.0
@@ -1581,7 +1676,7 @@ func _actions(delta: float) -> void:
 		if Input.is_action_just_pressed("belt%d" % (i + 1)):
 			_belt_key(i)
 	if Input.is_action_just_pressed("grenade"):
-		_throw("grenade")
+		_throw_belt_grenade()
 	if Input.is_action_just_pressed("smoke"):
 		_throw("smoke_grenade")
 	if Input.is_action_just_pressed("mine"):
@@ -1593,6 +1688,7 @@ func _actions(delta: float) -> void:
 	if Input.is_action_just_pressed("heal"):
 		_medkit()
 	if Input.is_action_just_pressed("use"):
+		_use_t = 0.8
 		var tm: Dictionary = mission.terminal_near(global_position) if mission.home() else {}
 		if not tm.is_empty():
 			mission.use_terminal(tm)
@@ -2465,6 +2561,20 @@ func _throw(kind: String, from_slot := "") -> void:
 			v = dir * 3.0 + Vector3.UP * 1.0
 		_spawn_throwable.rpc(kind, from, v, name))
 
+## G: the grenade at hand - in the hand, then on the belt (left to right: a frag or a smoke one,
+## whichever is there), only then one dug out of the pack. H: always a smoke one.
+func _throw_belt_grenade() -> void:
+	for slot in ["rh", "lh", "b0", "b1", "b2", "b3"]:
+		var id: String = item_in(slot).get("id", "")
+		if id == "grenade" or id == "smoke_grenade":
+			_throw(id, slot)
+			return
+	for id in ["grenade", "smoke_grenade"]:
+		if find_item(func(it): return it["id"] == id) != "":
+			_throw(id)
+			return
+	mission.hud.message("Nemáš granát", 1.5)
+
 @rpc("any_peer", "call_local", "reliable")
 func _spawn_throwable(kind: String, from: Vector3, vel: Vector3, thrower: String) -> void:
 	var rb := RigidBody3D.new()
@@ -2714,7 +2824,7 @@ func _medkit() -> void:
 		if from == "":
 			mission.hud.message("Nemáš lékárničku.", 1.5)
 			return
-		mission.hud.message("Beru lékárničku do rukou - H ošetří, Q vrátí zbraň.", 2.5)
+		mission.hud.message("Beru lékárničku do rukou - X ošetří, Q vrátí zbraň.", 2.5)
 		_came_from["medkit"] = from
 		_q_prev = ""
 		draw_slot(from)
@@ -2767,7 +2877,7 @@ func _use_teammate() -> bool:
 		return false
 	var me := get_multiplayer_authority()
 	best.set_carried.rpc_id(best.get_multiplayer_authority(), 0 if best.carried_by == me else me)
-	mission.hud.message("Táhneš %s (k lodi, nebo ošetři: lékárnička do ruky a H)" % best.display_name if best.carried_by != me else "Pustil jsi %s" % best.display_name, 2.5)
+	mission.hud.message("Táhneš %s (k lodi, nebo ošetři: lékárnička do ruky a X)" % best.display_name if best.carried_by != me else "Pustil jsi %s" % best.display_name, 2.5)
 	return true
 
 func _treat_teammate(slot: String) -> void:
@@ -3282,7 +3392,37 @@ func _blood_watch(delta: float) -> void:
 			_blood_t = randf_range(0.6, 1.4)
 			Game.blood_splat(mission, global_position + Vector3(0, 0.5, 0), Color(0.3, 0.02, 0.02), randf_range(0.08, 0.15))
 
+## Hit: the trunk and the head jerk (tp_hit_1, _2...: one at random), on top of whatever he does.
+var _hit_id := ""
+var _hit_t := 0.0
+var _hp_seen := -1.0
+func _hit_overlay(delta: float) -> void:
+	if _hit_id == "" or _sk == null:
+		return
+	var clip := AnimClips.get_clip(_hit_id)
+	_hit_t += delta
+	if clip.is_empty() or _hit_t >= float(clip.get("delka", 0.6)) or dead:
+		_hit_id = ""
+		return
+	var p0 := AnimClips.pose(clip, 0.0)
+	var pt := AnimClips.pose(clip, _hit_t)
+	for bn in pt:
+		var i := _bone(bn)
+		if i >= 0 and p0.has(bn):
+			var add := Quaternion.from_euler(p0[bn]).inverse() * Quaternion.from_euler(pt[bn])
+			_sk.set_bone_pose_rotation(i, _sk.get_bone_pose_rotation(i) * add)
+
 func _remote_visuals() -> void:
+	if _hp_seen >= 0.0 and hp < _hp_seen - 0.5 and not dead and not downed:
+		var ids := []
+		for k in range(1, 9):
+			if AnimClips.get_clip("tp_hit_%d_vse" % k).is_empty():
+				break
+			ids.append("tp_hit_%d_vse" % k)
+		if not ids.is_empty():
+			_hit_id = ids[randi() % ids.size()]
+			_hit_t = 0.0
+	_hp_seen = hp
 	if act != _act_seen:
 		_act_seen = act
 		_act_t = 0.0
