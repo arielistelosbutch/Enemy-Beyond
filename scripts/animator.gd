@@ -1683,7 +1683,9 @@ func _shots() -> void:
 	var list := [["body", "walk", "vse", 0.35], ["hand", "strike", "knife", 0.2], ["eyes", "reload", "pistol", 0.5], ["body", "prone_crawl", "vse", 0.3]]
 	for i in list.size():
 		var e: Array = list[i]
+		var t0 := Time.get_ticks_usec()
 		_open(e[0], e[1], e[2])
+		print("[SPEED] animator open %s:%s %.0f ms" % [e[0], e[1], (Time.get_ticks_usec() - t0) / 1000.0])
 		playing = false
 		t = float(e[3])
 		_select("forearm.R" if e[0] != "eyes" else "zbran")

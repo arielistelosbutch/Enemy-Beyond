@@ -66,6 +66,10 @@ var model_list: ItemList
 var model_filter: LineEdit
 var part_list: ItemList
 var _list_ids: Array = []
+var _list_pos := {}          # part id -> row in the parts list
+var _list_hl: Array = []     # rows drawn as the active part
+var _plist: Array = []       # every part: [mesh instance, part dict] (rebuilt when the meshes are)
+var _idx := {}               # part id -> [mesh instance, part dict]
 var _model_ids: Array = []
 var title_lbl: Label
 var status: Label
@@ -131,6 +135,8 @@ func _ready() -> void:
 		_selftest.call_deferred()
 	if Game.autotest() == "modclick":
 		_clicktest.call_deferred()
+	if Game.autotest() == "modspeed":
+		_speedtest.call_deferred()
 
 # ---- the panels ------------------------------------------------------------------------------------
 func _build_left(parent: Node) -> void:
@@ -359,6 +365,7 @@ func _refresh_meshes(all := false, only: Array = []) -> void:
 			Game._restyle(mi)
 	if model_name == "merc":
 		Game.apply_look(model, Game.merc.get("look", {}))
+	_reindex()
 
 func _world_box() -> AABB:
 	var box := AABB()
@@ -373,19 +380,25 @@ func _world_box() -> AABB:
 
 ## Every part: [mesh instance, part dict] in the order they were built.
 func _parts() -> Array:
-	var out := []
+	return _plist
+
+## The list of parts and the look-up by id, again after the meshes changed (the model may have
+## thousands of parts: everything else asks this index instead of going through them all).
+func _reindex() -> void:
+	_plist = []
+	_idx = {}
+	if model == null:
+		return
 	for mi in model.find_children("*", "MeshInstance3D", true, false):
 		if not mi.visible:
 			continue
 		for p in mi.get_meta("eb_parts", []):
-			out.append([mi, p])
-	return out
+			var e := [mi, p]
+			_plist.append(e)
+			_idx[String(p["id"])] = e
 
 func _find(id: String) -> Array:
-	for e in _parts():
-		if e[1]["id"] == id:
-			return e
-	return []
+	return _idx.get(id, [])
 
 func _mesh_of(id: String) -> MeshInstance3D:
 	var e := _find(id)
@@ -503,10 +516,15 @@ func _commit(only: Array = []) -> void:
 	sels = sels.filter(func(x): return not _find(x).is_empty())
 	if not sel in sels:
 		sel = sels[-1] if not sels.is_empty() else ""
-	_after_change()
+	# only moved (the same parts): the list stays, just the selection in it
+	_after_change(only.is_empty())
 
-func _after_change() -> void:
-	_fill_parts()
+## @a full: the parts may have changed (fill the list again); otherwise only the selection did.
+func _after_change(full := true) -> void:
+	if full or _list_ids.size() != _plist.size():
+		_fill_parts()
+	else:
+		_sync_list()
 	_refresh_fields()
 	title_lbl.text = "%s%s   ·   vybráno %d" % [NAMES.get(model_name, model_name), " *neuloženo" if dirty else "", sels.size()]
 
@@ -519,7 +537,7 @@ func _set_sel(ids: Array, active := "") -> void:
 	sel = active if active != "" else (sels[-1] if not sels.is_empty() else "")
 	if sel != "" and not sel in sels:
 		sels.append(sel)
-	_after_change()
+	_after_change(false)
 
 func _toggle(id: String) -> void:
 	if id in sels:
@@ -574,6 +592,8 @@ func _fill_parts() -> void:
 	_updating = true
 	part_list.clear()
 	_list_ids.clear()
+	_list_pos.clear()
+	_list_hl.clear()
 	for e in _parts():
 		var id := String(e[1]["id"])
 		var bone := String(e[1].get("bone", ""))
@@ -584,13 +604,35 @@ func _fill_parts() -> void:
 		var c: Array = _color_of(id)
 		part_list.set_item_icon_modulate(part_list.item_count - 1, Color(c[0], c[1], c[2]))
 		part_list.set_item_custom_fg_color(part_list.item_count - 1, EdUI.AMBER if id == sel else EdUI.TEXT)
+		_list_pos[id] = _list_ids.size()
 		_list_ids.append(id)
+		if id == sel:
+			_list_hl.append(part_list.item_count - 1)
 		if id in sels:
 			part_list.select(part_list.item_count - 1, false)
 	if sel != "":
 		var i := _list_ids.find(sel)
 		if i >= 0:
 			part_list.ensure_current_is_visible()
+	_updating = false
+
+## Only the selection changed: mark it in the list (no new rows).
+func _sync_list() -> void:
+	_updating = true
+	for r in _list_hl:
+		if r < part_list.item_count:
+			part_list.set_item_custom_fg_color(r, EdUI.TEXT)
+	_list_hl.clear()
+	part_list.deselect_all()
+	for id in sels:
+		var r: int = _list_pos.get(id, -1)
+		if r >= 0:
+			part_list.select(r, false)
+	var ra: int = _list_pos.get(sel, -1)
+	if ra >= 0:
+		part_list.set_item_custom_fg_color(ra, EdUI.AMBER)
+		_list_hl.append(ra)
+		part_list.ensure_current_is_visible()
 	_updating = false
 
 func _from_list() -> void:
@@ -868,11 +910,15 @@ func _nudge(d: Vector3, mult: float) -> void:
 	var stepm := extent * 0.005 * mult
 	var w: Vector3 = (axes[0] * d.x + axes[1] * d.y + axes[2] * d.z) * stepm
 	_push()
+	var meshes := []
 	for id in sels:
 		var t := _world_xf(id)
 		t.origin += w
 		_set_world_xf(id, t)
-	_commit()
+		var mi := _mesh_of(id)
+		if mi and not mi in meshes:
+			meshes.append(mi)
+	_commit(meshes)
 
 func _save() -> void:
 	Game.model_mods[model_name] = work
@@ -883,7 +929,7 @@ func _save() -> void:
 	else:
 		status.text = "Uložení se nepovedlo (%s)." % Game.models_dir()
 		Game.play_ui(self, "ui_deny", -6)
-	_after_change()
+	_after_change(false)
 	_fill_models()
 
 # ---- the view ------------------------------------------------------------------------------------
@@ -1257,6 +1303,50 @@ func _draw_overlay() -> void:
 	ov.flush()
 
 # ---- tests --------------------------------------------------------------------------------------
+## How long the editor makes Ari wait (ms): opening a model, a click on a part, grabbing it, a drag
+## step, one frame of the handles. Nothing is saved.
+func _speedtest() -> void:
+	var keep := Game.model_mods.duplicate(true)
+	var worst := {}
+	for n in ["rifle", "merc", "dropship", "mars_hq", "v_house_roof"]:
+		var t0 := Time.get_ticks_usec()
+		_load_model(n)
+		var t_open := (Time.get_ticks_usec() - t0) / 1000.0
+		await get_tree().process_frame
+		var parts := _parts()
+		var id := String(parts[parts.size() / 2][1]["id"])
+		var at := _scr(_center_of(id))
+		t0 = Time.get_ticks_usec()
+		var got := _pick(at)
+		var t_pick := (Time.get_ticks_usec() - t0) / 1000.0
+		t0 = Time.get_ticks_usec()
+		_set_sel([got if got != "" else id])
+		var t_sel := (Time.get_ticks_usec() - t0) / 1000.0
+		t0 = Time.get_ticks_usec()
+		_start_drag("move", -1, at)
+		var t_grab := (Time.get_ticks_usec() - t0) / 1000.0
+		var c0 := _center_of(sel)
+		t0 = Time.get_ticks_usec()
+		_drag_to(at + Vector2(12, 5), false)
+		var t_drag := (Time.get_ticks_usec() - t0) / 1000.0
+		_drag = ""
+		if _center_of(sel).distance_to(c0) < 1e-5:
+			print("[SPEED] %s: the drag did not move the part" % n)
+			t_drag = 99999.0
+		t0 = Time.get_ticks_usec()
+		_draw_overlay()
+		var t_frame := (Time.get_ticks_usec() - t0) / 1000.0
+		_undo_step()
+		print("[SPEED] %s parts %d: open %.0f pick %.0f select %.0f grab %.0f drag %.0f frame %.1f ms" % [n, parts.size(), t_open, t_pick, t_sel, t_grab, t_drag, t_frame])
+		for k in ["open", "pick", "select", "grab", "drag", "frame"]:
+			var v: float = {"open": t_open, "pick": t_pick, "select": t_sel, "grab": t_grab, "drag": t_drag, "frame": t_frame}[k]
+			worst[k] = maxf(worst.get(k, 0.0), v)
+	Game.model_mods = keep
+	# (limits for the slow software renderer of the test machine; a real graphics card is far faster)
+	var fast: bool = worst["open"] < 2000.0 and worst["pick"] < 100.0 and worst["select"] < 100.0 and worst["grab"] < 100.0 and worst["drag"] < 500.0 and worst["frame"] < 20.0
+	print("RESULT modspeed %s open %.0f pick %.0f select %.0f grab %.0f drag %.0f frame %.1f" % ["ok" if fast else "POMALU", worst["open"], worst["pick"], worst["select"], worst["grab"], worst["drag"], worst["frame"]])
+	get_tree().quit()
+
 ## Real mouse clicks through the window (as Ari's hand does): on a part in the view.
 func _clicktest() -> void:
 	_load_model("rifle")

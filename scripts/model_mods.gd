@@ -88,41 +88,59 @@ static func rebuild(mi: MeshInstance3D, mods: Dictionary) -> void:
 	var surfs := {}        # "s|color" -> {mat, v, n, b, w}
 	var picks := []
 	var pm: Dictionary = mods.get("parts", {})
+	var sl := _slices(src, isl, arrays)
+	if skel and mi.skin and not sl.is_empty() and not sl[0].has("bone_set"):
+		for d in sl:
+			d["bone_set"] = true
+			var bi: int = (d["b"] as PackedInt32Array)[0] if (d["b"] as PackedInt32Array).size() > 0 else -1
+			if bi >= 0 and bi < mi.skin.get_bind_count():
+				var bn := mi.skin.get_bind_name(bi)
+				if bn == "" and mi.skin.get_bind_bone(bi) >= 0:
+					bn = skel.get_bone_name(mi.skin.get_bind_bone(bi))
+				d["bone"] = String(bn)
+	var ids := _ids_for(piece, isl.size())
+	var empty := {}
 	for i in isl.size():
-		var id := "%s:%d" % [piece, i]
-		var m: Dictionary = pm.get(id, {})
-		if m.get("del", false):
+		var id: String = ids[i]
+		var m: Dictionary = pm.get(id, empty) if not pm.is_empty() else empty
+		if not m.is_empty() and m.get("del", false):
 			continue
 		var it: Dictionary = isl[i]
-		var a: Array = arrays[it["surf"]]
-		var xf: Array = m.get("xf", IDENT)
-		var bas := xf_basis(xf)
-		var nb := bas.inverse().transposed()
-		var c: Vector3 = it["center"]
-		var off := xf_pos(xf)
-		var col = m.get("color", null)
-		var key := "%d|%s" % [it["surf"], str(col)]
+		var xf: Array = m.get("xf", IDENT) if not m.is_empty() else IDENT
+		var col = m.get("color", null) if not m.is_empty() else null
+		var surf: int = it["surf"]
+		var key: String = _PLAIN[surf] if col == null and surf < _PLAIN.size() else "%d|%s" % [surf, str(col)]
 		if not surfs.has(key):
 			var mat: Material = src.surface_get_material(it["surf"])
 			if col != null:
 				mat = _recolor(mat, col)
 			surfs[key] = {"mat": mat, "v": PackedVector3Array(), "n": PackedVector3Array(), "b": PackedInt32Array(), "w": PackedFloat32Array()}
 		var o: Dictionary = surfs[key]
-		var sv: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
-		var sn = a[Mesh.ARRAY_NORMAL]
-		var sb = a[Mesh.ARRAY_BONES]
-		var sw = a[Mesh.ARRAY_WEIGHTS]
-		var per: int = (sb.size() / sv.size()) if sb != null and sv.size() > 0 else 0
-		var tri := PackedVector3Array()
-		for vi in it["tris"]:
-			var p: Vector3 = c + bas * (sv[vi] - c) + off
-			o["v"].append(p)
-			tri.append(p)
-			o["n"].append((nb * (sn[vi] as Vector3)).normalized() if sn != null else Vector3.UP)
-			for k in 4:
-				o["b"].append(sb[vi * per + k] if per > k else 0)
-				o["w"].append(sw[vi * per + k] if per > k else (1.0 if k == 0 else 0.0))
-		picks.append({"id": id, "tris": tri, "center": c + off, "kind": "old", "bone": _bone_of(mi, skel, sb, it, per)})
+		var piece_sl: Dictionary = sl[i]
+		var tri: PackedVector3Array = piece_sl["v"]
+		var c: Vector3 = it["center"]
+		var off := xf_pos(xf)
+		if _is_ident(xf):
+			# untouched: the block as it is (one copy in the engine, not vertex by vertex)
+			o["v"].append_array(tri)
+			o["n"].append_array(piece_sl["n"])
+		else:
+			var bas := xf_basis(xf)
+			var nb := bas.inverse().transposed()
+			var sv: PackedVector3Array = piece_sl["v"]
+			var sn: PackedVector3Array = piece_sl["n"]
+			tri = PackedVector3Array()
+			tri.resize(sv.size())
+			var nn := PackedVector3Array()
+			nn.resize(sn.size())
+			for k in sv.size():
+				tri[k] = c + bas * (sv[k] - c) + off
+				nn[k] = (nb * sn[k]).normalized()
+			o["v"].append_array(tri)
+			o["n"].append_array(nn)
+		o["b"].append_array(piece_sl["b"])
+		o["w"].append_array(piece_sl["w"])
+		picks.append({"id": id, "tris": tri, "center": c + off, "kind": "old", "bone": piece_sl["bone"]})
 	# new blocks
 	for np in mods.get("new", []):
 		if String(np.get("piece", "")) != piece:
@@ -167,6 +185,57 @@ static func rebuild(mi: MeshInstance3D, mods: Dictionary) -> void:
 		mesh.surface_set_material(mesh.get_surface_count() - 1, o["mat"])
 	mi.mesh = mesh
 	mi.set_meta("eb_parts", picks)
+
+const _PLAIN := ["0|<null>", "1|<null>", "2|<null>", "3|<null>", "4|<null>", "5|<null>", "6|<null>", "7|<null>",
+	"8|<null>", "9|<null>", "10|<null>", "11|<null>", "12|<null>", "13|<null>", "14|<null>", "15|<null>"]
+static var _id_cache := {}
+static func _ids_for(piece: String, n: int) -> Array:
+	var k := "%s#%d" % [piece, n]
+	if not _id_cache.has(k):
+		var a := []
+		for i in n:
+			a.append("%s:%d" % [piece, i])
+		_id_cache[k] = a
+	return _id_cache[k]
+
+static func _is_ident(xf: Array) -> bool:
+	return xf == IDENT or (absf(float(xf[0])) + absf(float(xf[1])) + absf(float(xf[2])) + absf(float(xf[3])) + absf(float(xf[4])) + absf(float(xf[5])) < 1e-9
+		and float(xf[6]) == 1.0 and float(xf[7]) == 1.0 and float(xf[8]) == 1.0)
+
+## Each block of a source mesh as its own ready arrays (vertices, normals, 4 bones and weights per
+## vertex, its bone): made once per mesh, so a rebuild only copies them.
+static var _slice_cache := {}
+static func _slices(src: Mesh, isl: Array, arrays: Array) -> Array:
+	var key := src.get_rid().get_id()
+	if _slice_cache.has(key):
+		return _slice_cache[key]
+	var out := []
+	for it in isl:
+		var a: Array = arrays[it["surf"]]
+		var sv: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+		var sn = a[Mesh.ARRAY_NORMAL]
+		var sb = a[Mesh.ARRAY_BONES]
+		var sw = a[Mesh.ARRAY_WEIGHTS]
+		var per: int = (sb.size() / sv.size()) if sb != null and sv.size() > 0 else 0
+		var tris: PackedInt32Array = it["tris"]
+		var v := PackedVector3Array()
+		v.resize(tris.size())
+		var n := PackedVector3Array()
+		n.resize(tris.size())
+		var b := PackedInt32Array()
+		b.resize(tris.size() * 4)
+		var w := PackedFloat32Array()
+		w.resize(tris.size() * 4)
+		for j in tris.size():
+			var vi: int = tris[j]
+			v[j] = sv[vi]
+			n[j] = (sn[vi] as Vector3).normalized() if sn != null else Vector3.UP
+			for k in 4:
+				b[j * 4 + k] = sb[vi * per + k] if per > k else 0
+				w[j * 4 + k] = sw[vi * per + k] if per > k else (1.0 if k == 0 else 0.0)
+		out.append({"v": v, "n": n, "b": b, "w": w, "bone": ""})
+	_slice_cache[key] = out
+	return out
 
 static func _new_index(mods: Dictionary, np: Dictionary) -> int:
 	return (mods.get("new", []) as Array).find(np)

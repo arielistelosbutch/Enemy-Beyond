@@ -1099,7 +1099,7 @@ func _autotest() -> void:
 			get_tree().change_scene_to_file("res://scenes/Animator.tscn")
 		"workshop", "wsclick", "animtest", "animshots":
 			get_tree().change_scene_to_file("res://scenes/Workshop.tscn")
-		"modeler", "modclick":
+		"modeler", "modclick", "modspeed":
 			get_tree().change_scene_to_file("res://scenes/Modeler.tscn")
 		"geo", "campaign", "campair", "uigeo":
 			# (the test machine's merc may still be on the sick bay from an earlier test run)

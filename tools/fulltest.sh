@@ -69,6 +69,7 @@ run climb       200 x "RESULT climb ok"                    --autotest=climb --mt
 run ws_click    100 x "RESULT wsclick bone true ring true item true" --autotest=wsclick
 run anim_edit   100 x "RESULT animtest mid true fp true"  --autotest=animtest
 run mod_click   100 x "RESULT modclick sel '(Rifle:[0-9]+)' \(want '\1'\)"   --autotest=modclick
+run mod_speed   300 x "RESULT modspeed ok" --autotest=modspeed
 run animator   150 x "RESULT animator click true imported true turned true keyed true moved true follows true fp true" --autotest=animator
 run locktest   120 h "RESULT locktest follows true turned true body true root true fp true" --autotest=locktest
 run leaveany    150 h "RESULT leaveany early_block true done true finished true" --autotest=leaveany
