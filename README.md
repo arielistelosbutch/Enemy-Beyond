@@ -31,12 +31,16 @@ Otevři složku v Godotu 4.7 a dej F5. Hlavní scéna je `scenes/Main.tscn`.
 | Q | dlouhá zbraň ruce ↔ záda |
 | 1–4 | věc z opasku do ruky (dlouhou zbraň si hodí na záda); náboje na opasku = nabít zbraň |
 | V | rychlý útok nožem / obuškem (nebo pažbou) |
-| G / X / B / T | granát / kouřový granát / mina / světlice |
+| G | hodit granát z opasku (výbušný nebo kouřový - ten, který tam máš) |
+| H | kouřový granát |
+| B / 7 | mina / světlice |
 | F | svítilna |
-| H | ošetřit se lékárničkou |
+| X | lékárnička (do ruky, znovu X ošetří) |
+| N | noční vidění |
 | E | ošetřit / táhnout padlého / sebrat; u lodi držet 2 s = odlet |
-| I / Tab | výstroj (ruce, záda, opasek, batoh) |
-| Caps Lock / N | mluvit (mikrofon); s vysílačkou v ruce do vysílačky |
+| I | výstroj (ruce, záda, opasek, batoh) |
+| Tab (držet) | mluvit (mikrofon); s vysílačkou v ruce do vysílačky |
+| M | mikrofon stále zapnutý / vypnout |
 | F11 | celá obrazovka |
 | Esc | pauza a nastavení |
 
@@ -136,9 +140,9 @@ Posádky chodí ve skupinách: **Šeďáci + Diskoll**, **Levité + Ohař**, **J
   Velká loď (Myslodějové, Kolos), Náhodná.
 
 ## Vysílačky a hlas (verze 0.10)
-- Mikrofon: Caps Lock nebo N (držet) = mluvíš. Hlas jde z tvé postavy a slábne se vzdáleností (3D).
+- Mikrofon: Tab (držet) = mluvíš, M = mikrofon stále zapnutý. Hlas jde z tvé postavy a slábne se vzdáleností (3D).
   V nastavení: při stisku / stále zapnutý (podle hlasitosti) / vypnutý.
-- **Vysílačka** (na opasku, klávesa 4): drž ji v ruce a mluv (Caps Lock, nebo tlačítko myši té ruky) - slyší tě
+- **Vysílačka** (na opasku, klávesa 4): drž ji v ruce a mluv (Tab, nebo tlačítko myši té ruky) - slyší tě
   všichni, kdo vysílačku nesou, ať jsou kdekoli. Blízko vetřelců chrčí a vypadává.
   Výzkum Helmové vysílačky: vysíláš bez ruky.
 - Mluvení dělá hluk - vetřelci ho slyší, Ohař přiběhne.
