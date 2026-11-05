@@ -827,7 +827,7 @@ func _die() -> void:
 	dead = true
 	lurking = false
 	collision_layer = 0
-	Game.play_at(mission, "death", global_position, -4)
+	Game.play_at(mission, "grey_death" if race.begins_with("grey") else "death", global_position, -4)
 
 ## It has seen you: a voice by race (greys chitter, the big ones roar, the rest hiss).
 var _voice_cd := 0.0
@@ -2871,7 +2871,7 @@ func _act_sounds(act: String, delta: float) -> void:
 	match act:
 		"work": Game.play_at(mission, "clink" if randf() < 0.6 else "zap", at, -16); _act_snd = randf_range(1.5, 3.5)
 		"work_high": Game.play_at(mission, "zap", at + Vector3.UP, -16); _act_snd = randf_range(2.0, 4.5)
-		"talk": Game.play_at(mission, "alien", at, -14); _act_snd = randf_range(4.0, 8.0)
+		"talk": Game.play_at(mission, "grey_chitter" if race.begins_with("grey") else "alien", at, -14); _act_snd = randf_range(4.0, 8.0)
 		"eat": Game.play_at(mission, "growl" if randf() < 0.3 else "skitter", at, -12); _act_snd = randf_range(2.0, 4.0)
 		"sniff": Game.play_at(mission, "sniff", at, -12); _act_snd = randf_range(3.0, 6.0)
 		"sway": Game.play_at(mission, "groan", at, -14); _act_snd = randf_range(6.0, 12.0)

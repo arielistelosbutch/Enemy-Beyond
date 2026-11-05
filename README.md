@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.55
+# Operace X - Enemy Beyond — prototyp 0.56
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,12 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.56
+- Obří lodě (bitevní a zásobovací) mají na zemi skutečný trup a dvě patra: z haly pod kupolí vede rampa na galerii a chodby do sálů na palubě. Od třetího měsíce války obři i létají a ve vzduchu vypadají stejně jako na zemi.
+- Sestřelené UFO je na zemi to, co jsi sestřelil. Malé lodě na zemi odpovídají těm ve vzduchu.
+- Nové modely přírody, ulic a dvorů, zařízení naší i jejich základny, nové ruce v pohledu z očí, suť ve spálené ruině.
+- Otáčení na místě, smrt z kleku, hod granátu vleže; všech 154 nahraných zvuků je ve hře.
 
 ## Novinky 0.55
 - Editor Mapové díly: každý díl mapy jde otevřít, upravit (zdi, okna, nábytek, rekvizity, světla, značky pro vetřelce) a uložit jako novou variantu, kterou pak mapy používají (`dilky/<druh>/*.json`).

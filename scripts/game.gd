@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.55 prototyp"
-const VERSION_NUM := "0.55"
+const VERSION := "0.56 prototyp"
+const VERSION_NUM := "0.56"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -1084,7 +1084,7 @@ func loop_stream(sname: String) -> AudioStream:
 	return st
 
 ## Sounds with several takes (name_0..name_N-1): a random one each time.
-const VARIANTS := {"plasma_heavy": 10, "casing": 4, "step_heavy": 3, "gear": 4, "sting": 4, "type": 4}
+const VARIANTS := {"plasma_heavy": 10, "casing": 4, "step_heavy": 3, "gear": 4, "sting": 4, "type": 4, "breath": 2}
 func sound(sname: String) -> AudioStream:
 	if VARIANTS.has(sname):
 		sname = "%s_%d" % [sname, randi() % int(VARIANTS[sname])]

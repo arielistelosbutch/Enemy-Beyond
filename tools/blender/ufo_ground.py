@@ -9,6 +9,7 @@ import sys, os, math
 sys.path.insert(0, os.path.dirname(__file__))
 from common import *
 from mathutils import Vector
+import bmesh
 
 OUTDIR = sys.argv[-1]
 TAU = math.tau
@@ -157,6 +158,143 @@ def beam(mtl, p0, p1, w, t):
     bpy.ops.object.transform_apply(location=True, rotation=True)
     return o
 
+def lens(m, prof, mats, n, door_top, vis, gap=(0, -1)):
+    """A turned hull from a profile [(r, z), ...] in bands (material per band); the bands below
+    door_top leave the doorway open (segments gap)."""
+    g = tuple(k % n for k in gap)
+    for k in range(len(prof) - 1):
+        (r1, z1), (r2, z2) = prof[k], prof[k + 1]
+        skip = g if min(z1, z2) < door_top else ()
+        vis.append(band(m[mats[k]], r1, z1, r2, z2, n, skip=skip, name="Hull%d" % k))
+
+def rim_lights(m, r, z, count, n_gap, vis, size=(0.12, 0.45, 0.08), door=True):
+    for i in range(count):
+        a = TAU * (i + 0.5) / count
+        if door and abs(((a - math.pi / 2 + math.pi) % TAU) - math.pi) < 0.32:
+            continue
+        vis.append(box(m["glow"] if i % 2 else m["dimg"], (math.cos(a) * r, math.sin(a) * r, z), size, rot=(0, 0, a)))
+
+def seams(m, r0, z0, r1, z1, count, vis, w=0.07, phase=0.0, mat="glow"):
+    for i in range(count):
+        a = TAU * (i + phase) / count
+        ca, sa = math.cos(a), math.sin(a)
+        vis.append(beam(m[mat], (ca * r0, sa * r0, z0), (ca * r1, sa * r1, z1), w, w))
+
+def entry(m, r, rim, zr, n, vis):
+    """The recess round the door: cheeks from the wall to the rim, a canopy over it."""
+    for i in (0, n - 1):
+        side = 1 if i == 0 else 0
+        a = TAU * (i + side) / n + math.pi / 2 - math.pi / n
+        ca, sa = math.cos(a), math.sin(a)
+        vis.append(tri_plate(m["dark"], [(ca * r, sa * r, 0.12), (ca * rim, sa * rim, zr), (ca * r, sa * r, zr)], "Cheek%d" % i))
+    vis.append(band(m["dark"], r, zr - 0.02, rim, zr - 0.02, n, skip=[k for k in range(n) if k not in (0, n - 1)], name="Canopy"))
+
+def legs(m, rim, zr, vis, count=4):
+    for k in range(count):
+        a = TAU * (k + 0.5) / count + math.pi / 2
+        top = (math.cos(a) * rim * 0.8, math.sin(a) * rim * 0.8, zr * 0.62)
+        foot = (math.cos(a) * rim * 0.95, math.sin(a) * rim * 0.95, 0.06)
+        vis.append(beam(m["rib"], top, foot, 0.24, 0.24))
+        vis.append(cyl(m["dark"], foot, 0.5, 0.12, verts=10))
+
+def hull2(kind, m, r, h, segs, vis):
+    """0.56: the same ship as in the air (air.py): the scout's lens with its dark dome, the raider's
+    lens inside a ring on spokes, the harvester's manta with swept wings - grown to fit the rooms."""
+    n = segs * 2
+    zr = h + 0.25                    # the rim stays above the doorway
+    m["dimg"] = mat("UfoGlowDim", (0.55, 0.15, 0.7), emit=1.8)
+    if kind == "scout":
+        rim = r * 1.32
+        prof = [(r + 0.05, 0.35), (r * 1.18, 1.4), (rim - 0.1, zr - 0.15), (rim, zr), (rim - 0.05, zr + 0.18),
+                (r * 1.18, zr + 0.55), (r * 0.84, zr + 0.95), (r * 0.5, zr + 1.15)]
+        lens(m, prof, ["hull", "hull", "rib", "rib", "hull", "hull", "hull"], n, zr, vis, (0, -1))
+        dome = [(r * 0.5, zr + 1.15), (r * 0.46, zr + 1.6), (r * 0.32, zr + 2.0), (0.01, zr + 2.15)]
+        lens(m, dome, ["dark", "dark", "dark"], n, -1, vis)
+        seams(m, r * 0.52, zr + 1.17, r * 1.14, zr + 0.6, 12, vis)
+        seams(m, r * 0.34, zr + 1.95, r * 0.46, zr + 1.62, 8, vis, 0.05, 0.5, "dimg")
+        for k in range(3):
+            vis.append(band(m["dark"], r * (0.56 + k * 0.17), zr + 1.13 - k * 0.12, r * (0.56 + k * 0.17) + 0.08, zr + 1.12 - k * 0.12, n, name="Ring%d" % k))
+        rim_lights(m, rim + 0.04, zr, 16, n, vis)
+        entry(m, r, rim, zr, n, vis)
+        legs(m, rim, zr, vis, 3)
+    elif kind == "raider":
+        rim = r * 1.12
+        prof = [(r + 0.05, 0.35), (r * 1.06, 1.3), (rim, zr), (rim - 0.05, zr + 0.2), (r * 0.98, zr + 0.9),
+                (r * 0.62, zr + 1.45), (r * 0.36, zr + 1.6)]
+        lens(m, prof, ["hull", "hull", "rib", "hull", "hull", "hull"], n, zr, vis, (0, -1))
+        dome = [(r * 0.36, zr + 1.6), (r * 0.33, zr + 2.2), (r * 0.2, zr + 2.7), (0.01, zr + 2.85)]
+        lens(m, dome, ["dark", "dark", "dark"], n, -1, vis)
+        seams(m, r * 0.4, zr + 1.58, r * 0.9, zr + 1.0, 16, vis)
+        for k in range(10):                                                    # slits round the dome
+            a = TAU * k / 10
+            vis.append(box(m["glow"], (math.cos(a) * r * 0.3, math.sin(a) * r * 0.3, zr + 2.3), (0.1, 0.6, 0.14), rot=(0, 0.6, a)))
+        # the ring on its spokes, as in the air (high enough to walk under to the ramp)
+        R0, R1 = r * 1.3, r * 1.45
+        ring = [(R0, zr + 0.05), (R1 - 0.1, zr - 0.25), (R1, zr + 0.1), (R1 - 0.1, zr + 0.45), (R0, zr + 0.3), (R0, zr + 0.05)]
+        lens(m, ring, ["rib", "rib", "rib", "rib", "dark"], n * 2, -1, vis)
+        for i in range(8):
+            a = TAU * (i + 0.5) / 8 + math.pi / 2
+            ca, sa = math.cos(a), math.sin(a)
+            vis.append(beam(m["rib"], (ca * (rim - 0.3), sa * (rim - 0.3), zr + 0.1), (ca * (R0 + 0.1), sa * (R0 + 0.1), zr + 0.15), 0.6, 0.4))
+            vis.append(beam(m["glow"], (ca * (rim - 0.2), sa * (rim - 0.2), zr + 0.33), (ca * R0, sa * R0, zr + 0.36), 0.1, 0.05))
+        for i in range(28):
+            a = TAU * i / 28
+            vis.append(box(m["glow"] if i % 2 else m["dimg"], (math.cos(a) * (R1 + 0.02), math.sin(a) * (R1 + 0.02), zr + 0.1), (0.14, 0.9, 0.24), rot=(0, 0, a)))
+        for x in (2.6, -2.6):                                                  # the two red eyes at the front
+            vis.append(sphere(m["amber"], (x, r * 1.02, 1.0), 0.5, seg=10, rings=6, scale=(1, 0.5, 0.6)))
+        rim_lights(m, rim + 0.04, zr, 20, n, vis)
+        entry(m, r, rim, zr, n, vis)
+        legs(m, R0, zr, vis, 4)
+    else:
+        # the harvester: the round hall inside a manta - a broad body, swept wings, a dark hump, engines aft
+        rim = r * 1.1
+        prof = [(r + 0.05, 0.35), (r * 1.05, 1.4), (rim, zr), (rim - 0.05, zr + 0.2), (r * 0.95, zr + 0.8),
+                (r * 0.6, zr + 1.15), (0.01, zr + 1.25)]
+        lens(m, prof, ["hull", "hull", "rib", "hull", "hull", "hull"], n, zr, vis, (0, -1))
+        hump = []
+        for y, w, hh in ((8.0, 0.8, 0.3), (6.0, 3.2, 1.0), (2.0, 4.6, 1.5), (-2.5, 4.2, 1.4), (-6.0, 2.4, 0.9), (-8.0, 0.6, 0.3)):
+            hump.append((y, w, hh))
+        for (y0, w0, h0), (y1, w1, h1) in zip(hump[:-1], hump[1:]):
+            vis.append(box(m["dark"], (0, (y0 + y1) / 2, zr + 1.2 + (h0 + h1) / 4), ((w0 + w1) / 2, abs(y1 - y0) + 0.05, (h0 + h1) / 2)))
+        for i in range(8):                                                     # slits on the hump
+            vis.append(box(m["glow"], (-2.8 + i * 0.8, 6.4, zr + 1.9), (0.14, 0.6, 0.14), rot=(0.5, 0, 0)))
+        for x in (1, -1):
+            pts = [(rim * 0.9 * x, 6.0), (12.2 * x, 2.0), (13.8 * x, -2.2), (13.5 * x, -4.2), (11.6 * x, -4.6), (10.0 * x, -6.6), (rim * 0.85 * x, -5.5)]
+            w = plate_xy(m["hull"], pts, zr - 0.15, zr + 0.35)
+            vis.append(w)
+            vis.append(plate_xy(m["glow"], [(13.0 * x, -2.2), (13.9 * x, -2.4), (13.6 * x, -4.0), (12.9 * x, -3.6)], zr - 0.16, zr + 0.36))
+            vis.append(plate_xy(m["rib"], [(11.0 * x, 3.4), (13.3 * x, -1.6), (13.1 * x, -2.2), (10.8 * x, 2.6)], zr + 0.34, zr + 0.42))
+            for k in range(4):                                                 # vents on the wings
+                vis.append(box(m["glow"] if k % 2 == 0 else m["dimg"], (x * (11.3 + k * 0.5), -1.5 - k * 0.6, zr + 0.4), (0.9, 0.12, 0.06), rot=(0, 0, 0.6 * x)))
+            vis.append(beam(m["glow"], (2.5 * x, 7.5, zr + 1.3), (7.0 * x, 1.5, zr + 1.05), 0.12, 0.12))
+            vis.append(beam(m["glow"], (7.0 * x, 1.5, zr + 1.05), (12.0 * x, -3.0, zr + 0.42), 0.12, 0.12))
+            vis.append(sphere(m["amber"], (1.6 * x, r * 1.08, 1.6), 0.45, seg=10, rings=6, scale=(1.4, 0.5, 0.6)))
+        for i in range(6):                                                     # the engine row at the back
+            vis.append(box(m["rib"], (-5 + i * 2, -(rim + 0.5), zr - 0.3), (1.6, 1.2, 1.1)))
+            vis.append(box(m["glow"], (-5 + i * 2, -(rim + 1.12), zr - 0.3), (1.1, 0.06, 0.6)))
+        seams(m, r * 0.62, zr + 1.13, r * 0.97, zr + 0.78, 20, vis)
+        rim_lights(m, rim + 0.04, zr, 24, n, vis)
+        entry(m, r, rim, zr, n, vis)
+        legs(m, rim, zr, vis, 4)
+
+def plate_xy(mtl, pts, z0, z1):
+    """A flat extruded polygon in XY (wings), z0..z1 thick."""
+    me = bpy.data.meshes.new("plate")
+    o = bpy.data.objects.new("plate", me)
+    bpy.context.scene.collection.objects.link(o)
+    bm = bmesh.new()
+    lo = [bm.verts.new((x, y, z0)) for x, y in pts]
+    hi = [bm.verts.new((x, y, z1)) for x, y in pts]
+    bm.faces.new(lo[::-1])
+    bm.faces.new(hi)
+    for i in range(len(pts)):
+        j = (i + 1) % len(pts)
+        bm.faces.new((lo[i], lo[j], hi[j], hi[i]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(me); bm.free()
+    o.data.materials.append(mtl)
+    return o
+
 def hull(m, r, h, segs, vis, scale_rim=1.3):
     """The saucer around the rooms: an underside sloping out to a sharp rim with lights,
     an upper hull rising back over the walls, a flat roof ring and a dome with a beacon."""
@@ -246,7 +384,7 @@ def build(kind):
     reset(); m = M(); vis = []; col = []
     if kind == "scout":
         r, h, segs = 5.0, 2.5, 12
-        hull(m, r, h, segs, vis)
+        hull2("scout", m, r, h, segs, vis)
         floor_and_ceiling(m, r, h, segs, vis, col)
         wall_ring(m, r, h, segs, (0,), vis, col, "Wall")
         door(m, r, h, segs, vis, col)
@@ -258,7 +396,7 @@ def build(kind):
         empty("Light_0", (0, 0, 2.0))
     elif kind == "raider":
         r, h, segs = 7.0, 2.6, 16
-        hull(m, r, h, segs, vis)
+        hull2("raider", m, r, h, segs, vis)
         floor_and_ceiling(m, r, h, segs, vis, col)
         wall_ring(m, r, h, segs, (0,), vis, col, "Wall")
         door(m, r, h, segs, vis, col)
@@ -282,7 +420,7 @@ def build(kind):
         empty("Light_0", (0, 3.0, 2.1)); empty("Light_1", (0, -3.0, 2.1))
     else:   # harvester
         r, h, segs = 10.0, 2.8, 20
-        hull(m, r, h, segs, vis, scale_rim=1.22)
+        hull2("harvester", m, r, h, segs, vis)
         floor_and_ceiling(m, r, h, segs, vis, col)
         wall_ring(m, r, h, segs, (0,), vis, col, "Wall")
         door(m, r, h, segs, vis, col)

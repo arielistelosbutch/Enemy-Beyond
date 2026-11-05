@@ -136,22 +136,21 @@ func _cave(o: Vector3) -> void:
 	var glow := false
 	for k in rng.randi_range(10, 18):
 		var p := o + Vector3(rng.randf_range(1.5, BLOCK - 1.5), 0, rng.randf_range(1.5, BLOCK - 1.5))
+		# 0.56: their garden as models (tools/blender/alien_base.py)
+		var yaw := rng.randf() * TAU
 		match rng.randi() % 5:
 			0:
-				var r := rng.randf_range(0.15, 0.35)
-				cyl(p + Vector3(0, r * 1.2, 0), r * 0.5, r, r * 2.4, Game.color_mat(Color(0.7, 0.4, 0.85), true), false, 8)
+				_prop("ab_bulbs", p, yaw, false).scale = Vector3.ONE * rng.randf_range(0.8, 1.4)
 				glow = true
 			1:
-				cyl(p + Vector3(0, 0.35, 0), 0.22, 0.04, 0.7, Game.color_mat(Color(0.95, 0.55, 0.15)), false, 6)
+				_prop("ab_trumpets", p, yaw, false).scale = Vector3.ONE * rng.randf_range(0.8, 1.3)
 			2:
-				for j in 4:
-					var bb := box(p + Vector3(0, 0.4 + j * 0.15, 0), Vector3(0.05, 0.8, 0.05), Game.color_mat(Color(0.55, 0.08, 0.1)), false, j * 0.8)
-					bb.rotation.z = (j - 1.5) * 0.35
+				_prop("ab_coral", p, yaw, false).scale = Vector3.ONE * rng.randf_range(0.8, 1.5)
 			3:
-				box(p + Vector3(0, 0.05, 0), Vector3(rng.randf_range(0.5, 1.0), 0.06, rng.randf_range(0.3, 0.6)), Game.color_mat(Color(0.2, 0.55, 0.25)), false, rng.randf() * PI)
+				_prop("ab_leaves", p, yaw, false).scale = Vector3.ONE * rng.randf_range(0.9, 1.6)
 			4:
-				var h2 := rng.randf_range(1.0, 2.6)
-				cyl(p + Vector3(0, h2 / 2, 0), 0.08, rng.randf_range(0.4, 0.8), h2, Game.mat("alien_rock", 0.5), true, 6)
+				var sp := _prop("ab_spire" if rng.randf() < 0.55 else "ab_spire_low", p, yaw, false)
+				sp.scale = Vector3(1, rng.randf_range(0.85, 1.15), 1)
 				_cover(p + Vector3(0.9, 0, 0))
 	var l := OmniLight3D.new()
 	l.light_color = Color(0.6, 0.35, 0.9)
@@ -177,9 +176,8 @@ func _built(o: Vector3, floor_col := Color(0.62, 0.62, 0.7)) -> void:
 ## Where the team came down: a shaft with our cable lift, a work lamp. The way out.
 func _shaft(o: Vector3) -> void:
 	var c := o + Vector3(BLOCK / 2, 0, BLOCK / 2)
-	box(c + Vector3(0, 0.08, 0), Vector3(3.0, 0.16, 3.0), Game.mat("metal", 0.5))
-	for sd in [-1.0, 1.0]:
-		box(c + Vector3(sd * 1.5, H / 2 + 0.2, 0), Vector3(0.1, H, 0.1), Game.color_mat(Color(0.8, 0.65, 0.2)), false)
+	box(c + Vector3(0, 0.08, 0), Vector3(3.0, 0.16, 3.0), Game.mat("metal", 0.5)).visible = false     # the lift's floor
+	_prop("ab_lift", c, 0.0, false)
 	var lamp := OmniLight3D.new()
 	lamp.light_color = Color(1.0, 0.92, 0.8)
 	lamp.light_energy = 1.5
@@ -200,14 +198,12 @@ func _hall(o: Vector3) -> void:
 		for sd in [-1.0, 1.0]:
 			for k in 3:
 				var p := o + Vector3(BLOCK / 2 + sd * (1.8 + k * 0.9), 0, 2.4 + row * 2.2)
-				cyl(p + Vector3(0, 0.35, 0), 0.28, 0.22, 0.7, Game.color_mat(Color(0.35, 0.5, 0.85)), true, 8)
+				_prop("ab_seat", p, PI if row % 2 else 0.0, false)
 	for p in [Vector3(1.8, 0, 1.8), Vector3(BLOCK - 1.8, 0, BLOCK - 1.8)]:
-		cyl(o + p + Vector3(0, 0.55, 0), 0.6, 0.6, 1.1, Game.color_mat(Color(0.55, 0.38, 0.2)), true, 10)
-	cyl(o + Vector3(BLOCK - 1.8, 0.5, 1.8), 0.7, 0.7, 1.0, Game.color_mat(Color(0.85, 0.6, 0.9)), true, 8)
-	box(o + Vector3(BLOCK - 1.8, 1.05, 1.8), Vector3(0.8, 0.05, 0.5), Game.color_mat(Color(0.4, 0.9, 1.0), true), false)
+		_prop("ab_barrel", o + p, rng.randf() * TAU, false)
+	_prop("ab_console", o + Vector3(BLOCK - 1.8, 0, 1.8), PI * 0.75, false)
 	for p in [Vector3(1.8, 0, BLOCK - 1.8), Vector3(BLOCK - 2.6, 0, BLOCK / 2)]:
-		box(o + p + Vector3(0, 0.6, 0), Vector3(0.1, 1.2, 0.1), Game.color_mat(Color(0.4, 0.4, 0.45)), false)
-		cyl(o + p + Vector3(0, 1.45, 0), 0.25, 0.25, 0.45, Game.color_mat(Color(0.9, 0.2, 0.2), true), false, 10)
+		_prop("ab_orb_lamp", o + p, 0.0, false)
 	box(o + Vector3(BLOCK / 2, 0.09, BLOCK - 2.2), Vector3(1.6, 0.04, 1.6), Game.color_mat(Color(0.9, 0.12, 0.1), true), false)
 	_cover(o + Vector3(2.5, 0, 2.5)); _cover(o + Vector3(BLOCK - 2.5, 0, BLOCK - 2.5))
 
@@ -220,16 +216,14 @@ func _hatchery(o: Vector3) -> void:
 	for k in 6:
 		var p := o + Vector3(2.4 + (k % 3) * 3.6, 0, 2.4 + (k / 3) * 7.2)
 		# a cage: yellow frame, glass sides, one side bars (we can open it)
-		for sx in [-0.8, 0.8]:
-			for sz in [-0.8, 0.8]:
-				box(p + Vector3(sx, 1.1, sz), Vector3(0.08, 2.2, 0.08), Game.color_mat(Color(0.9, 0.7, 0.15)), false)
-		box(p + Vector3(0, 2.2, 0), Vector3(1.7, 0.08, 1.7), Game.color_mat(Color(0.9, 0.7, 0.15)), false)
+		_prop("ab_cage", p, PI, false)
 		box(p + Vector3(-0.8, 1.1, 0), Vector3(0.03, 2.1, 1.6), glass, true)
 		box(p + Vector3(0.8, 1.1, 0), Vector3(0.03, 2.1, 1.6), glass, true)
 		if k < 3:
 			info["captives"].append(p + Vector3(0, 0.2, 0))
 	var c := o + Vector3(BLOCK / 2, 0, BLOCK / 2)
-	cyl(c + Vector3(0, 0.15, 0), 0.9, 1.0, 0.3, Game.color_mat(Color(0.75, 0.72, 0.7)), true, 12)
+	cyl(c + Vector3(0, 0.15, 0), 0.9, 1.0, 0.3, Game.color_mat(Color(0.75, 0.72, 0.7)), true, 12).visible = false
+	_prop("ab_tank", c, 0.0, false)
 	var liquid := StandardMaterial3D.new()
 	liquid.albedo_color = Color(0.3, 0.95, 0.4, 0.5)
 	liquid.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -248,10 +242,7 @@ func _stores_a(o: Vector3) -> void:
 	_built(o)
 	for k in 8:
 		var p := o + Vector3(rng.randf_range(2.0, BLOCK - 2.0), 0, rng.randf_range(2.0, BLOCK - 2.0))
-		if rng.randf() < 0.6:
-			cyl(p + Vector3(0, 0.55, 0), 0.6, 0.6, 1.1, Game.color_mat(Color(0.55, 0.38, 0.2)), true, 10)
-		else:
-			box(p + Vector3(0, 0.5, 0), Vector3(1.0, 1.0, 1.0), Game.color_mat(Color(0.75, 0.55, 0.85)), true, rng.randf() * PI)
+		_prop("ab_barrel" if rng.randf() < 0.6 else "ab_crate", p, rng.randf() * TAU, false)
 		_cover(p + Vector3(1.0, 0, 0))
 
 ## The command centre: a violet glowing chequered floor, panels of orange and blue, a red grid in the
@@ -267,7 +258,8 @@ func _command(o: Vector3) -> void:
 		for z in 3:
 			box(c + Vector3((x - 1) * 0.7, 0.1, (z - 1) * 0.7) + Vector3(0, 0, -3.0), Vector3(0.6, 0.03, 0.6), Game.color_mat(Color(0.95, 0.15, 0.1), true), false)
 	# the core: a dark pillar ringed with green light
-	cyl(c + Vector3(0, 0.3, 1.5), 1.2, 1.3, 0.6, Game.color_mat(Color(0.15, 0.1, 0.2)), true, 10)
+	cyl(c + Vector3(0, 0.3, 1.5), 1.2, 1.3, 0.6, Game.color_mat(Color(0.15, 0.1, 0.2)), true, 10).visible = false
+	_prop("ab_core", c + Vector3(0, 0, 1.5), 0.0, false)
 	var core := cyl(c + Vector3(0, 2.0, 1.5), 0.55, 0.55, 3.0, Game.color_mat(Color(0.25, 0.12, 0.35)), true, 10)
 	_breakable(core, "metal")
 	core.set_meta("hp", 320.0)
@@ -283,9 +275,8 @@ func _command(o: Vector3) -> void:
 	cl.position = c + Vector3(0, 2.0, 1.5)
 	for k in 3:
 		var p := o + Vector3(2.0 + k * 4.0, 0, BLOCK - 1.6)
-		cyl(p + Vector3(0, 0.5, 0), 0.6, 0.55, 1.0, Game.color_mat(Color(0.85, 0.55, 0.85)), true, 8)
-		box(p + Vector3(0, 1.4, 0.4), Vector3(1.0, 0.6, 0.05), Game.color_mat(Color(0.3, 1.0, 0.5), true), false)
+		_prop("ab_console", p, 0.0, false)
 	for p in [Vector3(1.6, 0, 1.6), Vector3(BLOCK - 1.6, 0, 1.6)]:
-		box(o + p + Vector3(0, 0.4, 0), Vector3(1.0, 0.8, 0.7), Game.color_mat(Color(0.75, 0.55, 0.2)), true)
+		_prop("ab_crate", o + p, rng.randf_range(-0.3, 0.3), false)
 	info["command"] = c + Vector3(0, 0.2, -1.5)
 	_cover(o + Vector3(2.5, 0, BLOCK / 2)); _cover(o + Vector3(BLOCK - 2.5, 0, BLOCK / 2))

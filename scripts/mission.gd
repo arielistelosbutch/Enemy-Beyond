@@ -1074,10 +1074,12 @@ func psi_glow(n: Node3D) -> void:
 
 ## A Líhavec tearing its way out of a body.
 @rpc("authority", "call_local", "reliable")
-func burst_fx(p: Vector3) -> void:
+func burst_fx(p: Vector3, hatch := false) -> void:
 	blood_fx(p)
 	blood_fx(p + Vector3(0, 0.3, 0))
 	Game.play_at(self, "burst", p, 2)
+	if hatch:
+		Game.play_at(self, "egg_burst", p, 0)      # the brood tearing its way out
 	var me := local_player()
 	if me and me.global_position.distance_to(p) < 20.0:
 		me.stress = min(100.0, me.stress + 25.0)
@@ -2540,6 +2542,8 @@ func _door_state(i: int, side: float, slam: bool) -> void:
 		Game.play_at(self, "door_bash", d["c"] + Vector3(0, 1.2, 0), 0)
 	else:
 		Game.play_at(self, "door_open" if side != 0.0 else "door_close", d["c"] + Vector3(0, 1.2, 0), -3)
+		if side != 0.0 and randf() < 0.35:
+			Game.play_at(self, "door_creak", d["c"] + Vector3(0, 1.4, 0), -8)     # old hinges
 
 ## Host: an alien at a shut door shoves it open (loudly).
 var _door_t := 0.0

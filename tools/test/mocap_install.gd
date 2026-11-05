@@ -5,6 +5,7 @@ extends Node
 
 const PACK := "Rifle 8-Way Locomotion Pack.zip"
 const PISTOL := "Pistol_Handgun Locomotion Pack.zip"
+const PRO := "Pro Rifle Pack.zip"
 ## clip id: [file, file inside the ZIP or "", travel taken out, loop, kind ("body" all bones / "hand" upper body),
 ##   optionally the part to keep [from, to] in seconds (hand actions: the game stretches it to the action's time)]
 const LIST := {
@@ -53,6 +54,14 @@ const LIST := {
 	"tp_hit_2_vse": ["hit_reaction2.fbx", "", true, false, "upper"],
 	"tp_hit_3_vse": ["hit_reaction3.fbx", "", true, false, "upper", 0.0, 1.2],
 	"tp_hit_4_vse": ["hit_on_back.fbx", "", true, false, "upper", 0.0, 0.55],
+	# 0.56: turning on the spot, two more deaths, the throw lying down
+	"tp_body_turn_left": [PRO, "turn 90 left.fbx", true, true, "body", -1, -1, "noyaw"],
+	"tp_body_turn_right": [PRO, "turn 90 right.fbx", true, true, "body", -1, -1, "noyaw"],
+	"tp_body_crouch_turn_left": [PRO, "crouching turn 90 left.fbx", true, true, "body", -1, -1, "noyaw"],
+	"tp_body_crouch_turn_right": [PRO, "crouching turn 90 right.fbx", true, true, "body", -1, -1, "noyaw"],
+	"tp_body_dead_crouch": [PRO, "death crouching headshot front.fbx", false, false, "body"],
+	"tp_body_dead_7": [PRO, "death from right.fbx", false, false, "body"],
+	"tp_throw_prone_vse": ["toss_granade_on_ground.fbx", "", true, false, "hand", 1.2, 2.5],
 }
 
 func _ready() -> void:
@@ -102,9 +111,18 @@ func _run() -> void:
 		clip["smycka"] = bool(e[3])
 		var opt: String = e[7] if e.size() > 7 else ""
 		if e.size() > 6 and float(e[5]) >= 0.0:
-			Mocap.trim(clip, float(e[5]), float(e[6]))
+			Mocap.trim(clip, float(e[5]), minf(float(e[6]), float(clip.get("delka", 1.0))))
 			if opt != "loop":
 				clip["natahnout"] = true      # the game plays it over the action's own time (reload, blow, throw, pull-up)
+		if opt == "noyaw":
+			# the body turns with the player: only the steps on the spot, not the hips' own turn
+			var ht: Array = clip["stopy"].get("hips", [])
+			if not ht.is_empty():
+				var y0: float = float(ht[0]["v"][1])
+				for key in ht:
+					key["v"][1] = y0
+			if clip["stopy"].has("root@pos"):
+				clip["stopy"].erase("root@pos")
 		if opt == "noroot":
 			# the game moves the man itself (a jump, a pull-up): only the limbs
 			clip["stopy"].erase("root@pos")

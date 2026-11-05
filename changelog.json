@@ -1,4 +1,19 @@
 {
+ "0.56": [
+  "Obří lodě mají konečně opravdový trup: zaoblený čtverec šestačtyřicet metrů napříč, šikmá sukně až k zemi, lem fialových světel, paluba se švy, kupole a šest přistávacích noh. Dovnitř se jde rampou.",
+  "A mají dvě patra jako v původním UFO. Z velké haly pod kupolí vede rampa na galerii a odtud chodby do sálů na palubě: bitevní loď má nahoře ubikace, laboratoř a velín, zásobovací nákladový sál a laboratoř. Na galerii čekají vetřelci a kryjí se za zábradlím.",
+  "Obři létají. Od třetího měsíce války se na radaru objeví i bitevní a zásobovací loď a ve vzduchu vypadají přesně tak, jak pak stojí na zemi. Mají tvrdý pancíř a víc děl, v jedné stíhačce je to skoro sebevražda. Když se je podaří sestřelit, trosky čekají na zemi s ohni kolem trupu a blikajícími světly uvnitř. Když je necháš, přistanou.",
+  "Sestřelené UFO je teď na zemi to, co jsi sestřelil (dřív to byl náhodný průzkumník nebo nájezdník). I Sklízeč a obři, kteří nikým nezastaveni přistanou, přistanou jako oni sami.",
+  "Malé lodě na zemi odpovídají těm ve vzduchu: průzkumník je čočka s tmavou kupolí, nájezdník čočka v prstenci na osmi paprscích s červenýma očima, sklízeč má křídla, hrb a řadu motorů.",
+  "Ruce v pohledu z očí jsou nové: rukavice s prsty a chrániči kloubů, manžeta, kus zápěstí, rukáv v barvě maskáče a na levé ruce hodinky. Úchopy zbraní zůstaly.",
+  "Příroda je celá z nových modelů: smrky, borovice, duby, bříza, ovocné stromy, keře, kameny, pařezy, klády, rákos, balíky sena, ledové kry a duny. Les, louka, skály, sad, potok, pastvina i ledová pole.",
+  "Ulice a dvory: pytle s pískem, lavičky, záhony, sudy, palety, zábradlí, drátěné ploty, ponky a koše. Park, dvůr, kontejnery, nádrže, hangár, obchod, zahrada, parkoviště a živý plot jsou přestavěné.",
+  "Naše základna je zařízená: plechové skříňky, stoly s monitory a klávesnicí, kancelářské židle, konzole s tlačítky, palandy s dekami, regály, pitevní stůl s něčím pod plachtou, nemocniční lůžka se závěsy, nakladač v hangáru a velitelský stůl pod glóbem.",
+  "Jejich základna taky: v jeskyních roste zahrada (svítící baňky, oranžové trubky, rudé korály, široké listy, krápníky) a v sálech mají sedačky, žebrované sudy, konzole, lampy s koulí, bedny, klece, nádrž v líhni a límec kolem řídicího jádra. Dolů jezdíme naším výtahem.",
+  "Spálená ruina: hromady sutě z cihel a ohořelé trosky místo kostek.",
+  "Animace: voják se otáčí na místě (vestoje i v podřepu) a nohy jdou s ním, kdo vykrvácí na zemi, padne z kleku, přibyla další smrt a hod granátu vleže.",
+  "Zvuky: všech 154 nahrávek je ve hře. Šediváci cvrlikají a umírají vlastním hlasem, nakažený sténá, vejce praská, dveře vrzají, vysílačka se při rušení zadrhává, voják unaveně oddechuje, a světlice, kouřový granát, raketa, pes a cvaknutí prázdné zbraně mají skutečný zvuk."
+ ],
  "0.55": [
   "Nový editor Mapové díly: každý díl mapy (statek, stodola, hospoda, sklad, les...) si otevřu, klikám na zdi, okna, nábytek i značky (kryt, trasa vetřelců, dveře, okna, místo pro civilistu) a posouvám je jako v Modeláři. Uložená varianta se pak objevuje na mapách.",
   "Budovy prošly předělávkou: okna mají rámy, parapety a křížky, dveře zárubně, domy sokl. Když se zeď rozstřílí, rám zmizí s ní.",

@@ -272,7 +272,7 @@ func _merge_static() -> void:
 		if not n is MeshInstance3D:
 			continue
 		var mi := n as MeshInstance3D
-		if not mi.mesh is BoxMesh or not mi.visible or keep.has(mi) or not mi.get_meta_list().is_empty() or mi.material_override == null:
+		if not (mi.mesh is BoxMesh or mi.mesh is SphereMesh or mi.mesh is CylinderMesh) or not mi.visible or keep.has(mi) or not mi.get_meta_list().is_empty() or mi.material_override == null:
 			continue
 		if mi.material_override is BaseMaterial3D and (mi.material_override as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
 			continue
@@ -704,7 +704,7 @@ func _field(o: Vector3) -> void:
 	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
 
 func _hay(p: Vector3) -> void:
-	cyl(p + Vector3(0, 0.6, 0), 0.7, 0.7, 1.2, Game.mat("hay", 1.0), true, 10)
+	_prop("hay_bale", p, rng.randf() * TAU, false)
 	_cover(p + Vector3(1.2, 0, 0)); _cover(p + Vector3(-1.2, 0, 0))
 
 func _pasture(o: Vector3) -> void:
@@ -715,9 +715,8 @@ func _pasture(o: Vector3) -> void:
 		# open snow: a few stones, a snow drift
 		_ground(o, "snow")
 		for i in rng.randi_range(1, 3):
-			var p := _jit(o, 1.5)
 			var r := rng.randf_range(0.3, 0.8)
-			cyl(p + Vector3(0, r * 0.3, 0), r * 0.6, r, r * 0.6, Game.mat("rock", 0.6), r > 0.5, 6)
+			_rock(_jit(o, 1.5), r, r > 0.5)
 		box(_jit(o, 3.0) + Vector3(0, 0.25, 0), Vector3(rng.randf_range(2, 4), 0.5, 1.2), Game.mat("snow", 0.5), true, rng.randf() * PI)
 		info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
 		return
@@ -731,9 +730,11 @@ func _pasture(o: Vector3) -> void:
 			1: p = o + Vector3(1 + i * 2, 0.5, BLOCK - 0.5)
 			2: p = o + Vector3(0.5, 0.5, 1 + i * 2)
 			_: p = o + Vector3(BLOCK - 0.5, 0.5, 1 + i * 2)
-		box(p, Vector3(0.15, 1.0, 0.15), Game.mat("fence"))
+		box(p, Vector3(0.13, 1.0, 0.13), Game.mat("fence"))
+		box(p + Vector3(0, 0.52, 0), Vector3(0.17, 0.04, 0.17), Game.mat("fence"), false)       # the post's cap
 		var horiz := side < 2
-		box(p + Vector3(1 if horiz else 0, 0.1, 0 if horiz else 1), Vector3(2 if horiz else 0.08, 0.1, 0.08 if horiz else 2), Game.mat("fence"), false)
+		for ry in [-0.15, 0.3]:
+			box(p + Vector3(1 if horiz else 0, ry, 0 if horiz else 1), Vector3(2.02 if horiz else 0.06, 0.09, 0.06 if horiz else 2.02), Game.mat("fence"), false)
 	for i in rng.randi_range(1, 3):
 		_hay(_jit(o, 2.5))
 	if rng.randf() < 0.6:
@@ -771,6 +772,69 @@ func _cow(p: Vector3, dead: bool) -> void:
 		box(p + Vector3(0, 0.8, 0), Vector3(0.8, 1.6, 0.8), hide, true).visible = false
 	_cover(p + Vector3(1.3, 0, 0))
 
+
+# ---- 0.56: nature as models (trees, bushes, rocks...) -----------------------------------------
+## Snow on the needles and the moss, sand in the desert (the models' own materials swapped by name).
+func _nature_skin(n: Node3D) -> void:
+	match terrain:
+		"snow":
+			_retexture(n, {"VNeedles": Game.color_mat(Color(0.78, 0.82, 0.85)), "VLeaves": Game.color_mat(Color(0.75, 0.78, 0.8)),
+				"VMoss": Game.color_mat(Color(0.85, 0.88, 0.9)), "VBush": Game.color_mat(Color(0.7, 0.74, 0.76))})
+		"desert":
+			_retexture(n, {"VMoss": Game.color_mat(Color(0.6, 0.5, 0.32)), "VRock": Game.color_mat(Color(0.5, 0.4, 0.3))})
+		"mars":
+			_retexture(n, {"VMoss": Game.color_mat(Color(0.45, 0.2, 0.12)), "VRock": Game.color_mat(Color(0.42, 0.2, 0.13))})
+
+## A tree at p: @a kinds the ones that fit here ("" = by the place: spruces in the mountains).
+func _tree(p: Vector3, kinds: Array = []) -> Node3D:
+	var pool: Array = kinds
+	if pool.is_empty():
+		pool = ["tree_spruce", "tree_spruce2", "tree_pine"] if biome in ["mountain", "polar"] or terrain == "snow" else \
+			["tree_spruce", "tree_spruce2", "tree_pine", "tree_oak", "tree_oak2", "tree_birch", "tree_spruce"]
+	var n := _prop(String(pool[rng.randi() % pool.size()]), p, rng.randf() * TAU, false)
+	var k := rng.randf_range(0.8, 1.2)
+	n.scale = Vector3.ONE * k
+	_nature_skin(n)
+	return n
+
+func _rock(p: Vector3, size := 1.0, solid := true) -> Node3D:
+	var nm: String = ["rock_a", "rock_b", "rock_c", "rock_d"][rng.randi() % 4] if size > 0.5 else "rock_d"
+	var base := {"rock_a": 1.0, "rock_b": 0.75, "rock_c": 1.5, "rock_d": 0.45}
+	var n := _prop(nm, p, rng.randf() * TAU, false)
+	n.scale = Vector3.ONE * clampf(size / float(base[nm]), 0.3, 3.0)
+	if not solid:
+		for sb in n.find_children("*", "StaticBody3D", true, false):
+			sb.free()
+		n.set_meta("nocol", true)
+	_nature_skin(n)
+	return n
+
+## A model whose collision can be shot to pieces (a railing, a fence panel): the model goes with it.
+func _breakable_model(n: Node3D, kind: String) -> void:
+	for sb in n.find_children("*", "StaticBody3D", true, false):
+		_breakable(sb, kind)
+		_deco(n, [sb])
+		return
+
+func _drum(p: Vector3) -> Node3D:
+	var n := _prop("drum_red" if rng.randf() < 0.5 else "drum_blue", p, rng.randf() * TAU, false)
+	return n
+
+## A shipping container's steel: corner posts, the door rods (closed ones), seen from outside.
+func _container_trim(c: Vector3, size: Vector3) -> void:
+	var dark := Game.color_mat(Color(0.12, 0.12, 0.13), false, 0.5, 0.6)
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			box(c + Vector3(sx * (size.x / 2 - 0.06), 0, sz * (size.z / 2 - 0.06)), Vector3(0.14, size.y - 0.012, 0.14), dark, false)
+	for k in 4:
+		box(c + Vector3(-0.85 + k * 0.57, 0, -size.z / 2 - 0.03), Vector3(0.04, size.y - 0.3, 0.04), Game.color_mat(Color(0.6, 0.6, 0.6), false, 0.6, 0.4), false)
+
+func _bush(p: Vector3) -> Node3D:
+	var n := _prop("bush" if rng.randf() < 0.55 else "bush2", p, rng.randf() * TAU, false)
+	n.scale = Vector3.ONE * rng.randf_range(0.8, 1.3)
+	_nature_skin(n)
+	return n
+
 func _forest(o: Vector3) -> void:
 	if terrain == "desert":
 		_dunes(o)      # no meadows, cows or trees in the sand
@@ -778,12 +842,16 @@ func _forest(o: Vector3) -> void:
 	_ground(o, "grass")
 	for i in rng.randi_range(5, 9):
 		var p := _jit(o, 1.0)
-		var h := rng.randf_range(4.0, 7.0)
-		cyl(p + Vector3(0, h / 2, 0), 0.18, 0.3, h, Game.mat("bark", 1.0), true, 6)
-		var r := rng.randf_range(1.6, 2.4)
-		cyl(p + Vector3(0, h * 0.62, 0), 0.0, r, h * 0.6, Game.mat("leaves", 0.6), false, 7)
-		cyl(p + Vector3(0, h * 0.9, 0), 0.0, r * 0.7, h * 0.45, Game.mat("leaves", 0.6), false, 7)
+		_tree(p)
 		_cover(p + Vector3(0.7, 0, 0.7))
+	for i in rng.randi_range(2, 4):
+		_bush(_jit(o, 0.8))
+	if rng.randf() < 0.5:
+		_prop("stump", _jit(o, 1.5), rng.randf() * TAU, true)
+	if rng.randf() < 0.4:
+		_prop("log", _jit(o, 2.5), rng.randf() * TAU, true)
+	if rng.randf() < 0.4:
+		_rock(_jit(o, 1.5), rng.randf_range(0.4, 0.9))
 	_grass(o, 900, "dry", 0.5, 1.2)
 	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
 
@@ -893,8 +961,11 @@ func _meadow(o: Vector3) -> void:
 	if terrain != "snow":
 		_grass(o, rng.randi_range(250, 600), "grass", 0.5, 1.1)
 	if rng.randf() < 0.25:
-		var p := _jit(o, 2.0)
-		cyl(p + Vector3(0, 0.3, 0), 0.4, 0.6, 0.6, Game.mat("rock", 0.5), true, 6)
+		_rock(_jit(o, 2.0), 0.6)
+	if rng.randf() < 0.35:
+		_bush(_jit(o, 2.0))
+	if rng.randf() < 0.2:
+		_tree(_jit(o, 3.0), ["tree_oak", "tree_oak2", "tree_birch"])
 	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
 
 # ---- 0.50: the war has been here (after Ari's pictures) ------------------------------------------
@@ -1038,12 +1109,13 @@ func _dunes(o: Vector3) -> void:
 	_ground(o, "sand")
 	for i in rng.randi_range(2, 4):
 		var p := _jit(o, 2.0)
-		var d := box(p + Vector3(0, 0.15, 0), Vector3(rng.randf_range(3.0, 6.0), 0.6, rng.randf_range(1.5, 2.5)), Game.mat("sand", 0.5), true, rng.randf() * PI)
-		d.rotation.z = rng.randf_range(-0.08, 0.08)
+		var d := _prop("dune", p, rng.randf() * PI, false)
+		var k := rng.randf_range(0.7, 1.3)
+		d.scale = Vector3(k, 1.0, rng.randf_range(0.8, 1.2))
 	for i in rng.randi_range(1, 3):
-		var p2 := _jit(o, 1.0)
-		var r := rng.randf_range(0.3, 0.9)
-		cyl(p2 + Vector3(0, r * 0.4, 0), r * 0.6, r, r * 0.9, Game.mat("rock", 0.5), true, 6).rotation.y = rng.randf() * PI
+		_rock(_jit(o, 1.0), rng.randf_range(0.3, 0.9))
+	if rng.randf() < 0.4:
+		_prop("dead_tree", _jit(o, 2.0), rng.randf() * TAU, false)
 	if rng.randf() < 0.15:
 		_prop(["car_beige", "car_red"][rng.randi() % 2], _jit(o, 3.0), rng.randf() * TAU)
 	_grass(o, 160, "dry", 0.3, 0.7)
@@ -1538,6 +1610,20 @@ func _hedge(a: Vector3, length: float, along_x: bool) -> void:
 		var h := rng.randf_range(1.3, 1.8)
 		var p := a + (Vector3(mid, h / 2, 0) if along_x else Vector3(0, h / 2, mid))
 		box(p, Vector3(l, h, 0.9) if along_x else Vector3(0.9, h, l), m)
+		# a lumpy top and sides: the hedge is not cut quite straight
+		var n := maxi(2, int(l / 0.8))
+		for k in n:
+			var u := seg + (k + 0.5) * l / n
+			var bm := MeshInstance3D.new()
+			var sm := SphereMesh.new()
+			sm.radius = rng.randf_range(0.42, 0.55)
+			sm.height = sm.radius * 1.2
+			sm.radial_segments = 7
+			sm.rings = 4
+			bm.mesh = sm
+			bm.material_override = m
+			root.add_child(bm)
+			bm.position = a + (Vector3(u, h - 0.1, rng.randf_range(-0.12, 0.12)) if along_x else Vector3(rng.randf_range(-0.12, 0.12), h - 0.1, u))
 		seg += l + (rng.randf_range(0.9, 1.5) if rng.randf() < 0.35 else 0.0)    # gaps to slip through
 		_cover(p + (Vector3(0, -h / 2, 1.0) if along_x else Vector3(1.0, -h / 2, 0)))
 
@@ -1618,10 +1704,14 @@ func _ruin(o: Vector3) -> void:
 				continue
 			var st := c + (Vector3(a, 0, 0 if side == 0 else d) if side < 2 else Vector3(0 if side == 2 else w, 0, a))
 			_wall(st, l, side < 2, hh, m, [], "brick")
-	for i in 7:
-		var p := c + Vector3(rng.randf_range(0.5, w - 0.5), 0, rng.randf_range(0.5, d - 0.5))
-		var sz := Vector3(rng.randf_range(0.5, 1.4), rng.randf_range(0.3, 1.1), rng.randf_range(0.5, 1.2))
-		box(p + Vector3(0, sz.y / 2, 0), sz, m, sz.y > 0.8, rng.randf() * PI)
+	# 0.56: heaps of rubble and charred debris (models) instead of loose blocks
+	var soot := Game.color_mat(Color(0.16, 0.13, 0.11))
+	for i in 6:
+		var p := c + Vector3(rng.randf_range(1.0, w - 1.0), 0, rng.randf_range(1.0, d - 1.0))
+		var rb := _prop("rubble" if i < 3 else "debris", p, rng.randf() * TAU, i < 3)
+		if i < 3:
+			rb.scale = Vector3.ONE * rng.randf_range(0.5, 0.75)
+			_retexture(rb, {"WConcrete": m, "WConcreteDark": soot, "WWhitePaint": m})
 	# a fallen roof beam
 	var bm := box(c + Vector3(w / 2, 0.9, d / 2), Vector3(0.3, 0.3, 6.0), Game.mat("scorch", 1.0), true, rng.randf_range(-0.6, 0.6))
 	bm.rotation.x = 0.28
@@ -1660,15 +1750,36 @@ func _garden(o: Vector3) -> void:
 	_wall(s, 2.6, false, 2.3, pl, [], "wood")
 	_wall(s + Vector3(3.2, 0, 0), 2.6, false, 2.3, pl, [[0.8, 1.6, 1.0]], "wood")
 	box(s + Vector3(1.6, 2.35, 1.3), Vector3(3.6, 0.1, 3.0), Game.mat("roof", 1.0), false)
+	var veg := [Color(0.2, 0.38, 0.12), Color(0.3, 0.42, 0.15), Color(0.15, 0.3, 0.12)]
 	for i in 4:
-		box(o + Vector3(6.0 + (i % 2) * 2.8, 0.15, 2.0 + (i / 2) * 3.0), Vector3(2.0, 0.3, 1.4), Game.mat("dirt", 1.0), false)
+		var bp := o + Vector3(6.0 + (i % 2) * 2.8, 0, 2.0 + (i / 2) * 3.0)
+		box(bp + Vector3(0, 0.15, 0), Vector3(2.0, 0.3, 1.4), Game.mat("dirt", 1.0), false)
+		for sx in [-1.0, 1.0]:
+			box(bp + Vector3(sx * 1.02, 0.17, 0), Vector3(0.05, 0.34, 1.46), Game.mat("planks", 1.0), false)
+		for r in 3:
+			for k in 5:
+				var pm := MeshInstance3D.new()
+				var sm := SphereMesh.new()
+				sm.radius = rng.randf_range(0.1, 0.17)
+				sm.height = sm.radius * 1.4
+				sm.radial_segments = 6
+				sm.rings = 3
+				pm.mesh = sm
+				pm.material_override = Game.color_mat(veg[(i + r) % 3])
+				root.add_child(pm)
+				pm.position = bp + Vector3(-0.75 + k * 0.38, 0.36, -0.45 + r * 0.45)
 	_hedge(o + Vector3(0.6, 0, 9.8), 11.0, true)
 	var f := Game.mat("fence", 1.0)
 	for k in 5:
 		if k == 2:
 			continue
-		var fb := box(o + Vector3(11.4, 0.45, 1.2 + k * 1.9), Vector3(0.08, 0.9, 1.8), f)
+		var fb := box(o + Vector3(11.4, 0.45, 1.2 + k * 1.9), Vector3(0.06, 0.9, 1.8), f)
+		fb.visible = false        # (the solid panel; you see the pickets)
 		_breakable(fb, "wood")
+		for j in 9:
+			_deco(box(o + Vector3(11.4, 0.5, 0.4 + k * 1.9 + j * 0.2), Vector3(0.03, 1.0, 0.11), Game.color_mat(Color(0.8, 0.78, 0.72)), false), [fb])
+		for ry in [0.25, 0.75]:
+			_deco(box(o + Vector3(11.37, ry, 1.2 + k * 1.9), Vector3(0.04, 0.07, 1.8), Game.color_mat(Color(0.75, 0.73, 0.67)), false), [fb])
 	_crate(o + Vector3(4.7, 0, 1.4), 0.8)
 	_cover(s + Vector3(1.6, 0, -0.8)); _cover(o + Vector3(8.0, 0, 6.0))
 	info["vip_spots"].append(s + Vector3(0.8, 0.3, 1.8))
@@ -1684,16 +1795,7 @@ func _orchard(o: Vector3) -> void:
 	for ix in 3:
 		for iz in 3:
 			var p := o + Vector3(2.2 + ix * 3.8 + rng.randf_range(-0.4, 0.4), 0, 2.2 + iz * 3.8 + rng.randf_range(-0.4, 0.4))
-			var th := rng.randf_range(1.4, 1.9)
-			cyl(p + Vector3(0, th / 2, 0), 0.12, 0.17, th, Game.mat("bark", 1.0), true, 6)
-			var crown := MeshInstance3D.new()
-			var sm := SphereMesh.new()
-			sm.radius = rng.randf_range(1.2, 1.6); sm.height = sm.radius * 1.6
-			sm.radial_segments = 8; sm.rings = 4
-			crown.mesh = sm
-			crown.material_override = Game.mat("leaves", 0.6)
-			root.add_child(crown)
-			crown.position = p + Vector3(0, th + sm.radius * 0.55, 0)
+			_tree(p, ["tree_fruit"])
 	for i in 3:
 		_crate(_jit(o, 1.0), 0.6, rng.randf() * PI)
 	if rng.randf() < 0.5:
@@ -1713,7 +1815,13 @@ func _stream(o: Vector3) -> void:
 		var side := 1.6 if rng.randf() < 0.5 else -1.6
 		var p := o + (Vector3(t, 0, mid + side) if along_x else Vector3(mid + side, 0, t))
 		var r := rng.randf_range(0.2, 0.6)
-		cyl(p + Vector3(0, r * 0.4, 0), r * 0.6, r, r * 0.8, Game.mat("rock", 0.6), r > 0.4, 6)
+		_rock(p, r, r > 0.4)
+	for i in rng.randi_range(3, 5):
+		var t2 := rng.randf_range(0.8, BLOCK - 0.8)
+		var side2 := 1.45 if rng.randf() < 0.5 else -1.45
+		_prop("reeds", o + (Vector3(t2, 0, mid + side2) if along_x else Vector3(mid + side2, 0, t2)), rng.randf() * TAU, false)
+	if rng.randf() < 0.6:
+		_tree(o + (Vector3(rng.randf_range(1, 11), 0, mid + (4.0 if rng.randf() < 0.5 else -4.0)) if along_x else Vector3(mid + (4.0 if rng.randf() < 0.5 else -4.0), 0, rng.randf_range(1, 11))), ["tree_birch", "tree_oak2"])
 	_grass(o, 900, "dry", 0.8, 1.6)
 	# footbridge
 	var bp := o + (Vector3(rng.randf_range(3, 9), 0.12, mid) if along_x else Vector3(mid, 0.12, rng.randf_range(3, 9)))
@@ -1729,14 +1837,15 @@ func _rocks(o: Vector3) -> void:
 	for i in rng.randi_range(4, 7):
 		var p := _jit(o, 1.2)
 		var r := rng.randf_range(0.6, 1.8)
-		var rk := cyl(p + Vector3(0, r * 0.45, 0), r * rng.randf_range(0.4, 0.8), r, r * rng.randf_range(0.8, 1.4), Game.mat("rock", 0.5), true, 6)
-		rk.rotation.y = rng.randf() * PI
+		_rock(p, r)
 		_cover(p + Vector3(r + 0.6, 0, 0)); _cover(p + Vector3(-r - 0.6, 0, 0))
+	for i in rng.randi_range(2, 5):
+		_rock(_jit(o, 0.8), rng.randf_range(0.25, 0.45), false)
 	for i in (0 if terrain == "desert" else rng.randi_range(2, 4)):
-		var p2 := _jit(o, 1.0)
-		var h := rng.randf_range(5.0, 8.0)
-		cyl(p2 + Vector3(0, h / 2, 0), 0.15, 0.28, h, Game.mat("bark", 1.0), true, 6)
-		cyl(p2 + Vector3(0, h * 0.55, 0), 0.0, 1.8, h * 0.7, Game.mat("leaves", 0.6), false, 7)
+		_tree(_jit(o, 1.0), ["tree_spruce", "tree_spruce2", "tree_pine", "tree_birch"])
+	if terrain != "desert":
+		for i in rng.randi_range(1, 2):
+			_bush(_jit(o, 1.0))
 	_grass(o, 600, "dry", 0.4, 1.0)
 	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
 
@@ -1849,13 +1958,16 @@ func _containers(o: Vector3) -> void:
 			info["waypoints"].append(p + Vector3(0, 0, 3.0))
 		else:
 			box(p + Vector3(0, 1.3, 3.0), Vector3(2.5, 2.6, 6.0), m)
+			_container_trim(p + Vector3(0, 1.3, 3.0), Vector3(2.5, 2.6, 6.0))
 			if rng.randf() < 0.6:
-				box(p + Vector3(0, 3.9, 3.0 + rng.randf_range(-0.3, 0.3)), Vector3(2.5, 2.6, 6.0), Game.mat(cols[rng.randi() % 3], 0.5))
+				var zo := rng.randf_range(-0.3, 0.3)
+				box(p + Vector3(0, 3.9, 3.0 + zo), Vector3(2.5, 2.6, 6.0), Game.mat(cols[rng.randi() % 3], 0.5))
+				_container_trim(p + Vector3(0, 3.9, 3.0 + zo), Vector3(2.5, 2.6, 6.0))
 		_cover(p + Vector3(1.9, 0, 1.0)); _cover(p + Vector3(-1.9, 0, 5.0))
 	for i in 5:
 		var dp := _jit(o, 1.0)
 		if dp.z > o.z + 9.0:
-			cyl(dp + Vector3(0, 0.45, 0), 0.3, 0.3, 0.9, Game.color_mat(Color(0.2, 0.3, 0.45) if i % 2 else Color(0.45, 0.15, 0.1)), true, 8)
+			_drum(dp)
 	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, 10.0))
 
 ## Fuel tanks with a pump house and pipes.
@@ -1865,7 +1977,23 @@ func _tanks(o: Vector3) -> void:
 		var p := o + Vector3(3.2 + i * 5.6, 0, 4.0)
 		cyl(p + Vector3(0, 3.0, 0), 2.1, 2.1, 6.0, Game.mat("metal", 0.4), true, 14)
 		cyl(p + Vector3(0, 6.1, 0), 0.6, 2.1, 0.4, Game.mat("metal", 0.4), false, 14)
-		box(p + Vector3(2.15, 3.0, 0), Vector3(0.1, 6.0, 0.4), Game.color_mat(Color(0.3, 0.3, 0.3)), false)   # ladder
+		var steel := Game.color_mat(Color(0.3, 0.31, 0.33), false, 0.5, 0.5)
+		for sz in [-0.22, 0.22]:
+			box(p + Vector3(2.2, 3.15, sz), Vector3(0.05, 6.3, 0.05), steel, false)        # the ladder's rails
+		for k in 20:
+			box(p + Vector3(2.2, 0.3 + k * 0.3, 0), Vector3(0.04, 0.03, 0.44), steel, false)
+		for k in 3:
+			box(p + Vector3(2.42, 3.6 + k * 0.9, 0), Vector3(0.03, 0.03, 0.7), steel, false)   # the cage hoops (front bar)
+		for k in 12:
+			var a := TAU * k / 12.0
+			box(p + Vector3(cos(a) * 1.9, 6.7, sin(a) * 1.9), Vector3(0.04, 0.9, 0.04), steel, false)     # railing posts on the roof
+		for k in 12:
+			var a0 := TAU * (k + 0.5) / 12.0
+			box(p + Vector3(cos(a0) * 1.9, 7.12, sin(a0) * 1.9), Vector3(1.0, 0.04, 0.04), steel, false, -a0 + PI / 2)
+		for k in 6:
+			box(p + Vector3(0, 0.35 + k * 1.0, 0) + Vector3(0, 0, 0), Vector3(4.24, 0.03, 0.03), Game.color_mat(Color(0.22, 0.22, 0.23)), false)   # weld seams
+		cyl(p + Vector3(-1.5, 0.6, 1.5), 0.12, 0.12, 0.5, steel, false, 8)
+		cyl(p + Vector3(-1.5, 0.9, 1.5), 0.22, 0.22, 0.05, Game.color_mat(Color(0.6, 0.12, 0.08)), false, 10)     # the valve wheel
 		_cover(p + Vector3(0, 0, 2.8)); _cover(p + Vector3(0, 0, -2.8))
 	box(o + Vector3(3.75, 0.6, 7.5), Vector3(6.5, 0.3, 0.3), Game.mat("metal", 0.5))    # the pipe ends at the pump house wall, the door stays free
 	var ph := o + Vector3(7.0, 0, 8.5)
@@ -1884,21 +2012,19 @@ func _yard(o: Vector3) -> void:
 	for k in 6:
 		if k == 2 or k == 3:
 			continue
-		var fb := box(o + Vector3(0.3, 1.0, 1.0 + k * 2.0), Vector3(0.05, 2.0, 2.0), Game.color_mat(Color(0.45, 0.47, 0.5)))
-		_breakable(fb, "wood")
+		_breakable_model(_prop("wire_fence", o + Vector3(0.3, 0, 1.0 + k * 2.0), PI / 2, false), "wood")
 	for i in 4:
 		var p := _jit(o, 2.0)
-		box(p + Vector3(0, 0.1, 0), Vector3(1.2, 0.2, 1.0), f, false, rng.randf() * 0.4)
+		_prop("pallet", p, rng.randf() * 0.4, false)
 		if rng.randf() < 0.6:
-			_crate(p + Vector3(0, 0.2, 0), 0.9)
+			_crate(p + Vector3(0, 0.15, 0), 0.9)
 	# forklift
 	var fp := o + Vector3(rng.randf_range(4, 8), 0, rng.randf_range(4, 8))
 	var yaw := rng.randf() * TAU
 	_forklift(fp, yaw)
 	_cover(fp + Vector3(1.5, 0, 0))
 	for i in 4:
-		var dp := _jit(o, 1.0)
-		cyl(dp + Vector3(0, 0.45, 0), 0.3, 0.3, 0.9, Game.color_mat(Color(0.2, 0.3, 0.45) if i % 2 else Color(0.45, 0.15, 0.1)), true, 8)
+		_drum(_jit(o, 1.0))
 	if rng.randf() < 0.6:
 		_prop(["car_blue", "car_red", "car_beige"][rng.randi() % 3], _jit(o, 3.0), rng.randf() * TAU)
 	_lamp(o + Vector3(BLOCK - 1.0, 4.0, 1.0), 1.3, 10.0, Color(1.0, 0.8, 0.5))
@@ -1995,6 +2121,11 @@ func _hangar(o: Vector3) -> void:
 	_wall(c + Vector3(w, 0, 0), d, false, h, m, [], "metal")
 	box(c + Vector3(w / 2, h + 0.05, d / 2), Vector3(w + 0.4, 0.1, d + 0.4), m, false)
 	box(c + Vector3(w / 2, 0.03, d / 2), Vector3(w - 0.4, 0.02, d - 0.4), Game.color_mat(Color(0.75, 0.62, 0.1)), false)   # stripes
+	_exterior(c, w, d, h, "metal")
+	# the gate's frame in yellow and black, a number over it
+	for k in 9:
+		box(c + Vector3(1.2 + k * 1.1 + 0.55, 2.35, -0.17), Vector3(0.55, 0.22, 0.04), Game.color_mat(Color(0.85, 0.7, 0.1)) if k % 2 == 0 else Game.color_mat(Color(0.08, 0.08, 0.08)), false)
+	box(c + Vector3(w / 2, 4.5, -0.17), Vector3(1.6, 1.0, 0.04), Game.color_mat(Color(0.85, 0.85, 0.8)), false)
 	_trusses(c, w, d, h)
 	var jet: Node3D = Game.model("sokol")
 	root.add_child(jet)
@@ -2002,9 +2133,9 @@ func _hangar(o: Vector3) -> void:
 	jet.rotation.y = PI
 	box(c + Vector3(w / 2, 0.5, d / 2 + 0.5), Vector3(2.2, 1.0, 5.5), Game.mat("metal", 0.5))   # the stand (cover)
 	for i in 3:
-		box(c + Vector3(1.0, 0.45, 2.5 + i * 2.4), Vector3(0.9, 0.9, 1.8), Game.mat("metal", 0.5))
+		_prop("workbench", c + Vector3(0.75, 0, 2.5 + i * 2.4), -PI / 2, false)
 	for i in 4:
-		cyl(c + Vector3(w - 0.8, 0.45, 1.5 + i * 0.75), 0.3, 0.3, 0.9, Game.color_mat(Color(0.45, 0.15, 0.1)), true, 8)
+		_drum(c + Vector3(w - 0.8, 0, 1.5 + i * 0.75))
 	for lx in [3.0, 8.0]:
 		_lamp(c + Vector3(lx, h - 0.6, d / 2), 1.6, 10.0, Color(0.85, 0.9, 1.0))
 	_cover(c + Vector3(w / 2 + 1.6, 0, d / 2)); _cover(c + Vector3(w / 2 - 1.6, 0, d / 2)); _cover(c + Vector3(2.0, 0, 4.0))
@@ -2073,14 +2204,17 @@ func _radar_tower(o: Vector3) -> void:
 ## Sandbags and a gun position at the edge of the base.
 func _sandbags(o: Vector3) -> void:
 	_ground(o, "dirt")
-	var m := Game.color_mat(Color(0.5, 0.45, 0.32))
 	for i in 3:
 		var p := _jit(o, 2.0)
 		var yaw := rng.randf() * TAU
-		for k in 3:
-			box(p + Vector3(0, 0.25 + k * 0.3, 0).rotated(Vector3.UP, 0), Vector3(3.0 - k * 0.4, 0.3, 0.6), m, true, yaw)
+		_prop("sandbags", p, yaw, false)
+		if rng.randf() < 0.5:
+			# a corner: a second wall at a right angle
+			_prop("sandbags", p + Vector3(cos(yaw), 0, -sin(yaw)) * 1.7 + Vector3(sin(yaw), 0, cos(yaw)) * 1.3, yaw + PI / 2, false)
 		_cover(p + Vector3(cos(yaw + PI / 2), 0, -sin(yaw + PI / 2)) * 1.0)
 	_crate(_jit(o, 2.0), 0.9)
+	if rng.randf() < 0.6:
+		_drum(_jit(o, 1.5))
 	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
 
 # ---- furniture (own pieces; boxes with a little detail) -----------------------------------------
@@ -2249,14 +2383,38 @@ func _shop(o: Vector3) -> void:
 		box(c + side[0], side[1], Game.mat("concrete", 0.5))
 	# aisles
 	var goods := [Color(0.8, 0.2, 0.15), Color(0.2, 0.5, 0.8), Color(0.9, 0.75, 0.2), Color(0.3, 0.6, 0.3)]
+	var shelf_m := Game.color_mat(Color(0.7, 0.72, 0.74), false, 0.4, 0.5)
 	for k in 3:
-		var ax := c + Vector3(1.8 + k * 2.4, 0, 3.4)
-		box(ax + Vector3(0, 0.8, 0), Vector3(0.7, 1.6, 3.2), Game.mat("metal", 0.5))
-		for lv in 3:
-			for sd in [-0.37, 0.37]:
-				box(ax + Vector3(sd, 0.4 + lv * 0.5, 0), Vector3(0.02, 0.22, 3.0), Game.color_mat(goods[(k + lv) % 4]), false)
+		var ax := c + Vector3(1.8 + k * 2.4, 0.1, 3.4)
+		box(ax + Vector3(0, 0.8, 0), Vector3(0.36, 1.6, 3.2), Game.mat("metal", 0.5))          # the back panel (solid)
+		box(ax + Vector3(0, 0.06, 0), Vector3(0.72, 0.12, 3.2), Game.color_mat(Color(0.2, 0.2, 0.22)), false)
+		for zz in [-1.58, 1.58]:
+			box(ax + Vector3(0, 0.82, zz), Vector3(0.72, 1.64, 0.04), shelf_m, false)        # the ends
+		for lv in 4:
+			var ly := 0.14 + lv * 0.44
+			box(ax + Vector3(0, ly, 0), Vector3(0.74, 0.025, 3.12), shelf_m, false)
+			# goods: packets and tins of different sizes, a few gaps where they were taken
+			for sd in [-1.0, 1.0]:
+				var zz := -1.5
+				var j := 0
+				while zz < 1.45:
+					var gw := rng.randf_range(0.18, 0.4)
+					var gh := rng.randf_range(0.14, 0.3)
+					if rng.randf() < 0.85 and lv < 4:
+						box(ax + Vector3(sd * 0.27, ly + 0.012 + gh / 2, zz + gw / 2), Vector3(0.16, gh, gw - 0.02), Game.color_mat(goods[(k + lv + j) % 4].darkened(rng.randf() * 0.3)), false)
+					zz += gw
+					j += 1
 		_cover(ax + Vector3(0.9, 0, 0))
-	box(c + Vector3(w - 2.0, 0.5, 1.2), Vector3(1.6, 1.0, 0.7), Game.mat("planks", 1.0))      # till
+	box(c + Vector3(w - 2.0, 0.55, 1.2), Vector3(1.6, 0.9, 0.7), Game.mat("planks", 1.0))      # till
+	box(c + Vector3(w - 2.0, 1.02, 1.2), Vector3(1.7, 0.04, 0.8), Game.color_mat(Color(0.75, 0.72, 0.65)), false)
+	box(c + Vector3(w - 2.4, 1.15, 1.25), Vector3(0.4, 0.2, 0.35), Game.color_mat(Color(0.2, 0.2, 0.22)), false)          # the register
+	box(c + Vector3(w - 2.4, 1.32, 1.35), Vector3(0.28, 0.16, 0.04), Game.color_mat(Color(0.2, 0.45, 0.3), true), false)
+	# the drinks fridge along the side wall, its glass still lit
+	box(c + Vector3(w - 0.5, 1.0, 4.2), Vector3(0.7, 1.9, 2.4), Game.color_mat(Color(0.85, 0.85, 0.85)))
+	box(c + Vector3(w - 0.87, 1.05, 4.2), Vector3(0.02, 1.5, 2.2), Game.color_mat(Color(0.6, 0.75, 0.8), true), false)
+	# the sign over the shop window
+	box(c + Vector3(w / 2, 2.8, -0.2), Vector3(6.0, 0.7, 0.08), Game.color_mat(Color(0.12, 0.3, 0.5)), false)
+	box(c + Vector3(w / 2, 2.8, -0.245), Vector3(4.4, 0.24, 0.02), Game.color_mat(Color(0.9, 0.85, 0.6), true), false)
 	for i in 3:
 		_crate(c + Vector3(1.0 + i * 1.3, 0, 7.6), 0.9)
 	_lamp(c + Vector3(3.0, h - 0.4, 3.0), 1.0, 7.0, Color(0.95, 0.98, 1.0))
@@ -2316,36 +2474,32 @@ func _park(o: Vector3) -> void:
 	_grass(o, 500, "grass", 0.3, 0.6)
 	box(o + Vector3(BLOCK / 2, 0.02, BLOCK / 2), Vector3(2.2, 0.03, BLOCK), Game.mat("dirt", 0.5), false)
 	box(o + Vector3(BLOCK / 2, 0.025, BLOCK / 2), Vector3(BLOCK, 0.03, 2.2), Game.mat("dirt", 0.5), false)
+	# the dry fountain: a basin, the column, the bowl at the top
 	cyl(o + Vector3(BLOCK / 2, 0.35, BLOCK / 2), 1.6, 1.7, 0.7, Game.mat("concrete", 0.5), true, 12)
 	cyl(o + Vector3(BLOCK / 2, 0.72, BLOCK / 2), 1.3, 1.3, 0.04, Game.mat("water", 0.4), false, 12)
-	var flowers := [Color(0.85, 0.65, 0.1), Color(0.8, 0.2, 0.25), Color(0.75, 0.5, 0.85)]
+	cyl(o + Vector3(BLOCK / 2, 1.2, BLOCK / 2), 0.18, 0.28, 1.0, Game.mat("concrete", 0.5), false, 8)
+	cyl(o + Vector3(BLOCK / 2, 1.75, BLOCK / 2), 0.55, 0.2, 0.2, Game.mat("concrete", 0.5), false, 10)
 	for q in 4:
 		var qp := o + Vector3(3.0 if q % 2 == 0 else 9.0, 0, 3.0 if q < 2 else 9.0)
-		box(qp + Vector3(0, 0.12, 0), Vector3(2.6, 0.24, 2.6), Game.mat("dirt", 1.0), false)
-		box(qp + Vector3(0, 0.3, 0), Vector3(2.3, 0.12, 2.3), Game.color_mat(flowers[q % 3]), false)
+		_prop("flower_bed", qp, (q % 2) * PI / 2, false)
 		var tp := qp + Vector3(1.8 if q % 2 == 0 else -1.8, 0, -1.8 if q < 2 else 1.8)
-		cyl(tp + Vector3(0, 0.9, 0), 0.1, 0.14, 1.8, Game.mat("bark", 1.0), true, 6)
-		var crown := MeshInstance3D.new()
-		var sm := SphereMesh.new()
-		sm.radius = 1.2; sm.height = 1.9; sm.radial_segments = 8; sm.rings = 4
-		crown.mesh = sm
-		crown.material_override = Game.mat("leaves", 0.6)
-		root.add_child(crown)
-		crown.position = tp + Vector3(0, 2.4, 0)
-	for b in [[Vector3(4.6, 0, 6.0), PI / 2], [Vector3(7.4, 0, 6.0), -PI / 2]]:
-		var bp: Vector3 = o + b[0]
-		box(bp + Vector3(0, 0.45, 0), Vector3(1.6, 0.08, 0.45), Game.mat("planks", 1.0), false, b[1])
-		box(bp + Vector3(0, 0.22, 0), Vector3(1.4, 0.44, 0.3), Game.color_mat(Color(0.15, 0.15, 0.15)), true, b[1])
-	# railing along two sides, gaps at the paths
-	var iron := Game.color_mat(Color(0.12, 0.12, 0.13))
+		var t := _tree(tp, ["tree_oak", "tree_oak2", "tree_birch", "tree_oak"])
+		t.scale *= 0.8
+	for b in [[Vector3(4.6, 0, 6.0), -PI / 2], [Vector3(7.4, 0, 6.0), PI / 2]]:
+		_prop("bench", o + (b[0] as Vector3), float(b[1]), false)
+	_prop("litter_bin", o + Vector3(4.7, 0, 7.3), -PI / 2, false)
+	_prop("litter_bin", o + Vector3(7.3, 0, 4.7), PI / 2, false)
+	for lp in [Vector3(4.6, 0, 4.6), Vector3(7.4, 0, 7.4)]:
+		cyl(o + lp + Vector3(0, 1.6, 0), 0.05, 0.07, 3.2, Game.color_mat(Color(0.12, 0.12, 0.13)), true, 6)
+		_lamp(o + lp + Vector3(0, 3.25, 0), 0.9, 6.0, Color(1.0, 0.85, 0.6))
+	# the railing along two sides, gaps at the paths
 	for side in 2:
 		for k in 5:
 			var t := 0.4 + k * 2.4
 			if t > 4.5 and t < 7.5:
 				continue
-			var fp := o + (Vector3(t + 1.0, 0.6, 0.15) if side == 0 else Vector3(0.15, 0.6, t + 1.0))
-			var fb := box(fp, Vector3(2.0, 1.2, 0.06) if side == 0 else Vector3(0.06, 1.2, 2.0), iron)
-			_breakable(fb, "wood")
+			var fp := o + (Vector3(t + 1.0, 0, 0.15) if side == 0 else Vector3(0.15, 0, t + 1.0))
+			_breakable_model(_prop("railing", fp, 0.0 if side == 0 else PI / 2, false), "wood")
 	_cover(o + Vector3(BLOCK / 2 + 2.2, 0, BLOCK / 2)); _cover(o + Vector3(BLOCK / 2 - 2.2, 0, BLOCK / 2))
 	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, 2.0))
 
@@ -2372,6 +2526,13 @@ func _parking(o: Vector3) -> void:
 		l.set_meta("lens", lens)
 		info["elec_lights"].append(l)
 	box(o + Vector3(6.0, 1.1, 6.0), Vector3(1.4, 2.2, 1.4), Game.color_mat(Color(0.75, 0.75, 0.7)))
+	box(o + Vector3(6.0, 2.27, 6.0), Vector3(1.7, 0.12, 1.7), Game.color_mat(Color(0.25, 0.3, 0.4)), false)      # the booth's roof
+	box(o + Vector3(6.0, 1.45, 5.29), Vector3(1.0, 0.6, 0.02), Game.color_mat(Color(0.3, 0.4, 0.45), true), false)   # its lit window
+	box(o + Vector3(6.8, 0.6, 5.0), Vector3(0.3, 1.2, 0.25), Game.color_mat(Color(0.7, 0.55, 0.1)), false)          # the ticket machine
+	box(o + Vector3(6.8, 1.0, 4.87), Vector3(0.2, 0.12, 0.02), Game.color_mat(Color(0.2, 0.6, 0.3), true), false)
+	for row in [1.8, 10.2]:
+		for k in 5:
+			box(o + Vector3(1.7 + k * 2.2, 0.06, row + (1.4 if row < 5 else -1.4)), Vector3(1.0, 0.12, 0.2), Game.mat("concrete", 0.5), false)   # wheel stops
 	info["waypoints"].append(o + Vector3(6.0, 0, 4.0))
 	info["waypoints"].append(o + Vector3(6.0, 0, 8.0))
 
@@ -2389,23 +2550,23 @@ func _icelake(o: Vector3) -> void:
 		var a2 := TAU * k / 6.0 + rng.randf_range(-0.3, 0.3)
 		var p := c + Vector3(cos(a2) * 4.8, 0, sin(a2) * 4.8)
 		var r := rng.randf_range(0.3, 0.7)
-		cyl(p + Vector3(0, r * 0.4, 0), r * 0.5, r, r * 0.8, Game.mat("rock", 0.6), r > 0.5, 6)
+		_rock(p, r, r > 0.5)
+	if rng.randf() < 0.6:
+		var sp := _prop("ice_shard", c + Vector3(rng.randf_range(-3, 3), 0, 5.2), rng.randf() * TAU, true)
+		sp.scale = Vector3.ONE * rng.randf_range(0.7, 1.1)
 	info["waypoints"].append(c + Vector3(5.5, 0, 0))
 
 func _icespires(o: Vector3) -> void:
 	_ground(o, "snow")
-	var ice := Game.color_mat(Color(0.75, 0.85, 0.95))
 	for i in rng.randi_range(3, 5):
 		var p := _jit(o, 2.0)
-		var hh := rng.randf_range(3.0, 7.0)
-		var r := rng.randf_range(1.0, 2.0)
-		var sp := cyl(p + Vector3(0, hh / 2, 0), 0.05, r, hh, ice, true, 7)
-		sp.rotation.y = rng.randf() * PI
+		var k := rng.randf_range(1.2, 2.2)
+		var sp := _prop("ice_shard", p, rng.randf() * TAU, false)
+		sp.scale = Vector3(k, k * rng.randf_range(0.9, 1.4), k)
+		var r := 0.7 * k
 		_cover(p + Vector3(r + 0.7, 0, 0)); _cover(p + Vector3(-r - 0.7, 0, 0))
 	for i in 3:
-		var rp := _jit(o, 1.0)
-		var rr := rng.randf_range(0.5, 1.2)
-		cyl(rp + Vector3(0, rr * 0.35, 0), rr * 0.6, rr, rr * 0.7, Game.mat("rock", 0.6), true, 6)
+		_rock(_jit(o, 1.0), rng.randf_range(0.5, 1.2))
 	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
 
 ## A research hut on the ice: someone was here before us.
@@ -2576,12 +2737,15 @@ func _big_ufo(center: Vector3) -> void:
 	info["ufo"] = center
 	info["ufo_kind"] = ufo_kind
 	var plan: Dictionary
+	var upper: Dictionary          # 0.56: a second deck over some halls, reached from the hub's gallery
 	if ufo_kind == "battleship":
 		plan = {Vector2i(0, -1): "entry", Vector2i(0, 0): "command", Vector2i(-1, 0): "power", Vector2i(1, 0): "lab",
 			Vector2i(0, 1): "quarters", Vector2i(-1, 1): "cargo", Vector2i(1, 1): "teleport", Vector2i(-1, -1): "quarters", Vector2i(1, -1): "cargo"}
+		upper = {Vector2i(-1, 0): "quarters", Vector2i(1, 0): "lab", Vector2i(0, 1): "command"}
 	else:
 		plan = {Vector2i(0, -1): "entry", Vector2i(0, 0): "cargo", Vector2i(-1, 0): "lab", Vector2i(1, 0): "cargo",
 			Vector2i(0, 1): "power", Vector2i(-1, 1): "lab", Vector2i(1, 1): "teleport"}
+		upper = {Vector2i(-1, 0): "cargo", Vector2i(1, 0): "lab"}
 	# the hull's shadow on the ground, scorched grass around
 	cyl(center + Vector3(0, 0.01, 0), 28.0, 28.0, 0.02, Game.mat("scorch"), false, 24)
 	for k in plan:
@@ -2592,10 +2756,35 @@ func _big_ufo(center: Vector3) -> void:
 				open.append(d)
 		if plan[k] == "entry":
 			open.append(Vector2i(0, -1))       # the ramp out
-		_section(cp, open, String(plan[k]))
+		if k == Vector2i(0, 0):
+			_section(cp, open, String(plan[k]), upper.keys(), true)
+		else:
+			_section(cp, open, String(plan[k]))
 		for d in open:
 			if plan.has(k + d) and (d.x > 0 or d.y > 0):
 				_passage(cp + Vector3(d.x, 0, d.y) * SEC_R, Vector3(d.x, 0, d.y))
+	# the second deck: halls on the roofs, each joined to the hub's gallery by a passage
+	var up_y := Vector3(0, SEC_H + 0.3, 0)
+	for k in upper:
+		var cp2 := center + Vector3(k.x * SEC_S, 0, k.y * SEC_S) + up_y
+		_section(cp2, [-k], String(upper[k]))
+		var hub_door := center + up_y + Vector3(k.x, 0, k.y) * SEC_R
+		_passage(hub_door, Vector3(k.x, 0, k.y))
+	_giant_hull(center, upper)
+	if mtype == "crash":
+		# shot down (0.56: the giants fly now): fires along the skirt, torn plates, the lights inside flicker
+		for i in 6:
+			var a := TAU * (i + rng.randf_range(0.2, 0.8)) / 6.0
+			if absf(wrapf(a - PI, -PI, PI)) < 0.45:
+				a += 0.6                   # not at the ramp (it faces -z)
+			var fp := center + Vector3(sin(a), 0, cos(a)) * rng.randf_range(25.0, 27.5)
+			_crash_fire(fp)
+			box(fp + Vector3(rng.randf_range(-2, 2), 0.35, rng.randf_range(-2, 2)), Vector3(rng.randf_range(1.2, 2.4), 0.1, rng.randf_range(1.0, 2.0)),
+				Game.mat("ufo_hull", 0.5), true, rng.randf() * PI).rotation.x = rng.randf_range(0.3, 0.8)
+		for l in root.get_children():
+			if l is OmniLight3D and (l as Node3D).position.distance_to(center) < 30.0 and rng.randf() < 0.5:
+				l.set_meta("flicker", true)
+				info["lights"].append(l)
 	var door := center + Vector3(0, 0, -SEC_S - SEC_R - 1.5)
 	info["ufo_door"] = door
 	info["waypoints"].append(door)
@@ -2603,12 +2792,14 @@ func _big_ufo(center: Vector3) -> void:
 		var a4 := TAU * i / 8.0
 		info["waypoints"].append(center + Vector3(sin(a4), 0, cos(a4)) * 30.0)
 
-func _section(c: Vector3, open: Array, role: String) -> void:
-	var H2 := 4.5
+const SEC_H := 4.5
+func _section(c: Vector3, open: Array, role: String, up_open: Array = [], hub := false) -> void:
+	var H2 := SEC_H
+	var HH := 2.0 * SEC_H + 0.3          # a hub: two decks high
 	var wall := Game.mat("ufo_wall", 0.5)
 	var side := 2.0 * SEC_R * tan(PI / 8.0)
 	cyl(c + Vector3(0, 0.05, 0), SEC_R / cos(PI / 8.0), SEC_R / cos(PI / 8.0), 0.1, Game.mat("ufo_floor", 0.5), true, 8).rotation.y = PI / 8.0
-	cyl(c + Vector3(0, H2 + 0.15, 0), SEC_R / cos(PI / 8.0) + 0.3, SEC_R / cos(PI / 8.0) + 0.3, 0.3, Game.mat("ufo_hull", 0.5), true, 8).rotation.y = PI / 8.0
+	cyl(c + Vector3(0, (HH if hub else H2) + 0.15, 0), SEC_R / cos(PI / 8.0) + 0.3, SEC_R / cos(PI / 8.0) + 0.3, 0.3, Game.mat("ufo_hull", 0.5), true, 8).rotation.y = PI / 8.0
 	for k in 8:
 		var ang := k * PI / 4.0           # side k faces this direction (0 = +x, 2 = +z ...)
 		var nrm := Vector3(cos(ang), 0, sin(ang))
@@ -2626,6 +2817,27 @@ func _section(c: Vector3, open: Array, role: String) -> void:
 			box(mid + Vector3(0, H2 - 0.6, 0), Vector3(3.0, 1.2, 0.35), wall, true, yaw)
 		else:
 			box(mid + Vector3(0, H2 / 2, 0), Vector3(side + 0.1, H2, 0.35), wall, true, yaw)
+		if hub:
+			# the upper deck's wall: a doorway to each hall on the roofs
+			var ugap := false
+			for d in up_open:
+				if Vector3(d.x, 0, d.y).dot(nrm) > 0.99:
+					ugap = true
+			var top := HH - H2
+			if ugap:
+				var tang2 := Vector3(-nrm.z, 0, nrm.x)
+				for sd in [-1.0, 1.0]:
+					box(mid + tang2 * sd * (side / 2.0 + 1.5) / 2.0 + Vector3(0, H2 + top / 2, 0), Vector3((side - 3.0) / 2.0, top, 0.35), wall, true, yaw)
+				box(mid + Vector3(0, H2 + 0.15, 0), Vector3(3.0, 0.3, 0.35), wall, true, yaw)
+				box(mid + Vector3(0, H2 + 0.3 + 3.4 + (top - 3.7) / 2, 0), Vector3(3.0, top - 3.7, 0.35), wall, true, yaw)
+			else:
+				box(mid + Vector3(0, H2 + top / 2, 0), Vector3(side + 0.1, top, 0.35), wall, true, yaw)
+			# the gallery round the walls (alternate heights: no faces in the same plane)
+			var gy := H2 + 0.15 - (0.004 if k % 2 else 0.0)
+			box(c + nrm * (SEC_R - 1.15) + Vector3(0, gy, 0), Vector3(side + 0.9, 0.3, 2.0), Game.mat("ufo_floor", 0.5), true, yaw)
+			if k != 1:
+				box(c + nrm * (SEC_R - 2.12) + Vector3(0, H2 + 0.8, 0), Vector3(side * 0.95, 1.0, 0.12), Game.mat("ufo_wall", 0.5), true, yaw)    # its railing
+			box(mid - nrm * 0.2 + Vector3(0, HH - 0.3, 0), Vector3(side * 0.8, 0.08, 0.05), Game.color_mat(Color(0.7, 0.4, 1.0), true), false, yaw)
 		# a strip of violet light along the top of every wall
 		box(mid - nrm * 0.2 + Vector3(0, H2 - 0.3, 0), Vector3(side * 0.8, 0.08, 0.05), Game.color_mat(Color(0.7, 0.4, 1.0), true), false, yaw)
 	var l := OmniLight3D.new()
@@ -2634,6 +2846,20 @@ func _section(c: Vector3, open: Array, role: String) -> void:
 	l.omni_range = 10.0
 	root.add_child(l)
 	l.position = c + Vector3(0, H2 - 0.6, 0)
+	if hub:
+		# the ramp up to the gallery, a light up there, aliens waiting on it
+		_stairs(c + Vector3(-4.6, 0.0, 3.0), c + Vector3(4.6, H2 + 0.3, 3.0), 1.8, Game.mat("ufo_floor", 0.5))
+		var l2 := OmniLight3D.new()
+		l2.light_color = Color(0.65, 0.4, 1.0)
+		l2.light_energy = 1.2
+		l2.omni_range = 10.0
+		root.add_child(l2)
+		l2.position = c + Vector3(0, HH - 0.8, 0)
+		for k in [0, 4, 6]:
+			var gp := c + Vector3(cos(k * PI / 4.0), 0, sin(k * PI / 4.0)) * (SEC_R - 1.2) + Vector3(0, H2 + 0.5, 0)
+			info["alien_spawns"].append(gp)
+			_cover(gp + Vector3(0, -0.2, 0))
+		info["waypoints"].append(c + Vector3(-5.2, H2 + 0.35, 0))
 	info["waypoints"].append(c)
 	info["alien_spawns"].append(c + Vector3(1.5, 0.2, 1.5))
 	_cover(c + Vector3(SEC_R - 1.2, 0, 0)); _cover(c + Vector3(-SEC_R + 1.2, 0, 0)); _cover(c + Vector3(0, 0, SEC_R - 1.2))
@@ -2649,11 +2875,12 @@ func _section(c: Vector3, open: Array, role: String) -> void:
 				for j in 4:
 					var aa := j * TAU / 4.0 + PI / 4.0
 					cyl(tc + Vector3(cos(aa), 0, sin(aa)) * 1.7 + Vector3(0, 0.4, 0), 0.32, 0.25, 0.8, chair_c, true, 8)
-			for k in 4:
+			for k in (0 if hub else 4):
 				var aa2 := PI * 1.25 + k * 0.5
 				var sp := c + Vector3(cos(aa2), 0, sin(aa2)) * (SEC_R - 0.3) + Vector3(0, 2.0, 0)
 				box(sp, Vector3(1.0, 0.7, 0.06), Game.color_mat(Color(0.2, 0.9, 0.4), true), false, -aa2 + PI / 2.0)
-			_low_walls(c, [[Vector3(-3.2, 0, 3.0), Vector3(3.2, 0, 3.0)]])
+			if not hub:
+				_low_walls(c, [[Vector3(-3.2, 0, 3.0), Vector3(3.2, 0, 3.0)]])
 		"power":
 			# the core: a column of molten orange light on a dark plinth - and a bomb if you hit it
 			cyl(c + Vector3(0, 0.4, 0), 1.6, 1.8, 0.8, Game.color_mat(Color(0.12, 0.1, 0.14)), true, 10)
@@ -2697,6 +2924,9 @@ func _section(c: Vector3, open: Array, role: String) -> void:
 				_cage(c + Vector3(cos(aa5), 0, sin(aa5)) * (SEC_R - 2.0))
 			box(c + Vector3(0, 0.12, 0), Vector3(2.0, 0.04, 2.0), Game.color_mat(Color(0.9, 0.12, 0.1), true), false)
 			_low_walls(c, [[Vector3(-2.0, 0, -2.5), Vector3(2.0, 0, -2.5)]])
+			if hub:
+				for k in 2:
+					_cage(c + Vector3((k - 0.5) * 5.0, 0, -0.5))
 		"teleport":
 			for k in 4:
 				var tp := c + Vector3((k % 2 - 0.5) * 4.0, 0.12, (k / 2 - 0.5) * 4.0)
@@ -2707,6 +2937,124 @@ func _section(c: Vector3, open: Array, role: String) -> void:
 		"entry":
 			# the ramp down to the ground on the south side
 			box(c + Vector3(0, 0.05, -SEC_R - 1.2), Vector3(3.0, 0.1, 2.6), Game.mat("ufo_floor", 0.5))
+
+## 0.56: the giant's hull round its halls, after the ships in the air: a skirt down to the ground
+## (solid: you go in by the ramp), a rim of violet lights, a deck over the roofs with glowing seams,
+## a dark dome over the hub and landing legs. A rounded square, so it stays inside its 4 x 4 blocks.
+func _giant_hull(center: Vector3, upper: Dictionary) -> void:
+	var n := 72
+	var HS := 23.0
+	var supply := ufo_kind == "supply"
+	var outline := []
+	for i in n:
+		var a := TAU * i / n
+		var ca := cos(a)
+		var sa := sin(a)
+		outline.append(Vector3(signf(ca) * HS * pow(absf(ca), 0.5), 0, signf(sa) * HS * pow(absf(sa), 0.5)))
+	var hullm := Game.mat("ufo_hull", 0.5)
+	var dark := Game.color_mat(Color(0.07, 0.06, 0.08), false, 0.5, 0.5)
+	var glow := Game.color_mat(Color(0.85, 0.3, 1.0) if not supply else Color(1.0, 0.55, 0.2), true)
+	var door_x := 2.4
+	var in_door := func(p: Vector3) -> bool: return absf(p.x) < door_x and p.z < 0.0
+	# the skirt: sloping out from the ground to the rim; solid boxes behind it (not over the door)
+	var lo := []
+	var hi := []
+	var rim := []
+	for p in outline:
+		lo.append(center + p * 0.97 + Vector3(0, 0.0, 0))
+		hi.append(center + p * 1.04 + Vector3(0, 4.25, 0))
+		rim.append(center + p * 1.02 + Vector3(0, 4.75, 0))
+	_strip(lo, hi, hullm, in_door)
+	_strip(hi, rim, dark, Callable())
+	for i in n:
+		var a: Vector3 = lo[i]
+		var b: Vector3 = lo[(i + 1) % n]
+		var mid := (a + b) / 2.0
+		if in_door.call(mid - center):
+			continue
+		var d := b - a
+		var col := box(mid + Vector3(0, 2.1, 0), Vector3(d.length() + 0.15, 4.2, 0.4), dark, true, atan2(-d.z, d.x))
+		col.visible = false
+	# the deck over the roofs (a hole over the hub, which rises above it)
+	var inner := []
+	var outer := []
+	for i in n:
+		var a2 := TAU * i / n
+		inner.append(center + Vector3(cos(a2) * 7.0, 4.6, sin(a2) * 7.0))
+		outer.append(rim[i] + Vector3(0, -0.15, 0))
+	_strip(inner, outer, hullm, Callable())
+	# lights all round the rim, seams across the deck, the dome, the legs
+	for i in range(0, n, 2):
+		var p: Vector3 = rim[i]
+		var t: Vector3 = (rim[(i + 1) % n] as Vector3) - p
+		box(p + Vector3(0, -0.25, 0) + (p - center).normalized() * 0.05, Vector3(0.9, 0.12, 0.08), glow if (i / 2) % 2 == 0 else dark, false, atan2(-t.z, t.x))
+	for i in range(0, n, 6):
+		var p2: Vector3 = outer[i]
+		var q: Vector3 = inner[i]
+		var dd := p2 - q
+		var m2 := (p2 + q) / 2.0 + Vector3(0, 0.06, 0)
+		var seam := box(m2, Vector3(0.12, 0.05, dd.length()), glow, false)
+		seam.look_at(m2 + dd, Vector3.UP)
+	var top := center + Vector3(0, 2.0 * SEC_H + 0.6, 0)
+	cyl(top + Vector3(0, 0.7, 0), 2.0, 6.2, 1.4, dark, false, 16)
+	cyl(top + Vector3(0, 1.7, 0), 0.4, 2.0, 0.7, dark, false, 16)
+	cyl(top + Vector3(0, 2.4, 0), 0.05, 0.25, 0.8, glow, false, 6)
+	for k in 8:
+		var a3 := TAU * (k + 0.5) / 8.0
+		box(top + Vector3(cos(a3) * 4.2, 0.75, sin(a3) * 4.2), Vector3(0.12, 0.3, 1.2), glow, false, -a3)
+	for k in 6:
+		var a4 := TAU * (k + 0.5) / 6.0
+		var foot := center + Vector3(cos(a4), 0, sin(a4)) * 25.2
+		var at := center + Vector3(cos(a4), 0, sin(a4)) * 22.0 + Vector3(0, 3.0, 0)
+		var leg := box((foot + at) / 2.0, Vector3(0.35, foot.distance_to(at), 0.35), dark, false)
+		leg.look_at((foot + at) / 2.0 + (at - foot), Vector3.UP)
+		leg.rotate_object_local(Vector3.RIGHT, PI / 2.0)
+		cyl(foot + Vector3(0, 0.08, 0), 0.8, 0.9, 0.16, dark, false, 10)
+	# the door: two ribs and a glowing lintel in the skirt
+	for sx in [-1.0, 1.0]:
+		box(center + Vector3(sx * (door_x + 0.2), 2.2, -HS * 0.99), Vector3(0.45, 4.4, 0.6), dark, false)
+	box(center + Vector3(0, 4.0, -HS * 1.0), Vector3(door_x * 2.0 + 0.8, 0.12, 0.2), glow, false)
+	if supply:
+		# the supply ship: cargo pods along the deck
+		for k in 6:
+			var pp := center + Vector3((k % 3 - 1) * 7.0, 5.2, (1 if k < 3 else -1) * 17.0)
+			box(pp, Vector3(4.0, 1.2, 2.4), hullm, false)
+			box(pp + Vector3(0, 0.62, 0), Vector3(3.2, 0.05, 0.1), glow, false)
+
+func _crash_fire(fp: Vector3) -> void:
+	_flame_fx(fp + Vector3(0, 0.1, 0), 28)
+	var fire := OmniLight3D.new()
+	fire.light_color = Color(1.0, 0.45, 0.15)
+	fire.light_energy = 1.8
+	fire.omni_range = 7.0
+	fire.set_meta("flicker", true)
+	root.add_child(fire)
+	fire.position = fp + Vector3(0, 1.0, 0)
+	info["lights"].append(fire)
+
+## Quads between two loops of points (both sides drawn); @a skip(mid) leaves a quad out.
+func _strip(a: Array, b: Array, mat: Material, skip: Callable) -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var n := a.size()
+	for i in n:
+		var j := (i + 1) % n
+		var p0: Vector3 = a[i]
+		var p1: Vector3 = a[j]
+		var q0: Vector3 = b[i]
+		var q1: Vector3 = b[j]
+		if skip.is_valid() and skip.call(((p0 + p1) / 2.0) - (info["ufo"] as Vector3)):
+			continue
+		for tri in [[p0, p1, q1], [p0, q1, q0], [p0, q1, p1], [p0, q0, q1]]:
+			var nrm := ((tri[1] as Vector3) - (tri[0] as Vector3)).cross((tri[2] as Vector3) - (tri[0] as Vector3)).normalized()
+			for v in tri:
+				st.set_normal(nrm)
+				st.set_uv(Vector2((v as Vector3).x, (v as Vector3).z) * 0.25 + Vector2(0, (v as Vector3).y * 0.25))
+				st.add_vertex(v)
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = mat
+	root.add_child(mi)
 
 ## A short covered passage from one hall's doorway to the next (2 m, 3 m wide).
 func _passage(a: Vector3, d: Vector3) -> void:

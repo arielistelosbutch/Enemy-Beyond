@@ -13,6 +13,9 @@ const UFO_KINDS := {
 	"scout": {"name": "Průzkumník (malé UFO)", "hp": 70.0, "speed": 62.0, "turn": 1.6, "guns": 1, "aliens": 0, "armor": 1.0, "scale": 2.2},
 	"raider": {"name": "Nájezdník (střední UFO)", "hp": 170.0, "speed": 52.0, "turn": 1.0, "guns": 1, "aliens": 1, "armor": 0.6, "scale": 2.0},
 	"harvester": {"name": "Sklízeč (velké UFO)", "hp": 360.0, "speed": 42.0, "turn": 0.6, "guns": 3, "aliens": 3, "armor": 0.35, "scale": 1.8},
+	# 0.56: the giants fly too, late in the war - the same hulls you walk round when they land
+	"supply": {"name": "Zásobovací loď (obří UFO)", "hp": 520.0, "speed": 36.0, "turn": 0.4, "guns": 3, "aliens": 5, "armor": 0.25, "scale": 1.5},
+	"battleship": {"name": "Bitevní loď (obří UFO)", "hp": 640.0, "speed": 32.0, "turn": 0.35, "guns": 5, "aliens": 6, "armor": 0.2, "scale": 1.5},
 }
 const CANNON_DMG := 3.0
 const MISSILE_DMG := 38.0
@@ -455,7 +458,7 @@ func _projectiles(delta: float) -> void:
 			bolts.erase(bo)
 
 func _ufo_radius() -> float:
-	return {"scout": 4.5, "raider": 8.0, "harvester": 14.0}[kind] * float(UFO_KINDS[kind]["scale"])
+	return {"scout": 4.5, "raider": 8.0, "harvester": 14.0, "supply": 22.0, "battleship": 22.0}[kind] * float(UFO_KINDS[kind]["scale"])
 
 static func _seg_hits(a: Vector3, b: Vector3, c: Vector3, r: float) -> bool:
 	var ab := b - a
@@ -522,11 +525,11 @@ func _ufo_ai(delta: float) -> void:
 	var to_ufo := (ufo.global_position - tpos)
 	var aimed: bool = (tg["fwd"] as Vector3).dot(to_ufo.normalized()) > 0.985 and to_ufo.length() < 500.0
 	if ufo_jink_cd <= 0.0 and (threat or (aimed and randf() < delta * 3.0)):
-		ufo_jink_cd = randf_range(0.9, 2.0) * (1.6 if kind == "harvester" else 1.0)
+		ufo_jink_cd = randf_range(0.9, 2.0) * (1.6 if kind in ["harvester", "supply", "battleship"] else 1.0)
 		var perp := ufo_dir.cross(Vector3.UP).normalized() * (1.0 if randf() < 0.5 else -1.0)
 		ufo_jink = (perp + Vector3(0, randf_range(-0.5, 0.5), 0)).normalized() * spd * (1.6 if kind == "scout" else 1.1)
 		# a sharp jink can shake off a missile (small, nimble UFOs much more often)
-		var shake: float = {"scout": 0.6, "raider": 0.35, "harvester": 0.15}[kind]
+		var shake: float = {"scout": 0.6, "raider": 0.35, "harvester": 0.15}.get(kind, 0.08)
 		for rk in rockets:
 			if not rk.get("lost", false) and (rk["node"] as Node3D).global_position.distance_to(ufo.global_position) < 160.0 and randf() < shake:
 				rk["lost"] = true

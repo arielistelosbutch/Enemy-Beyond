@@ -190,6 +190,12 @@ static func _ser(mg, n: Node3D, pxf: Transform3D, o: Vector3, els: Array, idx: D
 			e["volne"] = true
 		if n.has_meta("retex"):
 			e["retex"] = n.get_meta("retex")
+		if n.has_meta("nocol"):
+			e["nocol"] = true
+		for sb in n.find_children("*", "StaticBody3D", true, false):
+			if sb.has_meta("break_kind"):
+				e["br"] = String(sb.get_meta("break_kind"))
+				break
 		if not n.visible:
 			e["vis"] = false
 		idx[n] = els.size()
@@ -409,6 +415,10 @@ static func make(mg, e: Dictionary, o: Vector3, els := []) -> Node3D:
 				if bool(e.get("volne", false)):
 					mg._loose.append(n)
 			n.rotation_degrees = r
+			if bool(e.get("nocol", false)):
+				for sb in n.find_children("*", "StaticBody3D", true, false):
+					sb.free()
+				n.set_meta("nocol", true)
 			if e.has("retex"):
 				var swap := {}
 				for key in e["retex"]:
@@ -502,6 +512,8 @@ static func make(mg, e: Dictionary, o: Vector3, els := []) -> Node3D:
 			(n as CollisionObject3D).collision_layer = int(e["l"])
 		if e.has("br") and n is StaticBody3D:
 			mg._breakable(n, String(e["br"]))
+		elif e.has("br") and k == "model":
+			mg._breakable_model(n, String(e["br"]))
 		if e.has("stin"):
 			for gi in ([n] + n.find_children("*", "GeometryInstance3D", true, false)):
 				if gi is GeometryInstance3D:

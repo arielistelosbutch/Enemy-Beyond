@@ -25,6 +25,9 @@ run sound       200 h "RESULT soundcheck 0 chyb"           --autotest=soundcheck
 run pass_base   200 h "passcheck .* 0 blocked"             --autotest=basepass
 run pass_farm   200 h "passcheck .* 0 blocked"             --autotest=passcheck --mtype=terror --biome=farm
 run pass_town   200 h "passcheck .* 0 blocked"             --autotest=passcheck --mtype=terror --biome=town
+run pass_giant  300 h "passcheck .* 0 blocked"             --autotest=passcheck --mtype=landed --ufo=battleship --size=huge --biome=farm
+run pass_wreck  300 h "passcheck .* 0 blocked"             --autotest=passcheck --mtype=crash --ufo=supply --size=huge --biome=farm
+run air_giant   200 x "AIR-air\] end outcome"            --autotest=air --ufo=battleship
 for sd in 1 2 3; do
 run pass_ind_$sd  200 h "passcheck .* 0 blocked"           --autotest=passcheck --mtype=sabotage --biome=industrial --seed=$sd
 run pass_town_$sd 200 h "passcheck .* 0 blocked"           --autotest=passcheck --mtype=terror --biome=town --seed=$sd
@@ -73,7 +76,7 @@ run mod_speed   300 x "RESULT modspeed ok" --autotest=modspeed
 run animator   150 x "RESULT animator click true imported true turned true keyed true moved true follows true fp true" --autotest=animator
 run locktest   120 h "RESULT locktest follows true turned true body true root true fp true" --autotest=locktest
 run beltthrow  120 h "RESULT beltthrow started true belt_used true pack_kept true" --autotest=beltthrow
-run mocapgame  200 h "RESULT mocapgame 15 of 15" --autotest=mocapgame
+run mocapgame  200 h "RESULT mocapgame 19 of 19" --autotest=mocapgame
 run tileround  300 h "RESULT tileround ok 38 bad 0" --autotest=tileround
 run tileeditor 150 x "RESULT tileeditor parts [0-9]+ click true moved true turned true stretched true follows true model true mirror true delete true undo true saved true picked true built true" --autotest=tileeditor
 run leaveany    150 h "RESULT leaveany early_block true done true finished true" --autotest=leaveany

@@ -492,8 +492,16 @@ func _animate_body(delta: float) -> void:
 	_body_speed = lerp(_body_speed, moved.length() / max(delta, 0.001), 0.2)
 	var want := "idle"
 	var has := func(n: String) -> bool: return not AnimClips.get_clip("tp_body_" + n).is_empty()
+	# how fast he turns on the spot (0.56: the feet step round with him)
+	var yaw := global_rotation.y
+	_turn_rate = lerpf(_turn_rate, wrapf(yaw - _last_yaw, -PI, PI) / maxf(delta, 0.001), 0.15)
+	_last_yaw = yaw
 	if dead:
 		want = "dead"
+		if _body_want in ["dead", "dead_crouch"]:
+			want = _body_want             # chosen as he fell
+		elif (_body_want.begins_with("crawl") or _body_want.begins_with("crouch")) and has.call("dead_crouch"):
+			want = "dead_crouch"          # from his knees
 	elif downed:
 		# wounded: on hands and knees, crawling when moving (or being dragged)
 		want = "crawl_hurt" if _body_speed > 0.15 else "crawl_idle"
@@ -513,12 +521,16 @@ func _animate_body(delta: float) -> void:
 		want = "sprint"
 	elif crouching or ((act == 3 or act == 4) and _body_speed < 0.3):
 		want = "crouch_walk" if _body_speed > 0.3 else "crouch"
-		if want == "crouch" and aiming and has.call("crouch_aim"):
+		if want == "crouch" and absf(_turn_rate) > TURN_STEP and has.call("crouch_turn_left"):
+			want = "crouch_turn_left" if _turn_rate > 0.0 else "crouch_turn_right"
+		elif want == "crouch" and aiming and has.call("crouch_aim"):
 			want = "crouch_aim"
 	elif _body_speed > 3.2:
 		want = "run"
 	elif _body_speed > 0.3:
 		want = "walk"
+	elif absf(_turn_rate) > TURN_STEP and has.call("turn_left"):
+		want = "turn_left" if _turn_rate > 0.0 else "turn_right"
 	elif aiming and has.call("idle_aim"):
 		want = "idle_aim"
 	_body_want = want
@@ -526,7 +538,8 @@ func _animate_body(delta: float) -> void:
 	var play := want
 	if not body_anim.has_animation(play):
 		play = {"prone_reload": "prone", "climb": "crouch", "jump": "idle", "panic": "crouch", "dig": "crouch",
-			"idle_aim": "idle", "crouch_aim": "crouch"}.get(want, "downed" if dead or downed else "idle")
+			"idle_aim": "idle", "crouch_aim": "crouch", "turn_left": "idle", "turn_right": "idle", "crouch_turn_left": "crouch",
+			"crouch_turn_right": "crouch"}.get(want, "downed" if dead or downed else "idle")
 		if not body_anim.has_animation(play):
 			play = "idle"
 	if body_anim.current_animation != play:
@@ -546,6 +559,8 @@ func _animate_body(delta: float) -> void:
 	if not (dead or downed or prone or sprinting) and not _body_want in FULL_BODY:
 		_hold_pose(delta)
 		_emote_pose(delta)
+	elif prone and not (dead or downed) and act == 5:
+		_prone_throw(delta)
 	_hit_overlay(delta)
 	# the long gun sits in the right hand (follows the arms in every pose), not on the belly
 	if _sk and _hand_r >= 0 and body_gun:
@@ -605,6 +620,9 @@ func _gun_to(w: Transform3D) -> void:
 ## _right), a movement may have variants (tp_body_dead_2, _3...: one picked at random each time),
 ## and a movement that knows its own pace ("rychlost", from Mixamo) is played as fast as he goes.
 var _bclip_name := ""
+var _turn_rate := 0.0
+var _last_yaw := 0.0
+const TURN_STEP := 1.1          # rad/s: slower than this he just twists at the waist
 var _bclip_id := ""
 var _bclip_t := 0.0
 var _bclip_dir := ""
@@ -819,6 +837,20 @@ func _hold_pose(delta: float) -> void:
 			var rest: Quaternion = _sk.get_bone_rest(i).basis.get_rotation_quaternion()
 			_sk.set_bone_pose_rotation(i, rest * Quaternion.from_euler(want[bn]))
 	_body_pack(act == 3)
+
+## Lying down and throwing (0.56, Mixamo): the arms and the trunk only - he stays on his belly.
+func _prone_throw(delta: float) -> void:
+	_act_t += delta
+	var clip := AnimClips.find("tp", "throw_prone", held)
+	if clip.is_empty() or _sk == null:
+		return
+	var ct := _act_t * float(clip.get("delka", 1.0)) / 0.6 if clip.get("natahnout", false) else _act_t
+	var want := AnimClips.pose(clip, AnimClips.clip_time(clip, ct))
+	for bn in want:
+		var i := _bone(bn)
+		if i >= 0:
+			var rest: Quaternion = _sk.get_bone_rest(i).basis.get_rotation_quaternion()
+			_sk.set_bone_pose_rotation(i, rest * Quaternion.from_euler(want[bn]))
 
 ## Others see the pack on the ground in front while he digs in it.
 var _ground_pack: Node3D

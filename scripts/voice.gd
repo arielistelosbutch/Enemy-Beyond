@@ -257,6 +257,8 @@ func _play(peer: int, bytes: PackedByteArray, radio: bool) -> void:
 			rf[i] = Vector2(v, v)
 		if float(ch["last"]) > 0.4:
 			Game.play_ui(mission, "radio", -16)
+			if bad > 0.5:
+				Game.play_ui(mission, "radio_jam", -20 + bad * 6.0)     # they are close: the set screams
 			mission.hud.radio_from(p.display_name)
 		var pr: AudioStreamGeneratorPlayback = ch["pb_radio"]
 		if pr and fresh_start:

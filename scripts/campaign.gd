@@ -408,6 +408,9 @@ func advance(days: float) -> bool:
 				m["place"] = nearest_place(float(f["lat"]), float(f["lon"]))
 				m["reward"] = MTYPES["landed"]["reward"]
 				m["extra_aliens"] = UFO_ALIENS[f["kind"]] + 1
+				if String(f["kind"]) in ["supply", "battleship", "harvester"]:
+					m["ufo"] = f["kind"]           # it lands as what flew
+					m["size"] = UFO_SIZES[f["kind"]]
 				data["missions"].append(m)
 				_log("UFO, které nikdo nezastavil, přistálo: " + m["place"])
 				mission_found.emit(m)
@@ -641,8 +644,10 @@ func _move_crafts(days: float) -> bool:
 	return stop
 
 # ---- UFOs in the air ---------------------------------------------------------------------------------
-const UFO_NAMES := {"scout": "Průzkumník (malé)", "raider": "Nájezdník (střední)", "harvester": "Sklízeč (velké)"}
-const UFO_ALIENS := {"scout": 0, "raider": 1, "harvester": 3}
+const UFO_NAMES := {"scout": "Průzkumník (malé)", "raider": "Nájezdník (střední)", "harvester": "Sklízeč (velké)",
+	"supply": "Zásobovací loď (obří)", "battleship": "Bitevní loď (obří)"}
+const UFO_ALIENS := {"scout": 0, "raider": 1, "harvester": 3, "supply": 4, "battleship": 6}
+const UFO_SIZES := {"scout": "small", "raider": "medium", "harvester": "large", "supply": "huge", "battleship": "huge"}
 
 func generate_flight() -> Dictionary:
 	var lat := BASE_LAT + rng.randf_range(-12, 12)
@@ -653,6 +658,9 @@ func generate_flight() -> Dictionary:
 	var kinds := ["scout", "scout", "raider", "raider", "harvester"]
 	if float(data["day"]) < 4.0:
 		kinds = ["scout", "scout", "raider"]
+	elif int(data.get("month", 0)) >= 3:
+		# late in the war the giants cross the sky too (0.56)
+		kinds = ["scout", "raider", "raider", "harvester", "harvester", "supply", "battleship"]
 	var id := int(data["next_id"])
 	data["next_id"] = id + 1
 	return {"id": id, "kind": kinds[rng.randi() % kinds.size()], "lat": lat, "lon": lon,
@@ -727,9 +735,10 @@ func intercept_done(id: int, outcome: String, kind: String, jet_hp: float, lost 
 			m["lat"] = lat; m["lon"] = lon
 			m["place"] = nearest_place(lat, lon)
 			m["terrain"] = terrain_at(lat, lon)
-			m["size"] = {"scout": "small", "raider": "medium", "harvester": "large"}[kind]
+			m["size"] = UFO_SIZES[kind]
+			m["ufo"] = kind            # the wreck is the ship you shot down
 			m["extra_aliens"] = UFO_ALIENS[kind]
-			m["reward"] = MTYPES["crash"]["reward"] + {"scout": 0, "raider": 200, "harvester": 450}[kind]
+			m["reward"] = MTYPES["crash"]["reward"] + {"scout": 0, "raider": 200, "harvester": 450, "supply": 800, "battleship": 1100}[kind]
 			m["expires"] = float(data["day"]) + 1.0
 			data["missions"].append(m)
 			data["trust"] = clampi(int(data["trust"]) + 3, 0, 100)

@@ -904,7 +904,8 @@ func _ufoshot(p: Node) -> void:
 		["door", door + out * 2.5 + Vector3(0, 0.3, 0), u],
 		["in", door - out * 2.6 + Vector3(0, 0.3, 0), u - out * 3.0]]
 	if String(m().map.get("ufo_kind", "")) in ["battleship", "supply"]:
-		shots = [shots[0], ["door", door + Vector3(0, 0.3, -6.0), u]]
+		shots = [["out", u + Vector3(-34, 14, -40), u + Vector3(0, 3, 0)], ["door", door + Vector3(0, 0.3, -6.0), u],
+			["gallery", u + Vector3(3.5, 4.9, -4.0), u + Vector3(-2.0, 5.5, 3.0)], ["up", u + Vector3(-15.0 + 3.5, 4.9, -4.0), u + Vector3(-16.0, 5.8, 1.0)]]
 		for k in [[0, 0], [-1, 0], [1, 0], [0, 1], [-1, 1], [1, 1]]:
 			var sc: Vector3 = u + Vector3(k[0] * 15.0, 0, k[1] * 15.0)
 			shots.append(["sec%d_%d" % [k[0] + 1, k[1]], sc + Vector3(3.5, 0.3, -4.5), sc + Vector3(-1.0, 1.0, 1.0)])
@@ -915,7 +916,9 @@ func _ufoshot(p: Node) -> void:
 		p.global_position = e[1]
 		_aim_at(p, e[2])
 		p.flash.visible = true
-		m().env.ambient_light_energy = 0.6
+		m().env.ambient_light_energy = 0.6 if e[0] != "out" else 2.0
+		m().env.fog_enabled = e[0] != "out"
+		m().env.volumetric_fog_enabled = false
 		await get_tree().create_timer(1.5).timeout
 		get_viewport().get_texture().get_image().save_png("user://ufo_%s_%s.png" % [m().map.get("ufo_kind", "?"), e[0]])
 	get_tree().quit()
@@ -1866,7 +1869,9 @@ func _mocapgame(p: Node) -> void:
 	cam.make_current()
 	var shots := [["chuze", Vector3(0, 0, -2.6), {}], ["vzad", Vector3(0, 0, 2.6), {}], ["vlevo", Vector3(-2.6, 0, 0), {}],
 		["podrep", Vector3(0, 0, -1.3), {"crouching": true}], ["plazeni", Vector3(0, 0, -0.7), {"prone": true}],
-		["raneny", Vector3(0, 0, -0.5), {"downed": true}], ["smrt", Vector3.ZERO, {"dead": true}],
+		["smrt", Vector3.ZERO, {"dead": true}], ["raneny", Vector3(0, 0, -0.5), {"downed": true}], ["smrt_z_kleku", Vector3.ZERO, {"dead": true}],
+		["otoceni", Vector3.ZERO, {"turn": 2.0}], ["otoceni_podrep", Vector3.ZERO, {"crouching": true, "turn": -2.0}],
+		["hod_vleze", Vector3.ZERO, {"prone": true, "act": 5}],
 		["skok", Vector3.ZERO, {"act": 8}], ["splhani", Vector3.ZERO, {"act": 7}], ["panika", Vector3.ZERO, {"panic": "drop"}],
 		["batoh", Vector3.ZERO, {"act": 3}], ["prebijeni_vleze", Vector3.ZERO, {"prone": true, "act": 1}],
 		["mireni", Vector3.ZERO, {"aiming": true}], ["dvere", Vector3.ZERO, {"act": 6}], ["zasah", Vector3.ZERO, {"hit": true}]]
@@ -1884,8 +1889,12 @@ func _mocapgame(p: Node) -> void:
 		p.global_position = base
 		p._last_body_pos = base
 		var vel: Vector3 = p.global_transform.basis * (e[1] as Vector3)
+		var turn := float((e[2] as Dictionary).get("turn", 0.0))
+		if not (e[2] as Dictionary).get("dead", false):
+			p._body_want = ""
 		for f in 75:
 			p.global_position += vel / 60.0
+			p.rotation.y += turn / 60.0
 			p._animate_body(1.0 / 60.0)
 			p.global_position -= vel / 60.0      # (on the spot, the camera stays on him)
 			p._last_body_pos = p.global_position
@@ -1893,6 +1902,7 @@ func _mocapgame(p: Node) -> void:
 		for f in 3:
 			await get_tree().process_frame
 			p.global_position += vel / 60.0
+			p.rotation.y += turn / 60.0
 			p._animate_body(1.0 / 60.0)
 			p.global_position -= vel / 60.0
 			p._last_body_pos = p.global_position

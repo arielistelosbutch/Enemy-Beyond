@@ -49,3 +49,10 @@ animace/tp_strike_vse.json
 animace/tp_throw_crouch_vse.json
 animace/tp_throw_vse.json
 animace/tp_use_vse.json
+animace/tp_body_turn_left.json
+animace/tp_body_turn_right.json
+animace/tp_body_crouch_turn_left.json
+animace/tp_body_crouch_turn_right.json
+animace/tp_body_dead_7.json
+animace/tp_body_dead_crouch.json
+animace/tp_throw_prone_vse.json

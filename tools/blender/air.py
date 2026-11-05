@@ -10,7 +10,7 @@ import sys, os, math
 sys.path.insert(0, os.path.dirname(__file__))
 from kit import *
 
-ARGS = [a for a in sys.argv[1:] if not a.startswith("--") and not a.endswith(".png")]
+ARGS = [a for a in sys.argv[1:] if not a.startswith("--") and not a.endswith(".png") and "," not in a and a not in ("battleship", "supply", "sokol", "scout", "raider", "harvester")]
 OUTDIR = ARGS[0] if ARGS else "."
 
 def sokol():
@@ -166,16 +166,160 @@ def ufo(kind):
     o = join(p, "Lod_" + kind)
     export_glb(os.path.join(OUTDIR, "ufo_%s.glb" % kind), [o])
 
-sokol()
+def sq_lathe(m, prof, n=72, hs=23.0, sm=False):
+    """Like lathe() but round a rounded square (the giants' outline, as map_gen._giant_hull):
+    prof = [(k, z)], k scales the squircle of half-size hs (k = 0: a single point)."""
+    import bmesh
+    me = bpy.data.meshes.new("sql")
+    o = bpy.data.objects.new("sql", me)
+    bpy.context.scene.collection.objects.link(o)
+    bm = bmesh.new()
+    rows = []
+    for (k, z) in prof:
+        if k < 1e-5:
+            rows.append([bm.verts.new((0, 0, z))])
+            continue
+        row = []
+        for i in range(n):
+            a = TAU * i / n
+            ca, sa = math.cos(a), math.sin(a)
+            row.append(bm.verts.new((math.copysign(hs * k * abs(ca) ** 0.5, ca), math.copysign(hs * k * abs(sa) ** 0.5, sa), z)))
+        rows.append(row)
+    for r in range(len(rows) - 1):
+        a, b = rows[r], rows[r + 1]
+        for i in range(n):
+            j = (i + 1) % n
+            if len(a) == 1 and len(b) == 1:
+                continue
+            if len(a) == 1:
+                bm.faces.new([a[0], b[j], b[i]])
+            elif len(b) == 1:
+                bm.faces.new([a[i], a[j], b[0]])
+            else:
+                bm.faces.new([a[i], a[j], b[j], b[i]])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(me); bm.free()
+    o.data.materials.append(m)
+    return smooth(o) if sm else o
+
+def squircle_pt(a, k, hs=23.0):
+    ca, sa = math.cos(a), math.sin(a)
+    return (math.copysign(hs * k * abs(ca) ** 0.5, ca), math.copysign(hs * k * abs(sa) ** 0.5, sa))
+
+def giant(kind):
+    """0.56: the battleship and the supply ship in flight - the same hull you walk round on the ground
+    (map_gen._giant_hull): a rounded square 46 m across, the sloped skirt, the dark rim with its lights,
+    the deck with the upper halls and the hub's dome; underneath the belly, the folded legs, a red eye.
+    Origin at the middle of the height (the ground ship's y 5)."""
+    reset()
+    supply = kind == "supply"
+    hull = mat2("UfoHull", (0.2, 0.17, 0.22), 0.35, 0.7)
+    rib = mat2("UfoRib", (0.13, 0.11, 0.15), 0.4, 0.7)
+    dark = mat2("UfoDark", (0.07, 0.06, 0.08), 0.4, 0.6)
+    glow = mat2("UfoGlow", (1.0, 0.55, 0.2) if supply else (0.85, 0.25, 1.0), emit=5.0)
+    dim = mat2("UfoGlowDim", (0.7, 0.35, 0.12) if supply else (0.55, 0.15, 0.7), emit=1.8)
+    eye = mat2("UfoEye", (1.0, 0.12, 0.06), emit=5.0)
+    Z = -5.0            # the ground ship's y 0
+    p = []
+    # the belly and the skirt up to the rim (as on the ground: 0.97 at the bottom, 1.04 at the rim)
+    p.append(sq_lathe(hull, [(0.0, Z - 0.6), (0.6, Z - 0.5), (0.9, Z - 0.2), (0.97, Z), (1.04, Z + 4.25)]))
+    p.append(sq_lathe(dark, [(1.04, Z + 4.25), (1.02, Z + 4.75), (0.98, Z + 4.6)]))
+    p.append(sq_lathe(hull, [(0.98, Z + 4.6), (0.3, Z + 4.6), (0.0, Z + 4.6)]))         # the deck
+    # rim lights, seams over the deck, glowing rings under the belly
+    for i in range(0, 72, 2):
+        a = TAU * i / 72
+        x, y = squircle_pt(a, 1.025)
+        p.append(bx(glow if (i // 2) % 2 == 0 else dark, (x, y, Z + 4.5), (0.9, 0.1, 0.12), 0.02, rot=(0, 0, math.atan2(y, x) + PI2)))
+    for i in range(0, 72, 6):
+        a = TAU * i / 72
+        x0, y0 = math.cos(a) * 7.0, math.sin(a) * 7.0
+        x1, y1 = squircle_pt(a, 0.97)
+        p.append(beam(glow, (x0, y0, Z + 4.66), (x1, y1, Z + 4.66), 0.12, 0.05))
+    for k, kk in enumerate((0.45, 0.75)):
+        pts = [squircle_pt(TAU * i / 72, kk) for i in range(72)]
+        for i in range(0, 72, 2):
+            a0, b0 = pts[i], pts[(i + 1) % 72]
+            p.append(beam(dim if k else glow, (a0[0], a0[1], Z - 0.52 + 0.3 * k), (b0[0], b0[1], Z - 0.52 + 0.3 * k), 0.14, 0.06))
+    p.append(lathe(eye, [(0, Z - 0.95), (3.0, Z - 0.8), (3.4, Z - 0.6), (0, Z - 0.6)], 32))
+    p.append(torus(rib, (0, 0, Z - 0.62), 3.6, 0.22, seg=32))
+    # the legs folded up against the belly
+    for k in range(6):
+        a = TAU * (k + 0.5) / 6
+        c = (math.cos(a) * 17.0, math.sin(a) * 17.0)
+        p.append(disc(dark, (c[0], c[1], Z - 0.35), 1.1, 0.4, verts=12, b=0.05))
+        p.append(beam(rib, (c[0], c[1], Z - 0.5), (math.cos(a) * 21.5, math.sin(a) * 21.5, Z + 1.5), 0.4, 0.4))
+    # the closed ramp: ribs and the lit lintel at the front (Godot -Z = Blender +Y)
+    for sx in (-1, 1):
+        p.append(bx(dark, (sx * 2.6, 23 * 0.99, Z + 2.2), (0.45, 0.6, 4.4), 0.05, rot=(-0.12, 0, 0)))
+    p.append(bx(hull, (0, 23 * 1.0, Z + 2.1), (4.8, 0.2, 4.0), 0.02, rot=(-0.12, 0, 0)))
+    p.append(bx(glow, (0, 23 * 1.03, Z + 4.0), (5.6, 0.2, 0.12), 0.02))
+    # the halls on the deck: octagons (as _section), joined to the hub by passages
+    R8 = 6.5 / math.cos(math.pi / 8)
+    upper = [(-1, 0), (1, 0), (0, 1)] if not supply else [(-1, 0), (1, 0)]
+    def octo(mtl, prof, cx, cy):
+        # an octagon with flat sides facing the axes (as the halls on the ground)
+        o = lathe(mtl, prof, 8, sm=False)
+        o.rotation_euler = (0, 0, math.pi / 8)
+        o.location = (cx, cy, 0)
+        apply_xf(o)
+        return o
+    for (gx, gz) in upper:
+        cx, cy = gx * 15.0, -gz * 15.0
+        p.append(octo(hull, [(0, Z + 4.8), (R8, Z + 4.8), (R8, Z + 9.3), (R8 + 0.3, Z + 9.3), (R8 + 0.3, Z + 9.6), (0, Z + 9.6)], cx, cy))
+        for j in range(8):
+            a = j * math.pi / 4
+            p.append(bx(glow, (cx + math.cos(a) * 6.52, cy + math.sin(a) * 6.52, Z + 8.9), (0.1, 3.2, 0.1), 0.0, rot=(0, 0, a)))
+        # the passage to the hub
+        mx, my = gx * 9.0, -gz * 9.0
+        p.append(bx(rib, (mx, my, Z + 6.6), (3.6 if gz else 4.4, 4.4 if gz else 3.6, 3.6), 0.05))
+    # the hub: two decks high, its dome
+    p.append(octo(hull, [(0, Z + 4.6), (R8 + 0.3, Z + 4.6), (R8 + 0.3, Z + 9.6), (0, Z + 9.6)], 0, 0))
+    for j in range(8):
+        a = j * math.pi / 4
+        p.append(bx(glow, (math.cos(a) * 6.82, math.sin(a) * 6.82, Z + 9.3), (0.1, 3.6, 0.1), 0.0, rot=(0, 0, a)))
+    top = Z + 9.6
+    p.append(lathe(dark, [(0, top), (6.2, top), (2.0, top + 1.4), (0.4, top + 2.1), (0.0, top + 2.1)], 16, sm=False))
+    p.append(lathe(glow, [(0, top + 2.0), (0.25, top + 2.0), (0.05, top + 2.8), (0, top + 2.8)], 6, sm=False))
+    for k in range(8):
+        a = TAU * (k + 0.5) / 8
+        p.append(bx(glow, (math.cos(a) * 4.2, math.sin(a) * 4.2, top + 0.75), (1.2, 0.12, 0.3), 0.02, rot=(0.0, -0.5, a)))
+    if supply:
+        for k in range(6):
+            x, y = (k % 3 - 1) * 7.0, -(1 if k < 3 else -1) * 17.0
+            p.append(bx(hull, (x, y, Z + 5.2), (4.0, 2.4, 1.2), 0.08))
+            p.append(bx(glow, (x, y, Z + 5.83), (3.2, 0.1, 0.05), 0.0))
+    else:
+        # the battleship's guns: four turrets on the corners of the deck
+        for k in range(4):
+            a = TAU * (k + 0.5) / 4
+            x, y = squircle_pt(a, 0.8)
+            p.append(disc(dark, (x, y, Z + 4.9), 1.4, 0.6, verts=14, b=0.05))
+            p.append(tb(rib, (x, y, Z + 5.3), (x * 1.08, y * 1.08, Z + 5.6), 0.22, 10))
+            p.append(ball(eye, (x, y, Z + 5.3), 0.5, (1, 1, 0.6)))
+    o = join(p, "Lod_" + kind)
+    export_glb(os.path.join(OUTDIR, "ufo_%s.glb" % kind), [o])
+
+ONLY = sys.argv[sys.argv.index("--only") + 1].split(",") if "--only" in sys.argv else []
+if not ONLY or "sokol" in ONLY:
+    sokol()
 for k in ("scout", "raider", "harvester"):
-    ufo(k)
+    if not ONLY or k in ONLY:
+        ufo(k)
+for k in ("battleship", "supply"):
+    if not ONLY or k in ONLY:
+        giant(k)
 print("built air")
 if "--gallery" in sys.argv:
     reset()
-    for i, n in enumerate(["sokol", "ufo_scout", "ufo_raider", "ufo_harvester"]):
+    names = ["ufo_battleship", "ufo_supply"] if "--giants" in sys.argv else ["sokol", "ufo_scout", "ufo_raider", "ufo_harvester"]
+    locs = ((-26, 0, 0), (26, 0, 0)) if "--giants" in sys.argv else ((-33, 0, 0), (-21, 0, 0), (-4, 0, 0), (25, 0, 0))
+    for i, n in enumerate(names):
         before = set(bpy.data.objects)
         bpy.ops.import_scene.gltf(filepath=os.path.join(OUTDIR, n + ".glb"))
         for o in set(bpy.data.objects) - before:
             if o.parent is None:
-                o.location = ((-33, 0, 0), (-21, 0, 0), (-4, 0, 0), (25, 0, 0))[i]
-    preview(sys.argv[sys.argv.index("--gallery") + 1], target=(-4, 0, 0), dist=80, angle=0.35, height=38, res=(1400, 600))
+                o.location = locs[i]
+    if "--giants" in sys.argv:
+        preview(sys.argv[sys.argv.index("--gallery") + 1], target=(0, 0, -2), dist=150, angle=0.5, height=40, res=(1400, 600))
+    else:
+        preview(sys.argv[sys.argv.index("--gallery") + 1], target=(-4, 0, 0), dist=80, angle=0.35, height=38, res=(1400, 600))

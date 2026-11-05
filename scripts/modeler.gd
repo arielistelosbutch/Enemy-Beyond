@@ -20,7 +20,8 @@ const PALETTE := [[0.08, 0.08, 0.08], [0.22, 0.22, 0.23], [0.45, 0.46, 0.48], [0
 const NAMES := {"merc": "Žoldák", "heli": "Vrtulník Čáp", "dropship": "Kondor", "sokol": "Stíhačka Sokol", "cow": "Kráva",
 	"civ_a": "Civilista A", "civ_b": "Civilista B", "mozek": "Velký mozek", "ufo_g_scout": "UFO průzkumník (přistálé)",
 	"ufo_g_raider": "UFO nájezdník (přistálé)", "ufo_g_harvester": "UFO sklízeč (přistálé)", "ufo_scout": "UFO průzkumník (let)",
-	"ufo_raider": "UFO nájezdník (let)", "ufo_harvester": "UFO sklízeč (let)"}
+	"ufo_raider": "UFO nájezdník (let)", "ufo_harvester": "UFO sklízeč (let)",
+	"ufo_supply": "UFO zásobovací loď (let)", "ufo_battleship": "UFO bitevní loď (let)"}
 const TOOLS := {"posun": "Posun (G)", "otaceni": "Otáčení (R)", "velikost": "Velikost (S)"}
 const DOT := 3
 

@@ -25,6 +25,8 @@ const UFO := {
 	"ufo_scout": ["Průzkumník", "Malý disk s posádkou několika šediváků nebo jejich spojenců. Létá nízko, mapuje krajinu, unáší dobytek. Často havaruje - jeho motor je rychlý, ale křehký. Uvnitř jediný sál a pohonná jednotka.", "missions:0"],
 	"ufo_raider": ["Nájezdník", "Střední loď pro přepady a únosy. Dva sály, silnější motor, pancéřovaný trup. Posádka bývá větší a mívá s sebou šelmy nebo stroje.", "missions:3"],
 	"ufo_harvester": ["Sklízeč", "Velká loď, která sklízí - lidi, zvířata, suroviny. Na palubě vždy velitel a těžká výzbroj. Když přistane, není to průzkum, je to žeň.", "missions:6"],
+	"ufo_supply": ["Zásobovací loď", "Obří loď, zaoblený čtverec čtyřicet šest metrů napříč. Dole sály plné klecí a nádrží, nahoře na palubě další dva sály a nákladní moduly. Jezdí pro to, co Sklízeče nasbíraly. Posádka početná, oranžová světla v lemu.", "missions:12"],
+	"ufo_battleship": ["Bitevní loď", "Obří válečná loď. Dvě paluby: dole velín, reaktor, laboratoř a ubikace, nad nimi další tři sály spojené s velkou dvoupatrovou halou pod kupolí. Na rozích paluby věže. Uvnitř elita - a reaktor, který jde odpálit.", "missions:15"],
 }
 
 const ITEM_TEXT := {

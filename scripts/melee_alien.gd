@@ -86,7 +86,7 @@ func _voice(delta: float) -> void:
 		"zombie":
 			voice_t = randf_range(4.0, 9.0)
 			if d < 30.0:
-				Game.play_at(mission, "groan", global_position, -6)
+				Game.play_at(mission, "zombie_groan" if randf() < 0.6 else "groan", global_position, -6)
 		"ohar":
 			voice_t = randf_range(3.0, 7.0) if alert else randf_range(8.0, 16.0)
 			if d < 40.0:
@@ -508,5 +508,5 @@ func _hatch_later(secs: float) -> void:
 	var at := global_position
 	get_tree().create_timer(secs).timeout.connect(func():
 		if multiplayer.is_server() and not mission.finished:
-			mission.burst_fx.rpc(at + Vector3(0, 1.0, 0))
+			mission.burst_fx.rpc(at + Vector3(0, 1.0, 0), true)
 			mission.spawn_alien("lihnoun", at))

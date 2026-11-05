@@ -280,35 +280,40 @@ func _big_hangar(gx: int, params: Dictionary) -> void:
 func _col(c: Color) -> Material:
 	return Game.color_mat(c)
 
+## 0.56: the furniture is modelled (tools/blender/base_props.py); the old blocks stay as the hidden colliders.
+## A prop's front is -Z, a thing's front here is +Z at yaw 0: turned by yaw + PI.
+func _bp(name: String, p: Vector3, yaw: float) -> Node3D:
+	return _prop(name, p, yaw + PI, false)
+
 func _cabinet(p: Vector3, yaw: float, col: Color) -> void:
-	box(p + Vector3(0, 1.0, 0), Vector3(0.9, 2.0, 0.6), _col(col), true, yaw)
-	var f := Vector3(sin(yaw), 0, cos(yaw)) * 0.31
-	box(p + f + Vector3(0, 1.0, 0), Vector3(0.04, 1.6, 0.02) if absf(sin(yaw)) < 0.5 else Vector3(0.02, 1.6, 0.04), _col(col.darkened(0.35)), false, 0.0)
+	box(p + Vector3(0, 1.0, 0), Vector3(0.9, 2.0, 0.6), _col(col), true, yaw).visible = false
+	var paint := "grey"
+	if col.r > 0.8:
+		paint = "white"
+	elif col.b > 0.7:
+		paint = "blue"
+	elif col.r < 0.25:
+		paint = "dark"
+	_bp("bp_locker_" + paint, p, yaw)
 
 func _desk(p: Vector3, yaw: float, screen := Color(0.3, 1.0, 0.5)) -> void:
-	box(p + Vector3(0, 0.75, 0), Vector3(1.6, 0.06, 0.8), _col(Color(0.55, 0.57, 0.6)), true, yaw)
-	for sx in [-0.7, 0.7]:
-		box(p + Vector3(0, 0.37, 0) + Vector3(cos(yaw), 0, -sin(yaw)) * sx, Vector3(0.06, 0.74, 0.7), _col(Color(0.35, 0.36, 0.4)), false, yaw)
+	box(p + Vector3(0, 0.75, 0), Vector3(1.6, 0.06, 0.8), _col(Color(0.55, 0.57, 0.6)), true, yaw).visible = false
+	_bp("bp_desk", p, yaw)
 	var back := Vector3(-sin(yaw), 0, -cos(yaw)) * 0.2
-	box(p + back + Vector3(0, 1.0, 0), Vector3(0.55, 0.42, 0.35), _col(Color(0.82, 0.8, 0.74)), false, yaw)
 	box(p + back + Vector3(0, 1.02, 0) + Vector3(sin(yaw), 0, cos(yaw)) * 0.19, Vector3(0.44, 0.3, 0.02) if absf(sin(yaw)) < 0.5 else Vector3(0.02, 0.3, 0.44), Game.color_mat(screen, true), false, 0.0)
 	_chair(p + Vector3(sin(yaw), 0, cos(yaw)) * 0.8, yaw + PI)
 
-func _chair(p: Vector3, yaw: float, col := Color(0.3, 0.45, 0.8)) -> void:
-	cyl(p + Vector3(0, 0.22, 0), 0.05, 0.25, 0.44, _col(Color(0.3, 0.3, 0.33)), false, 6)
-	box(p + Vector3(0, 0.48, 0), Vector3(0.5, 0.1, 0.5), _col(col), false, yaw)
-	box(p + Vector3(0, 0.8, 0) + Vector3(sin(yaw), 0, cos(yaw)) * -0.22, Vector3(0.5, 0.6, 0.08) if absf(sin(yaw)) < 0.5 else Vector3(0.08, 0.6, 0.5), _col(col), false, 0.0)
+func _chair(p: Vector3, yaw: float, _col_unused := Color(0.3, 0.45, 0.8)) -> void:
+	_bp("bp_chair", p, yaw)
 
 func _console(p: Vector3, yaw: float, screen := Color(0.3, 1.0, 0.5)) -> void:
-	box(p + Vector3(0, 0.5, 0), Vector3(1.4, 1.0, 0.6), _col(Color(0.7, 0.68, 0.64)), true, yaw)
+	box(p + Vector3(0, 0.5, 0), Vector3(1.4, 1.0, 0.6), _col(Color(0.7, 0.68, 0.64)), true, yaw).visible = false
+	_bp("bp_console", p, yaw)
 	var up := p + Vector3(0, 1.45, 0) + Vector3(-sin(yaw), 0, -cos(yaw)) * 0.2
-	box(up, Vector3(1.3, 0.8, 0.12), _col(Color(0.5, 0.5, 0.52)), false, yaw)
 	box(up + Vector3(sin(yaw), 0, cos(yaw)) * 0.075, Vector3(1.1, 0.6, 0.02) if absf(sin(yaw)) < 0.5 else Vector3(0.02, 0.6, 1.1), Game.color_mat(screen, true), false, 0.0)
 
 func _barrel(p: Vector3) -> void:
-	cyl(p + Vector3(0, 0.45, 0), 0.32, 0.32, 0.9, _col(Color(0.38, 0.28, 0.2)), true, 10)
-	for y in [0.15, 0.75]:
-		cyl(p + Vector3(0, y, 0), 0.335, 0.335, 0.05, _col(Color(0.2, 0.18, 0.17)), false, 10)
+	_prop("drum_blue" if rng.randf() < 0.6 else "drum_red", p, rng.randf() * TAU, false)
 
 func _bunk(p: Vector3, along_x: bool) -> void:
 	var yel := _col(Color(0.85, 0.68, 0.2))
@@ -316,23 +321,14 @@ func _bunk(p: Vector3, along_x: bool) -> void:
 	var L := 2.0
 	var W := 0.9
 	var size := Vector3(L, 0.15, W) if along_x else Vector3(W, 0.15, L)
-	for y in [0.45, 1.45]:
-		box(p + Vector3(0, y, 0), size, blue, y < 1.0)
-		box(p + Vector3(0, y - 0.1, 0), size + Vector3(0.06, -0.08, 0.06), yel, false)
-		var pil := p + (Vector3(-L / 2 + 0.3, y + 0.12, 0) if along_x else Vector3(0, y + 0.12, -L / 2 + 0.3))
-		box(pil, Vector3(0.35, 0.1, 0.6) if along_x else Vector3(0.6, 0.1, 0.35), _col(Color(0.92, 0.92, 0.9)), false)
-	for sx in [-1, 1]:
-		for sz2 in [-1, 1]:
-			var q := p + (Vector3(sx * (L / 2), 0.9, sz2 * (W / 2)) if along_x else Vector3(sx * (W / 2), 0.9, sz2 * (L / 2)))
-			box(q, Vector3(0.06, 1.8, 0.06), yel, false)
+	box(p + Vector3(0, 0.45, 0), size, blue, true).visible = false
+	_prop("bp_bunk", p, 0.0 if along_x else -PI / 2, false)
 
 func _shelf(p: Vector3, along_x: bool, rng_items := true) -> void:
 	var L := 2.4
 	var grey := _col(Color(0.45, 0.47, 0.52))
-	for y in [0.1, 0.8, 1.5, 2.1]:
-		box(p + Vector3(0, y, 0), Vector3(L, 0.05, 0.6) if along_x else Vector3(0.6, 0.05, L), grey, y < 0.2)
-	for sx in [-1, 1]:
-		box(p + (Vector3(sx * L / 2, 1.1, 0) if along_x else Vector3(0, 1.1, sx * L / 2)), Vector3(0.05, 2.2, 0.6) if along_x else Vector3(0.6, 2.2, 0.05), grey, false)
+	box(p + Vector3(0, 0.1, 0), Vector3(L, 0.05, 0.6) if along_x else Vector3(0.6, 0.05, L), grey, true).visible = false
+	_prop("bp_rack", p, 0.0 if along_x else -PI / 2, false)
 	if rng_items:
 		for y in [0.1, 0.8, 1.5]:
 			for k in 3:
@@ -375,7 +371,8 @@ func _velin(a: Vector3, w: float, h: float) -> void:
 	info["spawn_yaw"] = PI * 0.75
 	# the command table in the middle: a round console, chairs, the globe projected above it
 	var c := a + Vector3(w * 0.55, 0, w * 0.55)
-	cyl(c + Vector3(0, 0.45, 0), 1.3, 1.1, 0.9, _col(Color(0.62, 0.55, 0.7)), true, 12)
+	cyl(c + Vector3(0, 0.45, 0), 1.3, 1.1, 0.9, _col(Color(0.62, 0.55, 0.7)), true, 12).visible = false
+	_prop("bp_command_table", c, 0.0, false)
 	cyl(c + Vector3(0, 0.92, 0), 1.25, 1.25, 0.04, Game.color_mat(Color(0.25, 0.5, 1.0), true), false, 12)
 	var globe := MeshInstance3D.new()
 	var sm := SphereMesh.new()
@@ -431,7 +428,8 @@ func _hangar_hall(a: Vector3, w: float, h: float, transport: String) -> void:
 	sb.rotation.y = m.rotation.y
 	for p in [Vector3(0.8, 0, 0.8), Vector3(1.6, 0, 0.9), Vector3(0.9, 0, 1.7), Vector3(w - 0.8, 0, w - 0.9), Vector3(w - 1.7, 0, w - 0.8)]:
 		_barrel(a + p)
-	box(a + Vector3(w - 1.0, 1.0, 1.4), Vector3(1.4, 2.0, 2.2), _col(Color(0.2, 0.3, 0.75)))       # loader
+	box(a + Vector3(w - 1.0, 1.0, 1.4), Vector3(1.4, 2.0, 2.2), _col(Color(0.2, 0.3, 0.75))).visible = false       # loader
+	_prop("bp_loader", a + Vector3(w - 1.0, 0, 1.4), 0.0, false)
 	box(a + Vector3(w * 0.5, h - 0.05, w * 0.5), Vector3(w * 0.6, 0.1, w * 0.6), Game.mat("metal", 0.5), false)   # the roof hatch
 	info["entries"].append(a + Vector3(2.0, 0.3, w - 2.0))
 	_cover(a + Vector3(1.5, 0, 2.5)); _cover(a + Vector3(w - 1.5, 0, w - 2.5))
@@ -454,10 +452,8 @@ func _lab(a: Vector3, w: float) -> void:
 	_desk(a + Vector3(1.0, 0, w - 3.0), PI / 2, Color(1.0, 0.8, 0.3))
 	# the autopsy table: steel, a lamp over it, something under a sheet
 	var t := a + Vector3(w * 0.6, 0, w * 0.55)
-	box(t + Vector3(0, 0.85, 0), Vector3(2.2, 0.08, 1.0), _col(Color(0.75, 0.78, 0.82)))
-	box(t + Vector3(0, 0.42, 0), Vector3(0.3, 0.84, 0.3), _col(Color(0.5, 0.52, 0.55)), false)
-	box(t + Vector3(0, 1.0, 0), Vector3(1.6, 0.22, 0.6), _col(Color(0.88, 0.9, 0.92)), false)
-	cyl(t + Vector3(0, 2.6, 0), 0.4, 0.2, 0.25, _col(Color(0.6, 0.62, 0.66)), false, 10)
+	box(t + Vector3(0, 0.85, 0), Vector3(2.2, 0.08, 1.0), _col(Color(0.75, 0.78, 0.82))).visible = false
+	_prop("bp_autopsy", t, 0.0, false)
 	var l := SpotLight3D.new()
 	l.light_energy = 2.0
 	l.spot_range = 3.0
@@ -479,10 +475,8 @@ func _workshop(a: Vector3, w: float) -> void:
 	box(a + Vector3(2.1, 1.5, 0.15), Vector3(3.2, 1.6, 0.08), _col(Color(0.4, 0.38, 0.35)), false)
 	for k in 2:
 		var b := a + Vector3(3.2 + k * 3.6, 0, w * 0.55)
-		box(b + Vector3(0, 0.9, 0), Vector3(2.2, 0.1, 1.1), _col(Color(0.5, 0.42, 0.32)))
-		box(b + Vector3(0, 0.45, 0), Vector3(2.0, 0.9, 0.9), _col(Color(0.3, 0.31, 0.34)), false)
-		box(b + Vector3(-0.6, 1.05, 0.1), Vector3(0.5, 0.2, 0.3), _col(Color(0.7, 0.2, 0.15)), false)
-		box(b + Vector3(0.5, 1.0, -0.2), Vector3(0.8, 0.1, 0.25), _col(Color(0.25, 0.25, 0.27)), false)
+		box(b + Vector3(0, 0.46, 0), Vector3(1.8, 0.92, 0.75), _col(Color(0.5, 0.42, 0.32))).visible = false
+		_prop("workbench", b, PI if k == 0 else 0.0, false)
 	for k in 3:
 		_crate(a + Vector3(1.0 + k * 1.1, 0, w - 0.9), 0.9)
 	_cabinet(a + Vector3(w - 0.4, 0, w - 1.5), -PI / 2, Color(0.2, 0.22, 0.25))
@@ -490,10 +484,9 @@ func _workshop(a: Vector3, w: float) -> void:
 func _infirmary(a: Vector3, w: float) -> void:
 	for bx in [1.2, 2.8, w - 2.8, w - 1.2]:
 		var b := a + Vector3(bx, 0, 1.6)
-		box(b + Vector3(0, 0.55, 0), Vector3(1.0, 0.15, 2.1), _col(Color(0.92, 0.93, 0.95)))
-		box(b + Vector3(0, 0.25, 0), Vector3(0.9, 0.5, 2.0), _col(Color(0.6, 0.62, 0.66)), false)
-		box(b + Vector3(0, 0.66, -0.75), Vector3(0.7, 0.1, 0.35), _col(Color(1, 1, 1)), false)
-		box(b + Vector3(0.8 if bx < w / 2 else -0.8, 1.1, 0), Vector3(0.04, 2.2, 2.2), _col(Color(0.55, 0.75, 0.75)), false)    # curtain
+		box(b + Vector3(0, 0.55, 0), Vector3(1.0, 0.15, 2.1), _col(Color(0.92, 0.93, 0.95))).visible = false
+		_prop("bp_sickbed", b, 0.0, false)
+		_prop("bp_curtain", b + Vector3(0.8 if bx < w / 2 else -0.8, 0, 0), 0.0, false)
 	_cabinet(a + Vector3(w - 0.4, 0, w - 1.5), -PI / 2, Color(0.9, 0.9, 0.92))
 	_cabinet(a + Vector3(w - 0.4, 0, w - 2.5), -PI / 2, Color(0.9, 0.9, 0.92))
 	_desk(a + Vector3(2.0, 0, w - 1.0), PI)
