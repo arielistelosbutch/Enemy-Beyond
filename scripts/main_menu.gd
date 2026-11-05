@@ -325,6 +325,7 @@ func _show_editor() -> void:
 	_label("Nástroje pro tvorbu hry. Ve vydané verzi nejsou.", FRAME, 8)
 	_button("Dílna - zbraně v rukou a pózy", func(): get_tree().change_scene_to_file("res://scenes/Workshop.tscn"))
 	_button("Modelář - kostky modelů", func(): get_tree().change_scene_to_file("res://scenes/Modeler.tscn"))
+	_button("Animace - všechny pohyby postavy", func(): get_tree().change_scene_to_file("res://scenes/Animator.tscn"))
 	var md := _button("Mapové díly (připravuje se)", func(): pass)
 	md.disabled = true
 	_button("Zpět", _show_main)
@@ -1094,6 +1095,8 @@ func _show_main_msg(t: String) -> void:
 # ---- headless tests -------------------------------------------------------------
 func _autotest() -> void:
 	match Game.autotest():
+		"animator", "animatorshots":
+			get_tree().change_scene_to_file("res://scenes/Animator.tscn")
 		"workshop", "wsclick", "animtest", "animshots":
 			get_tree().change_scene_to_file("res://scenes/Workshop.tscn")
 		"modeler", "modclick":
@@ -1181,7 +1184,7 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "aitest", "latetest", "gunshots", "topshot", "shieldtest", "fireshot", "abase":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "aitest", "latetest", "gunshots", "topshot", "shieldtest", "locktest", "fireshot", "abase":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",

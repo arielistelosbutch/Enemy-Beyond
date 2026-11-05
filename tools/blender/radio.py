@@ -1,21 +1,92 @@
-"""Handheld radio (walkie-talkie), own design. Same axes as the arsenal: +Y forward
-(antenna up the hand), origin at the grip.   python radio.py OUTDIR"""
+"""Handheld radio (walkie-talkie) and the PVS-7 style night-vision goggle (0.52 rework, own designs).
+radio: same axes as the arsenal (+Y forward = the antenna up the hand), origin at the grip, the front
+(speaker, display) towards +Z; body 0.06 x 0.15 x 0.035, antenna to y 0.32.
+nvg: (formerly tools/make_nvg.gd) one tube body 0.11 x 0.07 x 0.05, the objective lens in front (+Y =
+Godot -Z), two eyepieces behind, the head mount on top.
+Run: python3 tools/blender/radio.py <outdir> [--gallery out.png]"""
 import sys, os, math
 sys.path.insert(0, os.path.dirname(__file__))
-from common import *
-OUTDIR = sys.argv[-1]
-reset()
-body = mat("RadioBody", (0.09, 0.1, 0.085), rough=0.7)
-grille = mat("RadioGrille", (0.03, 0.03, 0.03), rough=0.8)
-knob = mat("Steel", (0.20, 0.21, 0.22), rough=0.45)
-led = mat("RadioLed", (1.0, 0.5, 0.1), emit=4.0)
-screen = mat("RadioScreen", (0.55, 0.75, 0.3), emit=1.2)
-p = [box(body, (0, 0.04, 0.0), (0.06, 0.15, 0.035)),
-     box(grille, (0, 0.0, 0.0185), (0.045, 0.05, 0.003)),
-     box(screen, (0, 0.075, 0.0185), (0.04, 0.025, 0.002)),
-     box(grille, (-0.031, 0.04, 0.0), (0.004, 0.03, 0.02)),
-     cyl(grille, (0.018, 0.21, 0.0), 0.006, 0.22, verts=6, r2=0.004, rot=(math.pi / 2, 0, 0)),
-     cyl(knob, (-0.015, 0.125, 0.0), 0.008, 0.02, verts=8, rot=(math.pi / 2, 0, 0)),
-     sphere(led, (0.005, 0.12, 0.006), 0.004, seg=6, rings=4)]
-o = join(p, "Radio")
-export_glb(os.path.join(OUTDIR, "radio.glb"), [o])
+from kit import *
+
+ARGS = [a for a in sys.argv[1:] if not a.startswith("--") and not a.endswith(".png")]
+OUTDIR = ARGS[0] if ARGS else "."
+
+def radio():
+    reset()
+    body = mat2("RadioBody", (0.09, 0.1, 0.085), 0.7)
+    rubber = mat2("RadioRubber", (0.035, 0.035, 0.035), 0.9)
+    grille = mat2("RadioGrille", (0.02, 0.02, 0.02), 0.8)
+    steel = mat2("RadioSteel", (0.32, 0.33, 0.34), 0.35, 0.8)
+    led = mat2("RadioLed", (1.0, 0.5, 0.1), emit=4.0)
+    screen = mat2("RadioScreen", (0.55, 0.75, 0.3), emit=1.2)
+    olive = mat2("RadioOlive", (0.2, 0.23, 0.15), 0.8)
+    p = []
+    p.append(bx(body, (0, 0.035, 0.0), (0.06, 0.14, 0.035), 0.006, seg=2))
+    p.append(bx(rubber, (0, 0.035, 0.0), (0.063, 0.12, 0.028), 0.004))                      # rubber side grips
+    p.append(bx(olive, (0, 0.035, -0.019), (0.05, 0.11, 0.006), 0.003))                     # battery pack at the back
+    p.append(bx(body, (0, 0.11, 0.0), (0.056, 0.02, 0.033), 0.005))                         # top plate
+    # speaker grille: a recessed panel with slots
+    p.append(bx(grille, (0, 0.005, 0.0175), (0.046, 0.06, 0.003), 0.001))
+    for k in range(7):
+        p.append(box(body, (0, -0.02 + k * 0.0085, 0.0192), (0.04, 0.003, 0.0015)))
+    p.append(bx(grille, (0, 0.072, 0.0175), (0.044, 0.03, 0.003), 0.001))
+    p.append(box(screen, (0, 0.072, 0.0192), (0.038, 0.022, 0.001)))
+    for k in range(3):                                                                    # keypad buttons
+        p.append(bx(rubber, (-0.012 + k * 0.012, 0.048, 0.019), (0.009, 0.006, 0.003), 0.001))
+    p.append(bx(rubber, (-0.032, 0.05, 0.0), (0.006, 0.03, 0.018), 0.002))                # push-to-talk
+    p.append(bx(rubber, (-0.032, 0.022, 0.0), (0.005, 0.01, 0.012), 0.002))
+    # knobs on top, the antenna (a rubber whip on a thicker base)
+    p.append(disc(steel, (-0.016, 0.124, 0.0), 0.009, 0.014, 'y', verts=14))
+    for k in range(10):
+        a = TAU * k / 10
+        p.append(box(rubber, (-0.016 + math.cos(a) * 0.009, 0.124, math.sin(a) * 0.009), (0.002, 0.012, 0.002)))
+    p.append(disc(rubber, (0.004, 0.123, 0.0), 0.005, 0.008, 'y', verts=10))
+    p.append(ball(led, (0.004, 0.128, 0.0), 0.003))
+    p.append(tb(rubber, (0.018, 0.115, 0.0), (0.018, 0.15, 0.0), 0.007, 10))
+    p.append(tb(rubber, (0.018, 0.15, 0.0), (0.018, 0.32, 0.0), 0.0045, 8, r2=0.003))
+    p.append(ball(rubber, (0.018, 0.32, 0.0), 0.004))
+    p.append(bx(steel, (0, -0.012, -0.022), (0.02, 0.05, 0.003), 0.001))                  # belt clip
+    o = join(p, "Radio")
+    export_glb(os.path.join(OUTDIR, "radio.glb"), [o])
+
+def nvg():
+    reset()
+    olive = mat2("NvgOlive", (0.2, 0.22, 0.17), 0.8)
+    dark = mat2("NvgDark", (0.1, 0.11, 0.1), 0.7)
+    rubber = mat2("NvgRubber", (0.03, 0.03, 0.03), 0.9)
+    steel = mat2("NvgSteel", (0.3, 0.31, 0.32), 0.35, 0.8)
+    lens = mat2("NvgLensGlass", (0.12, 0.35, 0.3), 0.05, 0.4)
+    green = mat2("NvgGlow", (0.3, 1.0, 0.4), emit=1.2)
+    p = []
+    # the housing: a bevelled block with a rounded top, a raised centre spine
+    p.append(bx(olive, (0, 0.0, 0.0), (0.11, 0.07, 0.05), 0.012, seg=3))
+    p.append(bx(olive, (0, 0.0, 0.02), (0.05, 0.06, 0.02), 0.008, seg=2))
+    # the objective: a stepped barrel, focus ring with grip ribs, the lens
+    p.append(disc(dark, (0, 0.045, 0.0), 0.024, 0.02, 'y', verts=20))
+    p.append(disc(rubber, (0, 0.07, 0.0), 0.028, 0.03, 'y', verts=24))
+    for k in range(16):
+        a = TAU * k / 16
+        p.append(box(rubber, (math.cos(a) * 0.028, 0.07, math.sin(a) * 0.028), (0.003, 0.026, 0.003)))
+    p.append(disc(dark, (0, 0.092, 0.0), 0.026, 0.014, 'y', verts=20))
+    p.append(disc(lens, (0, 0.1, 0.0), 0.021, 0.004, 'y', verts=20))
+    # the two eyepieces with rubber eye cups (a faint green glow inside)
+    for x in (0.032, -0.032):
+        p.append(disc(dark, (x, -0.045, 0.0), 0.015, 0.02, 'y', verts=16))
+        p.append(disc(rubber, (x, -0.063, 0.0), 0.018, 0.016, 'y', verts=18, r2=0.02))
+        p.append(disc(green, (x, -0.0715, 0.0), 0.01, 0.002, 'y', verts=14))
+        p.append(disc(steel, (x, -0.04, 0.0), 0.016, 0.004, 'y', verts=16))
+    # the switch knob, battery cap, the mount block and shoe on top
+    p.append(disc(rubber, (-0.045, 0.012, 0.02), 0.008, 0.012, verts=12))
+    p.append(disc(dark, (0.045, 0.01, 0.03), 0.009, 0.02, verts=14))
+    p.append(disc(steel, (0.045, 0.01, 0.041), 0.0085, 0.003, verts=14))
+    p.append(bx(dark, (0, 0.0, 0.037), (0.04, 0.04, 0.02), 0.004))
+    p.append(bx(steel, (0, -0.004, 0.05), (0.03, 0.03, 0.008), 0.002))
+    p.append(disc(steel, (0.022, 0.0, 0.037), 0.005, 0.006, 'x', verts=10))
+    o = join(p, "Nvg")
+    export_glb(os.path.join(OUTDIR, "nvg.glb"), [o])
+
+radio()
+nvg()
+print("built radio nvg")
+if "--gallery" in sys.argv:
+    gun_gallery(sys.argv[sys.argv.index("--gallery") + 1], [os.path.join(OUTDIR, "radio.glb"), os.path.join(OUTDIR, "nvg.glb")], cols=2, dx=0.45, dz=0.2)

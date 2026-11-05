@@ -1,7 +1,10 @@
 extends SceneTree
 ## Renders the inventory / globe icons from the game's own models:
 ##   godot --path . -s tools/icons.gd        (needs a display: xvfb-run on Linux)
-## Writes res://assets/icons/<id>.png with a transparent background.
+##   xvfb-run -a -s "-screen 0 1280x720x24" godot --path . -s tools/icons.gd [-- id id ... | -- races]
+## Writes res://assets/icons/<id>.png with a transparent background. Items that have no model in the game
+## (vesta, pancir, a_pack, plasma_cell) are rendered from tools/icon_models/ (tools/blender/icon_items.py).
+## 0.52: a key / fill / rim light and a sky for the reflections (the new models are metal), 4x supersampled.
 
 const ITEM_SIZE := Vector2i(96, 48)
 const CRAFT_SIZE := Vector2i(64, 64)
@@ -98,17 +101,30 @@ func _init() -> void:
 	var cam := Camera3D.new()
 	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
 	root3.add_child(cam)
-	for d in [[Vector3(-35, 30, 0), 1.6], [Vector3(-10, 200, 0), 0.6]]:
+	# key (warm, high front-left), fill (cool, low right), rim (from behind, picks out the edges)
+	for d in [[Vector3(-40, 35, 0), 2.1, Color(1.0, 0.96, 0.9)], [Vector3(-12, -110, 0), 0.55, Color(0.75, 0.82, 1.0)],
+			[Vector3(-25, 195, 0), 1.3, Color(0.85, 0.85, 1.0)]]:
 		var l := DirectionalLight3D.new()
 		l.rotation_degrees = d[0]
 		l.light_energy = d[1]
+		l.light_color = d[2]
 		root3.add_child(l)
 	var env := WorldEnvironment.new()
 	var e := Environment.new()
 	e.background_mode = Environment.BG_CLEAR_COLOR
+	# a sky only for what the metal reflects (the picture's background stays transparent)
+	var sky := Sky.new()
+	var sm := ProceduralSkyMaterial.new()
+	sm.sky_top_color = Color(0.32, 0.36, 0.45)
+	sm.sky_horizon_color = Color(0.62, 0.62, 0.64)
+	sm.ground_horizon_color = Color(0.3, 0.29, 0.28)
+	sm.ground_bottom_color = Color(0.08, 0.08, 0.09)
+	sky.sky_material = sm
+	e.sky = sky
+	e.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color(0.55, 0.58, 0.62)
-	e.ambient_light_energy = 0.9
+	e.ambient_light_color = Color(0.5, 0.53, 0.58)
+	e.ambient_light_energy = 0.55
 	env.environment = e
 	root3.add_child(env)
 	RenderingServer.set_default_clear_color(Color(0, 0, 0, 0))
@@ -119,7 +135,8 @@ func _init() -> void:
 		"pancir", "scanner", "radio", "nvg"]
 	var crafts := ["ufo_scout", "ufo_raider", "ufo_harvester", "sokol", "heli", "dropship"]
 	var all := []
-	var views := {"nvg": Vector3(0.8, 0.45, -0.9), "stit": Vector3(0.25, 0.3, 1.0), "radio": Vector3(1, 0.5, 0.6), "medkit": Vector3(1, 0.6, 0.5)}
+	var views := {"nvg": Vector3(0.8, 0.45, -0.9), "stit": Vector3(0.25, 0.3, 1.0), "radio": Vector3(1, 0.5, 0.6), "medkit": Vector3(1, 0.6, 0.5),
+		"vesta": Vector3(0.45, 0.25, -1.0), "pancir": Vector3(0.45, 0.25, -1.0), "a_pack": Vector3(0.6, 0.35, 1.0)}
 	for id in items:
 		all.append([id, ITEM_SIZE, views.get(id, Vector3(1, 0.35, 0.18))])
 	for id in crafts:
@@ -134,8 +151,10 @@ func _init() -> void:
 		all = all.filter(func(e3): return String(e3[0]) in only or (only.has("races") and String(e3[0]).begins_with("race_")) or (only.has("races") and e3[0] == "mars"))
 	for e2 in all:
 		var id: String = e2[0]
-		sv.size = e2[1] * 2      # rendered at double size, scaled down for smooth edges
+		sv.size = e2[1] * 4      # rendered at four times the size, scaled down for smooth edges
 		var path := "res://assets/models/%s.glb" % (e2[3] if e2.size() > 3 else id)
+		if not ResourceLoader.exists(path):
+			path = "res://tools/icon_models/%s.glb" % id
 		var m: Node3D = load(path).instantiate() if ResourceLoader.exists(path) else _stand_in(id)
 		root3.add_child(m)
 		await process_frame
@@ -144,17 +163,30 @@ func _init() -> void:
 		var dir: Vector3 = (e2[2] as Vector3).normalized()
 		cam.position = c + dir * (box.size.length() + 2.0)
 		cam.look_at(c, Vector3.UP)
-		# fit: project the 8 corners, size the ortho view to the widest side
+		# fit: project the vertices of the meshes themselves (the box's corners stick out of the
+		# silhouette in a three-quarter view), size the ortho view to the widest side
 		var xf := cam.global_transform.affine_inverse()
 		var lo := Vector2(INF, INF)
 		var hi := Vector2(-INF, -INF)
-		for i in 8:
-			var p := xf * box.get_endpoint(i)
-			lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.y))
-			hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.y))
+		for mi in m.find_children("*", "MeshInstance3D", true, false):
+			var mesh: Mesh = (mi as MeshInstance3D).mesh
+			if mesh == null or not (mi as MeshInstance3D).visible or String(mi.name).ends_with("-colonly"):
+				continue
+			var gx: Transform3D = xf * (mi as MeshInstance3D).global_transform
+			for si in mesh.get_surface_count():
+				var verts: PackedVector3Array = mesh.surface_get_arrays(si)[Mesh.ARRAY_VERTEX]
+				for v in verts:
+					var p := gx * v
+					lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.y))
+					hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.y))
+		if lo.x == INF:
+			for i in 8:
+				var p := xf * box.get_endpoint(i)
+				lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.y))
+				hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.y))
 		var aspect := float(e2[1].x) / float(e2[1].y)
 		var span := hi - lo
-		cam.size = maxf(span.y, span.x / aspect) * 1.12
+		cam.size = maxf(span.y, span.x / aspect) * 1.1
 		var mid := (lo + hi) / 2.0
 		cam.position += cam.global_transform.basis.x * mid.x + cam.global_transform.basis.y * mid.y
 		for f in 4:

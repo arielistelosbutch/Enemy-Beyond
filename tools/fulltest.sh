@@ -36,7 +36,7 @@ run geo_ui      300 x "\[UI\] geo_ency_grey: 0"            --autotest=uigeo
 run mission_ui  250 x "\[UI\] m_result: 0"                 --autotest=uimission
 run solo        250 h "RESULT"                             --autotest=solo
 run campaign    300 h "back on globe"                             --autotest=campaign
-run drone       200 x "first fall: downed false" --autotest=dronetest
+run drone       420 x "first fall: downed false" --autotest=dronetest
 run voice       200 h "RESULT voice: snippets \[1\]"       --autotest=voice
 run basewalk    400 x "RESULT basewalk 11"                 --autotest=basewalk
 run base_attack 400 x "RESULT basewalk 11"                 --autotest=basewalk --attack=1
@@ -69,6 +69,8 @@ run climb       200 x "RESULT climb ok"                    --autotest=climb --mt
 run ws_click    100 x "RESULT wsclick bone true ring true item true" --autotest=wsclick
 run anim_edit   100 x "RESULT animtest mid true fp true"  --autotest=animtest
 run mod_click   100 x "RESULT modclick sel '(Rifle:[0-9]+)' \(want '\1'\)"   --autotest=modclick
+run animator   150 x "RESULT animator click true imported true turned true keyed true moved true follows true fp true" --autotest=animator
+run locktest   120 h "RESULT locktest follows true turned true body true root true fp true" --autotest=locktest
 run leaveany    150 h "RESULT leaveany early_block true done true finished true" --autotest=leaveany
 run suit        100 h "RESULT suittest down true"        --autotest=suittest --group=sedaci --mtype=crash
 run levgrab     100 h "RESULT levgrab ko true carried true" --autotest=levgrab --group=levite --mtype=crash

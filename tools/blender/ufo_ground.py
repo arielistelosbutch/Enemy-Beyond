@@ -189,32 +189,7 @@ def hull(m, r, h, segs, vis, scale_rim=1.3):
             vis.append(beam(m["rib"], (ca * (pts[2][0] - 0.05), sa * (pts[2][0] - 0.05), pts[2][1] + 0.06), (ca * (pts[3][0] + 0.05), sa * (pts[3][0] + 0.05), pts[3][1] + 0.06), 0.14, 0.08))
             if i not in door_gap and (i + 1) % n not in door_gap and (i - 1) % n not in door_gap:
                 vis.append(beam(m["dark"], (ca * (r + 0.15), sa * (r + 0.15), 0.42), (ca * (rim - 0.05), sa * (rim - 0.05), zr - 0.03), 0.12, 0.06))
-    # 0.50: a crown of blades round the roof, violet seams running down the upper hull
-    nb = 8 if r < 6 else 12
-    for k in range(nb):
-        a = TAU * (k + 0.5) / nb + math.pi / 2
-        if abs(math.cos(a)) < 0.2 and math.sin(a) > 0:
-            continue                     # (none right over the door)
-        ca, sa = math.cos(a), math.sin(a)
-        base = Vector((ca * pts[3][0] * 0.98, sa * pts[3][0] * 0.98, pts[3][1] - 0.05))
-        tip = base + Vector((ca * 0.9, sa * 0.9, 1.6 + (k % 2) * 0.7))
-        bl = cyl(m["rib"], (0, 0, 0), 0.32, 1.0, verts=4, r2=0.0)
-        for v in bl.data.vertices:
-            v.co.x *= 0.35
-            v.co.z += 0.5
-        d = (tip - base)
-        bl.scale = (1, 1, d.length)
-        q = Vector((0, 0, 1)).rotation_difference(d.normalized())
-        bl.rotation_mode = 'QUATERNION'
-        bl.rotation_quaternion = q @ Vector((0, 0, 1)).rotation_difference(Vector((0, 0, 1)))
-        bl.location = base
-        bpy.ops.object.select_all(action='DESELECT'); bl.select_set(True)
-        bpy.context.view_layer.objects.active = bl
-        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-        for v in bl.data.vertices:       # turn the flat side to face outwards
-            pass
-        vis.append(bl)
-        vis.append(beam(m["glow"], tuple(base + Vector((ca * 0.06, sa * 0.06, 0.1))), tuple(base.lerp(tip, 0.7) + Vector((ca * 0.06, sa * 0.06, 0))), 0.05, 0.05))
+    # violet seams running down the upper hull (0.52: the crown of blades is gone - Ari did not like it)
     for i in range(0, n, 2):
         a = TAU * (i + 0.5) / n + math.pi / 2 - math.pi / n
         ca, sa = math.cos(a), math.sin(a)

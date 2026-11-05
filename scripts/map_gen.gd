@@ -875,25 +875,28 @@ func _war_scars(grid: Array, params: Dictionary) -> void:
 					grid[x][z] = "landmark"
 					placed += 1
 					break
-	# where they came down: violet veins in the ground, crystal blades, their pods (more of them later on)
-	var u: Vector3 = info["ufo"]
-	var r0 := 13.0 if us <= 2 else 26.0
-	for i in 3 + int(late * 3):
-		var a := rng.randf() * TAU
-		var p := u + Vector3(cos(a), 0, sin(a)) * rng.randf_range(r0, r0 + 9.0)
-		if p.distance_to(evac) > 14.0:
-			_prop("alien_veins", p, rng.randf() * TAU, false)
-	for i in int(round(late * 3.0)) + (1 if mtype == "landed" else 0):
-		var a := rng.randf() * TAU
-		var p := u + Vector3(cos(a), 0, sin(a)) * rng.randf_range(r0 + 2.0, r0 + 14.0)
-		if p.distance_to(evac) > 16.0:
-			_prop("alien_spike" if rng.randf() < 0.5 else "alien_pod", p, rng.randf() * TAU)
-			var gl := OmniLight3D.new()
-			gl.light_color = Color(0.8, 0.3, 1.0)
-			gl.light_energy = 1.2
-			gl.omni_range = 6.0
-			root.add_child(gl)
-			gl.position = p + Vector3(0, 1.4, 0)
+	# a crashed ship leaks its fuel: violet veins in the ground close round the wreck and along the
+	# furrow it dug on the way down (only at a crash - landed ships and terror sites stay clean)
+	if mtype == "crash" and info["ufo"] != Vector3.ZERO:
+		var u: Vector3 = info["ufo"]
+		var big := us > 2                # the battleship / supply hull sits on a 28 m scorch, no furrow
+		var ur: float = 28.0 if big else {"scout": 5.0, "raider": 7.0, "harvester": 10.0}.get(ufo_kind, 6.0)
+		var door: Vector3 = info.get("ufo_door", Vector3.ZERO)
+		var door_a := atan2(door.x - u.x, door.z - u.z) if door != Vector3.ZERO else INF
+		for i in 3 + int(late * 2):
+			var a := rng.randf() * TAU
+			if door_a != INF and absf(wrapf(a - door_a, -PI, PI)) < 0.5:
+				a += PI * 0.4            # not over the ramp
+			var p := u + Vector3(sin(a), 0, cos(a)) * rng.randf_range(ur + 0.5, ur + 3.0)
+			if p.distance_to(evac) > 14.0:
+				_prop("alien_veins", p, rng.randf() * TAU, false)
+		# the furrow runs from the wreck towards +z (see _ufo), torn plates in it
+		var fz := ur + 1.5
+		while not big and fz < 17.5:
+			var p := u + Vector3(rng.randf_range(-1.2, 1.2), 0, fz)
+			if p.distance_to(evac) > 14.0:
+				_prop("alien_veins", p, rng.randf() * TAU, false)
+			fz += rng.randf_range(3.5, 5.0)
 	if Game.autotest() != "": print("[MAP] war scars %d (late %.2f)" % [placed, late])
 
 ## Something still smoulders there: low flames, a flickering orange light, a crackle.

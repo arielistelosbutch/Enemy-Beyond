@@ -106,6 +106,7 @@ func _process(delta: float) -> void:
 		"gunshots": _gunshots(p)
 		"topshot": _topshot(p)
 		"shieldtest": _shieldtest(p)
+		"locktest": _locktest(p)
 		"fireshot": _fireshot(p)
 		"abase": _abase(p)
 		"cloakshot": _cloakshot(p)
@@ -1736,6 +1737,82 @@ func _shieldtest(p: Node) -> void:
 	out("RESULT shieldtest low %.0f up %.0f broke %s after %d" % [low, up, p.item_in("lh").is_empty(), n])
 	get_tree().quit()
 
+## Editor animations in the game (0.52): a knife locked to the hand turns with it in a blow, a body
+## movement changed in the editor replaces the model's own, a blow made in the eyes view moves the knife.
+func _locktest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.hp = 9999.0
+	p.inv["rh"] = {"id": "knife"}
+	p.inv.erase("lh")
+	p._update_held()
+	m().hud.inventory_open = false
+	await get_tree().create_timer(0.6).timeout
+	var still := func():
+		p._last_body_pos = p.global_position
+		p._body_speed = 0.0
+		p._animate_body(0.016)      # (his own body is animated only for the others; standing still)
+	for i in 10:
+		still.call()
+	var sk: Skeleton3D = p._sk
+	var hand_of := func() -> Transform3D: return sk.global_transform * sk.get_bone_global_pose(sk.find_bone("hand.R"))
+	# where the knife is this frame (the bone attachment catches up only after the skeleton updates)
+	var gun_of := func() -> Transform3D: return sk.global_transform * sk.get_bone_global_pose(sk.find_bone("spine")) * p.body_gun.transform
+	var rel0: Transform3D = p._lock_rel
+	var b0: Basis = gun_of.call().basis
+	# a blow: the knife follows the hand (its place in the hand stays, the knife itself turns)
+	p._melee("rh", Game.ITEMS["knife"])
+	p.act = 2
+	p._act_t = 0.0
+	var worst := 0.0
+	var turned := 0.0
+	for i in 12:
+		await get_tree().process_frame
+		await get_tree().process_frame
+		p.act = 2
+		still.call()
+		var rel: Transform3D = hand_of.call().affine_inverse() * gun_of.call()
+		worst = maxf(worst, rel.origin.distance_to(rel0.origin))
+		turned = maxf(turned, gun_of.call().basis.get_rotation_quaternion().angle_to(b0.get_rotation_quaternion()))
+	p.act = 0
+	# a body movement from the editor
+	var clip := AnimClips.new_clip("tp", "test")
+	AnimClips.set_key(clip, "spine", 0.0, [0.0, 0.0, 40.0])
+	AnimClips.set_key(clip, "root@pos", 0.0, [0.0, 0.3, 0.0])
+	clip["delka"] = 1.0
+	clip["smycka"] = true
+	still.call()
+	var bid := "tp_body_" + String(p.body_anim.current_animation)
+	AnimClips.save_clip(bid, clip)
+	await get_tree().create_timer(0.5).timeout
+	for i in 3:
+		still.call()
+	var si := sk.find_bone("spine")
+	var rq: Quaternion = sk.get_bone_rest(si).basis.get_rotation_quaternion()
+	var off: Vector3 = Basis(rq.inverse() * sk.get_bone_pose_rotation(si)).get_euler() * (180.0 / PI)
+	var ri := sk.find_bone("root")
+	var up: float = sk.get_bone_pose_position(ri).y - sk.get_bone_rest(ri).origin.y
+	AnimClips.delete_clip(bid)
+	# a blow from the eyes-view editor
+	var fc := AnimClips.new_clip("fp", "test")
+	AnimClips.set_key(fc, "zbran", 0.0, [0, 0, 0, 0, 0, 0])
+	AnimClips.set_key(fc, "zbran", 0.25, [0.0, 0.2, 0.0, 0.0, 0.0, 0.0])
+	AnimClips.set_key(fc, "zbran", 0.5, [0, 0, 0, 0, 0, 0])
+	fc["delka"] = 0.5
+	AnimClips.save_clip("fp_strike_knife", fc)
+	p.fire_cd = 0.0
+	var y0: float = p.gun.position.y
+	p._melee("rh", Game.ITEMS["knife"])
+	var ymax := y0
+	for i in 20:
+		await get_tree().process_frame
+		ymax = maxf(ymax, p.gun.position.y)
+	AnimClips.delete_clip("fp_strike_knife")
+	out("RESULT locktest follows %s turned %s body %s root %s fp %s" % [worst < 0.02, turned > 0.3, absf(off.z - 40.0) < 2.0, absf(up - 0.3) < 0.02, ymax - y0 > 0.08])
+	get_tree().quit()
+
 ## A firefight to measure them: a squad against a merc who cannot die, standing at a house corner.
 ## How much damage reaches him in 45 s, and what they did (from the [TAC] lines).
 func _aitest(p: Node) -> void:
@@ -2347,7 +2424,12 @@ func _vipcheck(p: Node) -> void:
 	for mi in m().find_children("*", "MeshInstance3D", true, false):
 		var n := String(mi.name).to_lower() + String(mi.get_parent().name).to_lower()
 		if "roof" in n and mi.is_visible_in_tree():
-			roofs.append((mi as MeshInstance3D).global_transform * (mi as MeshInstance3D).get_aabb())
+			var bb0: AABB = (mi as MeshInstance3D).global_transform * (mi as MeshInstance3D).get_aabb()
+			# the eaves are at the roof's origin (a downpipe may hang lower, that is not the roof)
+			var eaves: float = (mi.get_parent() as Node3D).global_position.y - 0.3 if mi.get_parent() is Node3D else bb0.position.y
+			if bb0.position.y < eaves:
+				bb0 = AABB(Vector3(bb0.position.x, eaves, bb0.position.z), Vector3(bb0.size.x, bb0.end.y - eaves, bb0.size.z))
+			roofs.append(bb0)
 	var bad := 0
 	var spots: Array = m().map.get("vip_spots", [])
 	var nm: RID = p.get_world_3d().navigation_map

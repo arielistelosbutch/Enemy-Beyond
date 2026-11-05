@@ -243,6 +243,7 @@ func _build_body(data: Dictionary) -> void:
 	else:
 		body.add_child(body_gun)
 		body_gun.position = Vector3(-0.1, 1.2, -0.3)
+	_gun_local = body_gun.transform
 	body_l = Node3D.new()
 	body_back = Node3D.new()
 	if sk and sk.find_bone("hand.L") >= 0:
@@ -361,7 +362,20 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 		var holder: Node3D = gun_l if _swing_left else gun
 		var side := -1.0 if _swing_left else 1.0
 		var ph := 1.0 - _swing
-		if _swing_kind == 0:
+		var sid: String = item_in("lh" if _swing_left else "rh").get("id", "")
+		var sclip := AnimClips.find("fp", "strike", sid)
+		if not sclip.is_empty():
+			# a blow made in the editor (Animace, Z očí: Úder)
+			var st := ph * float(sclip.get("delka", 1.0))
+			for e in AnimClips.events_between(sclip, _sw_last if _sw_last <= st else -1.0, st):
+				if String(e).begins_with("zvuk:"):
+					Game.play_ui(self, String(e).substr(5), -4)
+			_sw_last = st
+			var g := AnimClips.xform(sclip, "zbran", st)
+			var e3 := g.basis.get_euler()
+			holder.rotation = Vector3(e3.x, e3.y * side, e3.z * side)
+			_swing_shift(holder, Vector3(g.origin.x * side, g.origin.y, g.origin.z))
+		elif _swing_kind == 0:
 			# knife: a quick thrust forward
 			var sw := sin(ph * PI)
 			holder.rotation = Vector3(-0.9 * sw, 0.6 * sw * side, 0.4 * sw)
@@ -438,6 +452,7 @@ func _mg_spinup() -> void:
 
 ## Moves the swinging hand by @a off from where it would be (no drift frame to frame).
 var _swing_off := Vector3.ZERO
+var _sw_last := -1.0
 var _swing_holder: Node3D
 func _swing_shift(holder: Node3D, off: Vector3) -> void:
 	if _swing_holder == holder:
@@ -496,6 +511,7 @@ func _animate_body(delta: float) -> void:
 	if body_anim.current_animation != want:
 		body_anim.play(want, 0.25)
 	body_anim.advance(0.0 if dead and body_anim.current_animation_position > 0.3 else delta)
+	_body_clip(delta)
 	# dead: on the back. wounded: upright on all fours. prone: on the belly, arms ahead.
 	var rx := PI / 2 if dead else (-PI / 2 if prone and not downed else 0.0)
 	merc_model.rotation.x = lerp_angle(merc_model.rotation.x, rx, delta * 6.0)
@@ -507,7 +523,25 @@ func _animate_body(delta: float) -> void:
 	# the long gun sits in the right hand (follows the arms in every pose), not on the belly
 	if _sk and _hand_r >= 0 and body_gun:
 		var hand := _sk.global_transform * _sk.get_bone_global_pose(_hand_r)
-		body_gun.global_position = hand.origin + hand.basis.y.normalized() * -0.05
+		var posed := not (dead or downed or prone or sprinting) and emote == 0
+		if act != 0 and posed and _lock_item == held and bool(Game.tweaks.get("lock/" + held, true)):
+			# locked in the hand (Animace): the thing turns with the hand in every movement
+			_gun_to(hand * _lock_rel)
+		else:
+			if body_gun.transform.basis != _gun_local.basis:
+				body_gun.transform = _gun_local
+			body_gun.global_position = hand.origin + hand.basis.y.normalized() * -0.05
+			if act == 0 and posed and held != "":
+				# how it sits in the hand while just holding it (this frame's spine, not the lagging attachment)
+				var si := _bone("spine")
+				var w := _gun_local
+				if si >= 0 and body_gun.get_parent() is BoneAttachment3D:
+					w = _sk.global_transform * _sk.get_bone_global_pose(si) * _gun_local
+				else:
+					w = body_gun.global_transform
+				w.origin = hand.origin + hand.basis.y.normalized() * -0.05
+				_lock_rel = hand.affine_inverse() * w
+				_lock_item = held
 		if not (dead or downed or prone or sprinting) and emote == 0:
 			_left_hand_ik()
 	# fallen: the hands are empty (the gun lies by him), only the slung one stays on the back
@@ -515,6 +549,44 @@ func _animate_body(delta: float) -> void:
 		body_gun.visible = not (dead or downed or emote != 0)
 	if body_l:
 		body_l.visible = not (dead or downed)
+
+## The held thing: where it is locked to the hand, and how it sat when it was put there.
+var _lock_rel := Transform3D()
+var _lock_item := "?"
+var _gun_local := Transform3D()
+
+## Puts the held thing at a world transform, against this frame's pose of the trunk.
+func _gun_to(w: Transform3D) -> void:
+	var si := _bone("spine")
+	if si >= 0 and body_gun.get_parent() is BoneAttachment3D:
+		body_gun.transform = (_sk.global_transform * _sk.get_bone_global_pose(si)).affine_inverse() * w
+	else:
+		body_gun.global_transform = w
+
+## A body movement changed in the editor (Animace, tp_body_<name>) wins over the model's own.
+var _bclip_name := ""
+var _bclip_t := 0.0
+func _body_clip(delta: float) -> void:
+	var cur := String(body_anim.current_animation)
+	if cur != _bclip_name:
+		_bclip_name = cur
+		_bclip_t = 0.0
+	_bclip_t += delta
+	var clip := AnimClips.get_clip("tp_body_" + cur)
+	if clip.is_empty() or _sk == null:
+		return
+	var t := AnimClips.clip_time(clip, _bclip_t)
+	var p := AnimClips.pose(clip, t)
+	for bn in p:
+		var i := _bone(bn)
+		if i >= 0:
+			var rest: Quaternion = _sk.get_bone_rest(i).basis.get_rotation_quaternion()
+			_sk.set_bone_pose_rotation(i, rest * Quaternion.from_euler(p[bn]))
+	if AnimClips.has_track(clip, "root@pos"):
+		var ri := _bone("root")
+		if ri >= 0:
+			var v := AnimClips.sample(clip, "root@pos", t)
+			_sk.set_bone_pose_position(ri, _sk.get_bone_rest(ri).origin + Vector3(float(v[0]), float(v[1]), float(v[2])))
 
 ## The left hand takes hold of the gun's fore-end (or the pistol grip) wherever the gun is:
 ## move the gun or the right arm and the left arm follows.
@@ -655,7 +727,7 @@ func _hold_pose(delta: float) -> void:
 	var want := hold_want(held, held_l, act, _act_t)
 	want = Game.tweak_pose("hold/" + (held if held != "" else "nic"), want)
 	# an animation made in the Dílna (Animace) for this action and item wins
-	var ca: String = {1: "reload", 2: "strike", 3: "dig", 4: "heal"}.get(act, "hold")
+	var ca: String = {1: "reload", 2: "strike", 3: "dig", 4: "heal", 5: "throw"}.get(act, "hold")
 	var clip := AnimClips.find("tp", ca, held)
 	if not clip.is_empty():
 		want.merge(AnimClips.pose(clip, AnimClips.clip_time(clip, _act_t)), true)
@@ -760,6 +832,8 @@ func _act_tick() -> void:
 		a = 3
 	elif busy > 0 and (busy_text.begins_with("Ošetřuji") or busy_text.begins_with("Obvazuji") or busy_text.begins_with("Vyřezávám")):
 		a = 4
+	elif busy > 0 and busy_text.begins_with("Házím"):
+		a = 5
 	if a != act:
 		act = a
 		_act_t = 0.0
@@ -1685,6 +1759,7 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 func _melee(slot: String, rule: Dictionary) -> void:
 	fire_cd = rule["rate"]
 	_swing = 1.0
+	_sw_last = -1.0
 	_swing_left = slot == "lh"
 	var blunt: bool = rule.get("blunt", false)
 	if blunt:
@@ -2131,8 +2206,15 @@ func _reload_anim(delta: float, rid: String, reloading: bool) -> Array:
 	var fact := ""
 	if reloading:
 		fact = "reload1" if busy_text.begins_with("Přebíjím po") else "reload"
+	elif busy > 0 and busy_stand and busy_text.begins_with("Hrabu"):
+		fact = "dig"
+	elif busy > 0 and (busy_text.begins_with("Ošetřuji") or busy_text.begins_with("Obvazuji")):
+		fact = "heal"
+	elif busy > 0 and busy_text.begins_with("Házím"):
+		fact = "throw"
 	var fclip := AnimClips.find("fp", fact, rid) if fact != "" else {}
 	if not fclip.is_empty():
+		_vm_pack(fact == "dig", delta)
 		return _fp_clip_anim(fclip, ph)
 	_fp_hand_busy = false
 	if not _fp_parts.is_empty():

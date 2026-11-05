@@ -63,7 +63,7 @@ static func save_clip(id: String, clip: Dictionary) -> bool:
 		return false
 	f.store_string(JSON.stringify(clip, " ", false))
 	f.close()
-	_cache[id] = clip
+	_cache[id] = clip.duplicate(true)
 	_mtime[id] = FileAccess.get_modified_time(path_of(id))
 	_seen[id] = Time.get_ticks_msec()
 	return true
@@ -163,6 +163,8 @@ static func clip_time(clip: Dictionary, elapsed: float) -> float:
 static func pose(clip: Dictionary, t: float) -> Dictionary:
 	var out := {}
 	for name in clip.get("stopy", {}):
+		if String(name).contains("@"):
+			continue      # not a turn (root@pos: the whole body's move)
 		var v := sample(clip, name, t)
 		if v.size() >= 3:
 			out[name] = Vector3(float(v[0]), float(v[1]), float(v[2])) * (PI / 180.0)

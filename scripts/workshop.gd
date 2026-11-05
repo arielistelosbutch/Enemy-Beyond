@@ -8,7 +8,7 @@ const AlienScript := preload("res://scripts/alien.gd")
 
 const MODES := [["fp", "Předmět v ruce - z očí"], ["tp", "Předmět v ruce - zvenku (+ ruce)"], ["back", "Zbraň na zádech"],
 	["emote", "Pózy žoldáka (pozdrav, pohov, v bok)"], ["alien", "Vetřelci - práce a postoje"],
-	["atp", "ANIMACE postavy (časová osa)"], ["afp", "ANIMACE z očí (časová osa)"]]
+	["anim", "ANIMACE → editor Animace (všechny pohyby)"]]
 const EMOTES := [["salute", "Pozdrav (J)"], ["atease", "Pohov (U)"], ["hips", "Ruce v bok (stání)"]]
 const ALIENS := ["grey", "grey_velitel", "jestetan", "bijec", "lihnoun", "zombie", "ohar"]
 const ALIEN_ACTS := {"grey": ["work", "work_high", "talk", "stare"], "grey_velitel": ["work", "work_high", "talk", "stare"],
@@ -138,7 +138,13 @@ func _ready() -> void:
 	var mode_opt := _opt(panel_box)
 	for m in MODES:
 		mode_opt.add_item(m[1])
-	mode_opt.item_selected.connect(func(i): mode = MODES[i][0]; _rebuild_panel())
+	mode_opt.item_selected.connect(func(i):
+		if MODES[i][0] == "anim":
+			# the animations have their own editor now (time line, rings, the whole body)
+			get_tree().change_scene_to_file("res://scenes/Animator.tscn")
+			return
+		mode = MODES[i][0]
+		_rebuild_panel())
 	var dyn := VBoxContainer.new()
 	dyn.name = "Dyn"
 	dyn.add_theme_constant_override("separation", 2)

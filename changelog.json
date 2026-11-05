@@ -1,4 +1,17 @@
 {
+ "0.52": [
+  "Nový editor Animace (po vzoru Svitků Světlenu): všechny pohyby postavy na jednom místě – tělo (stání, chůze, běh, sprint, podřep, leh, plazení, raněný, smrt), ruce zvenku (držení, přebíjení, úder, ošetřování, hrabání v batohu, hod), pózy (pozdrav, pohov, ruce v bok) a pohled z očí (přebíjení, úder, hod, ošetřování, hrabání).",
+  "V Animaci klikneš na kloub a otáčíš ho za kroužky, klíč se zapíše sám. Časová osa má řádek pro každý kloub, klíče jdou přetahovat, přidat dvojklikem a smazat pravým tlačítkem. Kopírování a vkládání pózy, zrcadlení levá ↔ pravá, natažení délky, Zpět/Znovu.",
+  "Pohyby těla, které ještě nikdo neupravil, se načtou přímo z modelu a zjednoduší se jen na klíče, na kterých záleží – dají se rovnou ladit.",
+  "Události v animaci: zvuky, co drží levá ruka, kdy pustí a chytí zbraň, kdy zásobník zmizí nebo vypadne.",
+  "Zamknutí věci do ruky: nůž, obušek, granát i zbraně se teď při úderu, přebíjení a hodu otáčí s rukou, místo aby trčely v jedné poloze. Dá se vypnout pro každou věc zvlášť.",
+  "Hra používá všechno, co se v Animaci uloží: upravené pohyby těla, hod zvenku, a z očí úder, hod, ošetřování a hrabání v batohu.",
+  "Modelář 2: otáčení dílů za kroužky, posun, změna velikosti, výběr více dílů (Shift/Ctrl i tažením obdélníku), posun a otáčení celého výběru naráz, kopie, zrcadlení, čísla v centimetrech a stupních, palety barev.",
+  "Editory mají vlastní ostré rozlišení a vejdou se i do menšího okna; mřížka podlahy se kreslí čistě.",
+  "Předělané zbývající modely do nového vzhledu: Kondor, Čáp, Sokol, létající UFO, civilisté, kráva, celá vesnice (domy, studna, traktor, auta, kaple, zastávka, kurník, strašák…), mimozemské zbraně, vysílačka, noční vidění a celá základna na Marsu.",
+  "Nové obrázky všech předmětů, lodí a ras ve výzkumu i v encyklopedii, vyrenderované z nových modelů.",
+  "UFO už nemají korunu z bodců a ze země zmizely fialové krystaly. Fialové žíly jsou jen tam, kde UFO havarovalo – kolem vraku a podél brázdy jako vyteklé palivo."
+ ],
  "0.51": [
   "Pryč s posledními syntetickými zvuky z prvního prototypu (pípání a „boink“). Detektor, cinknutí, jiskření, bzučení dronů, skřípání, výkřiky civilistů, šramot vetřelců i zvuky v boji teď hrají skutečné nahrávky."
  ],
