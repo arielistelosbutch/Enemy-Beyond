@@ -41,6 +41,7 @@ var clip_id := ""
 var _ac := {}                # the clip being edited
 var _saved_json := ""        # what is on disk (to know if it changed)
 var _from_game := false      # nothing saved yet: read from the game
+var _from_template := false  # eyes view: nothing saved, a pattern shown
 var t := 0.0
 var playing := false
 var speed := 1.0
@@ -84,8 +85,12 @@ var _grid: MeshInstance3D
 # ui
 var act_list: ItemList
 var _act_keys: Array = []
-var item_opt: OptionButton
+var item_list: ItemList
+var _item_keys: Array = []
 var info_lbl: Label
+var howto_lbl: Label
+var from_opt: OptionButton
+var _view_btns := {}
 var title_lbl: Label
 var status: Label
 var hint: Label
@@ -196,35 +201,75 @@ func _ready() -> void:
 # ---- panels ---------------------------------------------------------------------------------------
 func _build_left(parent: Node) -> void:
 	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(260, 0)
+	box.custom_minimum_size = Vector2(270, 0)
 	box.add_theme_constant_override("separation", 6)
 	parent.add_child(box)
 	var p := PanelContainer.new()
 	p.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(p)
 	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 5)
 	p.add_child(v)
-	EdUI.head(v, "Co animuji")
+	# 1) where from: the man seen from outside, or what the player sees
+	EdUI.head(v, "1) Pohled")
+	var vr := EdUI.row(v, 4)
+	for e in [["out", "Postava zvenku"], ["eyes", "Z očí hráče"]]:
+		var key: String = e[0]
+		var b2 := EdUI.btn(vr, e[1], func(): _switch_view(key), "Zvenku: jak tě vidí ostatní (celé tělo). Z očí: zbraň a ruce, jak je vidí hráč.", true)
+		b2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_view_btns[key] = b2
+	# 2) which movement
+	EdUI.head(v, "2) Pohyb")
 	act_list = ItemList.new()
 	act_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	act_list.custom_minimum_size = Vector2(0, 150)
 	act_list.item_selected.connect(func(i):
 		var k: Array = _act_keys[i]
 		if k.is_empty():
 			return
 		_ask_then(func(): _open(k[0], k[1], item)))
 	v.add_child(act_list)
-	EdUI.head(v, "Pro věc")
-	item_opt = OptionButton.new()
-	item_opt.focus_mode = Control.FOCUS_NONE
-	item_opt.item_selected.connect(func(i):
-		var it := String(item_opt.get_item_metadata(i))
+	# 3) with which thing
+	EdUI.head(v, "3) Zbraň / věc")
+	item_list = ItemList.new()
+	item_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	item_list.custom_minimum_size = Vector2(0, 150)
+	item_list.fixed_icon_size = Vector2i(44, 26)
+	item_list.item_selected.connect(func(i):
+		var it: String = _item_keys[i]
 		_ask_then(func(): _open(kind, act, it)))
-	v.add_child(item_opt)
+	v.add_child(item_list)
 	info_lbl = EdUI.lbl(v, "", EdUI.DIM, 12, true)
 	var g := EdUI.grid(v, 1)
 	EdUI.btn(g, "Uložit (Ctrl+S)", _save).size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var fr := EdUI.row(g, 4)
+	EdUI.lbl(fr, "Začít podle:")
+	from_opt = OptionButton.new()
+	from_opt.focus_mode = Control.FOCUS_NONE
+	from_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	from_opt.tooltip_text = "Vezme jinou hotovou animaci (třeba přebíjení jiné zbraně) nebo vzor jako začátek - pak ji jen upravíš."
+	from_opt.item_selected.connect(func(i): _start_from(String(from_opt.get_item_metadata(i))))
+	fr.add_child(from_opt)
 	EdUI.btn(g, "Uložit pro všechny věci", _save_for_all, "Uloží tuhle animaci jako společnou pro každou věc (věci bez vlastní animace ji použijí)").size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	EdUI.btn(g, "Vrátit původní ze hry", func(): EdUI.ask(self, "Smazat upravenou animaci a vrátit původní pohyb ze hry?", _revert, "Vrátit"), "Smaže soubor s úpravou").size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+## The other view, keeping the movement and the thing where it can.
+func _switch_view(to: String) -> void:
+	_sync_view_btns()
+	if (to == "eyes") == (kind == "eyes"):
+		return
+	var it := item
+	_ask_then(func():
+		if to == "eyes":
+			var a2 := act if act in EYES.map(func(e): return e[0]) else "reload"
+			_open("eyes", a2, it if it != "vse" and not it.begins_with("show:") else "vse")
+		else:
+			var a3 := act if act in HANDS.map(func(e): return e[0]) else "hold"
+			_open("hand", a3, it))
+
+func _sync_view_btns() -> void:
+	for k in _view_btns:
+		(_view_btns[k] as Button).button_pressed = (k == "eyes") == (kind == "eyes")
 
 func _build_toolbar(parent: Node) -> void:
 	var bar := HFlowContainer.new()      # wraps onto a second line in a small window
@@ -295,11 +340,12 @@ func _build_right(parent: Node) -> void:
 	EdUI.btn(r4, "+ přidat v tomto čase", _add_event)
 	EdUI.btn(r4, "Smazat", _delete_event)
 	EdUI.head(v, "Jak na to")
-	EdUI.lbl(v, "1) Vlevo vyber pohyb (a věc).\n2) Posuň čas na ose dole.\n3) Klikni na kloub a otoč ho za kruh - klíč se zapíše sám.\n4) Mezi klíči se pohyb dopočítá. Mezerník přehraje.\n5) Ctrl+S uloží - hra to hned použije.", EdUI.DIM, 12, true)
+	howto_lbl = EdUI.lbl(v, "", EdUI.DIM, 12, true)
 
 func _fill_acts() -> void:
 	act_list.clear()
 	_act_keys.clear()
+	_sync_view_btns()
 	var add_head := func(text: String):
 		act_list.add_item(text)
 		var i := act_list.item_count - 1
@@ -308,23 +354,25 @@ func _fill_acts() -> void:
 		act_list.set_item_custom_fg_color(i, EdUI.AMBER)
 		_act_keys.append([])
 	var add := func(k: String, a: String, text: String):
-		var mark := " •" if _has_any(k, a) else ""
+		var mark := "  •" if _has_any(k, a) else ""
 		act_list.add_item("   " + text + mark)
 		_act_keys.append([k, a])
 		if k == kind and a == act:
 			act_list.select(act_list.item_count - 1)
-	add_head.call("TĚLO (pohyby)")
-	for e in BODY:
-		add.call("body", e[0], e[1])
-	add_head.call("RUCE ZVENKU (s věcí)")
+	if kind == "eyes":
+		add_head.call("CO DĚLAJÍ RUCE (z očí)")
+		for e in EYES:
+			add.call("eyes", e[0], e[1])
+		return
+	add_head.call("RUCE A VĚC V NICH")
 	for e in HANDS:
 		add.call("hand", e[0], e[1])
+	add_head.call("CELÉ TĚLO")
+	for e in BODY:
+		add.call("body", e[0], e[1])
 	add_head.call("PÓZY")
 	for e in EMOTES:
 		add.call("emote", e[0], e[1])
-	add_head.call("Z OČÍ (s věcí)")
-	for e in EYES:
-		add.call("eyes", e[0], e[1])
 
 func _has_any(k: String, a: String) -> bool:
 	for id in AnimClips.all_ids():
@@ -338,33 +386,77 @@ func _prefix(k: String, a: String) -> String:
 		"hand", "emote": return "tp_%s_" % a
 		_: return "fp_%s_" % a
 
+## Weapons first, then the rest; each with its picture.
+func _item_ids() -> Array:
+	var w := []
+	var rest := []
+	for id in Game.ITEMS:
+		if not ResourceLoader.exists("res://assets/models/%s.glb" % id) or String(id).begins_with("a_pack"):
+			continue
+		if Game.ITEMS[id].get("type", "") == "weapon":
+			w.append(id)
+		else:
+			rest.append(id)
+	return w + rest
+
 func _fill_items() -> void:
-	item_opt.clear()
-	if kind == "body" or kind == "emote":
-		item_opt.add_item("— nic v ruce —" if kind == "emote" else "— bez věci —")
-		item_opt.set_item_metadata(0, "vse")
-		item_opt.disabled = kind == "emote"
-		if kind == "body":
-			for id in Game.ITEMS:
-				if ResourceLoader.exists("res://assets/models/%s.glb" % id) and not id.begins_with("a_pack"):
-					item_opt.add_item("ukázat s: " + String(Game.ITEMS[id]["name"]))
-					item_opt.set_item_metadata(item_opt.item_count - 1, "show:" + id)
-		item_opt.disabled = kind == "emote"
+	item_list.clear()
+	_item_keys.clear()
+	var add := func(key: String, text: String, icon_id: String):
+		item_list.add_item(text, UiSkin.icon(icon_id) if icon_id != "" else null)
+		_item_keys.append(key)
+	if kind == "emote":
+		add.call("vse", "— nic v ruce —", "")
+	elif kind == "body":
+		add.call("vse", "— bez věci —", "")
+		for id in _item_ids():
+			add.call("show:" + id, "ukázat s: " + String(Game.ITEMS[id]["name"]), id)
 	else:
-		item_opt.disabled = false
 		if kind == "hand":
-			item_opt.add_item("— pro všechno —")
-			item_opt.set_item_metadata(0, "vse")
-		for id in Game.ITEMS:
-			if not ResourceLoader.exists("res://assets/models/%s.glb" % id) or id.begins_with("a_pack"):
-				continue
+			add.call("vse", "— pro všechno —", "")
+		for id in _item_ids():
 			var ty: String = Game.ITEMS[id].get("type", "")
 			if kind == "eyes" and act in ["reload", "reload1"] and ty != "weapon":
 				continue
 			var own := FileAccess.file_exists(AnimClips.path_of("%s%s" % [_prefix(kind, act), id]))
-			item_opt.add_item(String(Game.ITEMS[id]["name"]) + (" •" if own else ""))
-			item_opt.set_item_metadata(item_opt.item_count - 1, id)
-	EdUI.opt_select(item_opt, item)
+			add.call(id, String(Game.ITEMS[id]["name"]) + ("  • upraveno" if own else ""), id)
+	var want := item
+	if holder and holder.has_meta("item") and kind == "body":
+		want = "show:" + String(holder.get_meta("item"))
+	var i := _item_keys.find(want)
+	if i >= 0:
+		item_list.select(i)
+		item_list.ensure_current_is_visible()
+	# start from: another item's finished clip of the same movement, or the pattern
+	from_opt.clear()
+	from_opt.add_item("— vyber —")
+	from_opt.set_item_metadata(0, "")
+	if kind == "eyes":
+		from_opt.add_item("vzor (obecný pohyb)")
+		from_opt.set_item_metadata(1, "@vzor")
+	for cid in AnimClips.all_ids():
+		if cid.begins_with(_prefix(kind, act)) and cid != clip_id:
+			var it: String = cid.substr(_prefix(kind, act).length())
+			var nm: String = "všechno" if it == "vse" else String(Game.ITEMS.get(it, {}).get("name", it))
+			from_opt.add_item("hotová: " + nm)
+			from_opt.set_item_metadata(from_opt.item_count - 1, cid)
+	from_opt.disabled = from_opt.item_count <= 1
+
+## Starts the clip again from another one (or the pattern); undo brings the old back.
+func _start_from(src: String) -> void:
+	if src == "":
+		return
+	_push()
+	var nm := _title()
+	if src == "@vzor":
+		_ac = _template()
+	else:
+		_ac = AnimClips.get_clip(src).duplicate(true)
+	_ac["nazev"] = nm
+	t = 0.0
+	_changed()
+	from_opt.select(0)
+	status.text = "Začátek převzat - teď uprav, co je jinak, a ulož (Ctrl+S). Zpět vrátí původní."
 
 # ---- opening and saving -----------------------------------------------------------------------------
 func _ask_then(cb: Callable) -> void:
@@ -399,6 +491,7 @@ func _open(k: String, a: String, it: String) -> void:
 		clip_id = "tp_%s_vse" % a
 	var own := AnimClips.get_clip(clip_id)
 	_from_game = own.is_empty()
+	_from_template = false
 	if not own.is_empty():
 		_ac = own.duplicate(true)
 		_saved_json = JSON.stringify(_ac)
@@ -413,8 +506,6 @@ func _open(k: String, a: String, it: String) -> void:
 	_build_scene(show)
 	_fill_acts()
 	_fill_items()
-	if show != "":
-		EdUI.opt_select(item_opt, "show:" + show)
 	_fill_sel_opt()
 	if kind == "eyes":
 		_select("zbran")
@@ -424,7 +515,12 @@ func _open(k: String, a: String, it: String) -> void:
 		_set_tool("otaceni")
 	_fill_events()
 	_sync_ui()
-	status.text = ("Upravená animace: %s" % AnimClips.path_of(clip_id)) if not _from_game else "Pohyb ze hry - úpravy se uloží do %s" % AnimClips.path_of(clip_id)
+	if _from_template:
+		status.text = "Vzor pro začátek - ve hře zatím běží původní pohyb. Uprav ho a ulož (Ctrl+S), pak ho hra použije."
+	elif _from_game:
+		status.text = "Pohyb ze hry - úpravy se uloží do %s" % AnimClips.path_of(clip_id)
+	else:
+		status.text = "Upravená animace: %s" % AnimClips.path_of(clip_id)
 
 ## Something to start from: a body movement from the model, a hand action from the game's poses.
 func _start_clip() -> Dictionary:
@@ -448,13 +544,120 @@ func _start_clip() -> Dictionary:
 		var fall2 := AnimClips.find("fp", act, item)
 		if not fall2.is_empty():
 			c = fall2.duplicate(true)
-		c["delka"] = {"reload": 1.5, "reload1": 0.8, "strike": 0.45, "throw": 0.6, "heal": 2.0, "dig": 2.0}.get(act, 1.0)
+		else:
+			# the game's own hand-made movement cannot be shown here: a pattern to start from
+			c = _template()
+			_from_template = true
 	if kind == "hand":
 		c["delka"] = {"reload": 1.5, "strike": 0.45, "heal": 2.0, "dig": 2.0, "throw": 0.6, "hold": 1.2}.get(act, 1.0)
 		c["smycka"] = act in ["hold", "heal", "dig"]
 	if kind == "emote":
 		c["delka"] = 2.4
 		c["smycka"] = act != "salute"
+	return c
+
+## A pattern for the eyes view (the right movement roughly, with the left hand, the magazine and the
+## sounds already in it), so there is something on the time line to change instead of an empty one.
+func _template() -> Dictionary:
+	var c := AnimClips.new_clip("fp", _title())
+	var shield: bool = Game.ITEMS.get(item, {}).get("type", "") == "shield"
+	var base: Vector3 = PlayerScript.VM_ONE_L if shield else PlayerScript.VM_R.get(item, PlayerScript.VM_ONE_R)
+	var key := func(track: String, tt: float, v: Array):
+		AnimClips.set_key(c, track, tt, v)
+	var ev := func(tt: float, typ: String):
+		c["udalosti"].append({"t": snappedf(tt, 0.01), "typ": typ})
+	var hand_at := func(p: Vector3, rot: Vector3) -> Array:
+		return [snappedf(p.x, 0.001), snappedf(p.y, 0.001), snappedf(p.z, 0.001), rot.x, rot.y, rot.z]
+	var carry: String = {"pistol": "pistol_mag", "laser_pistol": "pistol_mag", "magnum": "magnum_rounds", "shotgun": "shell"}.get(item, "rifle_clip")
+	var has_mag := false
+	if Game.ITEMS.has(item):
+		var probe := Game.held_model(item, false)
+		has_mag = probe.find_child("Mag", true, false) != null
+		probe.free()
+	match act:
+		"reload":
+			var L := 1.6
+			c["delka"] = L
+			var tilt := [-0.05, 0.06, 0.02, 10.0, 12.0, 28.0]
+			key.call("zbran", 0.0, [0, 0, 0, 0, 0, 0])
+			key.call("zbran", 0.25 * L, tilt)
+			key.call("zbran", 0.8 * L, tilt)
+			key.call("zbran", L, [0, 0, 0, 0, 0, 0])
+			var under: Vector3 = base + Vector3(-0.05, -0.1, 0.03)
+			key.call("ruka", 0.15 * L, hand_at.call(base + Vector3(-0.14, 0.0, -0.1), Vector3(40, 0, 0)))
+			key.call("ruka", 0.25 * L, hand_at.call(under, Vector3(70, 0, 20)))
+			key.call("ruka", 0.42 * L, hand_at.call(Vector3(-0.16, -0.55, -0.3), Vector3(80, 0, 0)))
+			key.call("ruka", 0.55 * L, hand_at.call(Vector3(-0.12, -0.32, -0.32), Vector3(70, 0, 10)))
+			key.call("ruka", 0.66 * L, hand_at.call(under, Vector3(70, 0, 20)))
+			key.call("ruka", 0.85 * L, hand_at.call(base + Vector3(-0.14, 0.0, -0.1), Vector3(40, 0, 0)))
+			if has_mag:
+				key.call("Mag", 0.26 * L, [0, 0, 0, 0, 0, 0])
+				key.call("Mag", 0.34 * L, [0, -0.12, 0, 0, 0, 0])
+				key.call("Mag", 0.62 * L, [0, -0.1, 0, 0, 0, 0])
+				key.call("Mag", 0.7 * L, [0, 0, 0, 0, 0, 0])
+				ev.call(0.34 * L, "skryt:Mag")
+				ev.call(0.34 * L, "vyhodit:zasobnik")
+				ev.call(0.62 * L, "ukazat:Mag")
+			ev.call(0.0, "leva:zbran")
+			ev.call(0.15 * L, "leva:volna")
+			ev.call(0.28 * L, "zvuk:mag_out")
+			ev.call(0.45 * L, "drzi:" + carry)
+			ev.call(0.62 * L, "drzi:")
+			ev.call(0.68 * L, "zvuk:mag_in")
+			ev.call(0.88 * L, "leva:zbran")
+		"reload1":
+			var L1 := 0.8
+			c["delka"] = L1
+			key.call("zbran", 0.0, [0, 0, 0, 0, 0, 0])
+			key.call("zbran", 0.2 * L1, [-0.04, 0.03, 0.02, -8.0, 14.0, 60.0])
+			key.call("zbran", 0.8 * L1, [-0.04, 0.03, 0.02, -8.0, 14.0, 60.0])
+			key.call("zbran", L1, [0, 0, 0, 0, 0, 0])
+			var port: Vector3 = base + Vector3(-0.04, -0.03, 0.0)
+			key.call("ruka", 0.1 * L1, hand_at.call(Vector3(-0.14, -0.5, -0.26), Vector3(60, -20, 50)))
+			key.call("ruka", 0.5 * L1, hand_at.call(port, Vector3(50, -20, 60)))
+			key.call("ruka", 0.9 * L1, hand_at.call(Vector3(-0.14, -0.5, -0.26), Vector3(60, -20, 50)))
+			ev.call(0.0, "leva:zbran")
+			ev.call(0.05 * L1, "leva:volna")
+			ev.call(0.1 * L1, "drzi:" + carry)
+			ev.call(0.5 * L1, "zvuk:shell_insert")
+			ev.call(0.55 * L1, "drzi:")
+			ev.call(0.95 * L1, "leva:zbran")
+		"strike":
+			c["delka"] = 0.45
+			key.call("zbran", 0.0, [0, 0, 0, 0, 0, 0])
+			key.call("zbran", 0.15, [0.04, 0.1, 0.06, 45.0, -10.0, -15.0])
+			key.call("zbran", 0.27, [-0.12, -0.04, -0.2, -50.0, 15.0, 20.0])
+			key.call("zbran", 0.45, [0, 0, 0, 0, 0, 0])
+			ev.call(0.2, "zvuk:swish" if not item in ["knife"] else "zvuk:knife_stab")
+		"throw":
+			c["delka"] = 0.6
+			key.call("zbran", 0.0, [0, 0, 0, 0, 0, 0])
+			key.call("zbran", 0.22, [0.05, 0.16, 0.16, 60.0, 0.0, -10.0])
+			key.call("zbran", 0.36, [-0.06, 0.06, -0.35, -40.0, 0.0, 10.0])
+			key.call("zbran", 0.6, [0.0, -0.4, 0.0, 0.0, 0.0, 0.0])
+		"heal":
+			c["delka"] = 2.0
+			c["smycka"] = true
+			key.call("zbran", 0.0, [0.0, -0.25, 0.05, -20.0, 0.0, 0.0])
+			key.call("zbran", 2.0, [0.0, -0.25, 0.05, -20.0, 0.0, 0.0])
+			for k in 5:
+				var a := TAU * k / 4.0
+				key.call("ruka", 0.5 * k, hand_at.call(Vector3(-0.02 + cos(a) * 0.07, -0.26 + sin(a) * 0.05, -0.36), Vector3(35, 15, 45)))
+			ev.call(0.0, "leva:volna")
+			ev.call(0.0, "drzi:bandage")
+		"dig":
+			c["delka"] = 2.0
+			key.call("zbran", 0.0, [0.0, -0.45, 0.1, -30.0, 0.0, 0.0])
+			key.call("zbran", 2.0, [0.0, -0.45, 0.1, -30.0, 0.0, 0.0])
+			key.call("ruka", 0.0, hand_at.call(Vector3(-0.05, -0.42, -0.4), Vector3(75, 10, 15)))
+			key.call("ruka", 0.6, hand_at.call(Vector3(0.03, -0.36, -0.42), Vector3(75, 10, 15)))
+			key.call("ruka", 1.2, hand_at.call(Vector3(-0.06, -0.4, -0.38), Vector3(75, 10, 15)))
+			key.call("ruka", 1.7, hand_at.call(Vector3(-0.1, -0.3, -0.36), Vector3(60, 0, 20)))
+			key.call("ruka", 2.0, hand_at.call(Vector3(-0.14, -0.24, -0.34), Vector3(40, 0, 0)))
+			ev.call(0.0, "leva:volna")
+			ev.call(0.2, "zvuk:backpack_rummage")
+			ev.call(1.6, "drzi:medkit")
+	(c["udalosti"] as Array).sort_custom(func(x, y): return float(x["t"]) < float(y["t"]))
 	return c
 
 ## A body movement of the model as an editable clip: the turn of every joint at every key (degrees,
@@ -839,7 +1042,7 @@ func _process(delta: float) -> void:
 	if playing:
 		_sync_fields()
 	time_lbl.text = "%.2f / %.2f s%s" % [t, d, "   ▶" if playing else ""]
-	title_lbl.text = "%s%s" % [_title(), "  *neuloženo" if _dirty() else ("  (ze hry)" if _from_game else "")]
+	title_lbl.text = "%s%s" % [_title(), "  *neuloženo" if _dirty() else ("  (vzor – zatím neuloženo)" if _from_template else ("  (ze hry)" if _from_game else "  (upraveno)"))]
 	tl.queue_redraw()
 	_draw_overlay()
 
@@ -899,7 +1102,13 @@ func _sync_ui() -> void:
 	_updating = false
 	_sync_fields()
 	sel_lbl.text = (BONE_NAMES.get(sel, sel) if kind != "eyes" else {"zbran": "Zbraň (celá)", "ruka": "Levá ruka"}.get(sel, "Díl: " + sel))
-	info_lbl.text = ("Upravená (%s)" % clip_id) if not _from_game else ("Původní ze hry – po uložení vznikne %s" % clip_id)
+	if _from_template:
+		info_lbl.text = "Zobrazený je VZOR (hra má zatím vlastní pohyb). Po uložení vznikne %s." % clip_id
+	elif _from_game:
+		info_lbl.text = "Původní ze hry – po uložení vznikne %s" % clip_id
+	else:
+		info_lbl.text = "Upravená (%s)" % clip_id
+	howto_lbl.text = _howto()
 	# events that make sense here
 	ev_opt.clear()
 	for s in SOUNDS:
@@ -1082,6 +1291,23 @@ func _stretch_dialog() -> void:
 	d.canceled.connect(d.queue_free)
 	add_child(d)
 	d.popup_centered()
+
+## Help for what is open now.
+func _howto() -> String:
+	if kind == "eyes":
+		return ("Tady vidíš, co vidí hráč: zbraň (vpravo) a levou ruku.\n"
+			+ "1) Dole posuň červenou čáru času tam, kde se má něco stát.\n"
+			+ "2) Klikni na zbraň (nebo vyber 'Zbraň' nahoře) a táhni barevné šipky - posun (G), nebo kroužky - otáčení (R). Klíč se zapíše sám.\n"
+			+ "3) Levá ruka: vyber 'Levá ruka'. Ve hře je vidět jen od události 'levá ruka pustí zbraň' do 'levá ruka zpět na zbraň'.\n"
+			+ "4) Díly zbraně (zásobník Mag, závěr Slide...) jsou ve výběru jako 'Díl: ...'.\n"
+			+ "5) Události (zvuk, co drží levá ruka, zásobník zmizí) přidáš dole vpravo v aktuálním čase.\n"
+			+ "6) Mezerník přehraje, Ctrl+S uloží. 'Začít podle' vlevo převezme jinou hotovou zbraň.")
+	if kind == "body":
+		return ("Pohyb celého těla (stejný pro všechny zbraně).\n1) Posuň čas dole.\n2) Klikni na kloub (tečka) a otoč ho za kroužek - klíč se zapíše sám.\n"
+			+ "3) 'Celé tělo (posun)' nahoře hýbe celou postavou (šipky).\n4) Mezerník přehraje, Ctrl+S uloží.\nS věcí v ruce drží ruce pózu z 'Ruce a věc v nich: Držení'.")
+	return ("Jak tě vidí ostatní. Zbraň vybraná vlevo ve 3) je v ruce.\n1) Posuň čas dole.\n2) Klikni na kloub (tečka) a otoč ho za kroužek - klíč se zapíše sám.\n"
+		+ "3) Šedé tečky = kloub bez klíčů (hýbe se jako ve hře), oranžové = upravený.\n4) Mezerník přehraje, Ctrl+S uloží.\n"
+		+ "'— pro všechno —' platí pro každou zbraň, která nemá vlastní.")
 
 # ---- events ------------------------------------------------------------------------------------------
 func _fill_events() -> void:
@@ -1680,7 +1906,7 @@ func _selftest() -> void:
 
 ## Pictures of the editor: user://anim_<n>.png
 func _shots() -> void:
-	var list := [["body", "walk", "vse", 0.35], ["hand", "strike", "knife", 0.2], ["eyes", "reload", "pistol", 0.5], ["body", "prone_crawl", "vse", 0.3]]
+	var list := [["body", "walk", "vse", 0.35], ["hand", "strike", "knife", 0.2], ["eyes", "reload", "pistol", 0.5], ["body", "prone_crawl", "vse", 0.3], ["eyes", "reload", "shotgun", 0.42]]
 	for i in list.size():
 		var e: Array = list[i]
 		var t0 := Time.get_ticks_usec()
@@ -1688,7 +1914,7 @@ func _shots() -> void:
 		print("[SPEED] animator open %s:%s %.0f ms" % [e[0], e[1], (Time.get_ticks_usec() - t0) / 1000.0])
 		playing = false
 		t = float(e[3])
-		_select("forearm.R" if e[0] != "eyes" else "zbran")
+		_select("forearm.R" if e[0] != "eyes" else ("ruka" if i == 2 else "zbran"))
 		for f in 6:
 			await get_tree().process_frame
 		get_viewport().get_texture().get_image().save_png("user://anim_%d.png" % i)

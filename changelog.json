@@ -1,4 +1,11 @@
 {
+ "0.53": [
+  "Moje úpravy modelů z Modeláře jsou ve hře: puška, pistole, magnum, nůž, mimozemské zbraně, Šedivák velitel, civilistka a Sokol. K tomu nové držení zbraní a přebíjení zvenku.",
+  "Modelář je mnohem rychlejší: velké modely se otevřou za zlomek vteřiny místo desítek vteřin, díl jde chytit hned po kliknutí a tažení je plynulé.",
+  "Editor Animace je přehlednější: vlevo nejdřív pohled (postava zvenku / z očí hráče), pak pohyb a pak zbraň ze seznamu s obrázky.",
+  "Z očí má každá zbraň vzor pro přebíjení, přebíjení po náboji, úder, hod, ošetřování a hrabání v batohu – s levou rukou, zásobníkem a zvuky – takže se dá rovnou upravovat.",
+  "„Začít podle“: novou animaci jde začít od hotové animace jiné zbraně. Nápověda vpravo se mění podle toho, co je zrovna otevřené."
+ ],
  "0.52": [
   "Nový editor Animace (po vzoru Svitků Světlenu): všechny pohyby postavy na jednom místě – tělo (stání, chůze, běh, sprint, podřep, leh, plazení, raněný, smrt), ruce zvenku (držení, přebíjení, úder, ošetřování, hrabání v batohu, hod), pózy (pozdrav, pohov, ruce v bok) a pohled z očí (přebíjení, úder, hod, ošetřování, hrabání).",
   "V Animaci klikneš na kloub a otáčíš ho za kroužky, klíč se zapíše sám. Časová osa má řádek pro každý kloub, klíče jdou přetahovat, přidat dvojklikem a smazat pravým tlačítkem. Kopírování a vkládání pózy, zrcadlení levá ↔ pravá, natažení délky, Zpět/Znovu.",

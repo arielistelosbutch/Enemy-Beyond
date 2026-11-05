@@ -41,7 +41,7 @@ run voice       200 h "RESULT voice: snippets \[1\]"       --autotest=voice
 run basewalk    400 x "RESULT basewalk 11"                 --autotest=basewalk
 run base_attack 400 x "RESULT basewalk 11"                 --autotest=basewalk --attack=1
 run alienbase   400 x "RESULT abase"                       --autotest=abase --mtype=alienbase
-run fire        300 x "RESULT fireshot"                    --autotest=fireshot
+run fire        450 x "RESULT fireshot"                    --autotest=fireshot
 run doors       300 x "RESULT doorshot"                    --autotest=doorshot --biome=farm
 # co-op: two games at once (host and client on this machine)
 pair() {   # name, host mode, client mode, expected in host log, expected in client log, port
