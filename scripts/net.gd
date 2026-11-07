@@ -121,7 +121,7 @@ func _register(merc: Dictionary) -> void:
 		if kept != merc:
 			merc = kept
 			_adopt_merc.rpc_id(id, merc)
-	roster[id] = {"name": str(merc.get("name", "Žoldák")), "merc": merc}
+	roster[id] = {"name": str(merc.get("name", "Voják")), "merc": merc}
 	if fresh:
 		_note.rpc("%s se připojil ke hře (%d/%d)." % [roster[id]["name"], roster.size(), MAX_PLAYERS])
 	wallets[id] = int(merc.get("money", 0))
@@ -134,7 +134,7 @@ func _register(merc: Dictionary) -> void:
 func _adopt_merc(m: Dictionary) -> void:
 	Game.merc = m
 	Game.save_merc()
-	note.emit("Hostitel má v kampani novější záznam o žoldákovi %s - používáš ten." % str(m.get("name", "?")))
+	note.emit("Hostitel má v kampani novější záznam o vojákovi %s - používáš ten." % str(m.get("name", "?")))
 
 @rpc("authority", "call_local", "reliable")
 func _set_roster(r: Dictionary) -> void:
@@ -151,7 +151,7 @@ func start_mission(params := {}) -> bool:
 	if params.has("cid"):
 		var sick := sick_in_team()
 		if not sick.is_empty():
-			blocked.emit("Na marodce: %s.\nZraněný žoldák nemůže na misi, dokud neuplyne doba léčení (herní čas). Hráč si může vybrat jiného ze svých žoldáků v \"Můj žoldák\"." % ", ".join(sick))
+			blocked.emit("Na marodce: %s.\nZraněný voják nemůže na misi, dokud neuplyne doba léčení (herní čas). Hráč si může vybrat jiného ze svých vojáků v \"Můj voják\"." % ", ".join(sick))
 			return false
 	var s := Game.seed_override if Game.seed_override >= 0 else randi() % 1000000
 	if params.has("seed") and Game.seed_override < 0:
@@ -346,7 +346,7 @@ func _req_buy(item: String) -> void:
 		broadcast_team()
 		return
 	var price: int = Campaign.price(item)
-	if not Campaign.unlocked(item) or int(wallets.get(from, 0)) < price or Campaign.moskovium() < int(Campaign.SHOP_MK.get(item, 0)):
+	if not Campaign.unlocked(item) or Campaign.workshop_item(item) or int(wallets.get(from, 0)) < price:
 		return
 	_add_money(from, -price)
 	Campaign.data["moskovium"] = Campaign.moskovium() - int(Campaign.SHOP_MK.get(item, 0))

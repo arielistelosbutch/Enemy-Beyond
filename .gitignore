@@ -5,6 +5,8 @@ __pycache__/
 export_credentials.cfg
 # Pohyby z Mixama: jen v balíčku hry (.pck), ne ve zdrojácích (licence Mixama)
 animace/Maximo/
+animace/mixamo_*.glb
+animace/mixamo_*.glb.import
 animace/tp_body_climb.json
 animace/tp_body_crawl_hurt.json
 animace/tp_body_crawl_idle.json
@@ -56,3 +58,17 @@ animace/tp_body_crouch_turn_right.json
 animace/tp_body_dead_7.json
 animace/tp_body_dead_crouch.json
 animace/tp_throw_prone_vse.json
+# 0.57: pohyby z afk.ai (Ari) - taky jen v balíčku hry
+animace/tp_hit_5_vse.json
+animace/tp_hit_6_vse.json
+animace/tp_hit_7_vse.json
+animace/tp_hit_8_vse.json
+animace/tp_reload_pistol.json
+animace/tp_reload_magnum.json
+animace/tp_reload_plasma_pistol.json
+# 0.57: všechny pohyby postavy zvenku (afk.ai / Mixamo) jen v balíčku; Ariho vlastní držení zůstává
+animace/tp_*.json
+!animace/tp_hold_vse.json
+!animace/tp_hold_pistol.json
+# pohyb rukou z očí odvozený z Mixama
+animace/fp_*_mocap.json

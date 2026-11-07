@@ -2604,16 +2604,15 @@ func _skyranger(o: Vector3) -> void:
 	var m := Game.mat("skyranger", 0.5)
 	# the team's ride: the Kondor, or before its research the old twin-rotor Čáp
 	var heli := String(Net.mission_params.get("transport", "kondor")) == "heli"
-	var ship := Game.model("heli" if heli else "dropship")
+	var ship := Game.model("heli" if heli else ("pelikan" if mtype == "mars" else "dropship"))      # 0.57: Mars only by Pelikán
 	root.add_child(ship)
 	ship.position = c
-	if heli:
-		for rn in ["RotorF", "RotorR"]:
-			var r: Node3D = ship.find_child(rn, true, false)
-			if r:
-				# idling blades: a slow, endless turn
-				var tw := (Engine.get_main_loop() as SceneTree).create_tween().bind_node(r).set_loops()
-				tw.tween_property(r, "rotation:y", TAU, 2.6 if rn == "RotorF" else 2.9).as_relative()
+	# idling blades: a slow, endless turn (the Čáp's rotors, the Kondor's proprotors - nacelles up)
+	for rn in ["RotorF", "RotorR", "PropL", "PropR"]:
+		var r: Node3D = ship.find_child(rn, true, false)
+		if r:
+			var tw := (Engine.get_main_loop() as SceneTree).create_tween().bind_node(r).set_loops()
+			tw.tween_property(r, "rotation:y", TAU if rn != "PropL" else -TAU, 2.6 if rn in ["RotorF", "PropL"] else 2.9).as_relative()
 	var first := root.get_child_count()
 	# fuselage pointing away from the map (nose at -z), ramp open towards +z
 	box(c + Vector3(-1.6, 1.4, 0), Vector3(0.3, 2.8, 8), m)
@@ -2679,6 +2678,8 @@ func _ufo(center: Vector3) -> void:
 			info["alien_spawns"].append(xf * c.position + Vector3(0, 0.2, 0))
 		elif nm.begins_with("Way_"):
 			info["waypoints"].append(xf * c.position)
+			if kind == "harvester":
+				info["ufo_inside"] = (info.get("ufo_inside", []) as Array) + [xf * c.position]
 		elif nm.begins_with("Light_"):
 			var ul := OmniLight3D.new()
 			ul.light_color = Color(0.65, 0.35, 1.0)

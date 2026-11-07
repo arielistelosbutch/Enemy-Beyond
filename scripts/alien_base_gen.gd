@@ -8,6 +8,7 @@ extends "res://scripts/map_gen.gd"
 
 const H := 5.5
 var cells := {}           # Vector2i -> role
+var _ab_open := {}           # passages between cells (edge key -> true)
 
 func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	_t0 = Time.get_ticks_msec()
@@ -71,6 +72,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 				var b2: Vector2i = a + d
 				if b2.x < N and b2.y < N and rng.randf() < 0.45:
 					open[_edge(a, b2)] = true
+	_ab_open = open
 	# floor and ceiling over the whole base
 	box(Vector3(N * BLOCK / 2, -0.25, N * BLOCK / 2), Vector3(N * BLOCK, 0.5, N * BLOCK), Game.mat("alien_rock", 0.5))
 	box(Vector3(N * BLOCK / 2, H + 0.4, N * BLOCK / 2), Vector3(N * BLOCK + 2, 0.8, N * BLOCK + 2), Game.mat("alien_rock", 0.5))
@@ -163,9 +165,19 @@ func _cave(o: Vector3) -> void:
 ## A built cell: pale panels lining the rock, tiled floor, violet light.
 func _built(o: Vector3, floor_col := Color(0.62, 0.62, 0.7)) -> void:
 	box(o + Vector3(BLOCK / 2, 0.03, BLOCK / 2), Vector3(BLOCK - 1.6, 0.06, BLOCK - 1.6), Game.mat("ufo_floor", 0.5), false)
-	for sd in [0.0, 1.0]:
-		box(o + Vector3(BLOCK / 2, 1.6, 0.9 + sd * (BLOCK - 1.8)), Vector3(BLOCK - 1.8, 3.2, 0.1), Game.mat("alien_panel", 0.5), false)
-		box(o + Vector3(0.9 + sd * (BLOCK - 1.8), 1.6, BLOCK / 2), Vector3(0.1, 3.2, BLOCK - 1.8), Game.mat("alien_panel", 0.5), false)
+	# the panels line the rock - with a gap where the rock has one (0.56: they used to hide the
+	# passages behind a "wall" you could walk through)
+	var cell := Vector2i(int(round(o.x / BLOCK)), int(round(o.z / BLOCK)))
+	var pm := Game.mat("alien_panel", 0.5)
+	for sd in [0, 1]:
+		var nz := cell + Vector2i(0, -1 if sd == 0 else 1)
+		var nx := cell + Vector2i(-1 if sd == 0 else 1, 0)
+		var z_open := _ab_open.has(_edge(cell, nz))
+		var x_open := _ab_open.has(_edge(cell, nx))
+		for half in ([[0.9, BLOCK / 2 - 1.9], [BLOCK / 2 + 1.9, BLOCK - 0.9]] if z_open else [[0.9, BLOCK - 0.9]]):
+			box(o + Vector3((half[0] + half[1]) / 2, 1.6, 0.9 + sd * (BLOCK - 1.8)), Vector3(half[1] - half[0], 3.2, 0.1), pm, false)
+		for half in ([[0.9, BLOCK / 2 - 1.9], [BLOCK / 2 + 1.9, BLOCK - 0.9]] if x_open else [[0.9, BLOCK - 0.9]]):
+			box(o + Vector3(0.9 + sd * (BLOCK - 1.8), 1.6, (half[0] + half[1]) / 2), Vector3(0.1, 3.2, half[1] - half[0]), pm, false)
 	var l := OmniLight3D.new()
 	l.light_color = Color(0.7, 0.5, 1.0)
 	l.light_energy = 1.3

@@ -62,6 +62,15 @@ const LIST := {
 	"tp_body_dead_crouch": [PRO, "death crouching headshot front.fbx", false, false, "body"],
 	"tp_body_dead_7": [PRO, "death from right.fbx", false, false, "body"],
 	"tp_throw_prone_vse": ["toss_granade_on_ground.fbx", "", true, false, "hand", 1.2, 2.5],
+	# 0.57: the pistol pack - the same body movements with a handgun (the game takes them when he holds one)
+	"tp_body_idle_pistol": [PISTOL, "pistol idle.fbx", true, true, "body"],
+	"tp_body_walk_pistol": [PISTOL, "pistol walk.fbx", true, true, "body"],
+	"tp_body_walk_back_pistol": [PISTOL, "pistol walk backward.fbx", true, true, "body"],
+	"tp_body_walk_left_pistol": [PISTOL, "pistol strafe.fbx", true, true, "body"],
+	"tp_body_walk_right_pistol": [PISTOL, "pistol strafe (2).fbx", true, true, "body"],
+	"tp_body_run_pistol": [PISTOL, "pistol run.fbx", true, true, "body"],
+	"tp_body_run_back_pistol": [PISTOL, "pistol run backward.fbx", true, true, "body"],
+	"tp_body_crouch_pistol": [PISTOL, "pistol kneeling idle.fbx", true, true, "body"],
 }
 
 func _ready() -> void:

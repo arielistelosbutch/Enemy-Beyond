@@ -256,7 +256,7 @@ func _build_left(parent: Node) -> void:
 	from_opt.tooltip_text = "Vezme jinou hotovou animaci (třeba přebíjení jiné zbraně) nebo vzor jako začátek - pak ji jen upravíš."
 	from_opt.item_selected.connect(func(i): _start_from(String(from_opt.get_item_metadata(i))))
 	fr.add_child(from_opt)
-	EdUI.btn(g, "Načíst z Mixamo…", _mixamo_dialog, "Pohyb z Mixamo (FBX ze složky animace/Maximo, i ze ZIPů) převede na žoldáka. Nic se neuloží, dokud nedáš Ctrl+S.").size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	EdUI.btn(g, "Načíst z Mixamo…", _mixamo_dialog, "Pohyb z Mixamo (FBX ze složky animace/Maximo, i ze ZIPů) převede na vojáka. Nic se neuloží, dokud nedáš Ctrl+S.").size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	EdUI.btn(g, "Uložit pro všechny věci", _save_for_all, "Uloží tuhle animaci jako společnou pro každou věc (věci bez vlastní animace ji použijí)").size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	EdUI.btn(g, "Vrátit původní ze hry", func(): EdUI.ask(self, "Smazat upravenou animaci a vrátit původní pohyb ze hry?", _revert, "Vrátit"), "Smaže soubor s úpravou").size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
@@ -585,7 +585,7 @@ func _template() -> Dictionary:
 		c["udalosti"].append({"t": snappedf(tt, 0.01), "typ": typ})
 	var hand_at := func(p: Vector3, rot: Vector3) -> Array:
 		return [snappedf(p.x, 0.001), snappedf(p.y, 0.001), snappedf(p.z, 0.001), rot.x, rot.y, rot.z]
-	var carry: String = {"pistol": "pistol_mag", "laser_pistol": "pistol_mag", "magnum": "magnum_rounds", "shotgun": "shell"}.get(item, "rifle_clip")
+	var carry: String = {"pistol": "pistol_mag", "laser_pistol": "pistol_mag", "plasma_pistol": "plasma_cell", "plasma_rifle": "plasma_cell", "plasma_cannon": "plasma_cell", "plasma_minigun": "plasma_cell", "magnum": "magnum_rounds", "shotgun": "shell"}.get(item, "rifle_clip")
 	var has_mag := false
 	if Game.ITEMS.has(item):
 		var probe := Game.held_model(item, false)
@@ -645,7 +645,7 @@ func _template() -> Dictionary:
 			key.call("zbran", 0.15, [0.04, 0.1, 0.06, 45.0, -10.0, -15.0])
 			key.call("zbran", 0.27, [-0.12, -0.04, -0.2, -50.0, 15.0, 20.0])
 			key.call("zbran", 0.45, [0, 0, 0, 0, 0, 0])
-			ev.call(0.2, "zvuk:swish" if not item in ["knife"] else "zvuk:knife_stab")
+			ev.call(0.2, "zvuk:swish" if not item in ["knife", "energo_nuz"] else "zvuk:knife_stab")
 		"throw":
 			c["delka"] = 0.6
 			key.call("zbran", 0.0, [0, 0, 0, 0, 0, 0])
@@ -1366,7 +1366,7 @@ func _mixamo_dialog() -> void:
 	vb.custom_minimum_size = Vector2(520, 460)
 	d.add_child(vb)
 	var info := Label.new()
-	info.text = ("Soubory ze složky animace/Maximo (i uvnitř ZIPů). Pohyb se převede na žoldáka a otevře tady -\n"
+	info.text = ("Soubory ze složky animace/Maximo (i uvnitř ZIPů). Pohyb se převede na vojáka a otevře tady -\n"
 		+ "nic se neuloží, dokud nedáš Ctrl+S (Zpět vrátí původní).") if not items.is_empty() else "Ve složce animace/Maximo nejsou žádné FBX ani ZIPy z Mixamo."
 	vb.add_child(info)
 	var flt := LineEdit.new()

@@ -151,7 +151,83 @@ func ko_dark(on: bool) -> void:
 		tw.tween_property(r, "color:a", 0.0, 1.5)
 		tw.tween_callback(r.queue_free)
 
+## The night-vision tube overloads: pale green, the protection pulls the gain down, it comes back.
+func nvg_overload(k: float) -> void:
+	var r := ColorRect.new()
+	r.color = Color(0.75, 1.0, 0.75, clampf(k, 0.0, 1.0) * 0.95)
+	r.set_anchors_preset(Control.PRESET_FULL_RECT)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(r)
+	move_child(r, 0)
+	var tw := create_tween()
+	tw.tween_interval(0.25 + k * 0.6)
+	tw.tween_property(r, "color:a", 0.0, 1.0 + k * 1.2).set_ease(Tween.EASE_IN)
+	tw.tween_callback(r.queue_free)
+
+## Behind a battered shield: the window is cracked, the more the worse.
+var _visor: Control
+var _visor_k := 0.0
+func visor(k: float) -> void:
+	if k <= 0.01:
+		if _visor:
+			_visor.visible = false
+		return
+	if _visor == null:
+		_visor = Control.new()
+		_visor.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_visor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_visor)
+		move_child(_visor, 0)
+		_visor.draw.connect(_draw_visor)
+	_visor.visible = true
+	if absf(k - _visor_k) > 0.03:
+		_visor_k = k
+		_visor.queue_redraw()
+
+func _draw_visor() -> void:
+	var sz := _visor.size
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5701
+	_visor.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.75, 0.8, 0.8, 0.12 * _visor_k))
+	var n := int(3 + 16 * _visor_k)
+	for i in n:
+		var p := Vector2(rng.randf_range(0.15, 0.85) * sz.x, rng.randf_range(0.15, 0.85) * sz.y)
+		var col := Color(0.92, 0.95, 0.95, rng.randf_range(0.25, 0.5) * (0.6 + 0.4 * _visor_k))
+		# a star of cracks from each impact
+		for arm in rng.randi_range(3, 6):
+			var a := rng.randf() * TAU
+			var q := p
+			for seg in rng.randi_range(3, 6):
+				a += rng.randf_range(-0.6, 0.6)
+				var q2 := q + Vector2(cos(a), sin(a)) * rng.randf_range(12.0, 38.0) * sz.y / 720.0
+				_visor.draw_line(q, q2, col, rng.randf_range(1.0, 2.0))
+				q = q2
+		_visor.draw_circle(p, 3.0 * sz.y / 720.0, col)
+
+## A flare burns out next to you: the eyes lag behind the dark for a few seconds.
+func night_blind() -> void:
+	var r := ColorRect.new()
+	r.color = Color(0, 0, 0, 0.6)
+	r.set_anchors_preset(Control.PRESET_FULL_RECT)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(r)
+	move_child(r, 0)
+	var tw := create_tween()
+	tw.tween_property(r, "color:a", 0.0, 4.5).set_ease(Tween.EASE_IN)
+	tw.tween_callback(r.queue_free)
+
 ## Ještěřan's flash trap: the world goes white, then slowly comes back.
+## LC-01's shot: a short white flash.
+func shot_flash() -> void:
+	var r := ColorRect.new()
+	r.color = Color(1.0, 0.92, 0.88, 0.45)
+	r.set_anchors_preset(Control.PRESET_FULL_RECT)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(r)
+	var tw := create_tween()
+	tw.tween_property(r, "color:a", 0.0, 0.18)
+	tw.tween_callback(r.queue_free)
+
 func blind_flash(k: float) -> void:
 	var r := ColorRect.new()
 	r.color = Color(1.0, 0.98, 0.93, clampf(k, 0.0, 1.0))
@@ -380,6 +456,8 @@ func _draw_hud() -> void:
 				for d in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
 					c.draw_line(mid + d * 4, mid + d * 8, Color(1, 0.3, 0.2), 1.0)
 	# bars, bottom left (veteran: no numbers - you feel it: blood, breath, limping)
+	# 0.57: on a plate of the menus' metal, with the mercenary's own figure for the stance
+	_plate(c, Rect2(4, sz.y - 44, 218, 40))
 	var base := Vector2(10, sz.y - 34)
 	if Game.veteran():
 		_blood(c, sz, p)
@@ -413,6 +491,13 @@ func _draw_hud() -> void:
 		_text(c, base + Vector2(0, -12), "KRVÁCÍŠ (-%.1f zdraví/s) - X lékárnička (do ruky, pak X)" % p.bleeding, RED, 9)
 	# hands, bottom: left hand on the left, right hand on the right
 	var right := Vector2(sz.x - 160, sz.y - 30)
+	_plate(c, Rect2(sz.x - 168, sz.y - 66, 164, 62))
+	var held_id: String = p.item_in("rh").get("id", "")
+	var ico := UiSkin.icon(held_id) if held_id != "" else null
+	if ico:
+		c.draw_texture_rect(ico, Rect2(sz.x - 62, sz.y - 60, 56, 28), false, Color(1, 1, 1, 0.9))
+	if p.item_in("lh").size() > 0:
+		_plate(c, Rect2(sz.x - 338, sz.y - 34, 164, 30))
 	_hand_text(c, p, "rh", right)
 	var rid: String = p.item_in("rh").get("id", "")
 	if p.item_in("lh").size() > 0:
@@ -424,9 +509,9 @@ func _draw_hud() -> void:
 			holst.append("%s %s" % [hs[1], Game.ITEMS[p.inv[hs[0]]["id"]]["short"]])
 	if not holst.is_empty():
 		_text(c, right + Vector2(0, -24), "   ".join(holst), FRAME, 8)
-	if p.spin > 0.05 and rid == "minigun":
+	if p.spin > 0.05 and rid in ["minigun", "laser_minigun", "plasma_minigun"]:
 		c.draw_rect(Rect2(mid.x - 20, mid.y + 14, 40 * p.spin, 3), Color(1, 0.6, 0.2))
-	_stance_icon(c, Vector2(132, sz.y - 36), p)
+	_stance_icon(c, Vector2(130, sz.y - 40), p)
 	if Game.easy() or Game.has_talent(p.merc, "sesty_smysl"):
 		_eye_icon(c, Vector2(132, sz.y - 86), p)    # only on easy: on normal and hardcore you never know who is watching
 	if Game.mic_live:
@@ -518,7 +603,10 @@ func _belt_bar(c: Control, p: Node, sz: Vector2) -> void:
 				k += 1
 		return k
 	var extra := "   G %d  X %d  7 %d  H %d" % [n.call("grenade"), n.call("smoke_grenade"), n.call("flare"), n.call("medkit")]
-	_text(c, Vector2(222, sz.y - 6), "  ".join(parts) + extra + "   (I = výstroj)", FRAME, 7)
+	var line: String = "  ".join(parts) + extra + "   (I = výstroj)"
+	var w := ThemeDB.fallback_font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, 7).x
+	_plate(c, Rect2(226, sz.y - 16, w + 12, 14))
+	_text(c, Vector2(232, sz.y - 6), line, FRAME, 7)
 
 func _hand_text(c: Control, p: Node, slot: String, at: Vector2) -> void:
 	var it: Dictionary = p.item_in(slot)
@@ -527,20 +615,39 @@ func _hand_text(c: Control, p: Node, slot: String, at: Vector2) -> void:
 		_text(c, at + Vector2(0, 12), label + "prázdné ruce", FRAME, 9)
 		return
 	var rule: Dictionary = Game.ITEMS[it["id"]]
-	_text(c, at, label + ((rule["short"] + " (neznámá)") if Game.alien_unknown(it["id"]) else rule["name"]), TEXT, 9)
+	var mode := ("  [1×]" if p.semi else "  [dávka]") if rule.get("modes", false) else ""
+	if rule.has("bursts"):
+		mode = "  [%s]" % p.burst_name(it)
+	if rule.has("ammo_alt"):
+		mode = "  [%s]" % Game.ITEMS[String(it.get("sel", rule["ammo"]))]["short"]
+	_text(c, at, label + ((rule["short"] + " (neznámá)") if Game.alien_unknown(it["id"]) else rule["name"]) + mode, TEXT, 9)
 	if rule["type"] == "weapon":
 		var spare := 0
 		for s in p.inv:
-			if p.inv[s]["id"] == rule["ammo"]:
-				spare += int(p.inv[s].get("left", Game.ITEMS[rule["ammo"]]["rounds"]))
+			if p.inv[s]["id"] == String(it.get("sel", rule["ammo"])):
+				spare += int(p.inv[s].get("left", Game.ITEMS[p.inv[s]["id"]]["rounds"]))
 		if rule.get("alien", false):
 			_text(c, at + Vector2(0, 12), "%d / %d   články %d" % [int(it.get("loaded", 0)), Game.mag_size(it["id"]), int(it.get("cells", 0))], ACCENT, 10)
 		elif rule.get("laser", false):
-			_text(c, at + Vector2(0, 12), "%d / %d   dobíjí se samo" % [int(it.get("loaded", 0)), Game.mag_size(it["id"])], ACCENT, 10)
+			# the cell's readiness light (X-WEP-001): ready, or charging
+			var cap := Game.mag_size(it["id"])
+			if cap <= 1:
+				var ready := int(it.get("loaded", 0)) >= 1
+				_text(c, at + Vector2(0, 12), "článek připraven" if ready else "článek se nabíjí", ACCENT if ready else FRAME, 10)
+				if not ready:
+					c.draw_rect(Rect2(at + Vector2(118, 5), Vector2(60.0 * clampf(float(it.get("charge", 0.0)), 0.0, 1.0), 6)), FRAME)
+			else:
+				_text(c, at + Vector2(0, 12), "%d / %d pulzů%s" % [int(it.get("loaded", 0)), cap, "   nabíjí se doplna" if it.get("drained", false) else ""], ACCENT, 10)
 		else:
 			_text(c, at + Vector2(0, 12), "%d / %d   náhradní %d" % [int(it.get("loaded", 0)), Game.mag_size(it["id"]), spare], ACCENT, 10)
 	elif it.has("uses"):
 		_text(c, at + Vector2(0, 12), "%dx" % int(it["uses"]), ACCENT, 10)
+	elif it["id"] == "energo_nuz":
+		# EN-01's small indicator light: the edge's charge, or that it is charging / switched off
+		var e := int(it.get("edge", 3))
+		_text(c, at + Vector2(0, 12), ("ostří nabíjí" if e <= 0 else ("ostří vypnuto" if it.get("edge_off", false) else "ostří aktivní " + "▮".repeat(e))), ACCENT if e > 0 and not it.get("edge_off", false) else FRAME, 10)
+	elif it["id"] == "stun_baton" and Game.has_mod("stun_baton", "diagnostika", p.merc):
+		_text(c, at + Vector2(0, 12), "energie %d / %d" % [int(it.get("energy", p.baton_cap())), p.baton_cap()], ACCENT, 10)
 
 # ---- motion scanner ----------------------------------------------------------------------
 ## Like a real motion tracker it shows only "something moves" - teammates too -
@@ -570,9 +677,15 @@ func _scanner_update(delta: float) -> void:
 	var near := 99.0
 	for b in _blips:
 		near = min(near, Vector2(b["pos"].x - p.global_position.x, b["pos"].z - p.global_position.z).length())
+	_scan_near = near
 	if near < SCAN_RANGE and _ping_t <= 0:
 		_ping_t = lerpf(0.22, 1.4, near / SCAN_RANGE)
 		Game.play_ui(mission(), "scanner_close", -16 + (SCAN_RANGE - near) / 2.5)
+		# (0.57, MD-01's entry) the beeping carries a few metres: what hunts by ear may hear it
+		_beep_noise_cd -= _ping_t
+		if _beep_noise_cd <= 0.0:
+			_beep_noise_cd = 2.0
+			mission().noise(p.global_position, 6.0)
 	if _scan_t > 0:
 		return
 	_scan_t = 0.5
@@ -584,8 +697,9 @@ func _scanner_update(delta: float) -> void:
 		_last_pos[a.name] = pos
 		if pos.distance_to(last) > 0.25 and pos.distance_to(p.global_position) < SCAN_RANGE:
 			_blips.append({"pos": pos.snapped(Vector3(2.5, 1, 2.5)), "t": 1.4})
-	# false echoes: wind in the wheat, animals - and fear
-	if randf() < (0.015 if Game.has_research("detektor") else 0.03) + p.stress / 100.0 * 0.2:
+	# false echoes: wind in the wheat, animals - and fear; metal all round (works, their base) adds more
+	var metal := 2.0 if String(Net.mission_params.get("biome", "")) == "industrial" or String(Net.mission_params.get("type", "")) in ["alienbase", "mars"] else 1.0
+	if randf() < (0.015 if Game.has_research("detektor") else 0.03) * metal + p.stress / 100.0 * 0.2:
 		var ang := randf() * TAU
 		_blips.append({"pos": p.global_position + Vector3(cos(ang), 0, sin(ang)) * randf_range(6.0, SCAN_RANGE), "t": 1.0})
 
@@ -604,13 +718,19 @@ func _sting_check(p: Node) -> void:
 			Game.play_ui(mission(), "sting", -4)
 			return
 
+var _scan_near := 99.0
+var _beep_noise_cd := 0.0
 func _draw_scanner(c: Control, center: Vector2, r: float, p: Node) -> void:
 	c.draw_circle(center, r, Color(0.02, 0.08, 0.04, 0.8))
 	c.draw_arc(center, r, 0, TAU, 24, Color(0.2, 0.8, 0.3, 0.8), 1.0)
-	c.draw_arc(center, r * 0.5, 0, TAU, 16, Color(0.2, 0.8, 0.3, 0.3), 1.0)
-	c.draw_line(center, center + Vector2(0, -r), Color(0.2, 0.8, 0.3, 0.3))
-	var rr := _scan_sweep * r
-	c.draw_arc(center, rr, 0, TAU, 24, Color(0.3, 1, 0.4, 0.25 * (1.0 - _scan_sweep)), 1.0)
+	c.draw_arc(center, r * 0.66, 0, TAU, 20, Color(0.2, 0.8, 0.3, 0.3), 1.0)
+	c.draw_arc(center, r * 0.33, 0, TAU, 14, Color(0.2, 0.8, 0.3, 0.3), 1.0)
+	c.draw_line(center, center + Vector2(0, -r), Color(0.2, 0.8, 0.3, 0.2))
+	# the sweep line going round, a fading wake behind it (MD-01's green screen)
+	var ang := _scan_sweep * TAU - PI / 2
+	for k in 6:
+		var a2 := ang - k * 0.09
+		c.draw_line(center, center + Vector2(cos(a2), sin(a2)) * r, Color(0.3, 1, 0.4, 0.5 * (1.0 - k / 6.0)), 1.0)
 	var inv_basis: Basis = p.global_transform.basis.inverse()
 	for b in _blips:
 		var local: Vector3 = inv_basis * (b["pos"] - p.global_position)
@@ -618,7 +738,7 @@ func _draw_scanner(c: Control, center: Vector2, r: float, p: Node) -> void:
 		if v.length() > r: continue
 		c.draw_circle(center + v, 2.5, Color(0.5, 1, 0.5, clampf(b["t"], 0, 1)))
 	c.draw_circle(center, 1.5, Color(1, 1, 1))
-	_text(c, center + Vector2(-r, r + 10), "DETEKTOR", Color(0.3, 0.9, 0.4), 8)
+	_text(c, center + Vector2(-r, r + 10), "DETEKTOR  " + (("%d m" % int(snappedf(_scan_near, 2.0))) if _scan_near < SCAN_RANGE else "--"), Color(0.3, 0.9, 0.4), 8)
 
 # ---- drawing helpers ---------------------------------------------------------------------
 func _text(c: Control, pos: Vector2, s: String, col: Color, size := 10) -> void:
@@ -660,10 +780,47 @@ func _eye_icon(c: Control, o: Vector2, p: Node) -> void:
 	c.draw_rect(Rect2(o.x + 38, o.y + 17, 50, 3), Color(0, 0, 0, 0.6))
 	c.draw_rect(Rect2(o.x + 38, o.y + 17, 50 * clampf(w, 0.0, 1.0), 3), col)
 
+## A plate of the menus' dark metal behind a group of the HUD (UiSkin's inset panel).
+func _plate(c: Control, rect: Rect2) -> void:
+	UiSkin.inset(4).draw(c.get_canvas_item(), rect)
+
+## 0.57: our mercenary's own figure (tools/stance_icons.gd: merc.glb in the game's movements, white).
+const STANCE_TEX := {"stand": "stance_stand", "crouch": "stance_crouch", "prone": "stance_prone", "sprint": "stance_sprint",
+	"downed": "stance_downed", "winded": "stance_winded"}
 func _stance_icon(c: Control, o: Vector2, p: Node) -> void:
 	var box := Rect2(o, Vector2(34, 34))
-	c.draw_rect(box, Color(0, 0, 0, 0.45))
-	c.draw_rect(box, FRAME, false, 1.0)
+	c.draw_rect(box, Color(0.02, 0.03, 0.035, 0.7))
+	c.draw_rect(box, Color(FRAME, 0.55), false, 1.0)
+	var key := "stand"
+	if p.downed:
+		key = "downed"
+	elif p.prone:
+		key = "prone"
+	elif p.crouching:
+		key = "crouch"
+	elif p.sprinting:
+		key = "sprint"
+	elif p._winded:
+		key = "winded"
+	var tex := UiSkin.icon(STANCE_TEX[key])
+	if tex:
+		var col2 := TEXT
+		if p.sprinting:
+			col2 = ACCENT
+		if p._winded:
+			col2 = Color(0.55, 0.65, 0.9)
+		if p.downed:
+			col2 = RED
+		c.draw_texture_rect(tex, Rect2(o + Vector2(1, 1), Vector2(32, 32)), false, col2)
+		var w2 := "STOJÍŠ"
+		match key:
+			"downed": w2 = "PADL JSI"
+			"prone": w2 = "LEŽÍŠ"
+			"crouch": w2 = "KLEČÍŠ"
+			"sprint": w2 = "SPRINT"
+			"winded": w2 = "BEZ DECHU"
+		_text(c, o + Vector2(38, 30), w2, col2, 8)
+		return
 	var col := TEXT
 	var word := "STOJÍŠ"
 	if p.prone:
@@ -718,9 +875,13 @@ func _stance_icon(c: Control, o: Vector2, p: Node) -> void:
 func _bar(c: Control, pos: Vector2, label: String, v: float, col: Color) -> void:
 	_text(c, pos + Vector2(0, 8), label, TEXT, 8)
 	var r := Rect2(pos + Vector2(42, 1), Vector2(70, 7))
-	c.draw_rect(r, Color(0, 0, 0, 0.6))
-	c.draw_rect(Rect2(r.position, Vector2(r.size.x * clampf(v, 0, 1), r.size.y)), col)
-	c.draw_rect(r, FRAME, false, 1.0)
+	c.draw_rect(r, Color(0.01, 0.015, 0.02, 0.8))
+	var fill := Rect2(r.position, Vector2(r.size.x * clampf(v, 0, 1), r.size.y))
+	c.draw_rect(fill, col)
+	c.draw_rect(Rect2(fill.position, Vector2(fill.size.x, 2)), col.lightened(0.35))       # a sheen on top
+	for k in range(1, 10):                                                                # tenths
+		c.draw_line(r.position + Vector2(r.size.x * k / 10.0, 1), r.position + Vector2(r.size.x * k / 10.0, r.size.y - 1), Color(0, 0, 0, 0.45), 1.0)
+	c.draw_rect(r, Color(FRAME, 0.6), false, 1.0)
 
 func _panel(title: String, pos: Vector2, min_size: Vector2) -> PanelContainer:
 	var p := PanelContainer.new()
@@ -814,11 +975,13 @@ func _keys_text(p: Node) -> String:
 	var hand := func(sl: String) -> String:
 		var it: Dictionary = p.item_in(sl)
 		return "-" if it.is_empty() else Game.ITEMS[it["id"]]["short"]
-	var melee: String = p.find_item(func(it): return Game.ITEMS[it["id"]]["type"] == "melee")
+	var melee: String = p.find_item(func(it): return it["id"] in ["knife", "energo_nuz"])
+	if melee == "":
+		melee = p.find_item(func(it): return Game.ITEMS[it["id"]]["type"] == "melee")
 	var lines := [
 		"LTM  použít / střílet: %s" % hand.call("rh"),
 		"PTM  mířit (zbraň oběma rukama)",
-		"R    nabít zbraň",
+		"R    nabít zbraň / zapnout ostří energo nože",
 		"1    primární zbraň (%s)" % hand.call("back") if p.item_in("rh").get("home", "") != "back" else "1    primární zbraň - znovu 1 ji uklidí",
 		"2    sekundární zbraň (%s)" % hand.call("side") if p.item_in("rh").get("home", "") != "side" else "2    sekundární zbraň - znovu 2 ji uklidí",
 		"Q    primární do rukou / znovu Q: zpět, co jsi držel",
@@ -828,9 +991,10 @@ func _keys_text(p: Node) -> String:
 		"X    lékárnička - do rukou, pak ošetří (%s)" % where.call("medkit"),
 		"E    táhnout padlého / sebrat / civilista",
 		"Enter  v lodi: připraven (start mise i odlet)",
-		"V    rána zblízka (%s)" % ("nemáš nůž ani obušek" if melee == "" else Game.ITEMS[p.inv[melee]["id"]]["short"]),
+		"V    rána zblízka (%s)" % ("pažbou zbraně" if melee == "" else Game.ITEMS[p.inv[melee]["id"]]["short"]),
 		"F    svítilna na helmě",
-		"N    noktovizor (%s)" % where.call("nvg"),
+		"N    noktovizor / přísvit (%s)" % where.call("nvg"),
+		"L    dávky / jednotlivé rány, délka dávky, druh nábojů",
 		"Tab  držet = mluvit (nahlas, kdo je blízko)",
 		"M    mikrofon stále zapnutý / vypnout (%s)" % ("ZAPNUTO" if Game.mic_live else "vypnuto"),
 		"T    držet = vysílačka (%s)" % ("helma" if Game.has_research("vysilacky") else where.call("radio")),

@@ -109,7 +109,53 @@ def dropship():
     screen = mat2("KondorScreen", (0.25, 0.85, 0.5), emit=1.5)
     rubber = mat2("KondorTyre", (0.03, 0.03, 0.03), 0.95)
     p = []
+    tilts = []
     L = 8.0
+
+    def nacelle(x):
+        """Engine pod standing up from the pivot (5.3x, 0.9, 2.2), the proprotor on top; the prop is its child."""
+        piv = (5.3 * x, 0.9, 2.2)
+        q = []
+        pd = loft(hull, [(1.55, 0, 0, 0.42, 0.42), (1.8, 0, 0, 0.56, 0.56), (3.1, 0, 0, 0.6, 0.6),
+                         (3.6, 0, 0, 0.52, 0.52), (3.85, 0, 0, 0.36, 0.36)], verts=20)
+        for v in pd.data.vertices:                     # lofted along y: stand it up (y -> z), onto the pivot
+            x0, y0, z0 = v.co
+            v.co = Vector((5.3 * x + x0, 0.9 - z0, y0))
+        q.append(pd)
+        q.append(torus(hull2, (5.3 * x, 0.9, 2.55), 0.6, 0.025, seg=24))                          # panel seams
+        q.append(torus(hull2, (5.3 * x, 0.9, 3.3), 0.585, 0.025, seg=24))
+        q.append(bx(black, (5.3 * x + 0.5 * x, 0.9, 2.9), (0.12, 0.5, 0.6), 0.02))                 # intake grille
+        for k in range(4):
+            q.append(box(steel, (5.3 * x + 0.565 * x, 0.9, 2.7 + k * 0.13), (0.02, 0.44, 0.03)))
+        q.append(disc(hull2, (5.3 * x, 0.9, 1.5), 0.36, 0.1, 'z', verts=16, r2=0.28))              # exhaust
+        q.append(torus(eng, (5.3 * x, 0.9, 1.44), 0.24, 0.04, seg=16))
+        q.append(box(stencil, (5.3 * x, 0.9 - 0.56, 2.9), (0.3, 0.01, 0.5)))
+        q.append(ball(white, (5.3 * x, 0.9 + 0.58, 3.0), 0.04))
+        pod = join(q, "TiltL" if x < 0 else "TiltR")
+        origin_at(pod, piv)
+        # the proprotor: spinner, hub, three long twisted blades with yellow tips
+        r = [ball(hull2, (0, 0, 0.22), 0.3, (1, 1, 1.25)), disc(steel, (0, 0, 0.02), 0.26, 0.16, 'z', verts=16)]
+        for i in range(3):
+            a = i * TAU / 3 + (0.5 if x > 0 else 0.0)
+            ca, sa = math.cos(a), math.sin(a)
+            bl = plate(panel, [(0.25, -0.24), (2.75, -0.13), (2.95, -0.06), (2.95, 0.1), (0.25, 0.24)], -0.03, 0.03)
+            for v in bl.data.vertices:
+                vx, vy, vz = v.co
+                tw = 0.45 * (1.0 - vx / 3.0) * x                                              # blade twist
+                vy, vz = vy * math.cos(tw) - vz * math.sin(tw), vy * math.sin(tw) + vz * math.cos(tw)
+                v.co = Vector((vx * ca - vy * sa, vx * sa + vy * ca, vz + 0.015 * vx))
+            r.append(bl)
+            r.append(bx(warn, (ca * 2.85, sa * 2.85, 0.06), (0.22, 0.27, 0.07), 0.005, rot=(0, 0, a)))
+            r.append(bx(hull2, (ca * 0.38, sa * 0.38, 0.02), (0.3, 0.16, 0.12), 0.02, rot=(0, 0, a)))   # blade cuff
+        prop = join(r, "PropL" if x < 0 else "PropR")
+        hub = Vector((5.3 * x, 0.9, 3.95))
+        for v in prop.data.vertices:
+            v.co += hub
+        origin_at(prop, hub)
+        prop.parent = pod
+        prop.matrix_parent_inverse = pod.matrix_world.inverted()
+        return [pod, prop]
+
     # ---- the cabin shell (slabs, so the inside shows from the cabin) ----------------------------------------------
     for x in (1, -1):
         p.append(bx(hull, (1.72 * x, 0, 1.45), (0.25, L, 2.6), 0.03))                          # side wall
@@ -212,31 +258,13 @@ def dropship():
         p.append(plate(hull2, [(1.75 * x, 2.4), (4.7 * x, 1.85), (4.7 * x, 0.15), (1.75 * x, -0.4)], 1.9, 2.12, b=0.04))
         p.append(plate(panel, [(2.1 * x, 2.1), (4.4 * x, 1.75), (4.4 * x, 1.55), (2.1 * x, 1.9)], 2.12, 2.13))
         p.append(box(warn, (3.3 * x, 0.4, 2.13), (1.6, 0.06, 0.01)))
-        # the nacelle: a lofted pod with an intake ring and fan, an exhaust nozzle
-        p.append(loft(hull, [(2.65, 5.3 * x, 2.0, 0.66, 0.66), (2.2, 5.3 * x, 2.0, 0.75, 0.75), (0.8, 5.3 * x, 2.0, 0.78, 0.78),
-                             (-0.4, 5.3 * x, 2.0, 0.7, 0.7), (-0.9, 5.3 * x, 2.0, 0.56, 0.56)], verts=20, cap=False))
-        p.append(torus(steel, (5.3 * x, 2.66, 2.0), 0.66, 0.06, rot=(PI2, 0, 0), seg=24))
-        p.append(disc(black, (5.3 * x, 2.45, 2.0), 0.63, 0.05, 'y', verts=20))
-        for k in range(9):                                                                      # fan blades
-            a = TAU * k / 9
-            p.append(bx(hull2, (5.3 * x + math.cos(a) * 0.33, 2.5, 2.0 + math.sin(a) * 0.33), (0.08, 0.02, 0.56), 0.005,
-                        rot=(0.35, -a + PI2, 0)))
-        p.append(ball(steel, (5.3 * x, 2.55, 2.0), 0.16, (1, 0.8, 1)))
-        p.append(disc(hull2, (5.3 * x, -1.0, 2.0), 0.56, 0.2, 'y', verts=20, r2=0.46))
-        for k in range(12):                                                                     # nozzle petals
-            a = TAU * k / 12
-            p.append(bx(hull2, (5.3 * x + math.cos(a) * 0.47, -1.2, 2.0 + math.sin(a) * 0.47), (0.2, 0.3, 0.03), 0.005,
-                        rot=(0, -a + PI2, 0)))
-        p.append(disc(black, (5.3 * x, -1.1, 2.0), 0.44, 0.04, 'y', verts=20))
-        p.append(torus(eng, (5.3 * x, -1.13, 2.0), 0.3, 0.05, rot=(PI2, 0, 0), seg=20))
-        p.append(disc(hull2, (5.3 * x, -1.14, 2.0), 0.12, 0.08, 'y', verts=12, r2=0.04))
-        for y in (1.6, 0.4, -0.5):
-            p.append(torus(hull2, (5.3 * x, y, 2.0), 0.775, 0.025, rot=(PI2, 0, 0), seg=24))
-        p.append(bx(hull2, (4.85 * x, 0.9, 2.0), (0.4, 1.8, 0.3), 0.04))                       # pivot housing
-        p.append(disc(steel, (4.62 * x, 0.9, 2.0), 0.22, 0.08, 'x', verts=14))
-        p.append(box(nav, (6.08 * x, 0.9, 2.0), (0.06, 0.2, 0.08)))
-        p.append(ball(white, (5.3 * x, -0.2, 2.78), 0.04))
-        p.append(box(stencil, (5.3 * x, 1.6, 2.78), (0.25, 0.5, 0.01)))
+        # 0.57 (Ari: a tilt-rotor, not ducted fans): the wing-tip pivot housing stays on the wing,
+        # the nacelle with its big three-blade proprotor is a separate piece (TiltL / TiltR) that
+        # the game swings from straight up (take-off, landing, parked) to straight ahead (cruise)
+        p.append(bx(hull2, (4.75 * x, 0.9, 2.1), (0.5, 1.9, 0.36), 0.05))                       # pivot housing
+        p.append(disc(steel, (4.98 * x, 0.9, 2.2), 0.26, 0.1, 'x', verts=16))
+        p.append(box(nav, (6.0 * x, 0.9, 2.2), (0.06, 0.2, 0.08)))
+        tilts.append(nacelle(x))
         # landing gear: struts out of the sponsons, twin wheels
         for y in (2.5, -2.8):
             p.append(tb(steel, (1.95 * x, y, 0.4), (1.95 * x, y, 0.15), 0.06, 8))
@@ -271,7 +299,7 @@ def dropship():
     p.append(bx(hull2, (0, -4.0, 2.88), (3.6, 0.15, 0.3), 0.03))
     p.append(box(redl, (0, -3.9, 2.7), (0.3, 0.02, 0.08)))
     o = join(p, "Kondor")
-    export_glb(os.path.join(OUTDIR, "dropship.glb"), [o])
+    export_glb(os.path.join(OUTDIR, "dropship.glb"), [o] + [q for t in tilts for q in t])
 
 ALL = dict(cow=cow, dropship=dropship)
 for k, f in ALL.items():

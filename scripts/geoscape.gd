@@ -57,7 +57,7 @@ func _ready() -> void:
 	add_child(_toast)
 	Net.note.connect(_on_note)
 	Campaign.mission_found.connect(func(m): Game.play_ui(self, "radar_alert", -4); _alert("RADAR: %s\n%s\n%s" % [Campaign.MTYPES[m["type"]]["name"], m["place"], Campaign.MTYPES[m["type"]]["text"]]); selected = int(m["id"]); _focus(m))
-	Campaign.flight_found.connect(func(f): Game.play_ui(self, "radar_ping", -4); _alert("RADAR: UFO V LETU\n%s nad oblastí %s.\nVyber ho na glóbu a vyšli stíhačku Sokol, než zmizí." % [Campaign.UFO_NAMES[f["kind"]], Campaign.nearest_place(float(f["lat"]), float(f["lon"]))]); selected = int(f["id"]); _focus(f))
+	Campaign.flight_found.connect(func(f): Game.play_ui(self, "radar_ping", -4); _alert("RADAR: UFO V LETU\n%s nad oblastí %s.\nVyber ho na glóbu a vyšli stíhačky, než zmizí." % [Campaign.UFO_NAMES[f["kind"]], Campaign.nearest_place(float(f["lat"]), float(f["lon"]))]); selected = int(f["id"]); _focus(f))
 	Campaign.research_done.connect(func(id):
 		Game.play_ui(self, "research_done", -3)
 		_alert("VÝZKUM DOKONČEN\n%s\n%s" % [Campaign.RESEARCH[id]["name"], Campaign.RESEARCH[id]["desc"]])
@@ -91,7 +91,7 @@ func _ready() -> void:
 		Campaign.data["won_shown"] = true
 		Campaign.save()
 		Game.play_music("victory", false)
-		_alert("VÍTĚZSTVÍ\nVelký mozek je mrtvý a velín na Marsu utichl. UFO padají z nebe jako mrtví ptáci, Šediváci v lesích jen stojí a dívají se do tmy.\nŽoldáci přežili noc, která neměla konec.\n\nOPERACE X - ENEMY BEYOND\nPocta UFO: Enemy Unknown - fanouškovská hra, ne na prodej.\nNápad a hra: Ari (Ivo Arielistelos Florek).\nKampaň můžeš hrát dál.")
+		_alert("VÍTĚZSTVÍ\nVelký mozek je mrtvý a velín na Marsu utichl. UFO padají z nebe jako mrtví ptáci, Šediváci v lesích jen stojí a dívají se do tmy.\nVojáci přežili noc, která neměla konec.\n\nOPERACE X - ENEMY BEYOND\nPocta UFO: Enemy Unknown - fanouškovská hra, ne na prodej.\nNápad a hra: Ari (Ivo Arielistelos Florek).\nKampaň můžeš hrát dál.")
 	_autotest.call_deferred()
 
 # ---- the globe -------------------------------------------------------------------------------
@@ -434,7 +434,7 @@ func _build_side() -> void:
 	info_lbl.custom_minimum_size = Vector2(186, 0)
 	info_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var entries := [["Základna", _show_base], ["Výzkum", _show_research], ["Zbrojnice", _show_armory],
-			["Výstroj", func(): _menu_screen("loadout")], ["Žoldák", func(): _menu_screen("merc")],
+			["Výstroj", func(): _menu_screen("loadout")], ["Voják", func(): _menu_screen("merc")],
 			["Úpravy zbraní", func(): _menu_screen("mods")],
 			["Hlášení", _show_log], ["Encyklopedie", func(): _show_archive()]]
 	if Campaign.viewer:
@@ -467,14 +467,14 @@ func _update_text() -> void:
 		co += "\nCo-op: %d hráčů připojeno" % Net.roster.size()
 	var air := []
 	for c in Campaign.crafts():
-		air.append("%s %s" % [("Sokol" if int(c.get("n", 1)) == 1 else "%d× Sokol" % int(c.get("n", 1))) if c["kind"] == "jet" else Campaign.CRAFT_NAMES[c["kind"]].capitalize(), "letí k cíli" if c["state"] == "out" else ("u cíle" if c["state"] in ["arrived", "ambush"] else "se vrací")])
+		air.append("%s %s" % [("Stíhačka" if int(c.get("n", 1)) == 1 else "%d× stíhačka" % int(c.get("n", 1))) if c["kind"] == "jet" else Campaign.CRAFT_NAMES[c["kind"]].capitalize(), "letí k cíli" if c["state"] == "out" else ("u cíle" if c["state"] in ["arrived", "ambush"] else "se vrací")])
 	if not air.is_empty():
 		co += "\nVe vzduchu: " + ", ".join(air)
 	status_lbl.text = "%s\nRozpočet základny: %d kr   Důvěra: %d %%\nMk-115: %d g   Výzkum: %s   Rychlost: %s%s" % [Campaign.date_text(), int(d["credits"]), int(d["trust"]), Campaign.moskovium(), rs, SPEED_NAMES[speed], co]
 	var fl := _selected_flight()
 	if not fl.is_empty():
 		var left2: float = (float(fl["until"]) - float(d["day"])) * 24.0
-		info_lbl.text = "UFO V LETU\n%s\nNad oblastí: %s\nZmizí z radaru asi za %d min\n\nSokol: %s\n\nPoškozené UFO spadne (mise s posádkou a kořistí). Rozstřílené na kusy nedá nic. Velká UFO střílí zpět." % [
+		info_lbl.text = "UFO V LETU\n%s\nNad oblastí: %s\nZmizí z radaru asi za %d min\n\nStíhačky: %s\n\nPoškozené UFO spadne (mise s posádkou a kořistí). Rozstřílené na kusy nedá nic. Velká UFO střílí zpět." % [
 			Campaign.UFO_NAMES[fl["kind"]], Campaign.nearest_place(float(fl["lat"]), float(fl["lon"])), int(left2 * 60),
 			"připraveno %d z %d" % [Campaign.jets_ready(), Campaign.jets()]]
 		return
@@ -517,6 +517,10 @@ func _launch() -> void:
 	if m.is_empty():
 		_alert("Nejdřív vyber hlášení na glóbu.")
 		return
+	# X-PSI-002: no landing on Mars without the crew shield in the Pelikán
+	if m["type"] == "mars" and not Campaign.built("psi_ochrana"):
+		_alert("Výsadek nepovolen\nVelitelství Projektu X nepustí Pelikán k Marsu bez lodní psionické ochrany posádky (CPS-01).")
+		return
 	# the base and Mars: nobody has to fly anywhere first
 	if m["type"] in ["base", "mars"]:
 		_start_ground(m)
@@ -537,7 +541,7 @@ func _launch() -> void:
 func _launch_jets(fl: Dictionary) -> void:
 	var ready := Campaign.jets_ready()
 	if ready <= 0:
-		_alert("Žádný Sokol není připraven\nStíhačky jsou v opravě nebo ve vzduchu.")
+		_alert("Žádná stíhačka není připravena\nStíhačky jsou v opravě nebo ve vzduchu.")
 		return
 	var eta := Campaign.eta_hours("jet", float(fl["lat"]), float(fl["lon"]))
 	var left: float = (float(fl["until"]) - float(Campaign.data["day"])) * 24.0
@@ -547,7 +551,7 @@ func _launch_jets(fl: Dictionary) -> void:
 	if Net.is_online():
 		if _pick.is_empty():
 			_pick = {1: true}
-		_lbl(box, "Kdo usedne do Sokolů (připraveno %d) - klikni na jméno:" % ready, ACCENT, 9)
+		_lbl(box, "Kdo usedne do stíhaček (připraveno %d) - klikni na jméno:" % ready, ACCENT, 9)
 		for id in Net.roster:
 			var pid: int = id
 			var on: bool = _pick.get(pid, false)
@@ -561,7 +565,7 @@ func _launch_jets(fl: Dictionary) -> void:
 					_pick[pid] = true
 				_launch_jets(fl), 9)
 	else:
-		_lbl(box, "Letíš sám (Sokolů připraveno: %d)." % ready, ACCENT, 9)
+		_lbl(box, "Letíš sám (stíhaček připraveno: %d)." % ready, ACCENT, 9)
 	var row := HBoxContainer.new()
 	box.add_child(row)
 	_btn(row, "VZLÉTNOUT", func(): _go_jets(fl), 10)
@@ -577,7 +581,7 @@ func _go_jets(fl: Dictionary) -> void:
 	_close_popup()
 	Campaign.launch_craft("jet", fl, "flight", {"n": pilots.size(), "pilots": pilots})
 	Game.play_ui(self, "ui_confirm", -4)
-	_toast_say("Sokol vzlétl. Pusť čas - na místě začne souboj.")
+	_toast_say("Stíhačky vzlétly. Pusť čas - na místě začne souboj.")
 
 ## Before a ground mission: the transport flies there; jets can go along as escort.
 var _escort := 0
@@ -598,7 +602,7 @@ func _launch_transport(m: Dictionary) -> void:
 	_btn(er, " - ", func(): _escort = maxi(0, _escort - 1); _launch_transport(m), 9)
 	_btn(er, " + ", func(): _escort = mini(ready, _escort + 1); _launch_transport(m), 9)
 	if Net.is_online():
-		_lbl(box, "Kdo řídí transport (ostatní letí v doprovodu, pokud je Sokol):", FRAME, 8)
+		_lbl(box, "Kdo řídí transport (ostatní letí v doprovodu, pokud je stíhačka):", FRAME, 8)
 		var drv: int = int(_pick.get("driver", 1))
 		var dr := HBoxContainer.new()
 		box.add_child(dr)
@@ -638,7 +642,7 @@ func _on_arrived(c: Dictionary) -> void:
 	if c["kind"] == "jet":
 		var fl := Campaign._target_of(c)
 		var box := _overlay("SOKOL U CÍLE", 320)
-		_lbl(box, "%s má UFO na radaru. Zbraně odjištěny." % ("Sokol" if int(c.get("n", 1)) == 1 else "%d Sokoly" % int(c.get("n", 1))), TEXT, 9)
+		_lbl(box, "%s má UFO na radaru. Zbraně odjištěny." % ("Stíhačka" if int(c.get("n", 1)) == 1 else "%d stíhačky" % int(c.get("n", 1))), TEXT, 9)
 		_btn(box, "DO BOJE", func():
 			_close_popup()
 			_start_air(c, fl), 10)
@@ -655,7 +659,7 @@ func _begin_landed(c: Dictionary, m: Dictionary) -> void:
 
 func _start_air(c: Dictionary, fl: Dictionary) -> void:
 	if fl.is_empty():
-		Campaign.recall_craft(c, "UFO zmizelo - Sokol se vrací.")
+		Campaign.recall_craft(c, "UFO zmizelo - stíhačky se vracejí.")
 		return
 	Campaign.save()
 	var ip := Campaign.intercept_params(fl)
@@ -678,7 +682,7 @@ func _go_base() -> void:
 			for n in mini(int(Campaign.data["found"][k]), 2):
 				live.append(String(k).substr(5))
 	var params := {"type": "home", "type_name": "Základna", "base": Campaign.data["base"].duplicate(true), "grid_w": Campaign.GRID_W, "grid_h": Campaign.GRID_H,
-		"transport": Campaign.transport(), "live": live, "research": Campaign.data["research"]["done"].duplicate(), "night": false, "hour": 12.0,
+		"transport": Campaign.transport(), "live": live, "research": Campaign.active_research(), "night": false, "hour": 12.0,
 		"blips": Campaign.data["flights"].map(func(f): return [float(f.get("lat", 0)), float(f.get("lon", 0))]) + Campaign.data["missions"].map(func(m): return [float(m.get("lat", 0)), float(m.get("lon", 0))])}
 	if Campaign.viewer:
 		Net.start_local_base(params)     # the host stays on the globe; this is our own copy
@@ -696,13 +700,14 @@ func _on_ambush(c: Dictionary) -> void:
 	speed = 0
 	var box := _overlay("TRANSPORT NAPADEN!", 340)
 	var esc := int(c.get("escort", 0))
-	_lbl(box, "Cestou k cíli se na %s vrhla malá UFO.\n%s" % [Campaign.CRAFT_NAMES[c["kind"]], ("Doprovod %d Sokolů se otáčí k obraně." % esc) if esc > 0 else "Bez doprovodu: pilot musí uniknout."], RED, 9)
+	_lbl(box, "Cestou k cíli se na %s vrhla malá UFO.\n%s" % [Campaign.CRAFT_NAMES[c["kind"]], ("Doprovod %d stíhaček se otáčí k obraně." % esc) if esc > 0 else "Bez doprovodu: pilot musí uniknout."], RED, 9)
 	_btn(box, "BRÁNIT TRANSPORT", func(): _begin_escort(c), 10)
 
 func _begin_escort(c: Dictionary) -> void:
 	_close_popup()
 	Campaign.save()
-	var ep := {"escort": true, "craft": int(c["id"]), "transport": c["kind"], "escort_n": int(c.get("escort", 0)), "pilots": c.get("pilots", []), "driver": int(c.get("driver", 0))}
+	var ep := {"escort": true, "craft": int(c["id"]), "transport": c["kind"], "jet_armor": Campaign.built("pancir_letadel"), "escort_n": int(c.get("escort", 0)), "pilots": c.get("pilots", []), "driver": int(c.get("driver", 0))}
+	ep["night"] = Campaign.is_night(float(c.get("lon", Campaign.BASE_LON)))      # day or night where they meet
 	if Net.is_online():
 		Net.start_escort(ep)
 	else:
@@ -789,33 +794,29 @@ func _show_research() -> void:
 func _show_armory() -> void:
 	var box := _overlay("ZBROJNICE - NÁKUP", 500)
 	var base_pay := "ze svých peněz" if Campaign.viewer else "z rozpočtu základny (%d kr)" % int(Campaign.data["credits"])
-	_lbl(box, "DO SKLADU = pro celý tým natrvalo, platí se %s. SOBĚ = jen do tvé skříňky, ze tvých peněz (%d kr). Mimozemskou techniku (Moskovium %d g) kupuje jen základna." % [base_pay, Net.my_money(), Campaign.moskovium()], FRAME, 8).custom_minimum_size = Vector2(480, 0)
+	_lbl(box, "Běžná výbava od dodavatelů, ve skladu je druhý den. DO SKLADU = pro celý tým natrvalo, platí se %s. SOBĚ = jen do tvé skříňky, ze tvých peněz (%d kr). Co jsme vyzkoumali, nikdo neprodá - to vyrábí dílna." % [base_pay, Net.my_money()], FRAME, 8).custom_minimum_size = Vector2(480, 0)
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 8)
 	_scroll(box, 215).add_child(grid)
-	var stash := Campaign.stash()
 	var locker: Dictionary = Game.merc.get("locker", {})
 	for id in Campaign.SHOP:
-		if not Game.ITEMS.has(id):
+		if not Game.ITEMS.has(id) or Campaign.workshop_item(id):
 			continue
 		var key: String = id
-		var ok := Campaign.unlocked(id)
-		var mk := int(Campaign.SHOP_MK.get(id, 0))
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 2)
 		grid.add_child(row)
-		var cost := ("%d kr" % Campaign.price(id) + (" + %d g" % mk if mk > 0 else "")) if ok else "zamčeno"
 		var arm_n := int(Campaign.data["armory"].get(id, 0))
 		var ord_n := Campaign.on_order(id)
-		var name_b := _btn(row, "%s  %s\nsklad %d%s, tvoje %d" % [Game.ITEMS[id]["short"], cost, arm_n, (" +%d jede" % ord_n) if ord_n > 0 else "", int(locker.get(id, 0))], func(): pass, 8)
+		var name_b := _btn(row, "%s  %d kr\nsklad %d%s, tvoje %d" % [Game.ITEMS[id]["short"], Campaign.price(id), arm_n, (" +%d zítra" % ord_n) if ord_n > 0 else "", int(locker.get(id, 0))], func(): pass, 8)
 		name_b.custom_minimum_size = Vector2(150, 24)
 		name_b.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		UiSkin.item_icon(name_b, key, 30)
 		var bb := _btn(row, "Sklad", func():
 			if Campaign.viewer:
-				if Net.my_money() < Campaign.price(key) or Campaign.moskovium() < mk:
-					_alert("Nelze koupit\nNemáš dost peněz (nebo základna nemá Moskovium 115).")
+				if Net.my_money() < Campaign.price(key):
+					_alert("Nelze koupit\nNemáš dost peněz.")
 					return
 				Net.buy_for_base(key)
 				await get_tree().create_timer(0.5).timeout
@@ -823,17 +824,106 @@ func _show_armory() -> void:
 			elif Campaign.buy(key):
 				Game.play_ui(self, "money", -10)
 				_show_armory()
-				_alert("Objednáno\n%s dorazí do skladu asi za %.1f dne." % [Game.ITEMS[key]["name"], Campaign.delivery_days(key)])
-			else: _alert("Nelze koupit\nV rozpočtu základny není dost kreditů nebo Moskovia 115."), 8)
+			else: _alert("Nelze koupit\nV rozpočtu základny není dost kreditů."), 8)
 		bb.custom_minimum_size = Vector2(38, 24)
-		bb.disabled = not ok
 		var mb := _btn(row, "Sobě", func():
 			if Game.buy_for_me(key): Game.play_ui(self, "money", -10); _show_armory()
 			else: _alert("Nelze koupit\nNemáš dost vlastních peněz."), 8)
 		mb.custom_minimum_size = Vector2(38, 24)
-		mb.disabled = not ok or mk > 0
-	_btn(box, "Prodat ze skladu a kořisti...", _show_sell, 9)
+	var foot := HBoxContainer.new()
+	foot.add_theme_constant_override("separation", 6)
+	box.add_child(foot)
+	_btn(foot, "Dílna - výroba...", _show_workshop, 9)
+	_btn(foot, "Prodat ze skladu a kořisti...", _show_sell, 9)
 	_btn(box, "Zavřít", _close_popup)
+
+## The workshop: what research opened is made here - credits, alloys from the wrecks,
+## Moskovium, and days on a line. Only the host orders it (it is his base).
+func _show_workshop() -> void:
+	var box := _overlay("DÍLNA - VÝROBA", 500)
+	var lines := Campaign.workshop_lines()
+	_lbl(box, "Dílny: %d (tempo %d %%). Kredity základny: %d   Slitiny: %d ks   Moskovium 115: %d g" % [lines, int(round(Campaign.workshop_rate() * 100.0)), int(Campaign.data["credits"]), Campaign.alloys(), Campaign.moskovium()], FRAME, 8).custom_minimum_size = Vector2(480, 0)
+	if lines == 0:
+		_lbl(box, "Základna nemá dílnu. Bez ní se nic nevyrobí.", ACCENT, 8)
+	elif Campaign.viewer:
+		_lbl(box, "Výrobu zadává a platí hostitel.", FRAME, 8)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 8)
+	_scroll(box, 190).add_child(grid)
+	var n := 0
+	for id in Campaign.SHOP:
+		if not Game.ITEMS.has(id) or not Campaign.workshop_item(id) or not Campaign.unlocked(id):
+			continue
+		n += 1
+		var key: String = id
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 2)
+		grid.add_child(row)
+		var parts := ["%d kr" % Campaign.price(id)]
+		if Campaign.SHOP_AL.has(id): parts.append("%d sl." % int(Campaign.SHOP_AL[id]))
+		if Campaign.SHOP_MK.has(id): parts.append("%d g" % int(Campaign.SHOP_MK[id]))
+		for it in Campaign.MAKE_EATS.get(id, {}):
+			parts.append("%d× %s" % [int(Campaign.MAKE_EATS[id][it]), String(Game.ITEMS[it]["short"])])
+		var ord_n := Campaign.on_order(id)
+		var name_b := _btn(row, "%s  %s, %s\nsklad %d%s" % [Game.ITEMS[id]["short"], " + ".join(parts), _span(Campaign.make_days(id) / maxf(Campaign.workshop_rate(), 1.0)),
+			int(Campaign.data["armory"].get(id, 0)), (", vyrábí se %d" % ord_n) if ord_n > 0 else ""], func(): pass, 8)
+		name_b.custom_minimum_size = Vector2(190, 24)
+		name_b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		UiSkin.item_icon(name_b, key, 30)
+		var mb := _btn(row, "Vyrobit", func():
+			if Campaign.make(key):
+				Game.play_ui(self, "money", -10)
+				_show_workshop()
+			else: _alert("Nelze vyrobit\nChybí kredity, slitiny nebo Moskovium 115."), 8)
+		mb.custom_minimum_size = Vector2(46, 24)
+		mb.disabled = Campaign.viewer or lines == 0
+	# what research designed for the whole unit (vests, helmets, the fighters): made once, then everyone has it
+	for uid in Campaign.UPGRADES:
+		if not Campaign.researched(uid) or Campaign.built(uid):
+			continue
+		n += 1
+		var ukey: String = uid
+		var u: Dictionary = Campaign.UPGRADES[uid]
+		var urow := HBoxContainer.new()
+		urow.add_theme_constant_override("separation", 2)
+		grid.add_child(urow)
+		var up := ["%d kr" % Campaign.upgrade_price(uid)]
+		if u.has("al"): up.append("%d sl." % int(u["al"]))
+		if u.has("mk"): up.append("%d g" % int(u["mk"]))
+		var ub := _btn(urow, "%s\n%s, %s%s" % [u["name"], " + ".join(up), _span(float(u["days"]) * Campaign.time_k() / maxf(Campaign.workshop_rate(), 1.0)),
+			", vyrábí se" if Campaign.upgrade_coming(uid) else ""], func(): pass, 8)
+		ub.custom_minimum_size = Vector2(190, 24)
+		ub.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		UiSkin.item_icon(ub, String(Campaign.RESEARCH[uid].get("icon", "")), 30)
+		var umb := _btn(urow, "Vyrobit", func():
+			if Campaign.make_upgrade(ukey):
+				Game.play_ui(self, "money", -10)
+				_show_workshop()
+			else: _alert("Nelze vyrobit\nChybí kredity, slitiny nebo Moskovium 115."), 8)
+		umb.custom_minimum_size = Vector2(46, 24)
+		umb.disabled = Campaign.viewer or lines == 0 or Campaign.upgrade_coming(uid)
+	if n == 0:
+		_lbl(box, "Zatím není co vyrábět.", FRAME, 8)
+	# the queue
+	var q := []
+	var now := float(Campaign.data["day"])
+	for o in Campaign.data.get("orders", []):
+		if o.get("made", false):
+			var it := String(o["item"])
+			var nm: String = Campaign.queue_name(it)
+			q.append([float(o["at"]), "%s (%s)" % [nm, _span(float(o["at"]) - now)]])
+	q.sort_custom(func(x, y): return x[0] < y[0])
+	var ql := []
+	for e in q:
+		ql.append(e[1])
+	_lbl(box, ("Ve výrobě: " + ", ".join(ql)) if not ql.is_empty() else "Dílna stojí - nic se nevyrábí.", TEXT, 8).custom_minimum_size = Vector2(480, 0)
+	_btn(box, "Zpět", _show_armory)
+
+## "5 h" / "2,5 dne"
+func _span(d: float) -> String:
+	var h := ceili(maxf(d, 0.0) * 24.0)
+	return ("%d h" % h) if h < 24 else ("%s dne" % String.num(d, 1).replace(".", ","))
 
 ## The black market: spare gear from the armory (40 % of the price) and alien loot.
 func _show_sell() -> void:
@@ -867,65 +957,13 @@ func _show_sell() -> void:
 		_lbl(box, "Není co prodat.", FRAME, 9)
 	_btn(box, "Zpět", _show_armory)
 
-func _show_base() -> void:
-	var box := _overlay("ZÁKLADNA", 470)
-	_lbl(box, "Stavět jde jen vedle hotového zařízení (vznikne mezi nimi chodba). Kredity: %d. Stíhačky Sokol: %d (připraveno %d)." % [int(Campaign.data["credits"]), Campaign.jets(), Campaign.jets_ready()], FRAME, 8)
-	if not Campaign.viewer and Campaign.jets() < Campaign.MAX_JETS:
-		_btn(box, "Koupit další stíhačku Sokol - %d kr (v co-op poletí víc hráčů)" % Campaign.jet_price(), func():
-			if Campaign.buy_jet(): _show_base()
-			else: _alert("Nelze koupit\nNedostatek kreditů."), 8)
-	var grid := GridContainer.new()
-	grid.columns = Campaign.GRID_W
-	grid.add_theme_constant_override("h_separation", 3)
-	grid.add_theme_constant_override("v_separation", 3)
-	box.add_child(grid)
-	var colors := {"velin": Color(0.2, 0.35, 0.6), "hangar": Color(0.3, 0.3, 0.32), "ubikace": Color(0.3, 0.25, 0.18),
-		"laborator": Color(0.15, 0.4, 0.35), "dilna": Color(0.4, 0.3, 0.15), "osetrovna": Color(0.45, 0.15, 0.15), "radar": Color(0.2, 0.45, 0.2),
-		"cela": Color(0.25, 0.3, 0.55), "sklad": Color(0.35, 0.33, 0.25), "strelnice": Color(0.4, 0.38, 0.2)}
-	for i in Campaign.data["base"].size():
-		var cell: Dictionary = Campaign.data["base"][i]
-		var idx: int = i
-		var txt := "volno" if Campaign.can_build_at(i) else "zemina"
-		if cell["type"] != "":
-			txt = Campaign.FACILITIES[cell["type"]]["name"]
-			if float(cell["days"]) > 0:
-				txt += "\nstavba %d d" % ceili(float(cell["days"]))
-		var b := _btn(grid, txt, func(): _build_menu(idx), 8)
-		b.custom_minimum_size = Vector2(72, 40)
-		if cell["type"] != "":
-			UiSkin.tile(b, colors.get(cell["type"], Color(0.2, 0.2, 0.2)) * (0.6 if float(cell["days"]) > 0 else 1.0))
-	_btn(box, "Zavřít", _close_popup)
+## 0.57: the base screen of its own - the plan from above, the rooms, building, the hangar.
+func _show_base(select := -1) -> void:
+	_close_popup()
+	BaseScreen.open(self, select)
 
 func _build_menu(idx: int) -> void:
-	var cell: Dictionary = Campaign.data["base"][idx]
-	if Campaign.viewer and cell["type"] == "":
-		_alert("Stavba\nStavět může jen hostitel (je to jeho základna).")
-		return
-	if cell["type"] != "":
-		_alert("%s\n%s" % [Campaign.FACILITIES[cell["type"]]["name"], Campaign.FACILITIES[cell["type"]]["desc"]])
-		return
-	if not Campaign.can_build_at(idx):
-		_alert("Nelze stavět\nTady je zatím jen zemina: zařízení musí sousedit s hotovým (jinak by k němu nevedla chodba).")
-		return
-	var box := _overlay("STAVBA", 440)
-	var list := _scroll(box, 268)
-	for f in ["laborator", "dilna", "osetrovna", "radar", "cela", "sklad", "strelnice"]:
-		var key: String = f
-		var fi: Dictionary = Campaign.FACILITIES[f]
-		# a row: the build button with name and price, the description wrapped beside it
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 6)
-		list.add_child(row)
-		var b := _btn(row, "%s\n%d kr, %d dní" % [fi["name"], Campaign.facility_cost(f), int(Campaign.facility_days(f))], func():
-			if Campaign.build(idx, key): _show_base()
-			else: _alert("Nelze stavět\nNedostatek kreditů."), 8)
-		b.custom_minimum_size = Vector2(118, 30)
-		var d := _lbl(row, String(fi["desc"]), TEXT, 8)
-		d.custom_minimum_size = Vector2(290, 0)
-		d.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		if f == "cela" and Campaign.count("cela") > 0:
-			b.disabled = true
-	_btn(box, "Zpět", _show_base)
+	_show_base(idx)
 
 # ---- tests -----------------------------------------------------------------------------------------
 func _ui_check(tag: String) -> void:
@@ -973,11 +1011,77 @@ func _autotest() -> void:
 		await _ui_check("econ_research")
 		get_tree().quit()
 		return
+	if Game.autotest() == "striketest":
+		# 0.57: the Bitevní loď comes for the base: no core = the base is gone; the core = it never finds us
+		var res := []
+		for core in [false, true]:
+			Campaign.data["lost"] = false
+			Campaign.data["month"] = 4
+			Campaign.data["next_strike"] = float(Campaign.data["day"])
+			Campaign.data["flights"] = []
+			Campaign.data["missions"] = []
+			Campaign.data["next_raid"] = 9999.0
+			Campaign.data["next_mission"] = 9999.0
+			for i in Campaign.data["base"].size():
+				if String(Campaign.data["base"][i]["type"]) == "maskovani":
+					Campaign.data["base"][i] = {"type": "", "days": 0.0}
+			if core:
+				Campaign.data["base"][3] = {"type": "maskovani", "days": 0.0}
+			var seen := false
+			for k in 40:
+				Campaign.data["next_mission"] = 9999.0
+				Campaign.advance(0.05)
+				for f in Campaign.data["flights"]:
+					if f.get("strike", false):
+						seen = true
+				if Campaign.data["lost"]:
+					break
+			res.append("core %s strike %s lost %s" % [core, seen, Campaign.data["lost"]])
+		# Výslech zajatce: a captured Šedivák gives the base away only now and then (15 %)
+		var told := 0
+		for gi in 400:
+			Campaign.data["missions"] = []
+			Campaign._grey_talks()
+			if Campaign.data["missions"].any(func(mm): return mm["type"] == "alienbase"):
+				told += 1
+		res.append("grey %s" % ("ok" if told > 35 and told < 85 else "BAD %d" % told))
+		print("RESULT striketest " + " | ".join(res))
+		get_tree().quit()
+		return
+	if Game.autotest() == "encyshot":
+		# pictures of one encyclopedia entry, scrolled page by page (--ency=autopsy_ohnivec)
+		Campaign.data["seen_races"] = Campaign.RACE_INFO.keys()
+		for rid in Campaign.RESEARCH:
+			if not rid in Campaign.data["research"]["done"]:
+				Campaign.data["research"]["done"].append(rid)
+		for u in Campaign.UFO_NAMES:
+			if not Campaign.data.has("found"): Campaign.data["found"] = {}
+			Campaign.data["found"]["vrak_" + u] = 1
+		await get_tree().create_timer(0.5).timeout
+		var id := Game.cmd_arg("ency", "autopsy_ohnivec")
+		var en := Encyclopedia.open(self, id)
+		await get_tree().create_timer(1.5).timeout
+		var sc := en.text_lbl.get_parent() as ScrollContainer
+		for page in int(Game.cmd_arg("pages", "3")):
+			sc.scroll_vertical = int(page * sc.size.y * 0.9)
+			await get_tree().create_timer(0.4).timeout
+			get_viewport().get_texture().get_image().save_png("user://ency_%s_%d.png" % [id, page])
+		print("RESULT encyshot ", id)
+		get_tree().quit()
+		return
 	if Game.autotest() == "uigeo":
 		for i in 6:
 			Campaign.data["missions"].append(Campaign.generate_mission())
 		Campaign.data["flights"].append(Campaign.generate_flight())
 		Campaign.data["seen_races"] = Campaign.RACE_INFO.keys()
+		# 0.57: the defences built, so the plan and the build list show them
+		for ci in [[4, "silo"], [10, "laser_vez"], [15, "plazma_vez"], [16, "maskovani"]]:
+			if ci[0] < Campaign.data["base"].size() and String(Campaign.data["base"][ci[0]]["type"]) == "":
+				Campaign.data["base"][ci[0]] = {"type": ci[1], "days": 0.0}
+		for rid in ["jestrab", "vzduch_laser", "vzduch_laser_delo", "pvo_silo", "pvo_laser", "pvo_plazma", "maskovani"]:      # the hangar's new buttons in the base screen
+			if not rid in Campaign.data["research"]["done"]:
+				Campaign.data["research"]["done"].append(rid)
+		Campaign.data["built"] = ["vzduch_laser"]      # (one fitted, one still only a design: the workshop list shows it)
 		for i in 30:
 			Campaign._log("Zkušební záznam do hlášení číslo %d s trochu delším textem, aby bylo vidět zalamování." % i)
 		await get_tree().create_timer(0.5).timeout
@@ -988,15 +1092,26 @@ func _autotest() -> void:
 		_focus(Campaign.data["flights"][0])
 		await get_tree().create_timer(0.6).timeout
 		await _ui_check("geo_flight")
-		for e in [["geo_research", _show_research], ["geo_base", _show_base], ["geo_armory", _show_armory],
-				["geo_archive", _show_archive], ["geo_log", _show_log], ["geo_build", func(): _build_menu(2)],
+		for e in [["geo_research", _show_research], ["geo_base", _show_base], ["geo_armory", _show_armory], ["geo_workshop", func():
+					for rid in ["laser", "laser_puska", "rozbor_plazma", "slitiny", "vesta", "tezke", "zenijni"]:
+						if not rid in Campaign.data["research"]["done"]: Campaign.data["research"]["done"].append(rid)
+					var fd: Dictionary = Campaign.data.get("found", {})
+					fd["slitiny"] = int(fd.get("slitiny", 0)) + 14
+					Campaign.data["found"] = fd
+					Campaign.data["credits"] = int(Campaign.data["credits"]) + 4000
+					Campaign.make("pancir"); Campaign.make("laser_rifle"); Campaign.make("mine")
+					_show_workshop()],
+				["geo_archive", _show_archive], ["geo_log", _show_log], ["geo_build", func(): _build_menu(2)], ["geo_hangar", func(): _show_base(1)],
 				["geo_alert", func(): _alert("VELMI DLOUHÉ HLÁŠENÍ\n" + "Tohle je velmi dlouhý text upozornění, který by se měl zalomit. ".repeat(8))]]:
 			e[1].call()
+			if String(e[0]) in ["geo_base", "geo_build", "geo_hangar"]:
+				await get_tree().create_timer(2.5).timeout      # (the plan is built and photographed first)
 			await _ui_check(e[0])
 			_close_popup()
 			for c in get_children():
-				if c is ResearchScreen or c is Encyclopedia:
+				if c is ResearchScreen or c is Encyclopedia or c is BaseScreen:
 					c.queue_free()
+			await get_tree().process_frame
 		# the tree half done, the encyclopedia on an autopsy and a weapon
 		Campaign.data["research"]["done"] = ["pitva", "medicina", "pitva_levit", "zenijni", "tezke", "rozbor_plazma", "vesta", "slitiny", "vyslech"]
 		Campaign.data["research"]["current"] = "laser"

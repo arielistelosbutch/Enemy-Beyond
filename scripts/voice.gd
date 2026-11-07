@@ -284,6 +284,19 @@ func _interference(a: Node, b: Node) -> float:
 			continue
 		var d: float = min(al.global_position.distance_to(a.global_position), al.global_position.distance_to(b.global_position))
 		worst = max(worst, clampf(1.0 - d / 18.0, 0.0, 1.0))
+	# COM-01 is an ordinary set: distance, concrete and rock between the two eat the signal
+	var pa: Vector3 = (a as Node3D).global_position + Vector3.UP * 1.5
+	var pb: Vector3 = (b as Node3D).global_position + Vector3.UP * 1.5
+	var path := clampf((pa.distance_to(pb) - 45.0) / 150.0, 0.0, 0.35)
+	var space := (mission as Node3D).get_world_3d().direct_space_state if mission is Node3D else null
+	if space:
+		var q := PhysicsRayQueryParameters3D.create(pa, pb, 1)
+		q.exclude = [a.get_rid(), b.get_rid()] if a is CollisionObject3D and b is CollisionObject3D else []
+		if not space.intersect_ray(q).is_empty():
+			path += 0.2
+	if String(Net.mission_params.get("type", "")) in ["alienbase", "mars"]:
+		path += 0.15          # (deep under their hulls and rock)
+	worst = maxf(worst, path)
 	if Game.has_research("vysilacky"):
 		worst *= 0.6
 	return worst

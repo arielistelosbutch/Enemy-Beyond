@@ -11,7 +11,7 @@ signal report(text: String)
 signal craft_arrived(c: Dictionary)
 signal craft_ambushed(c: Dictionary)
 
-const START_YEAR := 1999
+const START_YEAR := 1990      # (Konečný soud: 23. dubna 1990 - the next day Projekt X goes to war)
 const BASE_LAT := 49.6      # the base: somewhere in the Bohemian-Moravian highlands
 const BASE_LON := 15.6
 
@@ -24,7 +24,7 @@ const MTYPES := {
 	"abduction": {"name": "Únos", "reward": 550, "aliens": 1, "expire": 0.5, "trust": 6,
 		"text": "Hlášení o světlech nad samotou a zmizelých lidech. Možná ještě není pozdě."},
 	"mars": {"name": "Velín na Marsu", "reward": 0, "aliens": 4, "expire": 9999.0, "trust": 0,
-		"text": "Orel je připravený. Odlet na Mars, do srdce jejich velení - k Velkému mozku. Zpátky se letí jen s vítězstvím."},
+		"text": "Pelikán je připravený. Odlet na Mars, do srdce jejich velení - k Velkému mozku. Zpátky se letí jen s vítězstvím."},
 	"terror": {"name": "Teror", "reward": 900, "aliens": 3, "expire": 0.35, "trust": 10,
 		"text": "Vetřelci vtrhli do městečka. Spojení s místní policií bylo přerušeno."},
 	"rescue": {"name": "Záchrana", "reward": 750, "aliens": 1, "expire": 0.4, "trust": 8,
@@ -45,71 +45,123 @@ const BRANCHES := {"bio": "Biologie", "psi": "Výslechy a psionika", "zbrane": "
 const RESEARCH := {
 	# biology: autopsies - each race on the table teaches where to hit it
 	"pitva": {"name": "Pitva šediváka", "cost": 150, "days": 3.0, "needs": {"corpse": "grey"}, "branch": "bio", "icon": "race_grey",
-		"desc": "Kde mají slabá místa? Všechny zbraně +15 % poškození proti vetřelcům."},
+		"desc": "První tělo na stole. Co jsou zač, jak jsou stavění a kde jsou slabí - zápis v encyklopedii."},
 	"medicina": {"name": "Polní medicína", "cost": 250, "days": 4.0, "needs": {"research": "pitva"}, "branch": "bio", "icon": "medkit",
-		"desc": "Co jsme se naučili na stole, pomůže i našim: lékárnička na 4 použití, padlý žoldák vykrvácí o 20 s později."},
+		"desc": "Co jsme se naučili na stole, pomůže i našim: lékárnička na 4 použití, padlý voják vykrvácí o 20 s později."},
 	"pitva_levit": {"name": "Pitva Levita", "cost": 200, "days": 3.0, "needs": {"research": "pitva", "corpse": "levit"}, "branch": "bio", "icon": "race_levit",
-		"desc": "Orgán, který ho nese, je jeho slabina. Levité dostávají o 20 % víc."},
+		"desc": "Z čeho je ten létající tvor složený - a z koho. Zápis v encyklopedii."},
 	"pitva_ohar": {"name": "Pitva Ohaře", "cost": 200, "days": 3.0, "needs": {"research": "pitva", "corpse": "ohar"}, "branch": "bio", "icon": "race_ohar",
-		"desc": "Pod pláty je tělo překvapivě měkké. Ohaři dostávají o 20 % víc."},
+		"desc": "Co se skrývá pod jeho pláty. Zápis v encyklopedii."},
 	"pitva_jestetan": {"name": "Pitva Ještěřana", "cost": 250, "days": 4.0, "needs": {"research": "pitva", "corpse": "jestetan"}, "branch": "bio", "icon": "race_jestetan",
-		"desc": "Šupiny drží kulky, ale ne všude. Ještěřani dostávají o 20 % víc."},
+		"desc": "Šupiny, oči a krev Ještěřana. Zápis v encyklopedii."},
 	"pitva_lihnoun": {"name": "Pitva Líhavce", "cost": 300, "days": 4.0, "needs": {"research": "pitva_jestetan", "corpse": "lihnoun"}, "branch": "bio", "icon": "race_lihnoun",
-		"desc": "Kde mezi pláty je měkko. Zbraně dávají Líhavcům a Nakaženým o 30 % víc. Ošetření nakaženého zabere polovinu času."},
+		"desc": "Jak se líhne a jak se množí. Zápis v encyklopedii - a zárodek z nakaženého kamaráda vyřízneme rychleji."},
 	"pitva_bijec": {"name": "Pitva Bijce", "cost": 300, "days": 4.0, "needs": {"research": "pitva", "corpse": "bijec"}, "branch": "bio", "icon": "race_bijec",
-		"desc": "Oblek k němu přirostl - ale švy zůstaly. Bijci dostávají o 20 % víc."},
+		"desc": "Kdo je Bijec doopravdy. Zápis v encyklopedii."},
 	"pitva_nador": {"name": "Pitva Nádoru", "cost": 250, "days": 3.0, "needs": {"research": "pitva_bijec", "corpse": "nador"}, "branch": "bio", "icon": "race_nador",
-		"desc": "Proč vstává z mrtvých. Nádory dostávají o 20 % víc."},
+		"desc": "Proč vstává z mrtvých. Zápis v encyklopedii."},
 	"pitva_ohnivec": {"name": "Rozbor Ohnivce", "cost": 300, "days": 4.0, "needs": {"research": "pitva_bijec", "corpse": "ohnivec"}, "branch": "bio", "icon": "race_ohnivec",
-		"desc": "Skála, která žije. Ohnivci dostávají o 20 % víc."},
-	"pitva_myslodej": {"name": "Pitva Mysloděje", "cost": 400, "days": 5.0, "needs": {"research": "psi_clona", "corpse": "myslodej"}, "branch": "bio", "icon": "race_myslodej",
-		"desc": "Skoro jen mozek. Myslodějové dostávají o 20 % víc a psionický útok slábne."},
+		"desc": "Skála, která žije. Zápis v encyklopedii."},
+	"pitva_myslodej": {"name": "Pitva Mysloděje", "cost": 400, "days": 5.0, "needs": {"research": "pitva", "corpse": "myslodej"}, "branch": "bio", "icon": "race_myslodej",
+		"desc": "Skoro jen mozek. Zápis v encyklopedii - a psionický útok od té doby bolí méně. Vede k psionické cloně a ke zprávě z Marsu."},
+	# 0.57: the last research - only when every alien has been on the table
+	"kdo_invaze": {"name": "Kdo stojí za invazí?", "cost": 1000, "days": 8.0, "branch": "psi", "icon": "race_myslodej",
+		"needs": {"research": ["pitva", "pitva_levit", "pitva_ohar", "pitva_jestetan", "pitva_lihnoun", "pitva_bijec", "pitva_nador", "pitva_ohnivec", "pitva_myslodej", "rozbor_diskoll", "rozbor_kolos"]},
+		"desc": "Všechny jejich rasy prošly laboratoří. Teď je čas složit to dohromady: kdo jim velí? Zápis v encyklopedii."},
+	# 0.57: the final research - it finds the central mind under the Martian surface and opens the last mission
+	"ruda_planeta": {"name": "Rudá planeta", "cost": 1500, "days": 8.0, "branch": "psi", "icon": "mars",
+		"needs": {"research": ["kdo_invaze", "orel"]},
+		"desc": "Signál centrální mysli vychází z hloubky pod povrchem Marsu. Pelikán tam doletí. Operace POSLEDNÍ ÚSVIT - odemkne poslední misi."},
 	# interrogations and the mind
-	"vyslech": {"name": "Výslech zajatce", "cost": 400, "days": 6.0, "needs": {"live": "any"}, "branch": "psi", "icon": "radio",
-		"desc": "Co ví živý vetřelec? Odhalí, odkud přicházejí (připraví útok na jejich základnu)."},
-	"psi_clona": {"name": "Psionická clona", "cost": 450, "days": 6.0, "needs": {"research": "vyslech", "seen": "grey_velitel"}, "branch": "psi", "icon": "race_grey_velitel",
-		"desc": "Kovová síťka pod helmou a cvičení soustředění. Velitelé a Myslodějové se do mysli dostanou mnohem hůř."},
-	"vyslech_velitel": {"name": "Výslech velitele", "cost": 600, "days": 7.0, "needs": {"research": "vyslech", "live": "officer"}, "branch": "psi", "icon": "race_bijec_velitel",
-		"desc": "Velitel ví víc než voják. Vede k signálu z Marsu."},
-	"signal": {"name": "Signál z Marsu", "cost": 600, "days": 6.0, "needs": {"research": "vyslech_velitel"}, "branch": "psi", "icon": "mars",
-		"desc": "Zajatý velitel pořád opakuje jedno slovo a ukazuje do nebe. Radar zachytil úzký paprsek mířící na Mars. Tam je jejich velín - a v něm to, co je všechny řídí."},
+	"vyslech": {"name": "Výslech zajatce", "cost": 400, "days": 6.0, "needs": {"live": "grey"}, "branch": "psi", "icon": "race_grey",
+		"desc": "Živý Šedivák v cele. Co ví obyčejný voják? Zápis v encyklopedii; vede k výslechu velitele (a ke stopě k jejich základně)."},
+	"psi_clona": {"name": "Psionická clona", "cost": 700, "days": 8.0, "needs": {"research": ["vyslech_velitel", "pitva_myslodej"]}, "branch": "psi", "icon": "race_grey_velitel",
+		"desc": "X-PSI-001, Projekt Nulový šum. Z toho, co jsme vyčetli z velitele šediváků a z nervů Mysloděje: aktivní pole, které ruší jejich působení na mysl. Ne úplně - ale poprvé vůbec. Stacionární generátor jde postavit na základně, clony do helem vyrobí dílna."},
+	"vyslech_velitel": {"name": "Výslech velitele", "cost": 600, "days": 7.0, "needs": {"research": "vyslech", "live": "grey_velitel"}, "branch": "psi", "icon": "race_grey_velitel",
+		"desc": "Živý Šedivák velitel v cele. Zápis v encyklopedii; spolu s pitvou Mysloděje vede k psionické cloně a k signálu z Marsu."},
+	"signal": {"name": "Signál z Marsu", "cost": 600, "days": 6.0, "needs": {"research": ["vyslech_velitel", "pitva_myslodej"]}, "branch": "psi", "icon": "mars",
+		"desc": "X-INT-009, Zpráva z Marsu. Nervová tkáň Mysloděje přijímá jejich rozkazy - a my je teď slyšíme taky. Přicházejí z Marsu. Tam je jejich velení a v něm to, co je všechny řídí."},
+	"psi_ochrana": {"name": "Psionická ochrana posádky", "cost": 1000, "days": 9.0, "needs": {"research": ["psi_clona", "signal", "orel"]}, "branch": "psi", "icon": "race_myslodej",
+		"desc": "X-PSI-002, Projekt Tichá mysl. Lodní ochranné pole CPS-01 pro Pelikán: Mars je obehnaný psionickou obranou, kterou žádná posádka bez ochrany nepřeletí."},
 	# weapons
 	"zenijni": {"name": "Ženijní výbava", "cost": 150, "days": 2.0, "needs": {}, "branch": "zbrane", "icon": "mine",
-		"desc": "Odemkne nášlapné miny a kouřové granáty ve zbrojnici."},
+		"desc": "Odemkne nášlapné miny ve zbrojnici."},
 	"tezke": {"name": "Těžké zbraně", "cost": 300, "days": 4.0, "needs": {}, "branch": "zbrane", "icon": "autocannon",
-		"desc": "Odemkne autokanón, minigun, raketomet a odstřelovací pušku."},
-	"rozbor_plazma": {"name": "Plazmová zbraň vetřelců", "cost": 250, "days": 3.0, "needs": {"loot": "a_pistol"}, "branch": "zbrane", "icon": "a_pistol",
-		"desc": "Rozebraná plazmová pistole. Ukořistěné zbraně vetřelců přestanou zlobit v rukou žoldáků a otevře se cesta k laseru."},
+		"desc": "Odemkne těžký kanón, minigun, odstřelovací pušku a průbojné a zápalné rakety."},
+	"rozbor_plazma": {"name": "Zbraně vetřelců", "cost": 250, "days": 3.0, "needs": {"loot": ["a_pistol", "a_rifle", "a_heavy"]}, "branch": "zbrane", "icon": "a_pistol",
+		"desc": "X-WEP-000. První rozbor ukořistěných zbraní vetřelců: pistole, pušky, těžká děla, granáty. Vyrobit ani bezpečně používat je zatím neumíme, ale otevírá se cesta k laseru a plazmě."},
+	# 0.57: X-WEP-001 - our guns, their energy. No magazines, but after a shot the cell has to charge.
 	"laser": {"name": "Laserové zbraně", "cost": 400, "days": 5.0, "needs": {"research": "rozbor_plazma"}, "branch": "zbrane", "icon": "laser_rifle",
-		"desc": "Naše verze jejich energetického článku: laserová pistole a puška. Žádné zásobníky - článek se dobíjí sám."},
-	"laser_tezky": {"name": "Laserový kanón", "cost": 600, "mk": 15, "days": 6.0, "needs": {"research": "laser", "loot": "a_heavy"}, "branch": "zbrane", "icon": "laser_cannon",
-		"desc": "Těžký laser podle zbraně Bijců. Na obrněné cíle a stroje."},
-	"plazma": {"name": "Plazmová puška", "cost": 700, "mk": 30, "days": 8.0, "needs": {"research": ["laser", "vyslech", "moskovium"], "loot": "a_rifle"}, "branch": "zbrane", "icon": "plasma_rifle",
-		"desc": "Vlastní zbraň postavená podle zabavené plazmové pušky. Tou se dá udolat cokoli."},
+		"desc": "X-WEP-001. Naše zbraň, jejich energetika: žádné náboje ani zásobníky, článek se po výstřelu sám nabije - a do té doby zbraň nevystřelí. Otevře výzkum jednotlivých laserových zbraní."},
+	"energo_nuz": {"name": "Energo nůž", "cost": 250, "days": 3.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "energo_nuz",
+		"desc": "X-WEP-002. EN-01: bojový nůž, jehož ostří rozžhaví laserové emitory. Pár silných zásahů, pak se článek několik vteřin nabíjí."},
+	"laser_pistole": {"name": "Laserová pistole", "cost": 300, "days": 4.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "laser_pistol",
+		"desc": "X-WEP-003. Lehká laserová zbraň do jedné ruky. Krátký dobíjecí cyklus."},
+	"laser_puska": {"name": "Laserová puška", "cost": 400, "days": 5.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "laser_rifle",
+		"desc": "X-WEP-004. LR-01: lehká laserová zbraň do obou rukou. Silný a přesný výboj, po každém výstřelu delší nabíjení."},
+	"laser_tezky": {"name": "Laserový kanón", "cost": 600, "mk": 15, "days": 6.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "laser_cannon",
+		"desc": "X-WEP-005. LC-01: přenosný laserový kanón. Jeden mimořádně silný výboj, pak velmi dlouhé nabíjení. Chce oporu a krytí družstva."},
+	"laser_minigun": {"name": "Laserový minigun", "cost": 700, "mk": 10, "days": 6.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "laser_minigun",
+		"desc": "X-WEP-006. LM-01: šest rotujících emitorů, rychlé série pulzů ze společné energetické rezervy. Vystřílenou rezervu musí dlouho nabíjet."},
+	# 0.57: X-WEP-007 - their plasma, our frames; one universal magazine (PL-MAG-01) for every plasma gun
+	"plazma": {"name": "Plazmové zbraně", "cost": 700, "mk": 30, "days": 8.0, "needs": {"research": ["laser", "vyslech", "moskovium"], "loot": "a_rifle"}, "branch": "zbrane", "icon": "plasma_cell",
+		"desc": "X-WEP-007. Jejich plazma v lidských zbraních. Žádné dobíjení jako u laseru, ale skutečná munice: univerzální plazmový zásobník PL-MAG-01. Otevře výzkum jednotlivých plazmových zbraní."},
+	"plazma_pistole": {"name": "Plazmová pistole PP-01", "cost": 500, "mk": 10, "days": 5.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_pistol",
+		"desc": "X-WEP-008. UAI PP-01, lidský rám kolem jejich plazmového emitoru. Bez čekání na článek, ale jen 10 ran na zásobník PL-MAG-01. Při rychlé palbě se přehřívá."},
+	"plazma_puska": {"name": "Plazmová puška PR-01", "cost": 700, "mk": 20, "days": 6.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_rifle",
+		"desc": "X-WEP-009. UAI PR-01, hlavní plazmová puška pěchoty. Nejsilnější rána pušky, další bez čekání na článek, ale jen 5 ran na zásobník PL-MAG-01. Při rychlé palbě se přehřívá."},
+	"plazma_granat": {"name": "Plazmový granát PG-01", "cost": 500, "mk": 15, "days": 5.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_grenade",
+		"desc": "X-WEP-010. UAI PG-01: celý zásobník PL-MAG-01 uvolněný naráz. Výroba každého granátu spotřebuje jeden zásobník ze skladu. Ve středu ničivý, k okraji rychle slábne, kryt chrání. Spálí i kořist."},
+	"plazma_kanon": {"name": "Plazmový kanón PC-01", "cost": 1000, "mk": 40, "days": 8.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_cannon",
+		"desc": "X-WEP-011. UAI PC-01, těžký přenosný plazmový kanón. Půl zásobníku PL-MAG-01 na ránu - dva ničivé výstřely, druhý rychle po prvním. Velmi těžký."},
+	"plazma_minigun": {"name": "Plazmový minigun PM-01", "cost": 1100, "mk": 40, "days": 8.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_minigun",
+		"desc": "X-WEP-012. UAI PM-01, šest rotujících plazmových emitorů. 20 pulzů na zásobník PL-MAG-01, krátká, prodloužená nebo úplná dávka. Velmi těžký, při přehřátí se rotor zastaví."},
 	# materials and gear
-	"vesta": {"name": "Balistická vesta a štít", "cost": 200, "days": 3.0, "needs": {}, "branch": "material", "icon": "vesta",
-		"desc": "Keramické pláty v látkové vestě a ruční štít s průzorem. Vesta: o 20 % menší zranění. Štít v levé ruce zastaví většinu střel zepředu."},
+	"vesta": {"name": "Keramické vložky", "cost": 200, "days": 3.0, "needs": {}, "branch": "material", "icon": "vesta",
+		"desc": "Tvrdé keramické pláty do vest ARM-01. Vesta pak zastaví víc ran a střepin."},
 	"batohy": {"name": "Výsadkové batohy", "cost": 250, "days": 4.0, "needs": {}, "branch": "material", "icon": "a_pack",
 		"desc": "Větší batoh s rámem podle vzoru výsadkářů: místo šesti míst devět. Víc nábojů, víc lékárniček - jen to pořád váží."},
 	"vysilacky": {"name": "Helmové vysílačky", "cost": 200, "days": 3.0, "needs": {}, "branch": "material", "icon": "radio",
 		"desc": "Vysílačka zabudovaná do helmy: mluvíš do éteru bez ruky na vysílačce. Odolnější proti rušení."},
 	"slitiny": {"name": "Vetřelecké slitiny", "cost": 300, "mk": 20, "days": 5.0, "needs": {"loot": "slitiny"}, "branch": "material", "icon": "a_pack",
-		"desc": "Pláty do vest z trupu UFO: +8 zdraví všem žoldákům."},
-	"pancir": {"name": "Slitinový pancíř", "cost": 500, "mk": 25, "days": 6.0, "needs": {"research": ["slitiny", "vesta"]}, "branch": "material", "icon": "pancir",
-		"desc": "Pláty z jejich slitiny přes celé tělo: o 38 % menší zranění. Je těžší, ale vidět je na každém žoldákovi."},
-	"moskovium": {"name": "Moskovium 115", "cost": 350, "days": 5.0, "needs": {"loot": "moskovium"}, "branch": "material", "icon": "plasma_cell",
-		"desc": "Prvek, který pohání jejich lodě i zbraně. Bez něj nepostavíme plazmu ani loď na Mars."},
+		"desc": "Rozbor jejich kovu z trupů a zbrojí. Sami ho zatím vyrobit neumíme - co se dá použít, přivezeme z vraků. Otevře cestu k experimentální vestě, pancéřování letadel a hybridní technice."},
+	"pancir_letadel": {"name": "Pancéřování letadel", "cost": 450, "days": 5.0, "needs": {"research": "slitiny"}, "branch": "lode", "icon": "dropship",
+		"desc": "X-AIR-001. Pláty z jejich slitin do trupů stíhaček a transportérů: vydrží o třetinu víc zásahů."},
+	"pancir": {"name": "Experimentální pancéřová vesta", "cost": 500, "days": 6.0, "needs": {"research": "slitiny"}, "branch": "material", "icon": "pancir",
+		"desc": "UAI ARM-02. Nosič s deskami z jejich slitin: zastaví víc ran a střepin a trochu i žáru. Dílna ji skládá ze slitin z vraků - každý kus stojí kořist."},
+	"moskovium": {"name": "Moskovium 115", "cost": 350, "days": 5.0, "needs": {"research": "slitiny", "loot": "moskovium"}, "branch": "material", "icon": "plasma_cell",
+		"desc": "X-MAT-002. Materiál M-115, supertěžký prvek 115 ze zařízení jejich lodí. Neumíme ho vyrobit ani plně vysvětlit - jen získat z jejich techniky."},
 	# craft and machines
 	"rozbor_diskoll": {"name": "Rozbor Diskollu", "cost": 250, "days": 4.0, "needs": {"corpse": "diskoll"}, "branch": "lode", "icon": "race_diskoll",
-		"desc": "Vrak létajícího disku. Diskolly dostávají o 20 % víc."},
+		"desc": "Vrak létajícího disku. Zápis v encyklopedii."},
 	"detektor": {"name": "Citlivější detektor", "cost": 200, "days": 3.0, "needs": {"research": "rozbor_diskoll"}, "branch": "lode", "icon": "scanner",
 		"desc": "Podle čidel Diskollu: detektor pohybu vidí na 35 m místo 25 m a méně se plete."},
 	"rozbor_kolos": {"name": "Rozbor Kolosu", "cost": 450, "days": 5.0, "needs": {"research": "rozbor_diskoll", "corpse": "kolos"}, "branch": "lode", "icon": "race_kolos",
-		"desc": "Trosky chodícího stroje. Kolosové dostávají o 20 % víc."},
-	"kondor": {"name": "Transportér Kondor", "cost": 500, "days": 5.0, "needs": {"research": "slitiny"}, "branch": "lode", "icon": "dropship",
-		"desc": "Místo pomalého vrtulníku Čáp rychlý transportér s krátkými křídly, slitinovým trupem a dvěma motory. Na misi doletí asi třikrát rychleji."},
-	"orel": {"name": "Hvězdná loď Orel", "cost": 2500, "mk": 120, "days": 10.0, "needs": {"research": ["signal", "moskovium", "pancir", "kondor"]}, "branch": "lode", "icon": "dropship",
-		"desc": "Kondor s motorem na Moskovium 115 a trupem z vetřeleckých slitin. Doletí na Mars a zpátky. Odemkne poslední misi."},
+		"desc": "Trosky chodícího stroje. Zápis v encyklopedii."},
+	"kondor": {"name": "Transportér Kondor", "cost": 600, "days": 6.0, "needs": {}, "branch": "lode", "icon": "dropship",
+		"desc": "Vrchol lidského letectví bez cizí techniky: konvertoplán s kompozitním trupem a dvěma motory, startuje svisle. Na misi doletí asi třikrát rychleji než Čáp. Po výzkumu ho postaví dílna."},
+	# 0.57: Project X's hybrid craft (Ari's designs) and the guns for our fighters
+	"jestrab": {"name": "Stíhačka Jestřáb", "cost": 1200, "mk": 40, "days": 8.0, "needs": {"research": ["laser", "slitiny", "rozbor_diskoll"]}, "branch": "lode", "icon": "jestrab",
+		"desc": "UAI XF-01. Hybridní stíhačka: oválný trup, gravitační pohon z jejich motorů, dva laserové kanóny pod trupem. Rychlejší, obratnější a odolnější než Sokol. Staví ho dílna ze slitin z vraků."},
+	"vzduch_laser": {"name": "Laserový kulomet stíhaček", "cost": 600, "days": 5.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "jet_laser_mg",
+		"desc": "X-AIR-003. Místo kanónu na stíhačky: rychlé paprsky z energetické rezervy, žádná munice. Vystřílená rezerva se musí nabít doplna."},
+	"vzduch_laser_delo": {"name": "Laserové dělo stíhaček", "cost": 900, "mk": 15, "days": 6.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "jet_laser_cannon",
+		"desc": "X-AIR-002. Místo raket: chvíli se nabíjí, pak vystřelí silný paprsek. Nepotřebuje zaměření ani munici."},
+	"vzduch_plazma": {"name": "Plazmový kulomet stíhaček", "cost": 1000, "mk": 30, "days": 7.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_rifle",
+		"desc": "Zelené dávky plazmy. Silnější než laser, ale má omezenou zásobu."},
+	"vzduch_plazma_delo": {"name": "Plazmové dělo stíhaček", "cost": 1600, "mk": 60, "days": 9.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_cell",
+		"desc": "Nejsilnější dělo ve hře. Zelené rány, které roztrhnou i bitevní loď - jen jich je málo."},
+	# 0.57: the base defends itself - against their raids, and against the Bitevní loď
+	"pvo_silo": {"name": "Raketové silo", "cost": 450, "days": 5.0, "needs": {"research": "tezke"}, "branch": "material", "icon": "rocket",
+		"desc": "Šachta s protiletadlovými raketami u základny. Odemkne stavbu sila."},
+	"pvo_laser": {"name": "Laserové věže", "cost": 700, "days": 6.0, "needs": {"research": ["laser", "pvo_silo"]}, "branch": "material", "icon": "laser_cannon",
+		"desc": "Věže s laserovými kanóny kolem vstupu. Odemkne stavbu věží."},
+	"pvo_plazma": {"name": "Plazmové PVO věže", "cost": 1200, "mk": 40, "days": 8.0, "needs": {"research": ["plazma", "pvo_laser"]}, "branch": "material", "icon": "plasma_cell",
+		"desc": "Protiletadlové věže s plazmovými děly. Odemkne stavbu věží."},
+	"maskovani": {"name": "Maskující jádro", "cost": 2000, "mk": 120, "days": 12.0, "needs": {"research": "moskovium", "loot": "vrak_battleship"}, "branch": "material", "icon": "mars",
+		"desc": "Z emitorů ochranného pole Bitevní lodě. Jádro, které základnu skryje před jejich senzory. Odemkne stavbu jádra."},
+	"orel": {"name": "Transportér Pelikán", "cost": 2500, "mk": 120, "days": 10.0, "needs": {"research": ["signal", "moskovium", "pancir", "kondor"]}, "branch": "lode", "icon": "pelikan",
+		"desc": "UAI XT-87. Meziplanetární transportér s hybridním pohonem, nákladovými moduly a automatickou věží. Jediná naše loď, která doletí na Mars a zpátky."},
 }
 
 ## Research that makes a race take more damage (an autopsy / a wreck taken apart).
@@ -118,7 +170,7 @@ const AUTOPSY_BONUS := {"levit": "pitva_levit", "ohar": "pitva_ohar", "jestetan"
 
 ## The archive: what the mercenaries have learned about each kind (own texts).
 const RACE_INFO := {
-	"grey": ["Šedivák", "VOJENSKÁ DATABÁZE - NEZNÁMÉ ENTITY\nKrycí označení: ŠEDIVÁK. Klasifikace: mimozemská biologická jednotka. Stupeň ohrožení: KRITICKÝ. Status: nepřátelský - předvoj invazních sil.\n\nPOPIS HROZBY: První potvrzené jednotky mimozemského původu na území Země. Skutečné záměry neznámé; zpravodajské analýzy naznačují průzkumný předvoj rozsáhlé invaze, jejímž cílem je podrobení planety a zotročení lidí.\n\nFYZIOLOGIE A VÝBAVA: Mimořádná inteligence a rychlé vyhodnocování situací. Tělo je křehké, svalstvo nedostatečně vyvinuté - nahrazuje je biomechanická kombinéza, která několikanásobně zesiluje svaly i nervové reakce: nepřirozená rychlost, obratnost a reflexy. Hrudník chrání plát z neidentifikované slitiny.\n\nTAKTICKÉ HODNOCENÍ: Silné stránky - extrémní rychlost, inteligence, nadlidské reflexy, pokročilá technologie. Slabiny - křehká anatomie, závislost na kombinéze. Doporučení: vyřadit biomechanickou podporu (těžce zraněnému kombinéza vypoví - zpomalí a hůř míří). Vyhnout se boji na krátkou vzdálenost.\n\nZ BOJE: Plazmová pistole. Do očí se nestřílí: obejde tě a pálí do zad. Diskolly mu hlásí, kde stojíš. Padlé žoldáky odtahuje do tmy.\n\n\"Pokud jsou tyto bytosti skutečně jen průzkumníci, nechceme vědět, co přijde po nich.\" - Velitelství pozemních obranných sil, utajovaná zpráva"],
+	"grey": ["Šedivák", "VOJENSKÁ DATABÁZE - NEZNÁMÉ ENTITY\nKrycí označení: ŠEDIVÁK. Klasifikace: mimozemská biologická jednotka. Stupeň ohrožení: KRITICKÝ. Status: nepřátelský - předvoj invazních sil.\n\nPOPIS HROZBY: První potvrzené jednotky mimozemského původu na území Země. Skutečné záměry neznámé; zpravodajské analýzy naznačují průzkumný předvoj rozsáhlé invaze, jejímž cílem je podrobení planety a zotročení lidí.\n\nFYZIOLOGIE A VÝBAVA: Mimořádná inteligence a rychlé vyhodnocování situací. Tělo je křehké, svalstvo nedostatečně vyvinuté - nahrazuje je biomechanická kombinéza, která několikanásobně zesiluje svaly i nervové reakce: nepřirozená rychlost, obratnost a reflexy. Hrudník chrání plát z neidentifikované slitiny.\n\nTAKTICKÉ HODNOCENÍ: Silné stránky - extrémní rychlost, inteligence, nadlidské reflexy, pokročilá technologie. Slabiny - křehká anatomie, závislost na kombinéze. Doporučení: vyřadit biomechanickou podporu (těžce zraněnému kombinéza vypoví - zpomalí a hůř míří). Vyhnout se boji na krátkou vzdálenost.\n\nZ BOJE: Plazmová pistole. Do očí se nestřílí: obejde tě a pálí do zad. Diskolly mu hlásí, kde stojíš. Padlé vojáky odtahuje do tmy.\n\n\"Pokud jsou tyto bytosti skutečně jen průzkumníci, nechceme vědět, co přijde po nich.\" - Velitelství pozemních obranných sil, utajovaná zpráva"],
 	"grey_velitel": ["Šedivák velitel", "VOJENSKÁ DATABÁZE - NEZNÁMÉ ENTITY\nKrycí označení: ŠEDIVÁK VELITEL. Klasifikace: mimozemská velitelská biologická jednotka. Stupeň ohrožení: KRITICKÝ+. Status: nepřátelský - velitelský článek invazních sil.\n\nPOPIS HROZBY: Vyšší vývojový nebo hodnostní stupeň Šediváků - taktický koordinátor, polní velitel a psionický operátor. Řídí pohyb podřízených, určuje cíle útoku a vyhodnocuje slabiny obrany. Pokud se běžní Šediváci jeví jako průzkumníci, Velitelé představují mozek celé operace.\n\nFYZIOLOGIE A VÝBAVA: Vyšší mentální kapacita, chladná inteligence, vypočítavost a schopnost manipulace. Tělo křehké jako u ostatních; velitelská kombinéza je robustnější, rychlejší a napojená i na nervový systém. Červená barva obleku označuje hodnost a vyšší energetickou kapacitu. Hrudník chrání zesílený plát z neidentifikované slitiny. Psionická čelenka zesiluje mentální schopnosti: narušuje vnímání, oslabuje morálku, možná přímo ovlivňuje nervovou soustavu.\n\nTAKTICKÉ HODNOCENÍ: Silné stránky - inteligence, velení, psionické útoky, extrémní rychlost, nadlidské reflexy. Slabiny - křehká anatomie, závislost na kombinéze a čelence, vysoká hodnota cíle: po jeho vyřazení podřízené jednotky ztrácejí koordinaci (hůř míří, nikdo je nežene vpřed). Doporučení: prioritní eliminace. Těžce zraněnému vypoví kombinéza i s čelenkou - zpomalí a psionika utichne. Vyhnout se přímému vizuálnímu kontaktu a boji zblízka bez psychické ochrany.\n\nZ BOJE: Vidí-li tě kterýkoli vetřelec, může ti vnutit paniku - nebo ti vnutí, že tvůj kamarád je jeden z nich. Když se ti obraz zbarví do fialova, nevěř ničemu, co vidíš. Živý zajatec je pro výzkum velká kořist.\n\n\"Běžný Šedivák je lovec. Šedivák Velitel je mysl, která lov řídí. Kde se objeví on, tam invaze nezačíná - tam už běží podle plánu.\" - Velitelství pozemních obranných sil, utajovaná zpráva"],
 	"diskoll": ["Diskoll", "VOJENSKÁ DATABÁZE - NEZNÁMÉ ENTITY\nKrycí označení: DISKOLL. Klasifikace: mimozemská autonomní průzkumná jednotka. Stupeň ohrožení: VYSOKÝ. Status: nepřátelský - robotický zvěd invazních sil.\n\nPOPIS HROZBY: Pokročilá průzkumná jednotka, která doprovází Šediváky. Přes malé rozměry má mimořádně výkonné senzory: identifikuje cíle na velkou vzdálenost a okamžitě předává jejich přesnou polohu. Často ji přímo ovládá Šedivák Velitel, data ale dokáže rozeslat každé jednotce s kompatibilním přijímačem. Zásadní prvek jejich bojové koordinace.\n\nFYZIOLOGIE A VÝBAVA: Plně mechanická jednotka diskovitého tvaru, velikostí srovnatelná s pozemskými drony. Pohon umožňuje vysokou rychlost, prudké změny směru a stabilní vznášení bez viditelných pohyblivých částí. Centrální optický senzor identifikuje a sleduje cíle, komunikační anténa přenáší taktická data. Výzbroj: dvojice předních plazmových blasterů se zelenými projektily. Vnitřní systémy jsou mimořádně citlivé na energetické poškození.\n\nTAKTICKÉ HODNOCENÍ: Silné stránky - rychlost, okamžitá identifikace nepřítele, přesné zaměřování, přenos taktických informací, plazmová výzbroj, manévrovatelnost. Slabiny - nízká odolnost proti energetickým útokům (plazma a výbuchy ho trhají na kusy, kulky odráží), omezené pancéřování, zranitelná komunikace: když padne, Šediváci v okolí na chvíli ztratí obraz o bojišti. Doporučení: prioritně narušit komunikaci a vyřadit senzory; pokud to jde, zajistit nepoškozený exemplář.\n\nZ BOJE: Koho zaměří (zelený paprsek a pípnutí), o tom vědí všichni Šediváci v okolí. Nedá se omráčit.\n\n\"Největším nebezpečím Diskollu nejsou jeho zbraně. Je to skutečnost, že jakmile vás spatří, ví o vás celá nepřátelská armáda. Získání jediného funkčního exempláře by nám mohlo konečně odhalit, jak spolu ty zatracené věci komunikují.\" - Velitelství pozemních obranných sil, utajovaná zpráva"],
 	"levit_velitel": ["Levit Mírotvůrce", "VOJENSKÁ DATABÁZE - NEZNÁMÉ ENTITY\nKrycí označení: LEVIT MÍROTVŮRCE. Klasifikace: Mimozemská biologicky modifikovaná velitelská jednotka. Stupeň ohrožení: EXTRÉMNÍ. Status: Nepřátelský - velitel teroristických jednotek invazních sil.\n\nPOPIS HROZBY: Levit Mírotvůrce představuje výrazně pokročilejší a nebezpečnější variantu standardních Levitů. Tato groteskně modifikovaná bytost zastává funkci velitele mimozemských teroristických jednotek, jejichž hlavním úkolem je šíření strachu, likvidace odporu a systematické zastrašování lidské populace.\nNa rozdíl od běžných Levitů vykazuje Mírotvůrce známky samostatného taktického uvažování, schopnosti vyhodnocovat nebezpečí a omezeného pudu sebezáchovy. Není proto neobvyklé, že se při vážném poškození stáhne z boje, aby se následně vrátil v částečně regenerovaném stavu.\nJeho přítomnost má navíc zásadní vliv na ostatní Levity. Dosud neobjasněným biologickým nebo neurologickým mechanismem dokáže stimulovat jejich agresivitu, potlačovat zbytky sebezáchovných instinktů a přivádět je do stavu nekontrolovatelného vražedného běsnění.\n\nFYZIOLOGIE A VÝBAVA: Tělo Mírotvůrce vykazuje známky rozsáhlých chirurgických zásahů, genetických úprav a implantace pokročilých biomechanických systémů. Obličej je násilně deformován kovovými háky a fixačními implantáty, zatímco vnitřní orgány jsou propojeny soustavou hadic, energetických vodičů a podpůrných zařízení.\nSpodní část těla tvoří mohutný zesílený antigravitační orgán, obklopený množstvím organických chapadel. Na rozdíl od běžných Levitů je tento orgán stabilizován dodatečnými mechanickými systémy a vyzařuje intenzivní fialovou záři.\nNejvýznamnější biologickou odlišností je schopnost částečné regenerace. Poškozené tkáně se dokážou postupně obnovovat, pokud má jednotka dostatek času a není vystavena dalším útokům. Regenerace pravděpodobně využívá energetické rezervy uložené v antigravitačním orgánu.\nJeho tělesná konstrukce je výrazně odolnější než u standardních Levitů a snese značné poškození.\nHlavní výzbroj tvoří těžká plazmová puška, schopná vypouštět vysoce energetické fialové projektily. Zbraň představuje vážné nebezpečí pro pěchotu i lehce obrněné cíle.\n\nTAKTICKÉ HODNOCENÍ:\n- Silné stránky: Vysoká odolnost, částečná regenerace, schopnost letu, taktická inteligence, těžká plazmová výzbroj, zesilování agresivity spojeneckých Levitů, psychologické zastrašování.\n- Slabiny: Regenerace vyžaduje čas, závislost na podpůrných biomechanických systémech, pravděpodobná zranitelnost energetických rozvodů a antigravitačního orgánu.\n- Doporučený postup: Absolutní priorita při střetu se skupinou Levitů. Eliminovat Mírotvůrce před zahájením boje s ostatními jednotkami. Nedovolit mu stáhnout se a regenerovat. Soustředit palbu na podpůrné systémy a antigravitační orgán. Vyhnout se dlouhotrvajícím střetům.\n\nZÁVĚREČNÉ UPOZORNĚNÍ: \"Mysleli jsme, že už jsme viděli všechno. Pak přišla ta větší věc. Fialová, obalená hadicemi, s obličejem roztrhaným železem. Ostatní Leviti začali vydávat příšerné zvuky a vrhli se na nás jako vzteklá zvířata. Ale ten velký jen visel ve vzduchu a díval se. Přísahám, že nás pozoroval. Když jsme ho konečně zasáhli, ustoupil. O deset minut později se vrátil. Rány, které jsme mu způsobili, byly pryč. Bože, co to s nimi udělali?\" - Poslední zaznamenané hlášení velitele 4. obranné čety, utajovaná zpráva Velitelství pozemních obranných sil"],
@@ -139,37 +191,51 @@ const RACE_INFO := {
 # ---- base facilities ---------------------------------------------------------------------------
 const FACILITIES := {
 	"velin": {"name": "Velín", "cost": 0, "days": 0, "desc": "Srdce základny."},
-	"hangar": {"name": "Hangár", "cost": 0, "days": 0, "desc": "Domov Kondoru."},
-	"ubikace": {"name": "Ubikace", "cost": 0, "days": 0, "desc": "Kde žoldáci spí (pokud vůbec)."},
+	"hangar": {"name": "Hangár", "cost": 0, "days": 0, "desc": "Domov transportéru a stíhaček."},
+	"ubikace": {"name": "Ubikace", "cost": 0, "days": 0, "desc": "Kde vojáci spí (pokud vůbec)."},
 	"laborator": {"name": "Laboratoř", "cost": 500, "days": 6.0, "desc": "Každá laboratoř zrychlí výzkum o polovinu."},
-	"dilna": {"name": "Zbrojnice", "cost": 400, "days": 5.0, "desc": "Každá zbrojnice zlevní nákupy o 15 %."},
+	"dilna": {"name": "Dílna", "cost": 400, "days": 5.0, "desc": "Vyrábí, co jsme vyzkoumali: zbraně, pancíře, vylepšení, stroje. Každá další dílna zrychlí výrobu o polovinu."},
 	"osetrovna": {"name": "Ošetřovna", "cost": 400, "days": 5.0, "desc": "Zranění se hojí dvakrát rychleji."},
 	"radar": {"name": "Radar", "cost": 600, "days": 7.0, "desc": "Mise se objevují častěji a déle vydrží."},
 	"cela": {"name": "Cela pro vetřelce", "cost": 450, "days": 5.0, "desc": "Prosklené kóje s poutacími křesly. Bez ní omráčený vetřelec cestu na základnu nepřežije - živé zajatce (a výslechy) jde mít jen s celou."},
 	"strelnice": {"name": "Střelnice", "cost": 300, "days": 3.0, "desc": "Čtyři stanoviště, terče, bedna s municí. Na zkoušení zbraní mezi misemi."},
 	"sklad": {"name": "Sklad", "cost": 250, "days": 3.0, "desc": "Regály a sudy. Každý sklad zlevní munici a granáty o 10 %."},
+	# 0.57: the defences (each needs its research first)
+	"silo": {"name": "Raketové silo", "cost": 700, "days": 7.0, "desc": "Šachta s protiletadlovými raketami. Brání základnu před nálety a srazí část výsadku, než dosedne."},
+	"laser_vez": {"name": "Laserové věže", "cost": 900, "days": 7.0, "desc": "Velín laserových věží nad vstupem. Brání základnu před nálety a oslabí výsadek."},
+	"plazma_vez": {"name": "Plazmové PVO věže", "short": "Plazmové věže", "cost": 1400, "days": 9.0, "desc": "Velín plazmových protiletadlových děl. Nejsilnější obrana proti náletům."},
+	"maskovani": {"name": "Maskující jádro", "cost": 2000, "days": 12.0, "desc": "Zelené jádro z jejich technologie. Skrývá základnu před jejich senzory."},
+	"psi_gen": {"name": "Psionická clona PSF-01", "short": "Psionická clona", "cost": 1600, "days": 9.0, "desc": "Stacionární generátor ochranného pole. Kdo je na základně, tomu se vetřelci do hlavy dostanou mnohem hůř - i zajatý velitel v cele."},
 }
+## Which research opens which facility for building.
+const FACILITY_RES := {"silo": "pvo_silo", "laser_vez": "pvo_laser", "plazma_vez": "pvo_plazma", "maskovani": "maskovani", "psi_gen": "psi_clona"}
+func facility_open(ft: String) -> bool:
+	return not FACILITY_RES.has(ft) or researched(FACILITY_RES[ft])
 const GRID_W := 6
 const GRID_H := 4
 
 # ---- shop: permanent extra allotment for every mission ------------------------------------
 ## (0.50: everything costs about twice as much - credits are meant to matter)
 const SHOP := {
-	"rifle_clip": 80, "pistol_clip": 50, "shells": 60, "magnum_rounds": 70, "ac_clip": 160, "minigun_belt": 240,
-	"rocket": 300, "grenade": 120, "smoke_grenade": 100, "mine": 180, "flare": 40, "medkit": 320,
-	"laser_pistol": 600, "laser_rifle": 1200, "laser_cannon": 1800,
+	"rifle_clip": 80, "pistol_clip": 50, "shells": 60, "slugs": 80, "beanbag": 90, "magnum_rounds": 70, "ac_clip": 160, "minigun_belt": 240,
+	"rocket": 300, "rocket_ap": 380, "rocket_inc": 340, "grenade": 120, "smoke_grenade": 100, "mine": 180, "flare": 40, "medkit": 320,
+	"laser_pistol": 600, "laser_rifle": 1200, "laser_cannon": 1800, "laser_minigun": 2200, "energo_nuz": 450,
 	"rifle": 500, "sniper": 900, "sniper_clip": 70, "shotgun": 500, "magnum": 440, "autocannon": 1200, "minigun": 1500, "rocket_launcher": 1300,
-	"knife": 120, "stun_baton": 360, "scanner": 600, "radio": 80, "nvg": 700, "plasma_rifle": 1800, "plasma_cell": 180,
-	"vesta": 600, "stit": 700, "pancir": 1800,
+	"knife": 120, "stun_baton": 360, "scanner": 600, "radio": 80, "nvg": 700, "plasma_rifle": 1800, "plasma_cell": 180, "plasma_pistol": 1200, "plasma_cannon": 3000, "plasma_minigun": 3200, "plasma_grenade": 400,
+	"vesta": 600, "stit": 700, "pancir": 1300,
 }
-const LOCKED_BY := {"mine": "zenijni", "smoke_grenade": "zenijni", "autocannon": "tezke", "ac_clip": "tezke",
-	"minigun": "tezke", "minigun_belt": "tezke", "rocket_launcher": "tezke", "rocket": "tezke",
+const LOCKED_BY := {"mine": "zenijni", "autocannon": "tezke", "ac_clip": "tezke",
+	"minigun": "tezke", "minigun_belt": "tezke", "rocket_ap": "tezke", "rocket_inc": "tezke",
 	"sniper": "tezke", "sniper_clip": "tezke",
-	"plasma_rifle": "plazma", "plasma_cell": "plazma",
-	"laser_pistol": "laser", "laser_rifle": "laser", "laser_cannon": "laser_tezky",
-	"vesta": "vesta", "stit": "vesta", "pancir": "pancir"}
+	"plasma_rifle": "plazma_puska", "plasma_cell": "plazma", "plasma_pistol": "plazma_pistole", "plasma_grenade": "plazma_granat",
+	"plasma_cannon": "plazma_kanon", "plasma_minigun": "plazma_minigun",
+	"laser_pistol": "laser_pistole", "laser_rifle": "laser_puska", "laser_cannon": "laser_tezky",
+	"laser_minigun": "laser_minigun", "energo_nuz": "energo_nuz",
+	"pancir": "pancir"}
 ## Alien-tech items also cost Moskovium 115 (the element that powers their ships).
-const SHOP_MK := {"plasma_rifle": 25, "plasma_cell": 3, "laser_cannon": 6, "pancir": 15}
+const SHOP_MK := {"plasma_rifle": 25, "plasma_cell": 3, "laser_cannon": 6, "laser_minigun": 6, "plasma_pistol": 12, "plasma_cannon": 40, "plasma_minigun": 40, "plasma_grenade": 4}
+## ...and alloys from the wrecks (we cannot make them yet - Vetřelecké slitiny, X-MAT-001).
+const SHOP_AL := {"pancir": 6, "laser_cannon": 4, "plasma_rifle": 4, "plasma_cannon": 6, "plasma_minigun": 6}
 ## What the team brings home from a won mission (collected automatically).
 ## Machines that blow up when they fall: what is left are scraps. After this many won missions
 ## with one shot down the workshop puts a whole one together (that counts as the body for research).
@@ -261,7 +327,7 @@ func new_campaign(diff := "") -> void:
 		"stats": {"kills": 0, "captures": 0, "missions": 0, "won": 0},
 		"base": [], "log": ["Kampaň začala. Základna v rokli na Vysočině je v provozu."],
 		"flights": [], "sokol_ready": 0.0,
-		"lost": false, "cid": str(randi()), "transport": "heli", "crafts": [],
+		"lost": false, "cid": str(randi()), "transport": "heli", "crafts": [], "built": [],
 	}
 	var b := []
 	for i in GRID_W * GRID_H:
@@ -270,6 +336,7 @@ func new_campaign(diff := "") -> void:
 	b[1] = {"type": "hangar", "days": 0.0}
 	b[GRID_W] = {"type": "ubikace", "days": 0.0}
 	b[GRID_W + 1] = {"type": "laborator", "days": 0.0}
+	b[2] = {"type": "dilna", "days": 0.0}
 	data["base"] = b
 	active = true
 	save()
@@ -296,6 +363,18 @@ func load_campaign() -> bool:
 		if not data.has("mercs"):
 			data["mercs"] = {}
 		Game.difficulty = String(data["difficulty"])
+		# 0.57: "Laserové zbraně" became the base research - the pistol and rifle researched with it stay ours
+		var done: Array = data.get("research", {}).get("done", [])
+		if not data.has("built"):
+			data["built"] = done.filter(func(r): return UPGRADES.has(String(r)))
+			if "orel" in done:
+				data["pelikan"] = true
+		if "plazma" in done and not "plazma_puska" in done:
+			done.append("plazma_puska")      # (older saves: the plasma rifle came with the plasma research)
+		if "laser" in done:
+			for rid in ["laser_pistole", "laser_puska"]:
+				if not rid in done:
+					done.append(rid)
 	active = not data.is_empty()
 	return active
 
@@ -324,14 +403,14 @@ func save() -> void:
 # ---- time -----------------------------------------------------------------------------------------
 func date_text() -> String:
 	var d := int(data["day"])
-	var months := ["listopadu", "prosince", "ledna", "února", "března", "dubna", "května", "června", "července", "srpna", "září", "října"]
-	var mdays := [30, 31, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31]
+	var months := ["dubna", "května", "června", "července", "srpna", "září", "října", "listopadu", "prosince", "ledna", "února", "března"]
+	var mdays := [30, 31, 30, 31, 31, 30, 31, 30, 31, 31, 28, 31]
 	var m := 0
-	var dd := d
+	var dd := d + 23          # (day 0 = 24. dubna 1990)
 	while dd >= mdays[m % 12]:
 		dd -= mdays[m % 12]
 		m += 1
-	var year := START_YEAR + int((m + 10) / 12)
+	var year := START_YEAR + int((m + 3) / 12)
 	var h := fmod(float(data["day"]) * 24.0, 24.0)
 	return "%d. %s %d  %02d:%02d UTC" % [dd + 1, months[m % 12], year, int(h), int(fmod(h, 1.0) * 60)]
 
@@ -353,6 +432,7 @@ func advance(days: float) -> bool:
 	var stop := false
 	data["day"] = float(data["day"]) + days
 	_deliveries()
+	_workshop_tick(days)
 	# research
 	var r: Dictionary = data["research"]
 	if r["current"] != "":
@@ -363,14 +443,26 @@ func advance(days: float) -> bool:
 			r["current"] = ""
 			r["progress"] = 0.0
 			_log("Výzkum dokončen: " + RESEARCH[done]["name"])
+			if done == "ruda_planeta":
+				if pelikan():
+					_add_final()
+				else:
+					_log("Na Mars nás doveze jen Pelikán. Dílna ho musí postavit (hangár).")
+			if UPGRADES.has(done):
+				_log("%s: návrh je hotový, teď to musí vyrobit dílna." % String(UPGRADES[done]["name"]))
 			if done == "orel":
-				_add_final()
+				_log("Pelikán jde postavit v dílně (hangár).")
 			if done == "vyslech":
-				_add_alien_base()
+				_grey_talks()
 			if done == "kondor":
-				data["transport"] = "kondor"
-				_log("Kondor je v hangáru. Čáp jde do zálohy.")
+				_log("Kondor jde postavit v dílně (hangár).")
 			research_done.emit(done)
+			stop = true
+	# a live grey officer in the cell does not sit still: now and then it reaches for the staff
+	if int((data.get("found", {}) as Dictionary).get("live_grey_velitel", 0)) > 0 and count("cela") > 0:
+		var p_inc := days * (0.004 if count("psi_gen") > 0 else (0.012 if built("psi_clona") else 0.035))
+		if randf() < p_inc:
+			_cell_incident()
 			stop = true
 	# construction
 	for cell in data["base"]:
@@ -396,6 +488,8 @@ func advance(days: float) -> bool:
 		data["flights"] = []
 		data["sokol_ready"] = 0.0
 	for f in data["flights"].duplicate():
+		if f.get("strike", false):
+			continue          # (a battleship on its way to us: _strike_tick flies it)
 		var hd := deg_to_rad(float(f["heading"]))
 		f["lat"] = clampf(float(f["lat"]) + cos(hd) * float(f["speed"]) * days, -70.0, 75.0)
 		f["lon"] = fposmod(float(f["lon"]) + sin(hd) * float(f["speed"]) * days / max(0.2, cos(deg_to_rad(float(f["lat"])))) + 180.0, 360.0) - 180.0
@@ -417,6 +511,8 @@ func advance(days: float) -> bool:
 			else:
 				_log("UFO opustilo dosah radaru.")
 			stop = true
+	if _strike_tick(days):
+		stop = true
 	if _move_crafts(days):
 		stop = true
 	# the radar finds something
@@ -434,15 +530,52 @@ func advance(days: float) -> bool:
 			data["missions"].append(m)
 			mission_found.emit(m)
 		stop = true
+	if float(data.get("vrak_signal", -1.0)) > 0.0 and float(data["day"]) >= float(data["vrak_signal"]):
+		data["vrak_signal"] = -1.0       # (once a campaign)
+		_log("Incident v hangáru: ve 2:43 se ve vraku Průzkumníka rozsvítil senzor. Tři sekundy vysílal, pak zhasl.")
+		# it told them where it lies: they come sooner
+		data["next_raid"] = minf(float(data.get("next_raid", 999.0)), float(data["day"]) + randf_range(2.0, 5.0))
+		stop = true
+	if float(data.get("vrak_raider_t", -1.0)) > 0.0 and float(data["day"]) >= float(data["vrak_raider_t"]):
+		data["vrak_raider_t"] = -1.0
+		_log("Incident v hangáru: ve 1:26 se vrak Nájezdníka sám zavřel - dva technici uvnitř. Vyprostili je, výzkum stál.")
+		var rr: Dictionary = data["research"]
+		if rr["current"] != "":
+			rr["progress"] = maxf(0.0, float(rr["progress"]) - 1.0)
+		stop = true
+	if float(data.get("vrak_supply_t", -1.0)) > 0.0 and float(data["day"]) >= float(data["vrak_supply_t"]):
+		data["vrak_supply_t"] = -1.0
+		_log("Incident v hangáru: ve 4:18 přijal velín vraku Zásobovací lodě data. Na obrazovce byla mapa okolí naší základny - aktuální. Systém odpojen.")
+		data["next_raid"] = minf(float(data.get("next_raid", 999.0)), float(data["day"]) + randf_range(1.0, 4.0))
+		stop = true
+	if float(data.get("vrak_battleship_t", -1.0)) > 0.0 and float(data["day"]) >= float(data["vrak_battleship_t"]):
+		data["vrak_battleship_t"] = -1.0
+		_log("Incident v hangáru: ve 2:11 se ve vraku Bitevní lodě rozsvítila navigace. Mezi označenými místy byla naše základna. Krátký přenos, pak odpojeno.")
+		if count("maskovani") == 0:
+			data["next_strike"] = minf(float(data.get("next_strike", 999.0)), float(data["day"]) + randf_range(3.0, 6.0))
+		stop = true
+	if float(data.get("vrak_harvester_t", -1.0)) > 0.0 and float(data["day"]) >= float(data["vrak_harvester_t"]):
+		data["vrak_harvester_t"] = -1.0
+		_log("Incident v laboratoři: ve 14:32 se ve vraku Sklízeče sama rozběhla zpracovatelská jednotka. Technika vyprostili, výzkum stál dva dny.")
+		var rh: Dictionary = data["research"]
+		if rh["current"] != "":
+			rh["progress"] = maxf(0.0, float(rh["progress"]) - 2.0)
+		stop = true
 	# from the third week on they know where we are: now and then they come for the base
-	if float(data["day"]) > 18.0 and not data.get("won", false):
+	if (float(data["day"]) > 18.0 or float(data.get("vrak_signal", 0.0)) < 0.0) and not data.get("won", false):
 		data["next_raid"] = float(data.get("next_raid", float(data["day"]) + rng.randf_range(6.0, 12.0)))
 		if float(data["day"]) >= float(data["next_raid"]):
-			data["next_raid"] = float(data["day"]) + rng.randf_range(lerpf(9.0, 4.0, war_stage()), lerpf(16.0, 8.0, war_stage()))
+			data["next_raid"] = float(data["day"]) + rng.randf_range(lerpf(9.0, 4.0, war_stage()), lerpf(16.0, 8.0, war_stage())) * (1.6 if count("maskovani") > 0 else 1.0)
 			var already := false
 			for mm in data["missions"]:
 				if mm["type"] == "base":
 					already = true
+			# the defences open up on the incoming ship: sometimes it never lands
+			if not already and rng.randf() < defence_shootdown():
+				already = true
+				_log("Nálet na základnu odražen: obrana sestřelila UFO nad Vysočinou. Výsadek nedosedl.")
+				data["trust"] = clampi(int(data["trust"]) + 2, 0, 100)
+				stop = true
 			if not already:
 				var bm := generate_mission()
 				bm["type"] = "base"
@@ -452,7 +585,8 @@ func advance(days: float) -> bool:
 				bm["terrain"] = terrain_at(BASE_LAT, BASE_LON)
 				bm["size"] = "medium"
 				bm["reward"] = MTYPES["base"]["reward"]
-				bm["extra_aliens"] = int(MTYPES["base"]["aliens"]) + int(float(data["day"]) / 15.0)
+				bm["extra_aliens"] = maxi(0, int(MTYPES["base"]["aliens"]) + int(float(data["day"]) / 15.0) - defence_hits())
+				bm["base_def"] = count("plazma_vez") + count("laser_vez")       # (they drop fewer waves under fire)
 				bm["expires"] = float(data["day"]) + float(MTYPES["base"]["expire"])
 				data["missions"].append(bm)
 				_log("POPLACH: vetřelci míří na základnu!")
@@ -479,7 +613,7 @@ func advance(days: float) -> bool:
 			txt += "\nROZPOČET JE V MÍNUSU (%d. měsíc). Dva měsíce v mínusu = projekt zkrachuje. Přispějte z vlastních peněz!" % int(data["debt_months"])
 			if int(data["debt_months"]) >= 2:
 				data["lost"] = true
-				txt = "KONEC\nProjekt zkrachoval. Základna se zavírá, žoldáci jdou domů."
+				txt = "KONEC\nProjekt zkrachoval. Základna se zavírá, vojáci jdou domů."
 		else:
 			data["debt_months"] = 0
 		_log(txt.replace("\n", " "))
@@ -492,6 +626,81 @@ func advance(days: float) -> bool:
 	changed.emit()
 	return stop
 
+## The base defences: the chance a raid is shot down before it lands, and how many of the
+## landing party they take out on the way down.
+func defence_shootdown() -> float:
+	return minf(0.75, 0.15 * count("silo") + 0.2 * count("laser_vez") + 0.3 * count("plazma_vez"))
+func defence_hits() -> int:
+	return count("silo") + count("laser_vez") + 2 * count("plazma_vez")
+
+## Analýza UFO - Bitevní loď: late in the war a battleship comes for the base itself. It flies in
+## for some hours (the jets can meet it), hangs over the hills and fires once - the base is gone.
+## Only the masking core hides us from it; the towers may bring it down before it fires.
+func _strike_tick(days: float) -> bool:
+	var stop := false
+	if int(data.get("month", 0)) >= 4 and not data.get("won", false):
+		data["next_strike"] = float(data.get("next_strike", float(data["day"]) + rng.randf_range(4.0, 12.0)))
+		if float(data["day"]) >= float(data["next_strike"]):
+			data["next_strike"] = float(data["day"]) + rng.randf_range(25.0, 40.0)
+			if count("maskovani") > 0:
+				_log("Radar: Bitevní loď prošla nad střední Evropou a zmizela. Základnu nenašla.")
+			else:
+				var a := rng.randf_range(0.0, TAU)
+				var id := int(data["next_id"])
+				data["next_id"] = id + 1
+				var hours := rng.randf_range(6.0, 10.0)
+				var f := {"id": id, "kind": "battleship", "strike": true, "lat": BASE_LAT + cos(a) * 14.0, "lon": BASE_LON + sin(a) * 20.0,
+					"heading": 0.0, "speed": 0.0, "until": float(data["day"]) + hours / 24.0}
+				data["flights"].append(f)
+				_log("POPLACH: Bitevní loď míří přímo k základně! Přílet za %d h." % int(hours))
+				flight_found.emit(f)
+			stop = true
+	for f in data["flights"].duplicate():
+		if not f.get("strike", false):
+			continue
+		# straight for us, arriving on time
+		var left := maxf(0.001, float(f["until"]) - float(data["day"]))
+		var k := clampf(days / left, 0.0, 1.0)
+		f["lat"] = lerpf(float(f["lat"]), BASE_LAT, k)
+		f["lon"] = lerpf(float(f["lon"]), BASE_LON, k)
+		if float(data["day"]) >= float(f["until"]):
+			data["flights"].erase(f)
+			stop = true
+			if count("maskovani") > 0:
+				_log("Bitevní loď visela nad Vysočinou a odletěla. Maskující jádro nás skrylo.")
+			elif rng.randf() < minf(0.8, 0.12 * count("silo") + 0.2 * count("laser_vez") + 0.35 * count("plazma_vez")):
+				_log("Bitevní loď nad základnou nabíjela hlavní kanón - věže ji sestřelily dřív, než vystřelila!")
+				var m := generate_mission()
+				m["type"] = "crash"
+				m["lat"] = BASE_LAT + rng.randf_range(-0.6, 0.6); m["lon"] = BASE_LON + rng.randf_range(-0.8, 0.8)
+				m["place"] = nearest_place(float(m["lat"]), float(m["lon"]))
+				m["terrain"] = terrain_at(float(m["lat"]), float(m["lon"]))
+				m["size"] = UFO_SIZES["battleship"]
+				m["ufo"] = "battleship"
+				m["extra_aliens"] = UFO_ALIENS["battleship"]
+				m["reward"] = MTYPES["crash"]["reward"] + 1100
+				m["expires"] = float(data["day"]) + 1.0
+				data["missions"].append(m)
+				mission_found.emit(m)
+			else:
+				data["lost"] = true
+				_log("Bitevní loď vystřelila. Základna zničena.")
+				report.emit("KONEC\nBitevní loď se zastavila nad Vysočinou. Spodek trupu se rozsvítil - a pak už nic. Z podzemní základny zbyl kráter. Projekt X skončil.")
+	return stop
+
+## Výslech velitele: "Subjekt je schopen představovat přímé nebezpečí pro provoz základny
+## i bez fyzického opuštění zadržovací cely."
+const CELL_INCIDENTS := [
+	"Ve 3:17 slyšel technik u cely rozkaz otevřít vstup. Nikdo ho nevyslal. Výzkum stál.",
+	"Tři vědci z laboratoře mají silné bolesti hlavy a nemohou se soustředit. Výzkum stál.",
+	"Strážný u cely tvrdí, že ho volala jeho mrtvá matka. Odvolali ho, výzkum stál.",
+	"Někdo v noci zkoušel kódy k přístupovému panelu cely. Nepamatuje si to. Výzkum stál."]
+func _cell_incident() -> void:
+	var r: Dictionary = data["research"]
+	if r["current"] != "":
+		r["progress"] = maxf(0.0, float(r["progress"]) - 1.0)
+	_log("Incident u cely: " + CELL_INCIDENTS[randi() % CELL_INCIDENTS.size()])
+
 func _log(s: String) -> void:
 	data["log"].append("[%s] %s" % [date_text().split("  ")[0], s])
 	if data["log"].size() > 40:
@@ -500,7 +709,7 @@ func _log(s: String) -> void:
 # ---- our craft on the globe: jets and the transport fly to the target in game time ---------------
 ## degrees of arc per game day (1 degree is about 111 km)
 const CRAFT_SPEED := {"jet": 300.0, "heli": 60.0, "kondor": 160.0}
-const CRAFT_NAMES := {"jet": "Sokol", "heli": "vrtulník Čáp", "kondor": "Kondor"}
+const CRAFT_NAMES := {"jet": "stíhač", "heli": "vrtulník Čáp", "kondor": "Kondor"}
 
 ## Older saves had the Kondor from the start.
 func transport() -> String:
@@ -557,7 +766,7 @@ func launch_craft(kind: String, target: Dictionary, ttype: String, extra := {}) 
 		c["ambush_at"] = rng.randf_range(0.3, 0.7)
 		c["dist0"] = arc_deg(BASE_LAT, BASE_LON, float(target["lat"]), float(target["lon"]))
 	crafts().append(c)
-	_log("%s vzlétl k cíli: %s (asi %d h letu)." % [CRAFT_NAMES[kind].capitalize() if kind != "jet" else ("%d× Sokol" % int(extra.get("n", 1))), target.get("place", nearest_place(float(target["lat"]), float(target["lon"]))), maxi(1, roundi(eta_hours(kind, float(target["lat"]), float(target["lon"]))))])
+	_log("%s vzlétl k cíli: %s (asi %d h letu)." % [CRAFT_NAMES[kind].capitalize() if kind != "jet" else ("%d× stíhačka" % int(extra.get("n", 1))), target.get("place", nearest_place(float(target["lat"]), float(target["lon"]))), maxi(1, roundi(eta_hours(kind, float(target["lat"]), float(target["lon"]))))])
 	changed.emit()
 	return c
 
@@ -592,7 +801,7 @@ func escort_done(craft_id: int, outcome: String, tr_hp: float, lost_jets: int) -
 		if tr_hp < 50.0:
 			txt += " Transport je poškozený, ale letí."
 	if lost_jets > 0:
-		txt += " Ztraceno Sokolů: %d." % lost_jets
+		txt += " Ztraceno stíhaček: %d." % lost_jets
 	_log(txt)
 	save()
 	changed.emit()
@@ -655,7 +864,7 @@ func generate_flight() -> Dictionary:
 	if rng.randf() < 0.35:
 		lat = rad_to_deg(asin(rng.randf_range(-0.8, 0.9)))
 		lon = rng.randf_range(-180, 180)
-	var kinds := ["scout", "scout", "raider", "raider", "harvester"]
+	var kinds := ["scout", "scout", "raider", "raider", "raider", "harvester"]     # (the Nájezdník: their workhorse)
 	if float(data["day"]) < 4.0:
 		kinds = ["scout", "scout", "raider"]
 	elif int(data.get("month", 0)) >= 3:
@@ -685,15 +894,75 @@ func jets_ready() -> int:
 		busy += 1        # older saves
 	return maxi(0, jets() - busy - jets_out())
 
+## A Sokol is an ordinary fighter: bought, it is in the hangar the next day.
 func buy_jet() -> bool:
-	if jets() >= MAX_JETS or int(data["credits"]) < jet_price():
+	if jets() + hulls_coming() >= MAX_JETS or int(data["credits"]) < jet_price():
 		return false
 	data["credits"] = int(data["credits"]) - jet_price()
-	data["jets"] = jets() + 1
-	_log("Do hangáru přibyla stíhačka Sokol (%d celkem)." % jets())
+	if not data.has("orders"):
+		data["orders"] = []
+	data["orders"].append({"item": "craft_sokol", "at": float(data["day"]) + 1.0})
+	_log("Objednána stíhačka Sokol - v hangáru bude zítra.")
 	save()
 	changed.emit()
 	return true
+
+## 0.57: the Jestřáb - a new one into a free place in the hangar, or a Sokol rebuilt into one.
+const HAWK_PRICE := 4000
+const HAWK_REBUILD := 3000
+func hawks() -> int:
+	return mini(int(data.get("hawks", 0)), jets())
+
+func hawk_new() -> bool:
+	return jets() + hulls_coming() < MAX_JETS
+
+func hawk_price() -> int:
+	return int(round((HAWK_PRICE if hawk_new() else HAWK_REBUILD) * econ() / 10.0) * 10)
+
+func can_buy_hawk() -> bool:
+	return researched("jestrab") and hawks() + crafts_coming("jestrab") < MAX_JETS
+
+## The Jestřáb is built in the workshop (credits, alloys, Moskovium, days on a line).
+func can_make_hawk() -> bool:
+	return can_buy_hawk() and workshop_lines() > 0 and int(data["credits"]) >= hawk_price() \
+		and alloys() >= int(CRAFT_MAKE["jestrab"]["al"]) and moskovium() >= int(CRAFT_MAKE["jestrab"]["mk"])
+
+func buy_hawk() -> bool:
+	if not can_make_hawk():
+		return false
+	var fresh := hawk_new()
+	data["credits"] = int(data["credits"]) - hawk_price()
+	_pay(int(CRAFT_MAKE["jestrab"]["al"]), int(CRAFT_MAKE["jestrab"]["mk"]))
+	_queue("craft_jestrab", float(CRAFT_MAKE["jestrab"]["days"]) * time_k(), {"new": fresh})
+	_log("Dílna začala stavět Jestřába." if fresh else "Dílna začala přestavovat Sokol na Jestřába.")
+	save()
+	changed.emit()
+	return true
+
+## What the fighters carry (all of them): the gun (fire) and the heavy weapon (right button).
+const JET_GUNS := {"cannon": ["Kanón", ""], "laser": ["Laserový kulomet", "vzduch_laser"], "plasma": ["Plazmový kulomet", "vzduch_plazma"]}
+const JET_HEAVY := {"missiles": ["Rakety", ""], "laser_cannon": ["Laserové dělo", "vzduch_laser_delo"], "plasma_cannon": ["Plazmové dělo", "vzduch_plazma_delo"]}
+func jet_gun() -> String:
+	var g := String(data.get("jet_gun", "cannon"))
+	return g if JET_GUNS.has(g) and (JET_GUNS[g][1] == "" or built(JET_GUNS[g][1])) else "cannon"
+
+func jet_heavy() -> String:
+	var h := String(data.get("jet_heavy", "missiles"))
+	return h if JET_HEAVY.has(h) and (JET_HEAVY[h][1] == "" or built(JET_HEAVY[h][1])) else "missiles"
+
+## The next weapon of that slot we have researched (the button in the hangar cycles through them).
+func cycle_jet_weapon(heavy: bool) -> void:
+	var table: Dictionary = JET_HEAVY if heavy else JET_GUNS
+	var keys := table.keys()
+	var cur := jet_heavy() if heavy else jet_gun()
+	var i := keys.find(cur)
+	for k in keys.size():
+		var nk: String = keys[(i + 1 + k) % keys.size()]
+		if table[nk][1] == "" or built(table[nk][1]):
+			data["jet_heavy" if heavy else "jet_gun"] = nk
+			break
+	save()
+	changed.emit()
 
 func _repair_jet(days: float) -> void:
 	var r: Array = data.get("jet_repair", [])
@@ -703,7 +972,19 @@ func _repair_jet(days: float) -> void:
 	data["jet_repair"] = r
 
 func intercept_params(f: Dictionary) -> Dictionary:
-	return {"intercept": true, "id": f["id"], "ufo": f["kind"], "lat": f["lat"], "lon": f["lon"]}
+	return {"intercept": true, "id": f["id"], "ufo": f["kind"], "lat": f["lat"], "lon": f["lon"],
+		"hawks": hawks(), "gun": jet_gun(), "heavy": jet_heavy(), "night": is_night(float(f["lon"])), "jet_armor": built("pancir_letadel"),
+		"plasma_mags": int(data["armory"].get("plasma_cell", 0))}
+
+## The fighters' plasma guns burn the base's PL-MAG-01 magazines (from the armory).
+func spend_plasma_mags(n: int) -> void:
+	if n <= 0 or not active:
+		return
+	var have := int(data["armory"].get("plasma_cell", 0))
+	data["armory"]["plasma_cell"] = maxi(0, have - n)
+	if int(data["armory"]["plasma_cell"]) <= 0:
+		data["armory"].erase("plasma_cell")
+	_log("Stíhačky spotřebovaly plazmové zásobníky: %d ks." % mini(n, have))
 
 ## After the air fight. Returns the text for the globe.
 func intercept_done(id: int, outcome: String, kind: String, jet_hp: float, lost := -1, damaged := 0) -> String:
@@ -749,9 +1030,13 @@ func intercept_done(id: int, outcome: String, kind: String, jet_hp: float, lost 
 			txt = "%s rozprášen ve vzduchu. Odměna 150 kr, žádná kořist." % UFO_NAMES[kind]
 		"shot_down":
 			data["trust"] = clampi(int(data["trust"]) - 2, 0, 100)
-			txt = "Sokoly sestřeleny, piloti se katapultovali."
+			txt = "Stíhačky sestřeleny, piloti se katapultovali."
 		"escaped", "fuel":
 			txt = "UFO uniklo."
+	# the battleship coming for the base does not turn back because the jets failed
+	if f.get("strike", false) and not outcome in ["crashed", "destroyed"]:
+		data["flights"].append(f)
+		txt += " Bitevní loď letí dál k základně."
 	# lost / damaged jets go to the workshop
 	if lost < 0:
 		lost = 1 if outcome == "shot_down" else 0
@@ -833,16 +1118,17 @@ func generate_mission() -> Dictionary:
 		"reward": int(info["reward"]), "seed": rng.randi() % 1000000,
 	}
 
-## Ground by place and season (the campaign starts in November): snow in the north and
+## Ground by place and season (the campaign starts at the end of April): snow in the north and
 ## the mountains, sand in the great deserts, otherwise the usual fields and woods.
 func terrain_at(lat: float, lon: float) -> String:
 	var desert := (lat > 15 and lat < 33 and lon > -15 and lon < 55) or (lat > -30 and lat < -19 and lon > 115 and lon < 145) \
 		or (lat > 25 and lat < 37 and lon > -118 and lon < -105) or (lat > 36 and lat < 45 and lon > 55 and lon < 75)
 	if desert:
 		return "desert"
-	var month := int(float(data.get("day", 0)) / 30.0) % 12      # 0 = November
-	var winter := month <= 4
-	if absf(lat) > 62 or (winter and lat > 50) or (winter and lat < -50):
+	var month := int((float(data.get("day", 0)) + 23.0) / 30.5) % 12      # 0 = April
+	var north_winter := month >= 7          # (November - March)
+	var south_winter := month >= 2 and month <= 4
+	if absf(lat) > 62 or (north_winter and lat > 50) or (south_winter and lat < -50):
 		return "snow"
 	return "temperate"
 
@@ -851,9 +1137,9 @@ func terrain_at(lat: float, lon: float) -> String:
 const HABIT_GEAR := ["sniper", "shotgun", "magnum", "rocket_launcher", "autocannon", "minigun", "stun_baton", "stit",
 	"pancir", "flare", "smoke_grenade", "mine", "grenade", "laser_rifle", "laser_cannon", "plasma_rifle"]
 const HABIT_TEXT := {"sniper": "odstřelovačku - budou se k němu stahovat zblízka, krytem", "shotgun": "brokovnici - budou držet odstup",
-	"magnum": "revolver - budou držet odstup", "rocket_launcher": "raketomet - nebudou se shlukovat", "autocannon": "autokanón - nebudou se shlukovat",
+	"magnum": "revolver - budou držet odstup", "rocket_launcher": "raketomet - nebudou se shlukovat", "autocannon": "kanón - budou se víc krýt",
 	"minigun": "minigun - budou se skrývat a chodit zezadu", "stun_baton": "obušek - nepustí ho k sobě", "stit": "štít - budou střílet z boku a zezadu",
-	"pancir": "těžký pancíř - přinesou těžké zbraně a granáty", "flare": "světlice - budou se držet mimo světlo",
+	"pancir": "pancéřové vesty - přinesou těžké zbraně a granáty", "flare": "světlice - budou se držet mimo světlo",
 	"smoke_grenade": "kouř - budou čekat, až se rozplyne", "mine": "miny - budou chodit jinudy", "grenade": "granáty - nebudou se shlukovat",
 	"laser_rifle": "laser - budou se víc krýt", "laser_cannon": "laserový kanón - nebudou se shlukovat", "plasma_rifle": "plazmu - budou se víc krýt"}
 
@@ -887,6 +1173,16 @@ func known_habits() -> Dictionary:
 	return out
 
 ## The interrogation told us where they hide on Earth: a base underground (stays until destroyed).
+## A captured Šedivák mostly knows only its own task - only now and then does it let slip
+## where their base on Earth is (Výslech zajatce).
+const GREY_TELLS := 0.15
+func _grey_talks() -> void:
+	for mm in data["missions"]:
+		if mm["type"] == "alienbase":
+			return
+	if rng.randf() < GREY_TELLS:
+		_add_alien_base()
+
 func _add_alien_base() -> void:
 	for mm in data["missions"]:
 		if mm["type"] == "alienbase":
@@ -898,7 +1194,7 @@ func _add_alien_base() -> void:
 	m["reward"] = int(MTYPES["alienbase"]["reward"])
 	m["expires"] = float(data["day"]) + 9999.0
 	data["missions"].append(m)
-	_log("Výslech prozradil polohu jejich základny: %s. Mise čeká na globu." % m["place"])
+	_log("Zajatý Šedivák při výslechu prozradil polohu jejich základny: %s. Mise čeká na globu." % m["place"])
 
 func _add_final() -> void:
 	for mm in data["missions"]:
@@ -909,7 +1205,7 @@ func _add_final() -> void:
 	data["missions"].append({"id": id, "type": "mars", "lat": BASE_LAT, "lon": BASE_LON, "place": "Mars - rudá pláň",
 		"expires": float(data["day"]) + 9999.0, "biome": "mars", "terrain": "mars", "size": "large", "race": "myslodej",
 		"group": "myslodejove", "extra_aliens": 4, "reward": 0, "seed": rng.randi() % 1000000})
-	_log("Orel je připravený na startovací rampě. Poslední mise: Mars.")
+	_log("Operace POSLEDNÍ ÚSVIT schválena. Pelikán čeká na startovací rampě. Poslední mise: Mars.")
 
 func won() -> bool:
 	return bool(data.get("won", false))
@@ -934,9 +1230,10 @@ func mission_params(m: Dictionary) -> Dictionary:
 	p["allot"] = allot()
 	p["nemesis"] = (data.get("nemesis", {}) as Dictionary).keys()
 	p["armory"] = data["armory"].duplicate()
-	p["research"] = data["research"]["done"].duplicate()
+	p["research"] = active_research()
 	p["cid"] = str(data.get("cid", ""))
 	p["day"] = float(data["day"])
+	p["osetrovna"] = count("osetrovna") > 0
 	p["transport"] = transport()
 	p["late"] = int(data.get("month", 0)) >= 3
 	p["habits"] = known_habits()
@@ -1054,10 +1351,17 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 				loot[ck] = int(loot.get(ck, 0)) + int(loot[k])
 				loot[k] = 0
 				_log("Zajatec cestu nepřežil - základna nemá celu pro vetřelce.")
+	# every further live Šedivák in the cell is another chance it gives away where their base is
+	if researched("vyslech"):
+		for gk in ["live_grey", "live_grey_velitel"]:
+			for gi in int(loot.get(gk, 0)):
+				_grey_talks()
 	for k in loot:
 		if int(loot[k]) <= 0:
 			continue
 		found[k] = int(found.get(k, 0)) + int(loot[k])
+		if String(k).begins_with("vrak_") and not k in data.get("wrecks_seen", []):
+			data["wrecks_seen"] = data.get("wrecks_seen", []) + [k]      # (the encyclopedia's ship notes open)
 		if k == "moskovium":
 			data["moskovium"] = moskovium() + int(loot[k])
 		got.append("%s %d%s" % [loot_name(k), int(loot[k]), " g" if k == "moskovium" else "x"])
@@ -1069,6 +1373,21 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 			got.append("%s 1x (seskládán z trosek)" % race_name(r))
 			_log("Dílna seskládala z trosek celý kus: %s. Laboratoř ho může rozebrat." % race_name(r))
 	data["found"] = found
+	# Analýza UFO - Průzkumník: the first wreck in the hangar is not as dead as it looks
+	if int(found.get("vrak_scout", 0)) > 0 and not data.has("vrak_signal"):
+		data["vrak_signal"] = float(data["day"]) + randf_range(4.0, 7.0)
+	# Analýza UFO - Nájezdník: its controls keep a reserve of their own
+	if int(found.get("vrak_raider", 0)) > 0 and not data.has("vrak_raider_t"):
+		data["vrak_raider_t"] = float(data["day"]) + randf_range(6.0, 10.0)
+	# Analýza UFO - Zásobovací loď: its command set still takes their updates
+	if int(found.get("vrak_supply", 0)) > 0 and not data.has("vrak_supply_t"):
+		data["vrak_supply_t"] = float(data["day"]) + randf_range(10.0, 14.0)
+	# Analýza UFO - Bitevní loď: its strategic set compares where it lies with where we are
+	if int(found.get("vrak_battleship", 0)) > 0 and not data.has("vrak_battleship_t"):
+		data["vrak_battleship_t"] = float(data["day"]) + randf_range(12.0, 17.0)
+	# Analýza UFO - Sklízeč: the converter wakes up on its own
+	if int(found.get("vrak_harvester", 0)) > 0 and not data.has("vrak_harvester_t"):
+		data["vrak_harvester_t"] = float(data["day"]) + randf_range(8.0, 12.0)
 	var gear_txt := _gear_lost(kits, lost_gear, lockers)
 	_nemesis_tick()
 	_learn_habits(kits)
@@ -1131,6 +1450,58 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 	return txt
 
 # ---- research, building, shop -----------------------------------------------------------------
+## 0.57: what research gives Project X is a design - the workshop has to make it before anyone has it.
+const UPGRADES := {
+	"vesta": {"name": "Keramické vložky do vest", "cr": 600, "days": 3.0},
+	"batohy": {"name": "Výsadkové batohy", "cr": 700, "days": 3.0},
+	"vysilacky": {"name": "Helmové vysílačky", "cr": 500, "days": 3.0},
+	"detektor": {"name": "Citlivější detektory", "cr": 500, "days": 2.0},
+	"psi_clona": {"name": "Psionické clony do helem", "cr": 1200, "al": 10, "days": 5.0},
+	"psi_ochrana": {"name": "Lodní psionická ochrana CPS-01 (Pelikán)", "cr": 2500, "al": 40, "days": 6.0},
+	"pancir_letadel": {"name": "Pancéřování letadel", "cr": 1200, "al": 20, "days": 4.0},
+	"vzduch_laser": {"name": "Laserové kulomety stíhaček", "cr": 1200, "days": 4.0},
+	"vzduch_laser_delo": {"name": "Laserová děla stíhaček", "cr": 1600, "mk": 10, "days": 5.0},
+	"vzduch_plazma": {"name": "Plazmové kulomety stíhaček", "cr": 2000, "mk": 30, "days": 5.0},
+	"vzduch_plazma_delo": {"name": "Plazmová děla stíhaček", "cr": 2600, "mk": 50, "days": 6.0},
+}
+
+## Researched and (if it is a thing) made.
+func built(id: String) -> bool:
+	return researched(id) and (not UPGRADES.has(id) or id in data.get("built", []))
+
+func active_research() -> Array:
+	return (data["research"]["done"] as Array).filter(func(r): return built(String(r)))
+
+func upgrade_price(id: String) -> int:
+	return int(round(float(UPGRADES[id]["cr"]) * econ() / 10.0) * 10)
+
+func upgrade_coming(id: String) -> bool:
+	return _made_orders().any(func(o): return o["item"] == "up_" + id)
+
+func can_make_upgrade(id: String) -> bool:
+	var u: Dictionary = UPGRADES.get(id, {})
+	return not u.is_empty() and researched(id) and not built(id) and not upgrade_coming(id) and workshop_lines() > 0 \
+		and int(data["credits"]) >= upgrade_price(id) and alloys() >= int(u.get("al", 0)) and moskovium() >= int(u.get("mk", 0))
+
+func make_upgrade(id: String) -> bool:
+	if not can_make_upgrade(id):
+		return false
+	var u: Dictionary = UPGRADES[id]
+	data["credits"] = int(data["credits"]) - upgrade_price(id)
+	_pay(int(u.get("al", 0)), int(u.get("mk", 0)))
+	_queue("up_" + id, float(u["days"]) * time_k())
+	_log("Dílna začala vyrábět: " + String(u["name"]) + ".")
+	save()
+	changed.emit()
+	return true
+
+func _upgrade_ready(id: String) -> void:
+	if not data.has("built"):
+		data["built"] = []
+	if not id in data["built"]:
+		data["built"].append(id)
+	_log("Dílna dokončila: %s. Je to ve výzbroji." % String(UPGRADES.get(id, {}).get("name", id)))
+
 func researched(id: String) -> bool:
 	return (active or viewer) and id in data["research"]["done"]
 
@@ -1178,7 +1549,10 @@ func needs_list(id: String) -> Array:
 			what = "živý " + race_name(lv)
 			ok = int(found.get("live_" + lv, 0)) > 0
 		out.append([what, ok])
-	if n.has("loot"):
+	if n.has("loot") and n["loot"] is Array:
+		# any one of them will do (X-WEP-000: the first alien weapon of any kind)
+		out.append(["kořist: zbraň vetřelců", (n["loot"] as Array).any(func(k): return int(found.get(k, 0)) > 0)])
+	elif n.has("loot"):
 		out.append(["kořist: " + loot_name(n["loot"]), int(found.get(n["loot"], 0)) > 0])
 	if n.has("seen"):
 		out.append(["setkání: " + race_name(n["seen"]), n["seen"] in data.get("seen_races", [])])
@@ -1216,6 +1590,8 @@ func loot_name(k: String) -> String:
 		return "živý zajatec: " + race_name(k.substr(5))
 	if k.begins_with("trosky_"):
 		return "trosky: " + race_name(k.substr(7))
+	if k.begins_with("vrak_"):
+		return "vrak UFO: " + String(UFO_NAMES.get(k.substr(5), k.substr(5))).get_slice(" (", 0)
 	return String(LOOT_NAMES.get(k, k))
 
 func start_research(id: String) -> bool:
@@ -1258,7 +1634,7 @@ func can_build_at(index: int) -> bool:
 func build(index: int, ftype: String) -> bool:
 	var cell: Dictionary = data["base"][index]
 	var f: Dictionary = FACILITIES[ftype]
-	if cell["type"] != "" or int(data["credits"]) < facility_cost(ftype) or not can_build_at(index):
+	if cell["type"] != "" or int(data["credits"]) < facility_cost(ftype) or not can_build_at(index) or not facility_open(ftype):
 		return false
 	data["credits"] = int(data["credits"]) - facility_cost(ftype)
 	data["base"][index] = {"type": ftype, "days": facility_days(ftype)}
@@ -1271,7 +1647,7 @@ func unlocked(item: String) -> bool:
 	return not LOCKED_BY.has(item) or researched(LOCKED_BY[item])
 
 func price(item: String) -> int:
-	var p: float = float(SHOP[item]) * econ() * pow(0.85, count("dilna"))
+	var p: float = float(SHOP[item]) * econ()
 	if String(Game.ITEMS.get(item, {}).get("type", "")) in ["ammo", "grenade", "flare", "medkit"]:
 		p *= pow(0.9, count("sklad"))
 	return int(p)
@@ -1279,22 +1655,227 @@ func price(item: String) -> int:
 func moskovium() -> int:
 	return int(data.get("moskovium", 0))
 
+## Ordinary things for the base: bought outside, here the next day.
 func buy(item: String) -> bool:
-	if not unlocked(item) or int(data["credits"]) < price(item) or moskovium() < int(SHOP_MK.get(item, 0)):
+	if workshop_item(item) or not unlocked(item) or int(data["credits"]) < price(item):
 		return false
 	data["credits"] = int(data["credits"]) - price(item)
-	data["moskovium"] = moskovium() - int(SHOP_MK.get(item, 0))
 	order(item)
 	save()
 	changed.emit()
 	return true
+
+# ---- the workshop: what research opened is not bought, it is made here ----------------------------
+## Everything a research unlocks (our own heavy guns too) - nobody sells it, the workshop makes it.
+func workshop_item(item: String) -> bool:
+	return LOCKED_BY.has(item)
+
+func alloys() -> int:
+	return int((data.get("found", {}) as Dictionary).get("slitiny", 0))
+
+## Days one piece takes on one line.
+func make_days(item: String) -> float:
+	return clampf(float(SHOP.get(item, 400)) / 400.0, 0.5, 6.0) * time_k()
+
+func workshop_lines() -> int:
+	return count("dilna")
+
+## Like the laboratories and research: one queue, and every further workshop makes it go half as fast again.
+func workshop_rate() -> float:
+	return 0.0 if workshop_lines() <= 0 else 1.0 + 0.5 * float(workshop_lines() - 1)
+
+## Workshop pieces that are built around a stock item (X-WEP-010: every PG-01 takes one PL-MAG-01).
+const MAKE_EATS := {"plasma_grenade": {"plasma_cell": 1}}
+
+func can_make(item: String) -> bool:
+	for it in MAKE_EATS.get(item, {}):
+		if int(data["armory"].get(it, 0)) < int(MAKE_EATS[item][it]):
+			return false
+	return workshop_item(item) and unlocked(item) and workshop_lines() > 0 and int(data["credits"]) >= price(item) \
+		and moskovium() >= int(SHOP_MK.get(item, 0)) and alloys() >= int(SHOP_AL.get(item, 0))
+
+## Puts one piece at the end of the workshop queue.
+func make(item: String) -> bool:
+	if not can_make(item):
+		return false
+	data["credits"] = int(data["credits"]) - price(item)
+	_pay(int(SHOP_AL.get(item, 0)), int(SHOP_MK.get(item, 0)))
+	for it in MAKE_EATS.get(item, {}):
+		data["armory"][it] = int(data["armory"].get(it, 0)) - int(MAKE_EATS[item][it])
+		if int(data["armory"][it]) <= 0:
+			data["armory"].erase(it)
+	_queue(item, make_days(item))
+	save()
+	changed.emit()
+	return true
+
+func _pay(al: int, mk: int) -> void:
+	data["moskovium"] = moskovium() - mk
+	var found: Dictionary = data.get("found", {})
+	found["slitiny"] = alloys() - al
+	data["found"] = found
+
+## Into the workshop queue (the work in days at one workshop's pace).
+func _queue(item: String, days: float, extra := {}) -> void:
+	if not data.has("orders"):
+		data["orders"] = []
+	var o := {"item": item, "work": days, "at": 0.0, "made": true}
+	o.merge(extra)
+	data["orders"].append(o)
+	_workshop_eta()
+
+## What a workshop order is called in the queue.
+func queue_name(it: String) -> String:
+	if Game.ITEMS.has(it):
+		return String(Game.ITEMS[it]["short"])
+	if it.begins_with("up_"):
+		return String(UPGRADES.get(it.substr(3), {}).get("name", it))
+	return {"craft_jestrab": "Jestřáb", "craft_kondor": "Kondor", "craft_orel": "Pelikán"}.get(it, it)
+
+func _made_orders() -> Array:
+	return (data.get("orders", []) as Array).filter(func(o): return o.get("made", false))
+
+## Work on the queue: the first piece, then the next one.
+func _workshop_tick(days: float) -> void:
+	var rate := workshop_rate()
+	var now := float(data["day"])
+	var done := []
+	var left := days * rate
+	for o in _made_orders():
+		if not o.has("work"):
+			o["work"] = maxf(0.01, float(o.get("at", now)) - now + days)      # (older saves: what was left)
+		if left <= 0.0:
+			break
+		var w := float(o["work"])
+		if w <= left:
+			left -= w
+			o["work"] = 0.0
+			done.append(o)
+		else:
+			o["work"] = w - left
+			left = 0.0
+	if not done.is_empty():
+		var l := []
+		var got := {}
+		for o in done:
+			data["orders"].erase(o)
+			var it := String(o["item"])
+			if it.begins_with("craft_"):
+				_craft_ready(o)
+			elif it.begins_with("up_"):
+				_upgrade_ready(it.substr(3))
+			else:
+				data["armory"][it] = int(data["armory"].get(it, 0)) + 1
+				got[it] = int(got.get(it, 0)) + 1
+		for k in got:
+			l.append("%s %dx" % [Game.ITEMS[k]["short"] if Game.ITEMS.has(k) else k, got[k]])
+		if not l.is_empty():
+			_log("Dílna dokončila: " + ", ".join(l) + ".")
+	_workshop_eta()
+
+## When each piece will be done (game day), at today's pace.
+func _workshop_eta() -> void:
+	var rate := workshop_rate()
+	var t := float(data["day"])
+	for o in _made_orders():
+		t += float(o.get("work", 0.0)) / rate if rate > 0.0 else 9999.0
+		o["at"] = t
+
+## Crafts ordered or in the workshop: how many of that kind (sokol / jestrab / kondor), and how many new hulls.
+func crafts_coming(kind := "") -> int:
+	var n := 0
+	for o in data.get("orders", []):
+		if String(o["item"]).begins_with("craft_") and (kind == "" or String(o["item"]) == "craft_" + kind):
+			n += 1
+	return n
+
+func hulls_coming() -> int:
+	var n := 0
+	for o in data.get("orders", []):
+		if o["item"] == "craft_sokol" or (o["item"] == "craft_jestrab" and o.get("new", false)):
+			n += 1
+	return n
+
+## The Jestřáb and the Kondor are ours, not bought: the workshop builds them.
+const CRAFT_MAKE := {"jestrab": {"days": 6.0, "al": 20, "mk": 10}, "kondor": {"days": 4.0, "al": 0, "mk": 0}, "orel": {"days": 10.0, "al": 60, "mk": 150}}
+const KONDOR_PRICE := 1500
+const PELIKAN_PRICE := 6000
+
+func pelikan() -> bool:
+	return bool(data.get("pelikan", false))
+
+func pelikan_price() -> int:
+	return int(round(PELIKAN_PRICE * econ() / 10.0) * 10)
+
+func can_make_pelikan() -> bool:
+	var c: Dictionary = CRAFT_MAKE["orel"]
+	return researched("orel") and not pelikan() and crafts_coming("orel") == 0 and workshop_lines() > 0 \
+		and int(data["credits"]) >= pelikan_price() and alloys() >= int(c["al"]) and moskovium() >= int(c["mk"])
+
+func make_pelikan() -> bool:
+	if not can_make_pelikan():
+		return false
+	var c: Dictionary = CRAFT_MAKE["orel"]
+	data["credits"] = int(data["credits"]) - pelikan_price()
+	_pay(int(c["al"]), int(c["mk"]))
+	_queue("craft_orel", float(c["days"]) * time_k())
+	_log("Dílna začala stavět Pelikán.")
+	save()
+	changed.emit()
+	return true
+
+func kondor_price() -> int:
+	return int(round(KONDOR_PRICE * econ() / 10.0) * 10)
+
+func can_make_kondor() -> bool:
+	return researched("kondor") and transport() != "kondor" and crafts_coming("kondor") == 0 and workshop_lines() > 0 \
+		and int(data["credits"]) >= kondor_price()
+
+func make_kondor() -> bool:
+	if not can_make_kondor():
+		return false
+	data["credits"] = int(data["credits"]) - kondor_price()
+	_queue("craft_kondor", float(CRAFT_MAKE["kondor"]["days"]) * time_k())
+	_log("Dílna začala stavět Kondor.")
+	save()
+	changed.emit()
+	return true
+
+func _craft_ready(o: Dictionary) -> void:
+	match String(o["item"]):
+		"craft_sokol":
+			data["jets"] = jets() + 1
+			_log("Do hangáru přibyla stíhačka Sokol (%d celkem)." % jets())
+		"craft_jestrab":
+			if o.get("new", false):
+				data["jets"] = jets() + 1
+				_log("Dílna dokončila Jestřába. Je v hangáru.")
+			else:
+				_log("Dílna přestavěla jeden Sokol na Jestřába.")
+			data["hawks"] = mini(int(data.get("hawks", 0)) + 1, jets())
+		"craft_kondor":
+			data["transport"] = "kondor"
+			_log("Dílna dokončila Kondor. Čáp jde do zálohy.")
+		"craft_orel":
+			data["pelikan"] = true
+			_log("Dílna dokončila Pelikán. Stojí na startovací rampě.")
+			if researched("ruda_planeta"):
+				_add_final()
+
+## When the last piece of this kind now in the workshop is done (game day), or -1.
+func made_at(item: String) -> float:
+	var t := -1.0
+	for o in data.get("orders", []):
+		if o.get("made", false) and o["item"] == item:
+			t = maxf(t, float(o["at"]))
+	return t
 
 ## What every mercenary gets from the base for nothing (0.50: only the basics; the rest is bought,
 ## takes days to arrive, and whatever is not brought back from a mission is gone).
 const ALLOT := {"pistol": 1, "pistol_clip": 2, "rifle": 1, "rifle_clip": 2, "knife": 1, "radio": 4, "flare": 2, "medkit": 1}
 const ALLOT_VETERAN := {"pistol": 1, "pistol_clip": 1, "rifle": 1, "rifle_clip": 1, "knife": 1, "radio": 4, "flare": 1}
 ## The armory a new campaign starts with (bought by the council - lose it and it is gone).
-const START_ARMORY := {"rifle_clip": 6, "pistol_clip": 4, "grenade": 4, "smoke_grenade": 2, "medkit": 2, "vesta": 2, "shotgun": 1, "shells": 3, "scanner": 1}
+const START_ARMORY := {"rifle_clip": 6, "pistol_clip": 4, "grenade": 4, "smoke_grenade": 2, "medkit": 2, "vesta": 2, "shotgun": 1, "shells": 3, "scanner": 1, "rocket_launcher": 1, "rocket": 2, "nvg": 1, "stit": 1}
 ## What the black market pays for alien things (credits, before difficulty).
 const LOOT_SELL := {"a_pistol": 500, "a_rifle": 800, "a_heavy": 1100, "slitiny": 30}
 
@@ -1327,11 +1908,8 @@ func allot() -> Dictionary:
 	return out
 
 ## Bought things are ordered, not conjured: they arrive after a while (alien tech is made in the workshop).
-func delivery_days(item: String) -> float:
-	var d := clampf(float(SHOP.get(item, 100)) / 500.0, 0.5, 3.0)
-	if SHOP_MK.has(item):
-		d += 2.0
-	return d * time_k() * pow(0.85, count("dilna"))
+func delivery_days(_item: String) -> float:
+	return 1.0
 
 func order(item: String) -> void:
 	if not data.has("orders"):
@@ -1348,18 +1926,26 @@ func on_order(item: String) -> int:
 func _deliveries() -> void:
 	var left := []
 	var got := {}
+	var made := {}
 	for o in data.get("orders", []):
-		if float(o["at"]) <= float(data["day"]):
+		if o.get("made", false):
+			left.append(o)      # (the workshop finishes those itself: _workshop_tick)
+		elif float(o["at"]) <= float(data["day"]):
+			if String(o["item"]).begins_with("craft_"):
+				_craft_ready(o)
+				continue
 			data["armory"][o["item"]] = int(data["armory"].get(o["item"], 0)) + 1
-			got[o["item"]] = int(got.get(o["item"], 0)) + 1
+			var into: Dictionary = made if o.get("made", false) else got
+			into[o["item"]] = int(into.get(o["item"], 0)) + 1
 		else:
 			left.append(o)
 	data["orders"] = left
-	if not got.is_empty():
-		var l := []
-		for k in got:
-			l.append("%s %dx" % [Game.ITEMS[k]["short"] if Game.ITEMS.has(k) else k, got[k]])
-		_log("Dodávka do skladu: " + ", ".join(l) + ".")
+	for pair in [[got, "Dodávka do skladu: "], [made, "Dílna dokončila: "]]:
+		if not (pair[0] as Dictionary).is_empty():
+			var l := []
+			for k in pair[0]:
+				l.append("%s %dx" % [Game.ITEMS[k]["short"] if Game.ITEMS.has(k) else k, pair[0][k]])
+			_log(String(pair[1]) + ", ".join(l) + ".")
 
 func sell_price(item: String) -> int:
 	return int(price(item) * 0.4)

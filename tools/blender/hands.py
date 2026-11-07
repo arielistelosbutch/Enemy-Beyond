@@ -28,8 +28,12 @@ GRIPS = {
     "laser_rifle": ((0, -0.01, -0.045), (0, 0.3, -0.04)),
     "laser_cannon": ((0, 0.0, -0.07), (0, 0.42, -0.07)),
     "laser_pistol": ((0, -0.005, -0.04), (-0.035, 0.0, -0.06)),
+    "laser_minigun": ((0, -0.02, -0.06), (0, 0.0, 0.17)),
+    "plasma_minigun": ((0, -0.02, -0.06), (0, 0.0, 0.17)),
+    "plasma_pistol": ((0, -0.005, -0.04), (-0.035, 0.0, -0.06)),
+    "plasma_cannon": ((0, 0.0, -0.07), (0, 0.42, -0.07)),
 }
-PISTOLS = ("pistol", "magnum", "laser_pistol")
+PISTOLS = ("pistol", "magnum", "laser_pistol", "plasma_pistol")
 
 def M():
     return dict(

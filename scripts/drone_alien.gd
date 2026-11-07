@@ -89,6 +89,10 @@ func _think(delta: float) -> void:
 		tgt += Vector3(rng.randf_range(-miss, miss), rng.randf_range(-miss, miss) * 0.5, rng.randf_range(-miss, miss))
 		var from := global_position + Vector3(0, 2.75, 0) - global_transform.basis.z * 1.0
 		_plasma.rpc(from, (tgt - from).normalized(), 2.0, "plasma")
+		# the big gun eats so much power and heat that everything else has to wait (Rozbor Kolosu):
+		# a couple of seconds with the rotary guns silent and the vents steaming
+		shoot_cd = maxf(shoot_cd, 2.4)
+		_vent_fx.rpc()
 
 ## Kolos: up a wall onto a roof to fire from above - and, after a while, down again somewhere else.
 var _climb_cd := 10.0
@@ -97,6 +101,8 @@ var _wall_base := Vector3.INF
 var _wall_n := Vector3.ZERO
 func _climb_tick(delta: float) -> void:
 	_climb_cd -= delta
+	if legs_hurt and not flying:
+		return       # cracked leg joints: no more climbing
 	if flying or _climb_cd > 0.0 or state != S.COMBAT or not is_instance_valid(target) or target.dead:
 		return
 	_climb_cd = rng.randf_range(14.0, 22.0)
@@ -205,14 +211,43 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 		var at := global_position + Vector3(0, float(R.get("hover", 0.0)) + (1.8 if race == "kolos" else 0.0), 0)
 		get_tree().create_timer(0.6).timeout.connect(func(): mission.explode(at, float(ex[0]), float(ex[1]), "-", true))
 
+@rpc("authority", "call_local", "reliable")
+func _vent_fx() -> void:
+	Game.play_at(mission, "hiss", global_position + Vector3(0, 2.2, 0), -2)
+	var sp := CPUParticles3D.new()
+	sp.one_shot = true
+	sp.amount = 36
+	sp.lifetime = 1.6
+	sp.explosiveness = 0.3
+	sp.direction = Vector3.UP
+	sp.spread = 25.0
+	sp.initial_velocity_min = 1.0
+	sp.initial_velocity_max = 2.2
+	sp.gravity = Vector3(0, 0.6, 0)
+	sp.scale_amount_min = 1.0
+	sp.scale_amount_max = 2.5
+	var qm := QuadMesh.new()
+	qm.size = Vector2(0.25, 0.25)
+	var mm := StandardMaterial3D.new()
+	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mm.albedo_color = Color(0.85, 0.85, 0.9, 0.35)
+	mm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	qm.material = mm
+	sp.mesh = qm
+	add_child(sp)
+	sp.position = Vector3(0, 2.3, 0.3)
+	sp.emitting = true
+	get_tree().create_timer(3.0).timeout.connect(sp.queue_free)
+
 # ---- Diskoll: the greys' eyes ---------------------------------------------------------------
 ## It maps the ground under it and tells the greys where everybody is.
 var _scan_t := 1.0
 var _mark_cd := {}
 func _scan(delta: float) -> void:
 	_scan_t -= delta
-	if _scan_t > 0.0:
-		return
+	if _scan_t > 0.0 or not antenna_ok:
+		return       # (mast shot off: it sees, but it cannot tell anybody)
 	_scan_t = 0.6
 	for p in mission.players():
 		if p.dead or p.downed:
@@ -252,4 +287,4 @@ func _mark_fx(who: String, at: Vector3) -> void:
 	var me: Node = mission.local_player()
 	if me and String(me.name) == who:
 		Game.play_ui(me, "radar_ping", -6)
-		mission.hud.message("Ten disk tě zaměřil - šediváci teď vědí, kde jsi.", 3.0)
+		pass

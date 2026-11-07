@@ -21,14 +21,38 @@ func _stand_in(id: String) -> Node3D:
 			if id == "rifle_clip":
 				m.rotation.x = 0.25       # a curved magazine, more or less
 			n.add_child(m)
-		"shells", "magnum_rounds", "minigun_belt":
-			var k: int = {"shells": 4, "magnum_rounds": 6, "minigun_belt": 9}[id]
+		"shells", "slugs", "beanbag", "magnum_rounds", "minigun_belt":
+			var k: int = {"shells": 4, "slugs": 4, "beanbag": 4, "magnum_rounds": 6, "minigun_belt": 9}[id]
+			var shell := id in ["shells", "slugs", "beanbag"]
 			for i in k:
 				var r: Node3D = rnd.instantiate()
-				r.scale = Vector3.ONE * (1.6 if id == "shells" else 1.0)
+				r.scale = Vector3.ONE * (1.6 if shell else 1.0)
 				r.rotation.x = PI / 2        # standing upright, side by side
-				r.position = Vector3(0, 0, (i - k / 2.0) * (0.03 if id == "shells" else 0.016))
+				r.position = Vector3(0, 0, (i - k / 2.0) * (0.03 if shell else 0.016))
+				if id != "shells" and shell:
+					# 0.57: the other loads by the colour of the hull - slugs dark green, less-lethal blue
+					var tint := Color(0.2, 0.32, 0.2) if id == "slugs" else Color(0.2, 0.35, 0.75)
+					for mi in r.find_children("*", "MeshInstance3D", true, false):
+						var mt := StandardMaterial3D.new()
+						mt.albedo_color = tint
+						mt.metallic = 0.3
+						mt.roughness = 0.5
+						(mi as MeshInstance3D).material_override = mt
 				n.add_child(r)
+		"rocket_ap", "rocket_inc":
+			# 0.57: the other warheads - the same rocket, the head painted (AP black and yellow, incendiary red)
+			var rk: Node3D = load("res://assets/models/rocket.glb").instantiate()
+			var tint := Color(0.12, 0.12, 0.12) if id == "rocket_ap" else Color(0.75, 0.15, 0.08)
+			for mi in rk.find_children("*", "MeshInstance3D", true, false):
+				var mt := StandardMaterial3D.new()
+				mt.albedo_color = tint
+				mt.metallic = 0.3
+				mt.roughness = 0.5
+				(mi as MeshInstance3D).material_override = mt
+			n.add_child(rk)
+			var band := _prim(CylinderMesh.new(), Vector3(0.07, 0.03, 0.07), Color(0.85, 0.7, 0.1) if id == "rocket_ap" else Color(0.95, 0.55, 0.1))
+			band.rotation.x = PI / 2
+			n.add_child(band)
 		"plasma_cell":
 			n.add_child(_prim(CylinderMesh.new(), Vector3(0.05, 0.12, 0.05), Color(0.2, 0.22, 0.24)))
 			var core := _prim(CylinderMesh.new(), Vector3(0.035, 0.09, 0.035), Color(0.3, 1.0, 0.5), true)
@@ -130,10 +154,10 @@ func _init() -> void:
 	RenderingServer.set_default_clear_color(Color(0, 0, 0, 0))
 	var items := ["rifle", "pistol", "shotgun", "magnum", "autocannon", "minigun", "rocket_launcher", "plasma_rifle",
 		"sniper", "laser_pistol", "laser_rifle", "laser_cannon", "stun_baton", "knife", "rifle_clip", "sniper_clip",
-		"pistol_clip", "shells", "magnum_rounds", "ac_clip", "minigun_belt", "plasma_cell", "rocket", "grenade",
+		"pistol_clip", "shells", "slugs", "beanbag", "magnum_rounds", "ac_clip", "minigun_belt", "plasma_cell", "rocket", "rocket_ap", "rocket_inc", "grenade",
 		"smoke_grenade", "mine", "flare", "medkit", "a_pistol", "a_rifle", "a_heavy", "a_pack", "stit", "vesta",
-		"pancir", "scanner", "radio", "nvg"]
-	var crafts := ["ufo_scout", "ufo_raider", "ufo_harvester", "ufo_battleship", "ufo_supply", "sokol", "heli", "dropship"]
+		"pancir", "scanner", "radio", "nvg", "energo_nuz", "laser_minigun", "jet_laser_mg", "jet_laser_cannon", "plasma_pistol", "plasma_cannon", "plasma_minigun", "plasma_grenade"]
+	var crafts := ["ufo_scout", "ufo_raider", "ufo_harvester", "ufo_battleship", "ufo_supply", "sokol", "jestrab", "pelikan", "heli", "dropship"]
 	var all := []
 	var views := {"nvg": Vector3(0.8, 0.45, -0.9), "stit": Vector3(0.25, 0.3, 1.0), "radio": Vector3(1, 0.5, 0.6), "medkit": Vector3(1, 0.6, 0.5),
 		"vesta": Vector3(0.45, 0.25, -1.0), "pancir": Vector3(0.45, 0.25, -1.0), "a_pack": Vector3(0.6, 0.35, 1.0)}

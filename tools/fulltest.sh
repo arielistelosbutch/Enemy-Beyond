@@ -41,8 +41,8 @@ run solo        250 h "RESULT"                             --autotest=solo
 run campaign    300 h "back on globe"                             --autotest=campaign
 run drone       420 x "first fall: downed false" --autotest=dronetest
 run voice       200 h "RESULT voice: snippets \[1\]"       --autotest=voice
-run basewalk    400 x "RESULT basewalk 11"                 --autotest=basewalk
-run base_attack 400 x "RESULT basewalk 11"                 --autotest=basewalk --attack=1
+run basewalk    400 x "RESULT basewalk 16"                 --autotest=basewalk
+run base_attack 400 x "RESULT basewalk 16"                 --autotest=basewalk --attack=1
 run alienbase   400 x "RESULT abase"                       --autotest=abase --mtype=alienbase
 run fire        450 x "RESULT fireshot"                    --autotest=fireshot
 run doors       300 x "RESULT doorshot"                    --autotest=doorshot --biome=farm
@@ -84,14 +84,25 @@ run suit        100 h "RESULT suittest down true"        --autotest=suittest --g
 run levgrab     100 h "RESULT levgrab ko true carried true" --autotest=levgrab --group=levite --mtype=crash
 run mirotest   150 h "RESULT mirotest frenzy true .* mending true .* healed true" --autotest=mirotest --group=levite --mtype=landed
 run bijtest    150 h "RESULT bijtest broken true flinch false taken 7.5 -> 9.0 alive true" --autotest=bijtest --group=bijci --mtype=landed
+run weaktest   200 h "RESULT weaktest grey true/true \| suit true \| mast true/true \| antenna true \| kolos true/true/true \| legs true 0.6 eye 2 \| ohar deaf true winded true belly true \| jest blind true fire 9.0 bullet 6.0 \| lih back true front true \| bijec laser 8.75 bullet 7.50 \| mys free true cd true \\| mines 2->1" --autotest=weaktest --mtype=landed
+run sgtest     150 h "RESULT sgtest full 7 7 tube slugs,beanbag,beanbag bean dmg 3 stun true slug dmg true loaded 4" --autotest=sgtest --mtype=landed --seed=1
+run kanontest  150 h "RESULT kanontest hit true burn true cycle true mag 5" --autotest=kanontest --mtype=landed --seed=1
+run mgheat     150 h "RESULT mgheat shots 11[0-9] hot true cooled true mag 300" --autotest=mgheat --mtype=landed
+run seedtest   200 h "RESULT seedtest bleed true seed true nvg true/false true/true false/false" --autotest=seedtest --mtype=landed
+run supplytest 200 h "RESULT supplytest drops 2 total" --autotest=supplytest --mtype=terror --biome=town --seed=1
+run striketest 200 h "RESULT striketest core false strike true lost true \\| core true strike false lost false \\| grey ok" --autotest=striketest
+run rockettest 150 h "RESULT rockettest tube \[\"rocket_ap\"\] ap true inc \[\]" --autotest=rockettest --mtype=landed --seed=1
 run bvtest     150 h "RESULT bvtest weak true body true module false reinf [23]" --autotest=bvtest --mtype=landed
 run nadtest    150 h "RESULT nadtest husk true still true blast true direct true" --autotest=nadtest --mtype=landed
 run ohntest    150 h "RESULT ohntest knows true charged true hurt true" --autotest=ohntest --mtype=landed
 run mystest    150 h "RESULT mystest moved true again false alive true" --autotest=mystest --mtype=landed
 run koltest    200 h "RESULT koltest found true up true top [0-9.]+ down true" --autotest=koltest --mtype=terror --biome=town
-run lasertest  120 h "RESULT lasertest drained true partial true still true full true free true" --autotest=lasertest --mtype=landed
-run shieldtest 100 h "RESULT shieldtest low 10 up 2 broke true" --autotest=shieldtest --mtype=landed
+run lasertest  120 h "RESULT lasertest drained true waiting true ready true mg_dry true mg_full true edge true" --autotest=lasertest --mtype=landed
+run lcshot     150 h "RESULT lcshot hit true shards true hum true ready true" --autotest=lcshot --mtype=landed
+run plasmatest 150 h "RESULT plasmatest pistol 10 hot true interlock true cannon 2 minigun true rifle 5 grenade true seared true mags_left 0" --autotest=plasmatest --mtype=landed
+run shieldtest 100 h "RESULT shieldtest low 10 up 2 broke true after [0-9]+ plasma 8 knock true vest 16/13 worn true" --autotest=shieldtest --mtype=landed
 run gearloss    60 h "RESULT gearloss order_wait true arrived true sold true won_grenades 4->3 clips_kept true lost_grenades 1 vests 1" --autotest=gearloss
+run workshoptest 60 h "RESULT workshoptest ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok$" --autotest=workshoptest
 run ai_late    160 h "RESULT aitest jestetan late 1 dmg [1-9][0-9][0-9]" --autotest=aitest --mtype=crash --biome=farm --late=1 --seed=5 --hour=13
 run latetest   120 h "RESULT latetest pack [2-9] nemesis [1-9][0-9]* marked true waves 3 added [3-9]" --autotest=latetest --mtype=crash --biome=farm --late=1 --seed=5 --hour=23
 run maptown   220 x "RESULT topshot untangled" --autotest=topshot --mtype=crash --biome=town --hour=13 --seed=11 --late=1

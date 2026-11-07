@@ -43,7 +43,7 @@ func pylons_up() -> int:
 func taken(dmg: float) -> float:
 	if race == "mozek" and pylons_up() > 0:
 		if mission and mission.local_player():
-			mission.hud.message("Štít drží! Nejdřív zničte pylony (%d)." % pylons_up(), 1.5)
+			mission.hud.message("Štít drží!", 1.5)
 		return 0.0
 	return super.taken(dmg)
 

@@ -69,8 +69,30 @@ static func main_anim(ap: AnimationPlayer) -> String:
 			best = an
 	return best
 
-## Mixamo bone names come as "mixamorig:Hips", "mixamorig_Hips" or "mixamorig1:Hips".
+## 0.57: the same for afk.ai (Ari's own movements, its Unreal-style skeleton): its bone for each
+## Mixamo one. afk stands like Mixamo (facing +Z, its "_l" side at +X), so the rest is the same.
+const AFK := {"Hips": "pelvis", "Spine": "spine_01", "Spine2": "spine_03", "Neck": "neck_01", "Head": "head",
+	"HeadTop_End": "head_leaf", "LeftArm": "upperarm_l", "LeftForeArm": "lowerarm_l", "LeftHand": "hand_l",
+	"LeftHandMiddle1": "middle_01_l", "RightArm": "upperarm_r", "RightForeArm": "lowerarm_r", "RightHand": "hand_r",
+	"RightHandMiddle1": "middle_01_r", "LeftUpLeg": "thigh_l", "LeftLeg": "calf_l", "LeftFoot": "foot_l",
+	"RightUpLeg": "thigh_r", "RightLeg": "calf_r", "RightFoot": "foot_r"}
+
+## Reads a GLB/glTF (an afk.ai export) into a scene in the tree of @a parent. null when it cannot.
+static func load_glb(path: String, parent: Node) -> Node:
+	var doc := GLTFDocument.new()
+	var st := GLTFState.new()
+	if doc.append_from_file(path, st) != OK:
+		return null
+	var sc: Node = doc.generate_scene(st)
+	if sc == null:
+		return null
+	parent.add_child(sc)
+	return sc
+
+## Mixamo bone names come as "mixamorig:Hips", "mixamorig_Hips" or "mixamorig1:Hips" (afk: see AFK).
 static func _find(sk: Skeleton3D, short: String) -> int:
+	if AFK.has(short) and sk.find_bone(AFK[short]) >= 0:
+		return sk.find_bone(AFK[short])
 	for i in sk.get_bone_count():
 		var n := sk.get_bone_name(i)
 		if n == short or n.ends_with(":" + short) or n.ends_with("_" + short):
@@ -80,12 +102,14 @@ static func _find(sk: Skeleton3D, short: String) -> int:
 ## Converts the first animation of a loaded Mixamo scene into a clip for our merc (@a target: its
 ## Skeleton3D, at rest). @a in_place: the walk's travel taken out (the game moves the man itself);
 ## @a fps: samples per second (thinned out afterwards).
-static func convert(src_scene: Node, target: Skeleton3D, name: String, in_place := true, fps := 30.0) -> Dictionary:
+static func convert(src_scene: Node, target: Skeleton3D, name: String, in_place := true, fps := 30.0, which := "") -> Dictionary:
 	var ss := _skel(src_scene)
 	var ap := _player(src_scene)
 	if ss == null or ap == null or ap.get_animation_list().is_empty():
 		return {}
-	var anim_name := main_anim(ap)
+	var anim_name := main_anim(ap) if which == "" else which
+	if not ap.has_animation(anim_name):
+		return {}
 	var anim := ap.get_animation(anim_name)
 	var si := {}
 	for b in MAP:
@@ -133,6 +157,8 @@ static func convert(src_scene: Node, target: Skeleton3D, name: String, in_place 
 	var hips0: Vector3 = (s_rest["Hips"] as Transform3D).origin
 	# sample
 	ap.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	ss.reset_bone_poses()      # (one export holds many movements: nothing of the last one may stay on bones this one leaves alone)
+	ap.stop()
 	ap.play(anim_name)
 	var n := maxi(2, int(ceil(anim.length * fps)) + 1)
 	var times := []

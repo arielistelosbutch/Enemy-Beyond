@@ -14,7 +14,7 @@ var cat := ""
 var current := -1           # index into all
 var list_box: VBoxContainer
 var title_lbl: Label
-var text_lbl: Label
+var text_lbl: RichTextLabel
 var cat_box: HBoxContainer
 var sv: SubViewport
 var svc: SubViewportContainer
@@ -67,7 +67,7 @@ func build() -> void:
 		b.custom_minimum_size = Vector2(80, 14)
 		b.set_meta("cat", c)
 	var sc := ScrollContainer.new()
-	sc.custom_minimum_size = Vector2(0, 262)
+	sc.custom_minimum_size = Vector2(0, 246)
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	lv.add_child(sc)
 	list_box = VBoxContainer.new()
@@ -100,9 +100,20 @@ func build() -> void:
 	title_lbl.add_theme_font_size_override("font_size", 14)
 	title_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
 	tv.add_child(title_lbl)
-	text_lbl = Label.new()
-	text_lbl.add_theme_color_override("font_color", TEXT)
-	text_lbl.add_theme_font_size_override("font_size", 9)
+	# 0.57: rich text - the database records get their headings, fields and the closing quote set apart
+	text_lbl = RichTextLabel.new()
+	text_lbl.bbcode_enabled = true
+	text_lbl.fit_content = true
+	text_lbl.scroll_active = false
+	text_lbl.add_theme_color_override("default_color", TEXT)
+	for fs in ["normal_font_size", "bold_font_size", "italics_font_size", "bold_italics_font_size"]:
+		text_lbl.add_theme_font_size_override(fs, 9)
+	text_lbl.add_theme_font_override("bold_font", UiSkin.font(true))
+	var ital := FontVariation.new()
+	ital.base_font = UiSkin.font()
+	ital.variation_transform = Transform2D(Vector2(1, 0), Vector2(0.2, 1), Vector2.ZERO)     # slanted Chakra Petch
+	text_lbl.add_theme_font_override("italics_font", ital)
+	text_lbl.add_theme_constant_override("paragraph_separation", 3)
 	text_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
 	text_lbl.custom_minimum_size = Vector2(186, 0)
 	text_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -237,7 +248,7 @@ func _select(i: int) -> void:
 	else:
 		_set_cat(cat)
 	title_lbl.text = String(e["title"])
-	text_lbl.text = String(e["text"])
+	text_lbl.text = db_bbcode(hide_unknown(String(e["text"])))
 	(text_lbl.get_parent() as ScrollContainer).scroll_vertical = 0
 	Game.play_ui(self, "type", -14)
 	_show_model(String(e["model"]), String(e["view"]))
@@ -436,3 +447,131 @@ class Plate extends Control:
 		for y in range(26, int(r.size.y) - 20, 26):
 			for x in range(26, int(r.size.x) - 20, 30):
 				draw_rect(Rect2(x - 2, y - 2, 4, 4), Color(0.45, 0.47, 0.56))
+
+## A record as rich text. The Vojenská databáze records (Ari's): the header block one field per line,
+## the CAPITAL section titles in amber, short sub-titles and "Key:" items picked out, the closing words
+## in italics, the signature dimmed. Any other text just gets its brackets escaped.
+## 0.57 (Ari): what a weapon does against each race stays hidden until that race's autopsy
+## (or the machine's analysis) is done. The section "BOJOVÁ ÚČINNOST PROTI ..." is cut into
+## blocks by the race subheadings; a block naming a race not yet researched is left out.
+const RACE_STEMS := {"Šediv": "pitva", "Levit": "pitva_levit", "Ohař": "pitva_ohar", "Ještěř": "pitva_jestetan",
+	"Líhav": "pitva_lihnoun", "Bij": "pitva_bijec", "Nádor": "pitva_nador", "Ohniv": "pitva_ohnivec",
+	"Myslod": "pitva_myslodej", "Diskoll": "rozbor_diskoll", "Kolos": "rozbor_kolos", "Nakaž": "pitva_lihnoun", "Mozek": "pitva_mozek"}
+## The ship blocks (X-MAT-002: where M-115 sits in each UFO type) open with a wreck of that type brought home.
+const UFO_STEMS := {"Průzkumník": "vrak_scout", "Nájezdník": "vrak_raider", "Sklízeč": "vrak_harvester",
+	"Zásobovací": "vrak_supply", "Bitevní": "vrak_battleship"}
+static func _ufo_known(key: String) -> bool:
+	if not Campaign.active:
+		return true
+	return int(Campaign.data.get("found", {}).get(key, 0)) > 0 or key in Campaign.data.get("wrecks_seen", [])
+
+static func hide_unknown(t: String) -> String:
+	var paras := t.split("\n\n")
+	for pi in paras.size():
+		var p: String = paras[pi]
+		var ships := p.begins_with("VÝSKYT V JEDNOTLIVÝCH TYPECH UFO")
+		if not (ships or p.begins_with("BOJOVÁ ÚČINNOST") or (p.begins_with("DODATEK") and p.contains("MIMOZEMSK"))):
+			continue
+		var out := []
+		var keep := true
+		var hidden := 0
+		var cut := p.find(": ")
+		var title := p.substr(0, cut + 2)
+		var lines := p.substr(cut + 2).split("\n")
+		var preamble := p.begins_with("DODATEK")      # (everything before the first race is a note for us)
+		for li in lines.size():
+			var ln: String = lines[li]
+			if ln.begins_with("Přístup:") or ln.begins_with("Důležité:") or ln.contains("zpřístupň"):
+				continue          # (a note for us, not for the reader)
+			if preamble and not ln.contains(" odemkne"):
+				continue
+			preamble = false
+			var lock := ln.find(" - odemkne")
+			if lock < 0:
+				lock = ln.find(" – odemkne")
+			if lock > 0:
+				ln = ln.substr(0, lock)
+			if ln.length() < 44 and not ln.right(1) in [".", "!", "?", ":", ","] and not ln.begins_with("- "):
+				# a subheading: which races does it name?
+				var named := []
+				for stem in (UFO_STEMS if ships else RACE_STEMS):
+					if ln.contains(stem):
+						named.append((UFO_STEMS if ships else RACE_STEMS)[stem])
+				if not named.is_empty():
+					keep = named.all(func(r): return _ufo_known(r) if ships else Game.has_research(r))
+					if not keep:
+						hidden += 1
+			if keep:
+				out.append(ln)
+		if hidden > 0:
+			out.append("Další údaje nejsou k dispozici.")
+		paras[pi] = title + "\n".join(out)
+	return "\n\n".join(paras)
+
+static func db_bbcode(t: String) -> String:
+	var amber := ACCENT.to_html(false)
+	var cyan := Color(0.45, 0.78, 0.86).to_html(false)
+	var dim := DIM.to_html(false)
+	t = t.replace("[", "[lb]")
+	var paras := t.split("\n\n")
+	var out := []
+	var caps := RegEx.new()
+	caps.compile("^([A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ0-9 ,/()\\-–]{4,}):\\s*")
+	var field := RegEx.new()
+	field.compile("\\.\\s+(?=[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][^:.]{2,40}:\\s)")
+	var key := RegEx.new()
+	key.compile("^(-\\s+|\\d+\\.\\s+)?([^:]{2,40}):\\s")
+	var closing := false
+	for pi in paras.size():
+		var p: String = paras[pi]
+		if pi == 0 and p.begins_with("VOJENSKÁ DATABÁZE"):
+			var lines := p.split("\n")
+			var o := "[b][color=#%s]%s[/color][/b]" % [amber, lines[0]]
+			for li in range(1, lines.size()):
+				var ln: String = lines[li]
+				if ln == ln.to_upper():
+					o += "\n[color=#%s]%s[/color]" % [dim, ln]
+					continue
+				for f in field.sub(ln, ".\n", true).split("\n"):
+					var k := key.search(f)
+					o += "\n" + (("[color=#%s]%s:[/color] %s" % [cyan, k.get_string(2), f.substr(k.get_end())]) if k else f)
+			out.append(o)
+			continue
+		# a stamp block (every line in capitals, e.g. the command's decision after the speech): centred amber
+		if pi > 0 and p == p.to_upper() and p.contains(":"):
+			closing = false
+			var st := []
+			for ln in p.split("\n"):
+				var c := ln.find(":")
+				st.append(("[color=#%s]%s:[/color] [b][color=#%s]%s[/color][/b]" % [dim, ln.substr(0, c), amber, ln.substr(c + 1).strip_edges()]) if c > 0 else "[b][color=#%s]%s[/color][/b]" % [amber, ln])
+			out.append("[center]%s[/center]" % "\n".join(st))
+			continue
+		var head := ""
+		var m := caps.search(p)
+		if m:
+			head = m.get_string(1)
+			p = p.substr(m.get_end())
+			closing = head.begins_with("ZÁVĚREČN")
+		var body := []
+		for ln in p.split("\n"):
+			var l: String = ln
+			var last := l.right(1)
+			if l.begins_with("— ") or l.begins_with("- Vedoucí") or (l.begins_with("- ") and closing and l.length() < 120 and pi == paras.size() - 1):
+				body.append("[right][color=#%s][i]%s[/i][/color][/right]" % [dim, l])
+			elif closing:
+				body.append("[i]%s[/i]" % l)
+			elif l.length() < 44 and not last in [".", "!", "?", ":", ",", "\"", ";"] and not l.begins_with("- ") and not l.contains(": "):
+				body.append("[b][color=#%s]%s[/color][/b]" % [cyan, l])
+			else:
+				var k2 := key.search(l)
+				if k2 and l.begins_with("- "):
+					body.append("• [color=#%s]%s:[/color] %s" % [cyan, k2.get_string(2), l.substr(k2.get_end())])
+				elif k2 and k2.get_string(1) != "":
+					body.append("[b]%s%s:[/b] %s" % [k2.get_string(1), k2.get_string(2), l.substr(k2.get_end())])
+				elif k2 and k2.get_string(2).length() <= 28 and k2.get_string(2).left(1) == k2.get_string(2).left(1).to_upper():
+					# "Primární cíl: ..." - a key line inside a section
+					body.append("[color=#%s]%s:[/color] %s" % [cyan, k2.get_string(2), l.substr(k2.get_end())])
+				else:
+					body.append(l)
+		out.append(("[b][color=#%s]%s[/color][/b]\n" % [amber, head] if head != "" else "") + "\n".join(body))
+	return "\n\n".join(out)

@@ -4,7 +4,7 @@ class_name EditorTabs
 ## keys do right now (as in the Svitky Světlenu editor).
 
 const TABS := [["models", "Modely", "res://scenes/Modeler.tscn"], ["hands", "Zbraně v rukou", "res://scenes/Workshop.tscn"],
-	["anim", "Animace", "res://scenes/Animator.tscn"], ["tiles", "Mapové díly", "res://scenes/TileEditor.tscn"]]
+	["tiles", "Mapové díly", "res://scenes/TileEditor.tscn"]]      # (0.57: no Animace tab - the movements come from Mixamo)
 
 ## The tab bar along the top; @a active is the part that is open now.
 static func add(parent: Control, active: String) -> HBoxContainer:

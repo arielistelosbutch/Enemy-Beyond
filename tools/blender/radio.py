@@ -1,8 +1,8 @@
-"""Handheld radio (walkie-talkie) and the PVS-7 style night-vision goggle (0.52 rework, own designs).
+"""Handheld radio (walkie-talkie) and the NVG-01 binocular night-vision goggle (own designs).
 radio: same axes as the arsenal (+Y forward = the antenna up the hand), origin at the grip, the front
 (speaker, display) towards +Z; body 0.06 x 0.15 x 0.035, antenna to y 0.32.
-nvg: (formerly tools/make_nvg.gd) one tube body 0.11 x 0.07 x 0.05, the objective lens in front (+Y =
-Godot -Z), two eyepieces behind, the head mount on top.
+nvg: 0.57 - two tube modules on a bridge (0.11 wide), objectives in front (+Y = Godot -Z), the IR
+illuminator between them, eyepieces behind, battery and the helmet mount on top.
 Run: python3 tools/blender/radio.py <outdir> [--gallery out.png]"""
 import sys, os, math
 sys.path.insert(0, os.path.dirname(__file__))
@@ -58,30 +58,33 @@ def nvg():
     lens = mat2("NvgLensGlass", (0.12, 0.35, 0.3), 0.05, 0.4)
     green = mat2("NvgGlow", (0.3, 1.0, 0.4), emit=1.2)
     p = []
-    # the housing: a bevelled block with a rounded top, a raised centre spine
-    p.append(bx(olive, (0, 0.0, 0.0), (0.11, 0.07, 0.05), 0.012, seg=3))
-    p.append(bx(olive, (0, 0.0, 0.02), (0.05, 0.06, 0.02), 0.008, seg=2))
-    # the objective: a stepped barrel, focus ring with grip ribs, the lens
-    p.append(disc(dark, (0, 0.045, 0.0), 0.024, 0.02, 'y', verts=20))
-    p.append(disc(rubber, (0, 0.07, 0.0), 0.028, 0.03, 'y', verts=24))
-    for k in range(16):
-        a = TAU * k / 16
-        p.append(box(rubber, (math.cos(a) * 0.028, 0.07, math.sin(a) * 0.028), (0.003, 0.026, 0.003)))
-    p.append(disc(dark, (0, 0.092, 0.0), 0.026, 0.014, 'y', verts=20))
-    p.append(disc(lens, (0, 0.1, 0.0), 0.021, 0.004, 'y', verts=20))
-    # the two eyepieces with rubber eye cups (a faint green glow inside)
-    for x in (0.032, -0.032):
-        p.append(disc(dark, (x, -0.045, 0.0), 0.015, 0.02, 'y', verts=16))
-        p.append(disc(rubber, (x, -0.063, 0.0), 0.018, 0.016, 'y', verts=18, r2=0.02))
-        p.append(disc(green, (x, -0.0715, 0.0), 0.01, 0.002, 'y', verts=14))
-        p.append(disc(steel, (x, -0.04, 0.0), 0.016, 0.004, 'y', verts=16))
-    # the switch knob, battery cap, the mount block and shoe on top
-    p.append(disc(rubber, (-0.045, 0.012, 0.02), 0.008, 0.012, verts=12))
-    p.append(disc(dark, (0.045, 0.01, 0.03), 0.009, 0.02, verts=14))
-    p.append(disc(steel, (0.045, 0.01, 0.041), 0.0085, 0.003, verts=14))
-    p.append(bx(dark, (0, 0.0, 0.037), (0.04, 0.04, 0.02), 0.004))
-    p.append(bx(steel, (0, -0.004, 0.05), (0.03, 0.03, 0.008), 0.002))
-    p.append(disc(steel, (0.022, 0.0, 0.037), 0.005, 0.006, 'x', verts=10))
+    irl = mat2("NvgIrLens", (0.25, 0.06, 0.06), 0.05, 0.4)
+    # NVG-01: a binocular - two tube modules joined by a bevelled bridge
+    p.append(bx(olive, (0, -0.005, 0.004), (0.046, 0.05, 0.036), 0.008, seg=2))
+    for x in (0.033, -0.033):
+        # the tube module: body, objective barrel, the ribbed focus ring, the lens
+        p.append(disc(olive, (x, -0.005, 0.0), 0.021, 0.07, 'y', verts=20))
+        p.append(disc(dark, (x, 0.04, 0.0), 0.02, 0.02, 'y', verts=20))
+        p.append(disc(rubber, (x, 0.058, 0.0), 0.023, 0.018, 'y', verts=22))
+        for k in range(12):
+            a = TAU * k / 12
+            p.append(box(rubber, (x + math.cos(a) * 0.023, 0.058, math.sin(a) * 0.023), (0.003, 0.016, 0.003)))
+        p.append(disc(dark, (x, 0.071, 0.0), 0.021, 0.01, 'y', verts=20))
+        p.append(disc(lens, (x, 0.077, 0.0), 0.017, 0.004, 'y', verts=20))
+        # the eyepiece with a rubber eye cup (a faint green glow inside)
+        p.append(disc(dark, (x, -0.045, 0.0), 0.016, 0.016, 'y', verts=16))
+        p.append(disc(rubber, (x, -0.061, 0.0), 0.018, 0.016, 'y', verts=18, r2=0.02))
+        p.append(disc(green, (x, -0.0695, 0.0), 0.01, 0.002, 'y', verts=14))
+        p.append(disc(steel, (x, -0.037, 0.0), 0.017, 0.004, 'y', verts=16))
+    # the infrared illuminator under the bridge, between the objectives
+    p.append(disc(dark, (0, 0.028, -0.01), 0.008, 0.02, 'y', verts=12))
+    p.append(disc(irl, (0, 0.039, -0.01), 0.0065, 0.003, 'y', verts=12))
+    # the switch knob, battery tube, the mount block and shoe on top
+    p.append(disc(rubber, (-0.012, 0.012, 0.026), 0.007, 0.01, verts=12))
+    p.append(disc(dark, (0.0, -0.01, 0.024), 0.008, 0.04, 'x', verts=14))
+    p.append(disc(steel, (0.021, -0.01, 0.024), 0.0075, 0.003, 'x', verts=14))
+    p.append(bx(dark, (0, 0.006, 0.033), (0.034, 0.032, 0.016), 0.004))
+    p.append(bx(steel, (0, 0.004, 0.044), (0.026, 0.026, 0.007), 0.002))
     o = join(p, "Nvg")
     export_glb(os.path.join(OUTDIR, "nvg.glb"), [o])
 

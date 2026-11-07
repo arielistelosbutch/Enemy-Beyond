@@ -95,12 +95,27 @@ func _process(delta: float) -> void:
 		"levgrab": _levgrab(p)
 		"mirotest": _mirotest(p)
 		"bijtest": _bijtest(p)
+		"bijanim": _bijanim(p)
+		"softparts": _softparts(p)
+		"fpmocap": _fpmocap(p)
+		"tpwalk": _tpwalk(p)
+		"testroom": _testroom(p)
+		"weaktest": _weaktest(p)
+		"sgtest": _sgtest(p)
+		"kanontest": _kanontest(p)
+		"mgheat": _mgheat(p)
+		"seedtest": _seedtest(p)
+		"supplytest": _supplytest(p)
+		"rockettest": _rockettest(p)
 		"bvtest": _bvtest(p)
 		"nadtest": _nadtest(p)
 		"ohntest": _ohntest(p)
 		"mystest": _mystest(p)
 		"koltest": _koltest(p)
 		"lasertest": _lasertest(p)
+		"lcshot": _lcshot(p)
+		"ppshot": _ppshot(p)
+		"plasmatest": _plasmatest(p)
 		"aitest": _aitest(p)
 		"latetest": _latetest(p)
 		"gunshots": _gunshots(p)
@@ -554,7 +569,7 @@ func _ui_mission(p: Node) -> void:
 	for i in 4:
 		lines.append("Bořek Krejčí %d - zabití 12, zajato 3 - v bezvědomí" % i)
 	lines.append("Civilisté: zachráněno 3, mrtvých 4, ztraceno ve tmě 1")
-	h.show_result("MISE NEÚSPĚŠNÁ", "Tým se stáhl z mise.\n\n" + "\n".join(lines) + "\n\nTvůj žoldák: zraněn - uzdraví se za 120 min\nZkušenosti +345  (Desátník)\nPOVÝŠEN: Desátník! Přesnost +3, Odvaha +2. Vyber si talent v menu Můj žoldák.\n\nTeror (Městečko u Jihlavy): neúspěch. Odměna 120 kr, důvěra -14. Padlí: 2. Civilisté: zachráněno 3, mrtvých 4.")
+	h.show_result("MISE NEÚSPĚŠNÁ", "Tým se stáhl z mise.\n\n" + "\n".join(lines) + "\n\nTvůj voják: zraněn - uzdraví se za 120 min\nZkušenosti +345  (Desátník)\nPOVÝŠEN: Desátník! Přesnost +3, Odvaha +2. Vyber si talent v menu Můj voják.\n\nTeror (Městečko u Jihlavy): neúspěch. Odměna 120 kr, důvěra -14. Padlí: 2. Civilisté: zachráněno 3, mrtvých 4.")
 	await _uic("m_result")
 	get_tree().quit()
 
@@ -1058,6 +1073,7 @@ func _topshot(p: Node) -> void:
 
 ## 0.50: every gun in the hands, one picture each (user://gun_<id>.png).
 func _gunshots(p: Node) -> void:
+	_skip_brief()
 	if p == null or step > 0 or not m().started():
 		return
 	step = 1
@@ -1738,8 +1754,38 @@ func _shieldtest(p: Node) -> void:
 	while p.item_in("lh").get("id", "") == "stit" and n < 200:
 		p.hurt(30.0, front, true)
 		n += 1
+	var broke: bool = p.item_in("lh").is_empty()
+	# 0.57: BSH-01 against plasma, and a heavy blow knocks it aside
+	p.inv["lh"] = {"id": "stit"}
+	p._update_held()
+	p.stamina = 100.0
+	await get_tree().create_timer(0.3).timeout
+	var h2: float = p.hp
+	p.hurt(20.0, front, false, "plasma")
+	var pl: float = h2 - p.hp
+	p.hurt(35.0, front, false, "blow")
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var knocked: bool = p._shield_knock > 0.0 and not p.shield_up
 	Input.action_release("aim")
-	out("RESULT shieldtest low %.0f up %.0f broke %s after %d" % [low, up, p.item_in("lh").is_empty(), n])
+	# ARM-02 against ARM-01: more stopped; plasma on the same plates wears them down
+	p.inv.erase("lh")
+	p._update_held()
+	var vd := {}
+	for av in ["vesta", "pancir"]:
+		p.armor = av
+		var hv: float = p.hp
+		p.hurt(20.0, front)
+		vd[av] = hv - p.hp
+	var hp0: float = p.hp
+	p.hurt(20.0, front, false, "plasma")
+	var first: float = hp0 - p.hp
+	for i in 8:
+		p.hurt(20.0, front, false, "plasma")
+	var hp9: float = p.hp
+	p.hurt(20.0, front, false, "plasma")
+	var worn: bool = hp9 - p.hp > first + 2.0
+	out("RESULT shieldtest low %.0f up %.0f broke %s after %d plasma %.0f knock %s vest %.0f/%.0f worn %s" % [low, up, broke, n, pl, knocked, vd["vesta"], vd["pancir"], worn])
 	get_tree().quit()
 
 ## Editor animations in the game (0.52): a knife locked to the hand turns with it in a blow, a body
@@ -1979,7 +2025,153 @@ func _aitest(p: Node) -> void:
 	out("RESULT aitest %s late %s dmg %.0f shots %d" % [race, Game.cmd_arg("late", "0"), hp0 - p.hp, shots])
 	get_tree().quit()
 
-## Laser: shot dry, it will not fire until the cell is full again.
+## X-WEP-007: one PL-MAG-01 for every plasma gun - each takes what it takes; the plasma grenade burns one.
+func _plasmatest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started() or m().aliens().size() < 1:
+		return
+	step = 1
+	p.hp = 9999.0
+	m().hud.inventory_open = false
+	for sl in ["b0", "b1", "b2", "b3"]:
+		p.inv[sl] = {"id": "plasma_cell"}
+	p.inv["rh"] = {"id": "plasma_pistol", "loaded": 0}
+	p._update_held()
+	var pr: Dictionary = Game.ITEMS["plasma_pistol"]
+	p._reload(p.inv["rh"], pr)
+	await get_tree().create_timer(float(pr["reload"]) + 0.6).timeout
+	var pistol := int(p.inv["rh"]["loaded"])
+	# PP-01: ten quick shots heat the chamber; a swap right after the last one waits for the interlock
+	for i in pistol:
+		p._shoot("rh", p.inv["rh"], pr)
+	var hot: bool = p._mg_hot
+	p._reload(p.inv["rh"], pr)
+	await get_tree().create_timer(float(pr["reload"]) + 0.15).timeout
+	var early := int(p.inv["rh"]["loaded"])
+	await get_tree().create_timer(0.8).timeout
+	var interlock := early == 0 and int(p.inv["rh"]["loaded"]) == pistol
+	p.inv["rh"] = {"id": "plasma_cannon", "loaded": 0}
+	p._update_held()
+	p._reload(p.inv["rh"], Game.ITEMS["plasma_cannon"])
+	await get_tree().create_timer(float(Game.ITEMS["plasma_cannon"]["reload"]) + 0.8).timeout
+	var cannon := int(p.inv["rh"]["loaded"])
+	# PM-01: a short burst stops after 5 pulses, the selector goes on to 10
+	p.inv["rh"] = {"id": "plasma_minigun", "loaded": 20}
+	p._update_held()
+	var mg: Dictionary = Game.ITEMS["plasma_minigun"]
+	p._burst_n = 0
+	p.spin = 1.0
+	Input.action_press("fire")
+	await get_tree().create_timer(1.6).timeout       # held long enough for 20 pulses - the short burst stops at 5
+	Input.action_release("fire")
+	await get_tree().create_timer(0.2).timeout
+	var short_ok: bool = int(p.inv["rh"]["loaded"]) == 15 and p.burst_name(p.inv["rh"]).begins_with("Krátká")
+	if not short_ok:
+		out("PM-01 loaded %d" % int(p.inv["rh"]["loaded"]))
+	p.inv["rh"]["burst"] = 1
+	short_ok = short_ok and p.burst_name(p.inv["rh"]).begins_with("Prodloužená")
+	p._mg_hot = false
+	p.mg_heat = 0.0
+	p.inv["rh"] = {"id": "plasma_rifle", "loaded": 0}
+	p._update_held()
+	p._reload(p.inv["rh"], Game.ITEMS["plasma_rifle"])
+	await get_tree().create_timer(float(Game.ITEMS["plasma_rifle"]["reload"]) + 0.8).timeout
+	var rifle := int(p.inv["rh"]["loaded"])
+	var a: Node = m().aliens().filter(func(x): return not x.dead)[0]
+	a.set_physics_process(false)
+	a.hp = 2000.0
+	var h0: float = a.hp
+	# a second one, weak, right next to it: the ball kills it and leaves nothing for the lab
+	var rest: Array = m().aliens().filter(func(x): return not x.dead and x != a and not x.R.has("hover"))
+	if rest.is_empty():
+		rest = m().aliens().filter(func(x): return not x.dead and x != a)
+	var b: Node = rest[0] if rest.size() > 0 else null
+	if b:
+		b.set_physics_process(false)
+		b.global_position = a.global_position + Vector3(1.6, 0, 0)
+		b.hp = 5.0
+	p._spawn_throwable("plasma_grenade", a.global_position + Vector3(1.0, 0.5, 0), Vector3.ZERO, p.name)
+	await get_tree().create_timer(3.2).timeout
+	var seared: bool = b != null and b.dead and b.seared
+	if not seared:
+		out("seared? b %s dead %s hp %s pos %s a %s" % [b.race if b else "-", b.dead if b else "-", b.hp if b else "-", b.global_position if b else "-", a.global_position])
+	out("RESULT plasmatest pistol %d hot %s interlock %s cannon %d minigun %s rifle %d grenade %s seared %s mags_left %d" % [pistol, hot, interlock, cannon, short_ok, rifle, a.hp < h0 - 60.0, seared, ["b0", "b1", "b2", "b3"].filter(func(sl): return p.inv.has(sl)).size()])
+	get_tree().quit()
+
+## PP-01: the green pulse in flight (screenshot only).
+func _ppshot(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.hp = 9999.0
+	m().hud.inventory_open = false
+	for a in m().aliens():
+		a.queue_free()
+	await get_tree().create_timer(2.0).timeout
+	_skip_brief()
+	p.global_position = m().free_spot(m().map["evac"] + Vector3(6, 0.3, -6))
+	var away: Vector3 = (p.global_position - m().map["ufo"]) * Vector3(1, 0, 1)
+	_aim_at(p, p.global_position + away.normalized() * 60.0 + Vector3(0, 14.0, 0))
+	p.inv["rh"] = {"id": "plasma_pistol", "loaded": 10}
+	p.inv.erase("lh")
+	p._update_held()
+	await get_tree().create_timer(1.4).timeout
+	var shots := DisplayServer.get_name() != "headless"
+	if shots:
+		get_viewport().get_texture().get_image().save_png("user://pp_a.png")
+	p._shoot("rh", p.inv["rh"], Game.ITEMS["plasma_pistol"])
+	for i in 3:
+		await get_tree().create_timer(0.05).timeout
+		if shots:
+			get_viewport().get_texture().get_image().save_png("user://pp_%d.png" % i)
+	out("RESULT ppshot ok")
+	get_tree().quit()
+
+## LC-01: one huge shot, hot shards hurt what stands next to the target, then a long charge (with the hum).
+func _lcshot(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started() or m().aliens().size() < 2:
+		return
+	step = 1
+	p.hp = 9999.0
+	m().hud.inventory_open = false
+	var al: Array = m().aliens().filter(func(a): return not a.dead)
+	var a0: Node = al[0]
+	var a1: Node = al[1]
+	for a in al:
+		a.set_physics_process(false)
+	var spot: Vector3 = p.global_position - p.global_transform.basis.z * 7.0
+	a0.global_position = spot
+	a1.global_position = spot + p.global_transform.basis.x * 1.2
+	a0.hp = 2000.0
+	a1.hp = 2000.0
+	await get_tree().create_timer(0.3).timeout
+	_aim_at(p, a0.global_position + Vector3(0, 1.0, 0))
+	p.inv["rh"] = {"id": "laser_cannon", "loaded": 1}
+	p._update_held()
+	await get_tree().create_timer(2.0).timeout
+	var h0: float = a0.hp
+	var h1: float = a1.hp
+	p._shoot("rh", p.inv["rh"], Game.ITEMS["laser_cannon"])
+	await get_tree().create_timer(0.03).timeout
+	if DisplayServer.get_name() != "headless":
+		get_viewport().get_texture().get_image().save_png("user://lc_0.png")
+	await get_tree().create_timer(0.7).timeout
+	if DisplayServer.get_name() != "headless":
+		get_viewport().get_texture().get_image().save_png("user://lc_1.png")
+	print("[LC] shot done hp %.0f %.0f" % [a0.hp, a1.hp])
+	var hit: bool = a0.hp < h0 - 100.0
+	var shards: bool = a1.hp < h1 and a1.hp > h1 - 100.0
+	var humming: bool = p._lc_hum != null and p._lc_hum.playing
+	await get_tree().create_timer(1.0 / float(Game.ITEMS["laser_cannon"]["recharge"])).timeout
+	var ready: bool = int(p.inv["rh"]["loaded"]) == 1 and not p._lc_hum.playing
+	out("RESULT lcshot hit %s shards %s hum %s ready %s" % [hit, shards, humming, ready])
+	get_tree().quit()
+
+const EDGE_WAIT := 5.6
+## Laser (X-WEP-001): after a shot the cell charges and the gun will not fire until it is ready;
+## the laser minigun fires a reserve of pulses and, shot dry, charges all the way.
 func _lasertest(p: Node) -> void:
 	_skip_brief()
 	if p == null or step > 0 or not m().started():
@@ -1990,12 +2182,30 @@ func _lasertest(p: Node) -> void:
 	var r: Dictionary = Game.ITEMS["laser_rifle"]
 	p._shoot("rh", p.inv["rh"], r)
 	var drained: bool = p.inv["rh"].get("drained", false)
-	await get_tree().create_timer(2.5).timeout
-	var part: int = int(p.inv["rh"]["loaded"])
-	var still: bool = p.inv["rh"].get("drained", false)
-	var cap := Game.mag_size("laser_rifle")
-	await get_tree().create_timer(float(cap) / float(r["recharge"]) + 1.5).timeout
-	out("RESULT lasertest drained %s partial %s still %s full %s free %s" % [drained, part > 0 and part < cap, still, int(p.inv["rh"]["loaded"]) >= cap, not p.inv["rh"].get("drained", false)])
+	await get_tree().create_timer(0.25).timeout
+	var waiting: bool = int(p.inv["rh"]["loaded"]) == 0
+	await get_tree().create_timer(1.0 / float(r["recharge"]) + 0.3).timeout
+	var ready: bool = int(p.inv["rh"]["loaded"]) == 1 and not p.inv["rh"].get("drained", false)
+	var mr: Dictionary = Game.ITEMS["laser_minigun"]
+	p.inv["rh"] = {"id": "laser_minigun", "loaded": Game.mag_size("laser_minigun")}
+	p._update_held()
+	for i in Game.mag_size("laser_minigun"):
+		p._shoot("rh", p.inv["rh"], mr)
+	var mg_dry: bool = p.inv["rh"].get("drained", false)
+	await get_tree().create_timer(float(Game.mag_size("laser_minigun")) / float(mr["recharge"]) + 1.5).timeout
+	var mg_full: bool = int(p.inv["rh"]["loaded"]) >= Game.mag_size("laser_minigun") and not p.inv["rh"].get("drained", false)
+	# EN-01: three hot strikes, then a plain knife; charged again it waits switched off until R
+	p.inv["rh"] = {"id": "energo_nuz"}
+	p._update_held()
+	var hits := []
+	for i in 4:
+		hits.append(p._edge_strike(38.0, 66.0))
+	await get_tree().create_timer(EDGE_WAIT).timeout
+	var kn: Dictionary = p.inv["rh"]
+	var off: bool = kn.get("edge_off", false) and p._edge_strike(38.0, 66.0) == 38.0
+	p._edge_switch(kn)
+	var edge: bool = hits == [66.0, 66.0, 66.0, 38.0] and off and p._edge_strike(38.0, 66.0) == 66.0
+	out("RESULT lasertest drained %s waiting %s ready %s mg_dry %s mg_full %s edge %s" % [drained, waiting, ready, mg_dry, mg_full, edge])
 	get_tree().quit()
 
 ## The late war: a night pack, the nemesis, an officer's killer remembered, reinforcements; the campaign side.
@@ -2231,7 +2441,735 @@ func _bvtest(p: Node) -> void:
 	out("RESULT bvtest weak %s body %s module %s reinf %d" % [weak, not_weak, b.module_ok, m().aliens().size() - n0])
 	get_tree().quit()
 
+## 0.57: RL-01's warheads - the armour-piercing one into a Bijec, the incendiary one into the ground.
+func _rockettest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	if not has_meta("rk_spawned"):
+		set_meta("rk_spawned", true)
+		m().spawn_alien("bijec", p.global_position + Vector3(0, 0.3, 30))
+		return
+	var bs: Array = m().aliens().filter(func(a): return a.race == "bijec")
+	if bs.is_empty():
+		return
+	step = 1
+	p.hp = 9999.0
+	var rule: Dictionary = Game.ITEMS["rocket_launcher"]
+	p.global_position = m().free_spot(p.global_position + Vector3(0, 0.3, 16))
+	await get_tree().physics_frame
+	p.inv["rh"] = {"id": "rocket_launcher", "loaded": 0, "sel": "rocket_ap"}
+	p.inv["b0"] = {"id": "rocket_ap"}
+	p.inv["b1"] = {"id": "rocket_inc"}
+	p._update_held()
+	p._reload(p.inv["rh"], rule)
+	await get_tree().create_timer(3.6).timeout
+	var tube := str(p.inv["rh"].get("tube", []))
+	var b: Node = bs[0]
+	b.state = b.S.LURK
+	var fwd: Vector3 = -p.cam.global_transform.basis.z
+	fwd.y = 0
+	b.global_position = p.cam.global_position + fwd.normalized() * 9.0 - Vector3(0, 1.3, 0)
+	b.velocity = Vector3.ZERO
+	await get_tree().physics_frame
+	p.pitch = 0.0
+	p.aiming = true
+	var hp0: float = b.hp
+	p._shoot("rh", p.inv["rh"], rule)
+	await get_tree().create_timer(1.0).timeout
+	var ap_dmg: float = hp0 - b.hp
+	# the incendiary one: down at the feet, something must burn there
+	var fires0: int = m().get_tree().get_nodes_in_group("fire").size()
+	p.inv["rh"]["sel"] = "rocket_inc"
+	p._reload(p.inv["rh"], rule)
+	await get_tree().create_timer(3.6).timeout
+	p.pitch = -1.2
+	p._shoot("rh", p.inv["rh"], rule)
+	await get_tree().create_timer(1.0).timeout
+	out("RESULT rockettest tube %s ap %s inc %s" % [tube, ap_dmg > 150.0 or b.dead, str(p.inv["rh"].get("tube", "?"))])
+	get_tree().quit()
+
+## 0.57: the minigun heats up, locks, cools down; 300 rounds in the container.
+## 0.57: Zásobovací loď - in a terror mission it makes good the losses, twice at most.
+func _supplytest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started() or m().aliens().is_empty():
+		return
+	step = 1
+	p.hp = 9999.0
+	var before: int = m().aliens_total
+	for round in 4:
+		for a in m().aliens():
+			if not a.dead and a.race != "pylon":
+				a.damage(9999.0, a.global_position + Vector3.UP, null)
+		await get_tree().create_timer(0.6).timeout
+	out("RESULT supplytest drops %d total %d->%d" % [m()._supply_drops, before, m().aliens_total])
+	get_tree().quit()
+
+## 0.57: MED-01 stands an infected soldier up but the seed stays; NVG-01 cycles off/passive/IR.
+func _seedtest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.implant()
+	p.hurt(p.hp + 5.0, p.global_position + Vector3(0, 0, 2))
+	var bl: float = p.bleed_left
+	p.revived("Test")
+	var still: bool = p.infected and not p.downed
+	p.stress = 0.0
+	p.panic = ""
+	await get_tree().create_timer(0.3 if DisplayServer.get_name() == "headless" else 6.0).timeout
+	p.inv["p5"] = {"id": "nvg"}
+	m().hud.inventory_open = false
+	var states := []
+	for i in 3:
+		Input.action_press("nvg")
+		await get_tree().physics_frame
+		await get_tree().physics_frame
+		Input.action_release("nvg")
+		await get_tree().physics_frame
+		states.append("%s/%s" % [m().nvg_on, p.ir_on])
+		if DisplayServer.get_name() != "headless":
+			await get_tree().create_timer(0.4).timeout
+			_snap("seed_nvg_%d" % i)
+	m().set_nvg(true, true)
+	m().nvg_glare(p.cam.global_position - p.cam.global_transform.basis.z * 4.0, 18.0, 0.7)
+	await get_tree().create_timer(0.5).timeout
+	if DisplayServer.get_name() != "headless":
+		_snap("seed_nvg_glare")
+	out("RESULT seedtest bleed %s seed %s nvg %s" % [bl <= 22.0, still, " ".join(states)])
+	get_tree().quit()
+
+func _mgheat(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	var rule: Dictionary = Game.ITEMS["minigun"]
+	p.inv["rh"] = {"id": "minigun", "loaded": 300}
+	p._update_held()
+	var n := 0
+	while not p._mg_hot and n < 400:
+		p._shoot("rh", p.inv["rh"], rule)
+		n += 1
+	var hot: bool = p._mg_hot
+	await get_tree().create_timer(2.6).timeout
+	out("RESULT mgheat shots %d hot %s cooled %s mag %d" % [n, hot, not p._mg_hot, Game.mag_size("minigun")])
+	get_tree().quit()
+
+## 0.57: HC-01 - one armour-piercing round, then the incendiary charge burns on.
+func _kanontest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	if not has_meta("kn_spawned"):
+		set_meta("kn_spawned", true)
+		m().spawn_alien("bijec", p.global_position + Vector3(0, 0.3, 30))
+		return
+	var bs: Array = m().aliens().filter(func(a): return a.race == "bijec")
+	if bs.is_empty():
+		return
+	step = 1
+	p.hp = 9999.0
+	var rule: Dictionary = Game.ITEMS["autocannon"]
+	p.global_position = m().free_spot(p.global_position + Vector3(0, 0.3, 16))     # out of the Kondor
+	await get_tree().physics_frame
+	p.inv["rh"] = {"id": "autocannon", "loaded": 5}
+	p._update_held()
+	var b: Node = bs[0]
+	b.state = b.S.LURK
+	var fwd: Vector3 = -p.cam.global_transform.basis.z
+	fwd.y = 0
+	b.global_position = p.cam.global_position + fwd.normalized() * 6.0 - Vector3(0, 1.3, 0)
+	b.velocity = Vector3.ZERO
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	p.pitch = 0.0
+	p.bracing = true
+	var q := PhysicsRayQueryParameters3D.create(p.cam.global_position, p.cam.global_position - p.cam.global_transform.basis.z * 50.0, Game.WORLD | Game.GLASS | 4)
+	q.exclude = [p.get_rid()]
+	var hh: Dictionary = p.get_world_3d().direct_space_state.intersect_ray(q)
+	print("kanon ray ", hh.get("collider"), " at ", hh.get("position"), " b ", b.global_position, " cam ", p.cam.global_position, " spread ", p.current_spread())
+	var hp0: float = b.hp
+	p._shoot("rh", p.inv["rh"], rule)
+	await get_tree().create_timer(0.2).timeout
+	var hit1: float = hp0 - b.hp
+	await get_tree().create_timer(1.5).timeout
+	print("kanon hit ", hit1, " total ", hp0 - b.hp)
+	out("RESULT kanontest hit %s burn %s cycle %s mag %d" % [hit1 > 60.0, hp0 - b.hp > hit1 + 5.0, p.fire_cd > 0.0, Game.mag_size("autocannon")])
+	get_tree().quit()
+
+## 0.57: the shotgun's loads - slugs, less-lethal, shells - picked with L, loaded shell by shell.
+func _sgtest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	if not has_meta("sg_spawned"):
+		set_meta("sg_spawned", true)
+		m().spawn_alien("bijec", p.global_position + Vector3(0, 0.3, 30))
+		return
+	var bs: Array = m().aliens().filter(func(a): return a.race == "bijec")
+	if bs.is_empty():
+		return
+	step = 1
+	p.hp = 9999.0
+	var rule: Dictionary = Game.ITEMS["shotgun"]
+	p.inv["rh"] = {"id": "shotgun", "loaded": 0, "sel": "slugs"}
+	p.inv["b0"] = {"id": "shells"}
+	p.inv["b1"] = {"id": "slugs"}
+	p.inv["b2"] = {"id": "beanbag"}
+	p._update_held()
+	var wp: Dictionary = p.inv["rh"]
+	p._reload(wp, rule)
+	await get_tree().create_timer(6.0).timeout
+	var full := "%d %s" % [int(wp["loaded"]), str(p._tube(wp).count("slugs"))]
+	# two out, then two less-lethal in on top
+	wp["loaded"] = 5
+	wp["sel"] = "beanbag"
+	p._reload(wp, rule)
+	await get_tree().create_timer(2.5).timeout
+	var tb: Array = p._tube(wp).duplicate()
+	# fire at the Bijec: first the less-lethal, then a slug
+	var b: Node = bs[0]
+	b.state = b.S.LURK
+	b._tele_cd = 9999.0
+	var fwd: Vector3 = -p.cam.global_transform.basis.z
+	fwd.y = 0
+	b.global_position = p.cam.global_position + fwd.normalized() * 5.0 - Vector3(0, 1.3, 0)
+	b.velocity = Vector3.ZERO
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	p.pitch = 0.0
+	p.aiming = true
+	var hp0: float = b.hp
+	p._shoot("rh", wp, rule)
+	await get_tree().create_timer(0.3).timeout
+	var after_bean := [hp0 - b.hp, b.stun_dmg]
+	p._shoot("rh", wp, rule)
+	p._shoot("rh", wp, rule)
+	await get_tree().create_timer(0.3).timeout
+	out("RESULT sgtest full %s tube %s bean dmg %.0f stun %s slug dmg %s loaded %d" % [full, ",".join(tb.slice(4)), after_bean[0], after_bean[1] > 0.0, hp0 - b.hp - after_bean[0] > 50.0, int(wp["loaded"])])
+	get_tree().quit()
+
+## 0.57: the autopsies' weak points, working without any research.
+const WEAK_ZOO := ["grey", "diskoll", "kolos", "ohar", "jestetan", "lihnoun", "bijec", "myslodej"]
+func _weaktest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	if not has_meta("wk_spawned"):
+		set_meta("wk_spawned", true)
+		for i in WEAK_ZOO.size():
+			m().spawn_alien(WEAK_ZOO[i], p.global_position + Vector3(-21.0 + i * 6.0, 0.3, 30))
+		return
+	var got := {}
+	for a in m().aliens():
+		if a.race in WEAK_ZOO and not got.has(a.race):
+			got[a.race] = a
+	if got.size() < WEAK_ZOO.size():
+		return
+	step = 1
+	p.hp = 9999.0
+	await get_tree().create_timer(1.0).timeout
+	var r := []
+	# Šedivák: the neck
+	var g: Node = got["grey"]
+	var neck: float = g._bone_y("neck", 0.95)
+	r.append("grey %s/%s" % [g.weak_spot(Vector3(g.global_position.x, neck + 0.04, g.global_position.z + 0.3)), not g.weak_spot(g.global_position + Vector3(0, 0.6, 0.3))])
+	g.weak_hit(g.global_position)
+	r.append("suit %s" % g.suit_down)
+	# Diskoll: the mast
+	var dk: Node = got["diskoll"]
+	r.append("mast %s/%s" % [dk.weak_spot(dk.to_global(Vector3(0.27, 1.65, 0.13))), not dk.weak_spot(dk.to_global(Vector3(0, 1.4, -0.6)))])
+	dk.weak_hit(dk.global_position)
+	r.append("antenna %s" % (not dk.antenna_ok))
+	# Kolos: legs and the sensor eye
+	var k: Node = got["kolos"]
+	var sp0: float = k.walk_spd
+	r.append("kolos %s/%s/%s" % [k.weak_spot(k.to_global(Vector3(0.6, 0.5, 0))), k.weak_spot(k.to_global(Vector3(0, 2.0, -0.85))), not k.weak_spot(k.to_global(Vector3(0.8, 1.8, 0.3)))])
+	for i in 4:
+		k.weak_hit(k.to_global(Vector3(0.6, 0.5, 0)))
+	for i in 2:
+		k.weak_hit(k.to_global(Vector3(0, 2.0, -0.85)))
+	r.append("legs %s %.1f eye %d" % [k.legs_hurt, k.walk_spd / sp0, k._sensor_hits])
+	# Ohař: a blast deafens it, a long sprint winds it
+	var o: Node = got["ohar"]
+	m().blast_shock(o.global_position + Vector3(2, 0, 0), 10.0)
+	var deaf: bool = o._deaf_t > 0.0
+	o._deaf_t = 0.0
+	for i in 14:
+		o._tire(0.5, o.run_spd * 1.5)
+	r.append("ohar deaf %s winded %s belly %s" % [deaf, o._winded_t > 0.0, o.weak_spot(o.to_global(Vector3(0, 0.25, 0.4)))])
+	# Ještěřan: a flare in its face, fire and blasts
+	var j: Node = got["jestetan"]
+	var fl := Node3D.new()
+	fl.add_to_group("flare")
+	m().add_child(fl)
+	fl.global_position = j.eye() + (-j.global_transform.basis.z) * 1.5
+	j._blind_cd = 0.0
+	j._light_t = 0.0
+	j._light_tick(0.1)
+	fl.queue_free()
+	m().hit_kind = "fire"
+	var jf: float = j.taken(10.0)
+	m().hit_kind = ""
+	var jb: float = j.taken(10.0)
+	r.append("jest blind %s fire %.1f bullet %.1f" % [j._blind_t > 0.0, jf, jb])
+	# Líhavec: from behind
+	var l: Node = got["lihnoun"]
+	r.append("lih back %s front %s" % [l.weak_spot(l.to_global(Vector3(0, 1.0, 0.3))), not l.weak_spot(l.to_global(Vector3(0, 1.0, -0.3)))])
+	# Bijec: energy through the joints
+	var b: Node = got["bijec"]
+	m().hit_kind = "laser"
+	var bl: float = b.taken(10.0)
+	m().hit_kind = ""
+	r.append("bijec laser %.2f bullet %.2f" % [bl, b.taken(10.0)])
+	# Mysloděj: a hard hit lets the man go
+	var my: Node = got["myslodej"]
+	my._tele_cd = 9999.0
+	p.panic = "flee"
+	p.panic_t = 4.0
+	my._psi_held[String(p.name)] = m().t + 5.0
+	my.psi_cd = 0.0
+	my.damage(40.0, my.global_position + Vector3(0, 1, 3), null)
+	await get_tree().create_timer(0.5).timeout
+	r.append("mys free %s cd %s" % [p.panic == "", my.psi_cd >= 8.0])
+	# mines: a pressure plate - the floating disc passes over, the Bijec's foot sets it off
+	dk.set_physics_process(false)
+	b.set_physics_process(false)
+	m().add_mine(dk.global_position, p.name)
+	m().add_mine(b.global_position, p.name)
+	var n0: int = m().mines.size()
+	await get_tree().create_timer(2.8).timeout
+	r.append("mines %d->%d" % [n0, m().mines.size()])
+	out("RESULT weaktest " + " | ".join(r))
+	get_tree().quit()
+
 ## Bijec: no flinch from pain; hit hard, the armour fails and the bullets bite more.
+## The test room (editor only): the mirror copies the player, the aliens stand in a row.
+func _testroom(p: Node) -> void:
+	if p == null or step > 0:
+		return
+	var tr: Node = m().get_node_or_null("TestRoom")
+	if tr == null or not tr._ready_done or tr.aliens.is_empty():
+		return
+	step = 1
+	var shots := DisplayServer.get_name() != "headless"
+	await get_tree().create_timer(1.0).timeout
+	if shots:
+		get_viewport().get_texture().get_image().save_png("user://testroom_0.png")
+	# --emotes=1: the emote wheel and each emote, from outside (O)
+	if Game.cmd_arg("emotes", "") == "1":
+		p.global_position = tr.base + Vector3(0, 0.3, 0.6)
+		var ev3 := InputEventKey.new()
+		ev3.keycode = KEY_O
+		ev3.pressed = true
+		tr._unhandled_input(ev3)
+		await get_tree().create_timer(0.6).timeout
+		var wh: Control = p._WHEEL.new(["Pozdrav", "Pohov", "Ano", "Ne", "Hlásím se", "Otázka", "Vysvětluje", "Vysílačka", "Pomoc!", "Pěst", "Úklona", "Protažení", "Jídlo", "Zima", "Únava", "Kliky", "Rozcvička", "Tanec", "Tanec 2", "Sednout"])
+		m().hud.add_child(wh)
+		wh.pick = 4
+		wh._aim = Vector2(60, -40)
+		wh.queue_redraw()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		if shots:
+			get_viewport().get_texture().get_image().save_png("user://emote_wheel.png")
+		wh.queue_free()
+		var only := Game.cmd_arg("only", "")
+		for e in range(1, p.EMOTES.size()):
+			if only != "" and not String(p.EMOTES[e - 1][0]) in only.split(","):
+				continue
+			p.emote = 0
+			await get_tree().create_timer(0.3).timeout
+			p._start_emote(e)
+			await get_tree().create_timer(float(Game.cmd_arg("at", "1.0"))).timeout
+			if shots:
+				get_viewport().get_texture().get_image().save_png("user://emote_%02d_%s.png" % [e, p.EMOTES[e - 1][0]])
+			print("[EMOTE] %s emote %d clip %s" % [p.EMOTES[e - 1][0], p.emote, p.EMOTES[e - 1][2]])
+		# drawing a weapon
+		p.emote = 0
+		out("RESULT testroom emotes")
+		get_tree().quit()
+		return
+	# --guns=a,b,..: the mirror copy with each gun, close up (standing, then walking)
+	if Game.cmd_arg("guns", "") != "":
+		p.global_position = tr.base + Vector3(0, 0.3, 0.6)
+		p.rotation.y = 0.0
+		p.pitch = -0.12
+		var side := Camera3D.new()
+		side.fov = 40.0
+		m().add_child(side)
+		var snap := func(fname: String) -> void:
+			for who in [tr.puppet, p]:
+				if who.body_gun and who.body_gun.get_child_count() > 0:
+					var gm: Node3D = who.body_gun.get_child(0)
+					var hr: Vector3 = (who._sk.global_transform * who._sk.get_bone_global_pose(who._hand_r)).origin
+					var hl: Vector3 = (who._sk.global_transform * who._sk.get_bone_global_pose(who._bone("hand.L"))).origin
+					print("[ROLL] %s %s up·Y %.2f barrel(-Z)·toL %.2f clip %s" % [fname, who.name, gm.global_transform.basis.y.normalized().dot(Vector3.UP), -gm.global_transform.basis.z.normalized().dot((hl - hr).normalized()), who._bclip_id])
+			if not shots:
+				return
+			var pp: Vector3 = tr.puppet.global_position
+			side.global_position = pp + Vector3(-1.5, 1.35, 1.6)
+			side.look_at(pp + Vector3(-0.1, 1.1, 0.2), Vector3.UP)
+			side.current = true
+			await get_tree().process_frame
+			await get_tree().process_frame
+			get_viewport().get_texture().get_image().save_png("user://" + fname + ".png")
+			p.cam.current = true
+			await get_tree().process_frame
+			get_viewport().get_texture().get_image().save_png("user://" + fname + "_fp.png")
+		for g: String in Game.cmd_arg("guns", "").split(","):
+			tr._give(p, g)
+			await get_tree().create_timer(1.2).timeout
+			await snap.call("tr_gun_%s" % g)
+			print("[GUN] %s held %s free_arms %s clip %s" % [g, tr.puppet.held, tr.puppet._body_arms_carry(), tr.puppet._bclip_id])
+			if Game.cmd_arg("gunmove", "") == "1" and g != "":
+				var it: Dictionary = p.inv["rh"]
+				it["loaded"] = 0
+				p._reload(it, Game.ITEMS[g])
+				for k in 3:
+					await get_tree().create_timer(0.55).timeout
+					await snap.call("tr_gun_%s_r%d" % [g, k])
+				await get_tree().create_timer(2.5).timeout
+				for k in 30:
+					p.velocity = Vector3(0, 0, -1.6)
+					p.global_position += Vector3(0, 0, -0.02)
+					await get_tree().physics_frame
+				await snap.call("tr_gun_%s_w" % g)
+				for k in 30:
+					p.velocity = Vector3(0, 0, -4.8)
+					p.global_position += Vector3(0, 0, -0.08)
+					await get_tree().physics_frame
+				await snap.call("tr_gun_%s_run" % g)
+				p.sprinting = true
+				for k in 20:
+					p.velocity = Vector3(0, 0, 6.5)
+					p.global_position += Vector3(0, 0, 0.11)
+					await get_tree().physics_frame
+				await snap.call("tr_gun_%s_sprint" % g)
+				p.sprinting = false
+				# your own body from outside (O), standing and walking
+				if shots and Game.cmd_arg("outside", "") == "1":
+					var ev2 := InputEventKey.new()
+					ev2.keycode = KEY_O
+					ev2.pressed = true
+					tr._unhandled_input(ev2)
+					await get_tree().create_timer(0.8).timeout
+					get_viewport().get_texture().get_image().save_png("user://tr_gun_%s_O.png" % g)
+					for k in 30:
+						p.velocity = Vector3(0, 0, -1.6)
+						p.global_position += Vector3(0, 0, -0.02)
+						await get_tree().physics_frame
+					get_viewport().get_texture().get_image().save_png("user://tr_gun_%s_Ow.png" % g)
+					tr._unhandled_input(ev2)
+				p.global_position = tr.base + Vector3(0, 0.3, 0.6)
+		out("RESULT testroom guns")
+		get_tree().quit()
+		return
+	# walk towards the mirror with the rifle: the copy should come the other way
+	var z0: float = tr.puppet.global_position.z
+	for i in 40:
+		p.global_position += Vector3(0, 0, -0.04)
+		await get_tree().physics_frame
+	var came: bool = tr.puppet.global_position.z > z0 + 0.5
+	var ev := InputEventKey.new()
+	ev.keycode = KEY_T
+	ev.pressed = true
+	tr._unhandled_input(ev)
+	ev.keycode = KEY_K
+	tr._unhandled_input(ev)
+	ev.keycode = KEY_O
+	tr._unhandled_input(ev)
+	await get_tree().create_timer(1.0).timeout
+	if shots:
+		get_viewport().get_texture().get_image().save_png("user://testroom_1.png")
+	out("RESULT testroom mirror %s held %s aliens %d" % [came, tr.puppet.held, tr.aliens.size()])
+	get_tree().quit()
+
+## How the others see you walk with a rifle: the Mixamo walk with its own arms (now) and with the
+## arms locked in the hold pose (before) - stills from outside.
+func _tpwalk(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.hp = 9999.0
+	for x in m().aliens():
+		x.global_position += Vector3(0, -60, 0)
+		x.set_physics_process(false)
+	await get_tree().create_timer(1.5).timeout
+	_skip_brief()
+	m().hud.inventory_open = false
+	var start: Vector3 = m().free_spot(m().map["evac"] + Vector3(6, 0.3, -6))
+	p.inv["rh"] = {"id": "rifle", "loaded": 20}
+	p.inv.erase("lh")
+	p._update_held()
+	var lamp := OmniLight3D.new()
+	lamp.omni_range = 10.0
+	lamp.light_energy = 2.4
+	m().add_child(lamp)
+	var shots := DisplayServer.get_name() != "headless"
+	p.body.visible = true
+	var ok := true
+	var pistol_clip := ""
+	for mode: String in ["old", "new", "pistol"]:
+		if mode == "old":
+			p.set_meta("old_hold", true)
+		else:
+			p.remove_meta("old_hold")
+		if mode == "pistol":
+			p.inv["rh"] = {"id": "pistol", "loaded": 15}
+			p._update_held()
+		p.global_position = start
+		await get_tree().physics_frame
+		var fw: Vector3 = -p.global_transform.basis.z
+		var sd: Vector3 = p.global_transform.basis.x
+		var cam2 := Camera3D.new()
+		m().add_child(cam2)
+		cam2.fov = 45.0
+		cam2.current = true
+		var t := 0.0
+		var k := 0
+		var arm0 := Vector3.ZERO
+		var swing := 0.0
+		while t < 2.4:
+			var dt := get_physics_process_delta_time()
+			await get_tree().physics_frame
+			t += dt
+			p.global_position += fw * 1.5 * dt
+			p._remote_visuals()
+			var mid: Vector3 = p.global_position + Vector3(0, 1.0, 0)
+			cam2.global_position = mid + sd * 3.2 + fw * 0.6 + Vector3(0, 0.3, 0)
+			cam2.look_at(mid, Vector3.UP)
+			lamp.global_position = mid + sd * 1.5 + Vector3(0, 1.5, 0)
+			var ua: Vector3 = p._sk.get_bone_pose_rotation(p._sk.find_bone("upperarm.R")).get_euler()
+			if arm0 == Vector3.ZERO:
+				arm0 = ua
+			swing = maxf(swing, ua.distance_to(arm0))
+			if shots and t > 1.0 + k * 0.25 and k < 4:
+				get_viewport().get_texture().get_image().save_png("user://tpwalk_%s_%d.png" % [mode, k])
+				k += 1
+		out("tpwalk %s arm swing %.3f clip %s free %s" % [mode, swing, p._bclip_id, p._body_arms_carry()])
+		if mode == "pistol":
+			pistol_clip = p._bclip_id + (" free" if p._body_arms_carry() else "")
+		if mode == "new":
+			ok = swing > 0.05
+		cam2.queue_free()
+		p.cam.current = true
+	out("RESULT tpwalk arms move %s pistol %s" % [ok, pistol_clip])
+	get_tree().quit()
+
+## "Z mocapu do očí": the eyes' reload made from the Mixamo reload seen from outside (FpFromTp),
+## then the same reload shot from outside and through the eyes, for the rifle and the pistol.
+const FPM_PHASES := [0.08, 0.25, 0.42, 0.58, 0.75, 0.92]
+func _fpmocap(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.hp = 9999.0
+	for x in m().aliens():
+		x.global_position += Vector3(0, -60, 0)
+		x.set_physics_process(false)
+	await get_tree().create_timer(1.5).timeout
+	_skip_brief()
+	m().hud.inventory_open = false
+	p.global_position = m().free_spot(m().map["evac"] + Vector3(6, 0.3, -6))
+	var lamp := OmniLight3D.new()
+	lamp.omni_range = 8.0
+	lamp.light_energy = 2.2
+	m().add_child(lamp)
+	lamp.global_position = p.global_position + Vector3(0, 2.4, 0)
+	var shots := DisplayServer.get_name() != "headless"
+	var made := {}
+	for kind: String in ["rifle", "pistol"]:
+		var ammo: String = Game.ITEMS[kind]["ammo"]
+		p.inv["rh"] = {"id": kind, "loaded": 0}
+		p.inv.erase("lh")
+		for sl in ["b0", "b1", "b2", "b3", "p0", "p1"]:
+			p.inv[sl] = {"id": ammo}
+		p._update_held()
+		await get_tree().create_timer(0.6).timeout
+		var rule: Dictionary = Game.ITEMS[kind]
+		# 1) record: the body plays its reload (as the others see it)
+		var sk: Skeleton3D = p._sk
+		var samples := []
+		p.inv["rh"]["loaded"] = 0
+		p._reload(p.inv["rh"], rule)
+		while p.busy > 0.0:
+			await get_tree().physics_frame
+			p._remote_visuals()      # the body as the others see it (only puppets do it themselves)
+			if p.body_gun == null or p.body_gun.get_child_count() == 0 or p.busy_total <= 0.0:
+				continue
+			var gm: Node3D = p.body_gun.get_child(0)
+			var head := sk.global_transform * sk.get_bone_global_pose(sk.find_bone("head"))
+			var eye := Transform3D(p.global_transform.basis, head.origin + p.global_transform.basis * Vector3(0, 0.07, -0.09))
+			var magn: Node3D = gm.find_child("Mag", true, false)
+			var box := ArmIK._aabb(gm)
+			var magp: Vector3 = magn.global_position if magn else gm.global_transform * (box.get_center() + Vector3(0, -box.size.y * 0.45, -box.size.z * 0.1))
+			var gr: Dictionary = ArmIK.grips(kind, gm)
+			var gripw: Vector3 = gm.global_transform * Vector3(gr.get("l", box.get_center()))
+			samples.append({"ph": 1.0 - p.busy / p.busy_total, "spine": sk.global_transform * sk.get_bone_global_pose(sk.find_bone("spine")),
+				"eye": eye, "gun": gm.global_transform, "hand": sk.global_transform * sk.get_bone_global_pose(sk.find_bone("hand.L")), "mag": magp,
+				"grip": gripw})
+		var clip := FpFromTp.build(samples, kind, ("Puška" if kind == "rifle" else "Pistole") + " - z mocapu (Mixamo Reloading)", float(rule.get("reload", 1.5)))
+		made[kind] = clip
+		var id := "fp_reload_" + kind
+		AnimClips._cache[id] = clip
+		AnimClips._seen[id] = Time.get_ticks_msec() + 100000000
+		var f := FileAccess.open("user://fp_reload_%s_mocap.json" % kind, FileAccess.WRITE)
+		f.store_string(JSON.stringify(clip, " ", false))
+		f.close()
+		out("fpmocap %s: %d samples, %d gun keys, %d hand keys, events %s" % [kind, samples.size(), AnimClips.track(clip, "zbran").size(), AnimClips.track(clip, "ruka").size(), str(clip["udalosti"].map(func(e): return "%s@%s" % [e["typ"], e["t"]]))])
+		# 2) through the eyes, 3) from outside - the same reload, stills at the same moments
+		for view: String in ["fp", "tp"]:
+			var cam2: Camera3D = null
+			if view == "tp":
+				p.body.visible = true
+				cam2 = Camera3D.new()
+				m().add_child(cam2)
+				var fw: Vector3 = -p.global_transform.basis.z
+				var sd: Vector3 = p.global_transform.basis.x
+				cam2.global_position = p.global_position + fw * 2.4 + sd * 1.1 + Vector3(0, 1.6, 0)
+				cam2.look_at(p.global_position + Vector3(0, 1.2, 0), Vector3.UP)
+				cam2.fov = 50.0
+				cam2.current = true
+			p.inv["rh"]["loaded"] = 0
+			p._reload(p.inv["rh"], rule)
+			var k := 0
+			while p.busy > 0.0 and k < FPM_PHASES.size():
+				await get_tree().process_frame
+				if view == "tp":
+					p._remote_visuals()
+				if p.busy_total > 0.0 and 1.0 - p.busy / p.busy_total >= float(FPM_PHASES[k]):
+					if shots:
+						get_viewport().get_texture().get_image().save_png("user://fpm_%s_%s_%d.png" % [kind, view, k])
+					k += 1
+			while p.busy > 0.0:
+				await get_tree().process_frame
+			if cam2:
+				cam2.queue_free()
+				p.cam.current = true
+				p.body.visible = false
+			await get_tree().create_timer(0.4).timeout
+	out("RESULT fpmocap rifle %s pistol %s" % [AnimClips.track(made["rifle"], "ruka").size() > 3, AnimClips.track(made["pistol"], "ruka").size() > 3])
+	get_tree().quit()
+
+## The commander's cape on spring bones and the swaying tentacles (Levit, Nádor): stills while they move.
+func _softparts(p: Node) -> void:
+	_skip_brief()
+	if p == null or not m().started():
+		return
+	if step == 0:
+		step = 1
+		p.hp = 9999.0
+		for x in m().aliens():
+			x.global_position += Vector3(0, -60, 0)
+			x.set_physics_process(false)
+		p.global_position = m().free_spot(m().map["evac"] + Vector3(6, 0.3, -6))
+		var f: Vector3 = -p.global_transform.basis.z
+		var sd: Vector3 = p.global_transform.basis.x
+		m().spawn_alien("bijec_velitel", p.global_position + f * 4.5 - sd * 1.6)
+		m().spawn_alien("levit", p.global_position + f * 4.5 + sd * 0.4)
+		m().spawn_alien("nador", p.global_position + f * 4.5 + sd * 2.2)
+		return
+	if step != 1:
+		return
+	step = 2
+	await get_tree().create_timer(1.0).timeout
+	_skip_brief()
+	var who: Array = m().aliens().filter(func(x): return x.race in ["bijec_velitel", "levit", "nador"])
+	var lamp := OmniLight3D.new()
+	lamp.omni_range = 12.0
+	lamp.light_energy = 2.5
+	m().add_child(lamp)
+	lamp.global_position = p.global_position + Vector3(0, 2.8, 0) - p.global_transform.basis.z * 2.0
+	_aim_at(p, p.global_position - p.global_transform.basis.z * 4.5 + Vector3(0, 0.9, 0))
+	p.inv["rh"] = {"id": "knife"}
+	p._update_held()
+	var homes := {}
+	var faces := {}
+	for a in who:
+		a.set_physics_process(false)
+		homes[a] = a.global_position
+	var vel: Node = who.filter(func(x): return x.race == "bijec_velitel")[0] if who.any(func(x): return x.race == "bijec_velitel") else null
+	var sk: Skeleton3D = vel.body.find_child("Skeleton3D", true, false) if vel else null
+	var bi: int = sk.find_bone("cape.L.3") if sk else -1
+	var cape0 := sk.get_bone_global_pose(bi).origin if bi >= 0 else Vector3.ZERO
+	var max_off := 0.0
+	var shots := DisplayServer.get_name() != "headless"
+	var t := 0.0
+	var k := 0
+	while t < 3.0:
+		var dt := get_process_delta_time()
+		t += dt
+		# they pace sideways and back: the cloth should trail and swing
+		for a in who:
+			var h: Vector3 = homes[a]
+			a.global_position = h + p.global_transform.basis.x * sin(t * 2.2) * 1.2
+			a.look_at(a.global_position + p.global_transform.basis.x * (1.0 if cos(t * 2.2) > 0 else -1.0), Vector3.UP)
+			if a.anim:
+				a.anim.play("walk")
+			a._animate(dt)
+		if bi >= 0:
+			max_off = maxf(max_off, sk.get_bone_global_pose(bi).origin.distance_to(cape0))
+		if shots and t > 0.6 * (k + 1) and k < 4:
+			get_viewport().get_texture().get_image().save_png("user://soft_%d.png" % k)
+			k += 1
+		await get_tree().process_frame
+	var springs: bool = sk != null and sk.find_child("Cape", false, false) != null
+	var tent: bool = who.filter(func(x): return x.race in ["levit", "nador"]).all(func(x): return not x._tent_meshes.is_empty())
+	out("RESULT softparts springs %s swings %s tentacles %s" % [springs, max_off > 0.08, tent])
+	get_tree().quit()
+
+## Bijec with the Mixamo clips (animace/mixamo_bijec.glb): stills of each clip, and the war cry plays "roar".
+func _bijanim(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	var bs: Array = m().aliens().filter(func(x): return x.race.begins_with("bijec") and not x.dead)
+	if bs.is_empty():
+		return
+	step = 1
+	p.hp = 9999.0
+	m().hud.inventory_open = false
+	await get_tree().create_timer(1.5).timeout
+	_skip_brief()
+	var a: Node = bs[0]
+	for x in m().aliens():
+		x.set_physics_process(false)
+		x.set_process(false)
+		if x != a:
+			x.global_position += Vector3(0, -50, 0)
+	p.global_position = m().free_spot(m().map["evac"] + Vector3(6, 0.3, -6))
+	var side: Vector3 = p.global_transform.basis.x
+	a.global_position = p.global_position - p.global_transform.basis.z * 4.2 + Vector3(0, -0.3, 0)
+	a.look_at(a.global_position + side, Vector3.UP)
+	_aim_at(p, a.global_position + Vector3(0, 1.1, 0))
+	var lamp := OmniLight3D.new()
+	lamp.omni_range = 9.0
+	lamp.light_energy = 2.5
+	m().add_child(lamp)
+	lamp.global_position = p.global_position + Vector3(0, 2.6, 0) - p.global_transform.basis.z * 1.5
+	p.inv["rh"] = {"id": "knife"}
+	p._update_held()
+	var mx: bool = a.anim.get_animation("walk").find_track(NodePath("KolRig/Skeleton3D:hips"), Animation.TYPE_POSITION_3D) >= 0
+	var shots := DisplayServer.get_name() != "headless"
+	for clip in ["idle", "walk", "run", "roar"]:
+		a.anim.play(clip, 0.0)
+		var L: float = a.anim.get_animation(clip).length
+		for i in 3:
+			a.anim.seek(L * (0.15 + i * 0.3), true)
+			await get_tree().create_timer(0.15).timeout
+			if shots:
+				get_viewport().get_texture().get_image().save_png("user://bij_%s_%d.png" % [clip, i])
+	a._warcry_fx()
+	var roar: bool = a._cry_anim_t > 2.0
+	out("RESULT bijanim mixamo %s roar %s" % [mx, roar])
+	get_tree().quit()
+
 func _bijtest(p: Node) -> void:
 	_skip_brief()
 	if p == null or step > 0 or not m().started():

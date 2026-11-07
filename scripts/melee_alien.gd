@@ -147,7 +147,7 @@ func _pick_prey() -> Node:
 	return best
 
 func hear(pos: Vector3, radius: float) -> void:
-	if dead:
+	if dead or _deaf_t > 0.0:
 		return
 	if R.has("blind"):
 		radius *= 1.6      # it lives by its ears
@@ -160,6 +160,46 @@ func hear(pos: Vector3, radius: float) -> void:
 		state = S.INVESTIGATE
 		lurking = false
 		_go(_snap(pos))
+
+# ---- 0.57: Ohař weaknesses (Pitva Ohaře) - from the first night ---------------------------------
+## A blast close by: its ears ring, it has no idea where anybody is for a few seconds.
+var _deaf_t := 0.0
+var _dash_t := 0.0
+var _winded_t := 0.0
+func blast_near(_at: Vector3) -> void:
+	if race != "ohar" or dead:
+		return
+	_deaf_t = 4.5
+	_stagger = 1.2
+	prey = null
+	_charging = false
+	striking = false
+	windup = 0.0
+	state = S.SEARCH
+	search_t = 4.5
+	_tlog("deafened")
+	_deaf_fx.rpc()
+
+@rpc("authority", "call_local", "reliable")
+func _deaf_fx() -> void:
+	Game.play_at(mission, "ohar_charge", global_position + Vector3.UP, -6)
+
+## Ran flat out too long: it has to stop and pant.
+func _tire(delta: float, spd: float) -> float:
+	if _winded_t > 0.0:
+		_winded_t -= delta
+		_charging = false
+		return walk_spd * 0.5
+	if spd >= run_spd:
+		_dash_t += delta
+		if _dash_t > 6.0:
+			_dash_t = 0.0
+			_winded_t = 3.5
+			_tlog("winded")
+			return walk_spd * 0.5
+	else:
+		_dash_t = maxf(0.0, _dash_t - delta * 0.5)
+	return spd
 
 func stalk(p: Node) -> void:
 	if dead or state == S.COMBAT:
@@ -177,8 +217,6 @@ func lurk_at(pos: Vector3) -> void:
 func damage(dmg: float, from: Vector3, by: Node) -> void:
 	if dead:
 		return
-	if Game.has_research("pitva_lihnoun") and (race == "lihnoun" or race == "zombie"):
-		dmg *= 1.3
 	hp -= taken(dmg)
 	alert = true
 	if hp <= 0:
@@ -228,6 +266,12 @@ func _think(delta: float) -> void:
 	strike_cd -= delta
 	repath_t -= delta
 	heard_t -= delta
+	if _deaf_t > 0.0:
+		# deaf: it stumbles about, shaking its head
+		_deaf_t -= delta
+		velocity.x = 0; velocity.z = 0
+		rotation.y += delta * 1.6
+		return
 	if race == "zombie":
 		life_t -= delta
 		if life_t <= 0:
@@ -452,6 +496,8 @@ func _hunt(delta: float) -> void:
 				if race == "ohar":
 					_roar_scare()
 			spd = run_spd * float(pc[1])
+	if race == "ohar":
+		spd = _tire(delta, spd)
 	_walk(spd, delta)
 
 func _strike_tick(delta: float) -> void:
@@ -480,7 +526,8 @@ func _strike_tick(delta: float) -> void:
 	var dmg := rng.randf_range(R["melee"][0], R["melee"][1]) * (1.3 if Game.veteran() else 1.0)
 	mission.combat_t = mission.t
 	if prey.has_method("is_player"):
-		prey.hurt.rpc_id(prey.get_multiplayer_authority(), dmg, global_position)
+		# (a Líhavec's tentacles reach round a shield; the others hit it like a battering ram)
+		prey.hurt.rpc_id(prey.get_multiplayer_authority(), dmg, global_position, false, "claw" if R.has("implant") else "blow")
 		if R.has("implant"):
 			prey.implant.rpc_id(prey.get_multiplayer_authority())
 		_hit_fx.rpc(prey.global_position + Vector3(0, 1.0, 0))

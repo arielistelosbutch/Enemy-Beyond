@@ -15,7 +15,7 @@ static func grips(id: String, model: Node3D) -> Dictionary:
 	var cy := box.position.y + box.size.y * 0.55
 	var back := box.end.z
 	var front := box.position.z
-	if Game.two_handed(id) or id in ["pistol", "magnum", "laser_pistol", "a_pistol"]:
+	if Game.two_handed(id) or id in ["pistol", "magnum", "laser_pistol", "plasma_pistol", "a_pistol"]:
 		var two := Game.two_handed(id)
 		out["l"] = Game._v3(t.get("l", null), Vector3(box.get_center().x, cy - 0.01, lerpf(back, front, 0.5 if two else 0.32)))
 	return out

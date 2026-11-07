@@ -1,6 +1,6 @@
 """Enemy Beyond 0.52 - models of the items that have no model in the game (only a picture in the
 inventory, the research tree and the encyclopedia): the plate-carrier vest "vesta", the alien-alloy
-armour "pancir", the alien backpack "a_pack" and the plasma cell "plasma_cell". Own designs.
+ARM-02 vest "pancir" (and an unused full-body "pancir_full"), the alien backpack "a_pack" and the plasma cell "plasma_cell". Own designs.
 They are written to tools/icon_models/ (not assets/models, so nothing in the game changes): tools/icons.gd
 renders their icons from them. Front = +Y (Godot -Z), origin in the middle.
 Run: python3 tools/blender/icon_items.py <outdir> [--gallery out.png]"""
@@ -43,6 +43,35 @@ def vesta():
     save(p, "Vesta", "vesta")
 
 def pancir():
+    """ARM-02 (X-ARM-002, the Experimentální pancéřová vesta - item "pancir"): the ARM-01 carrier in a darker grey-green, the front bag cut open for three moulded
+    plates of their alloy (violet-grey, hairline seams), alloy shoulder caps, fewer pouches."""
+    reset(); p = []
+    ol = mat2("VestXCloth", (0.16, 0.17, 0.14), 0.9)
+    ol2 = mat2("VestXDark", (0.09, 0.1, 0.08), 0.9)
+    al = mat2("VestXAlloy", (0.27, 0.25, 0.31), 0.35, 0.7)
+    al2 = mat2("VestXAlloyDark", (0.13, 0.12, 0.15), 0.4, 0.6)
+    seam = mat2("VestXSeam", (0.7, 0.3, 0.95), emit=1.6)
+    blk = mat2("VestXBlack", (0.04, 0.04, 0.04), 0.8)
+    tape = mat2("VestXTape", (0.62, 0.5, 0.2), 0.9)
+    p.append(bx(ol, (0, 0.03, 0.0), (0.3, 0.05, 0.36), 0.025, seg=2))           # front bag
+    p.append(bx(ol, (0, -0.1, 0.02), (0.3, 0.05, 0.38), 0.025, seg=2))          # back bag
+    for k, (z, w) in enumerate(((0.11, 0.24), (0.035, 0.26), (-0.04, 0.24))):  # three alloy plates
+        p.append(bx(al if k != 1 else al2, (0, 0.062, z), (w, 0.022, 0.07), 0.012, seg=2))
+        p.append(box(seam, (0, 0.074, z - 0.037), (w - 0.03, 0.003, 0.003)))
+    p.append(bx(al2, (0, -0.128, 0.03), (0.26, 0.012, 0.3), 0.01))             # back insert edge
+    for sx in (1, -1):
+        p.append(bx(ol2, (0.1 * sx, -0.03, 0.22), (0.07, 0.16, 0.05), 0.02, seg=2))   # shoulder straps
+        p.append(ball(al, (0.1 * sx, -0.03, 0.245), 0.045, (1.0, 1.6, 0.35)))       # alloy caps
+        p.append(bx(ol2, (0.17 * sx, -0.03, -0.1), (0.05, 0.14, 0.14), 0.02))        # cummerbund
+    for k in range(2):                                                         # two magazine pouches
+        x = -0.06 + k * 0.12
+        p.append(bx(ol2, (x, 0.09, -0.12), (0.075, 0.045, 0.1), 0.01, seg=2))
+        p.append(bx(blk, (x, 0.115, -0.1), (0.02, 0.008, 0.03), 0.003))
+    p.append(bx(tape, (-0.08, 0.05, 0.168), (0.1, 0.005, 0.022), 0.002))       # yellow test tape
+    p.append(bx(blk, (0, 0.03, 0.19), (0.12, 0.05, 0.02), 0.005))             # drag handle
+    save(p, "Pancir", "pancir")
+
+def pancir_full():
     """Armour of alien alloy: a moulded breastplate in dark violet-grey alloy, a segmented belly,
     shoulder guards, a raised collar, violet seams where the plates meet."""
     reset(); p = []
@@ -65,7 +94,7 @@ def pancir():
         p.append(ball(al2, (0.2 * sx, -0.02, 0.155), 0.05, (1.0, 1.15, 0.5)))
     p.append(lathe(al2, [(0.07, 0.2), (0.09, 0.2), (0.085, 0.24), (0.065, 0.25)], 20, cy=-0.02))   # collar
     p.append(ball(glow, (0, 0.105, 0.06), 0.012))
-    save(p, "Pancir", "pancir")
+    save(p, "PancirFull", "pancir_full")
 
 def a_pack():
     """The alien backpack: a ribbed carapace of dark violet alloy with bone-pale ridges, a green cell
@@ -116,8 +145,8 @@ def plasma_cell():
     save(p, "PlasmaCell", "plasma_cell")
 
 os.makedirs(OUTDIR, exist_ok=True)
-vesta(); pancir(); a_pack(); plasma_cell()
+vesta(); pancir(); pancir_full(); a_pack(); plasma_cell()
 print("built icon items")
 if "--gallery" in sys.argv:
-    gallery(sys.argv[sys.argv.index("--gallery") + 1], [os.path.join(OUTDIR, n + ".glb") for n in ("vesta", "pancir", "a_pack", "plasma_cell")],
-            cols=4, spacing=0.5, dist=2.6, height=0.5, target_z=0.0, angle=0.3, res=(1400, 500))
+    gallery(sys.argv[sys.argv.index("--gallery") + 1], [os.path.join(OUTDIR, n + ".glb") for n in ("vesta", "pancir", "pancir_full", "a_pack", "plasma_cell")],
+            cols=5, spacing=0.5, dist=2.6, height=0.5, target_z=0.0, angle=0.3, res=(1400, 500))

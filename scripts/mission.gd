@@ -262,6 +262,11 @@ func _ready() -> void:
 	actors = Node3D.new()
 	actors.name = "Actors"
 	add_child(actors)
+	if Net.mission_params.get("testroom", false) and OS.has_feature("editor"):
+		var tr := Node.new()
+		tr.set_script(load("res://scripts/test_room.gd"))
+		tr.name = "TestRoom"
+		add_child(tr)
 	spawner = MultiplayerSpawner.new()
 	spawner.name = "Spawner"
 	add_child(spawner)
@@ -498,14 +503,14 @@ func _briefing_text() -> String:
 			"crash": "Malé UFO spadlo po zásahu do krajiny. Část posádky mohla přežít a hledá úkryt.",
 			"landed": "UFO přistálo neporušené. Posádka je venku a něco tu dělá. Zatím neví, že o nás ví.",
 			"abduction": "Z okolních stavení zmizeli lidé. Nad krajinou viděli světla. Možná ještě někdo žije.",
-			"mars": "Orel přistál na rudé pláni. Před vámi je tunel do jejich velína a za ním Velký mozek - to, co je všechny řídí. Chrání ho štít ze tří pylonů. Zničte pylony, pak mozek. Myslí na vás. Uslyšíte ho.",
+			"mars": "Pelikán přistál na rudé pláni. Před vámi je tunel do jejich velína a za ním Velký mozek - to, co je všechny řídí. Chrání ho štít ze tří pylonů. Zničte pylony, pak mozek. Myslí na vás. Uslyšíte ho.",
 			"rescue": "Nouzový maják vysílá z oblasti, kam dosedlo UFO. Někdo tam přežil a vetřelci po něm jdou. Signál ukazuje směr a vzdálenost (nahoře na obrazovce).",
 			"alienbase": "Výslech prozradil, kde mají základnu: jeskyně pod zemí, vykopané do skály a zarostlé jejich zahradou. Sjíždíte šachtou dolů. Někde v hloubce je velitelské centrum s řídicím jádrem - a v líhni prý drží lidi.",
 			"sabotage": "Tři cizí majáky v krajině vysílají k jejich lodím. Dokud stojí, přicházejí další. Každý maják: drž u něj E 3 sekundy, nálož bouchne za 8 sekund.",
 			"base": "Vetřelci přistáli nad základnou. Vyřadili pojistky - hlavní světla zhasla, svítí jen rudé nouzové lampy. Lezou dovnitř hangárem a šachtou výtahu, ve vlnách. Vydržet a zabít všechny. Znáte tu každou chodbu - oni ne." if Net.mission_params.has("base") else "Vetřelci přistáli u základny v rokli. Kondor stojí na ploše a nikam se neletí. Útočí ve vlnách od okraje rokle. Vydržet a zabít všechny.",
 			"terror": "Vetřelci vtrhli do městečka. Spojení s místními je přerušeno. Poslední hovor na tísňovou linku: \"Je to černé, je to rychlé, a ti, co to zabilo, zase vstávají.\"\nZachraň, koho můžeš (E u vyděšeného civilisty - půjde za tebou do Kondoru).",
 		}
-		var terr: String = {"snow": "\nTerén: sníh - každý krok je slyšet.", "desert": "\nTerén: poušť - málo úkrytů."}.get(mp.get("terrain", ""), "")
+		var terr: String = {"snow": "\nTerén: sníh.", "desert": "\nTerén: poušť."}.get(mp.get("terrain", ""), "")
 		var task := "ÚKOL: zneškodnit posádku a vrátit se do Kondoru.\nOmráčení vetřelci mají pro výzkum velkou cenu. Co vetřelci upustí, posbíráme při odletu."
 		match String(mp.get("type", "")):
 			"mars": task = "ÚKOL: zničit tři pylony štítu a Velký mozek. Návrat není."
@@ -522,8 +527,8 @@ func _briefing_text() -> String:
 					parts.append(Campaign.HABIT_TEXT[it])
 			if not parts.is_empty():
 				learned += "\n%s pořád nosí %s." % [who, "; ".join(parts)]
-		if learned != "":
-			task += "\n\nVetřelci se učí:" + learned
+		# (0.57, Ari: no hand-holding - they still learn, nobody tells you how)
+		learned = ""
 		if Game.camo != "":
 			task += "\n\nMaskáče: %s vzor." % Game.CAMO_NAMES.get(Game.camo, Game.camo)
 		return "%s\nOblast: %s, místní čas %02d:%02d (%s), mapa %s%s\n\n%s\n\n" % [
@@ -531,11 +536,11 @@ func _briefing_text() -> String:
 			PHASE_NAMES.get(phase(), "noc"), MapGen.SIZE_NAMES.get(mp.get("size", "medium"), "střední"), terr, flavor.get(mp.get("type", "crash"), "")] + task
 	var r := RandomNumberGenerator.new()
 	r.seed = Net.mission_seed
-	var day := r.randi_range(3, 27)
+	var day := r.randi_range(24, 30)
 	var hh := r.randi_range(1, 3)
 	var mm := r.randi_range(0, 59)
 	var places := ["u Telče", "nad Kamenicí", "u Pelhřimova", "pod Javořicí", "u Nové Bystřice"]
-	return "%d. listopadu 1999, %02d:%02d\nVysočina, samota %s.\n\nRadar zachytil pád neznámého objektu. Od 23:40 nekomunikuje farma Horákových.\nPolicejní hlídka, která sem jela, se nevrátila.\n\nÚKOL: zneškodnit posádku UFO a vrátit se do Kondoru.\nPilot čeká se zapnutými motory." % [day, hh, mm, places[r.randi() % places.size()]]
+	return "%d. dubna 1990, %02d:%02d\nVysočina, samota %s.\n\nRadar zachytil pád neznámého objektu. Od 23:40 nekomunikuje farma Horákových.\nPolicejní hlídka, která sem jela, se nevrátila.\n\nÚKOL: zneškodnit posádku UFO a vrátit se do Kondoru.\nPilot čeká se zapnutými motory." % [day, hh, mm, places[r.randi() % places.size()]]
 
 func volumetric_on() -> bool:
 	return Game.volumetric and RenderingServer.get_current_rendering_method() == "forward_plus"
@@ -557,12 +562,15 @@ func _post_filter() -> void:
 ## Night vision, only on this machine: the picture goes through the tube shader, and the
 ## world gets a little light of its own (an intensifier sees what the eye does not).
 var nvg_on := false
+var nvg_ir := false
 var _nvg_layer: CanvasLayer
+var _nvg_mat: ShaderMaterial
 var _nvg_amb := 0.0
-func set_nvg(on: bool) -> void:
-	if on == nvg_on:
+func set_nvg(on: bool, ir := false) -> void:
+	if on == nvg_on and (ir and on) == nvg_ir:
 		return
 	nvg_on = on
+	nvg_ir = ir and on
 	if _nvg_layer == null:
 		_nvg_layer = CanvasLayer.new()
 		_nvg_layer.layer = 1
@@ -576,6 +584,7 @@ func set_nvg(on: bool) -> void:
 		if me and Game.has_talent(me.merc, "nocni_oko"):
 			sm.set_shader_parameter("grain", 0.035)
 		cr.material = sm
+		_nvg_mat = sm
 		_nvg_layer.add_child(cr)
 		add_child(_nvg_layer)
 	_nvg_layer.visible = on
@@ -583,9 +592,41 @@ func set_nvg(on: bool) -> void:
 	var add := 0.0
 	if on:
 		add = {"noc": 0.55, "soumrak": 0.25, "svitani": 0.25}.get(phase(), 0.05)
+		if nvg_ir:
+			add += 0.2 if phase() == "noc" else 0.05
+	# NVG-01 only amplifies what light there is: under clouds on a starless night the passive
+	# picture is murky and noisy (the illuminator fixes that); in fog the IR comes back off the haze
+	var gain := 5.0
+	var grain := 0.035 if (local_player() and Game.has_talent(local_player().merc, "nocni_oko")) else 0.1
+	if on and not nvg_ir and phase() == "noc" and weather in ["overcast", "rain", "storm"]:
+		gain = 2.4
+		grain += 0.07
+	elif on and nvg_ir and weather == "fog":
+		gain = 3.6
+		grain += 0.05
+	_nvg_mat.set_shader_parameter("gain", gain)
+	_nvg_mat.set_shader_parameter("grain", grain)
 	_amb_base += add - _nvg_amb
 	env.ambient_light_energy += add - _nvg_amb
 	_nvg_amb = add
+
+## A bright flash in front of the tube: the gain cannot drop fast enough, the picture burns out green.
+func nvg_glare(at: Vector3, reach: float, k: float) -> void:
+	if not nvg_on:
+		return
+	var me := local_player()
+	if me == null or me.dead or me.cam == null:
+		return
+	var d: float = me.cam.global_position.distance_to(at)
+	if d > reach:
+		return
+	var fwd: Vector3 = -me.cam.global_transform.basis.z
+	if fwd.dot((at - me.cam.global_position).normalized()) < 0.2:
+		return          # (behind you: the tube does not see it)
+	var q := PhysicsRayQueryParameters3D.create(at + Vector3(0, 0.3, 0), me.cam.global_position, Game.WORLD)
+	if not get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+		return
+	hud.nvg_overload(clampf(k * (1.3 - d / reach), 0.25, 1.0))
 
 ## The Night Eye talent: the eyes get used to the dark (only on this machine).
 func night_eyes() -> void:
@@ -824,6 +865,13 @@ func _maybe_spawn() -> void:
 	var cpos: Array = map.get("captives", [])
 	if mt == "alienbase":
 		nciv = cpos.size()
+	elif mt in ["crash", "landed"] and String(map.get("ufo_kind", "")) == "harvester" and not (map.get("ufo_inside", []) as Array).is_empty():
+		# a Sklízeč: people from the last farm still locked in its holds
+		var inside: Array = map["ufo_inside"]
+		nciv = mini(rng.randi_range(1, 3), inside.size())
+		cpos = []
+		for hi in nciv:
+			cpos.append(inside[(hi * 2) % inside.size()] + Vector3(0, 0.1, 0))
 		# their commander waits by the core
 		if map.has("command") and not crew.is_empty():
 			var off: String = GROUPS.get(crew_group, {}).get("officer", "grey_velitel")
@@ -831,8 +879,10 @@ func _maybe_spawn() -> void:
 			next_alien_id += 1
 			aliens_total += 1
 	for ci in nciv:
-		spawner.spawn({"kind": "civ", "id": ci, "pos": cpos[ci] if mt == "alienbase" else _far_point(rng, 12.0)})
+		spawner.spawn({"kind": "civ", "id": ci, "pos": cpos[ci] if ci < cpos.size() else _far_point(rng, 12.0)})
 	civs_total = nciv
+	if Game.autotest() != "" and nciv > 0:
+		print("[CIV] %d civilians (%s)" % [nciv, "aboard the ship" if mt in ["crash", "landed"] else mt])
 	_spawn_objectives(rng)
 
 ## A random walkable point at least @a min_d from the team's landing spot.
@@ -1469,14 +1519,21 @@ func _show_done() -> void:
 
 # ---- rockets, explosions, smoke and mines --------------------------------------------------
 @rpc("any_peer", "call_local", "reliable")
-func fire_rocket(from: Vector3, dir: Vector3, shooter: String) -> void:
+func fire_rocket(from: Vector3, dir: Vector3, shooter: String, kind := "rocket") -> void:
 	var r := Node3D.new()
 	r.set_script(preload("res://scripts/rocket.gd"))
+	r.kind = kind
 	r.dir = dir
 	r.shooter = shooter
 	r.mission = self
 	add_child(r)
 	r.global_position = from
+
+## A blast's bang (0.57): the beasts that hunt by ear are deafened by it (Pitva Ohaře).
+func blast_shock(p: Vector3, radius: float) -> void:
+	for a in aliens():
+		if not a.dead and a.global_position.distance_to(p) < radius:
+			a.blast_near(p)
 
 ## Host: damage around a point (rockets, autocannon shells, mines).
 @rpc("any_peer", "call_local", "reliable")
@@ -1485,6 +1542,7 @@ func explode(p: Vector3, radius: float, dmg: float, by: String, big: bool) -> vo
 		return
 	_boom.rpc(p, big)
 	noise(p, 50.0 if big else 30.0)
+	blast_shock(p, 14.0 if big else 10.0)
 	blast_breakables(p, radius, dmg)
 	# a blast near anything that burns may set it alight
 	if randf() < (0.75 if _flammable_near(p, radius + 1.0) else 0.12):
@@ -1499,7 +1557,7 @@ func explode(p: Vector3, radius: float, dmg: float, by: String, big: bool) -> vo
 	for pl in players():
 		var d2: float = pl.global_position.distance_to(p)
 		if d2 < radius * 0.9 and not pl.dead:
-			pl.hurt.rpc_id(pl.get_multiplayer_authority(), dmg * 0.6 * (1.0 - d2 / radius), p)
+			pl.hurt.rpc_id(pl.get_multiplayer_authority(), dmg * 0.6 * (1.0 - d2 / radius), p, false, "blast")
 
 # ---- destruction: planks, fences, crates and windows break; brick and sheet metal only to
 # explosives and plasma (like the old game, the ground itself stays) ------------------------------
@@ -1672,6 +1730,7 @@ func _nav_tick(delta: float) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func _boom(p: Vector3, big: bool) -> void:
+	nvg_glare(p, 30.0 if big else 18.0, 1.0 if big else 0.7)
 	var pl := local_player()
 	if pl == null and not players().is_empty():
 		pl = players()[0]
@@ -1863,7 +1922,7 @@ func _fires_tick(delta: float) -> void:
 		var r: float = 1.4 * float(f["size"])
 		for pl in players():
 			if not pl.dead and pl.global_position.distance_to(p) < r:
-				pl.hurt.rpc_id(pl.get_multiplayer_authority(), 4.0, p)
+				pl.hurt.rpc_id(pl.get_multiplayer_authority(), 4.0, p, false, "heat")
 		for a in aliens():
 			if not a.dead and a.race != "ohnivec" and a.global_position.distance_to(p) < r:
 				hit_kind = "fire"
@@ -1922,11 +1981,22 @@ func _mines_tick() -> void:
 		mn["led"].visible = fmod(t, 1.0) < 0.15 and t > mn["armed_at"]
 		if not multiplayer.is_server() or t < mn["armed_at"]:
 			continue
+		# (0.57, MN-01's entry) a pressure plate: only a foot (or a claw) on it sets it off - what floats
+		# over it (Levit, Nádor, Mysloděj, Diskoll) passes untouched; and it does not ask whose foot it is
+		var hit := false
 		for a in aliens():
-			if not a.dead and a.global_position.distance_to(mn["pos"]) < 2.2:
-				_mine_gone.rpc(mines.find(mn))
-				explode(mn["pos"], 3.8, 120.0, mn["by"], true)
+			if not a.dead and not a.R.has("hover") and not a.airborne and not a.flying \
+					and a.global_position.distance_to(mn["pos"]) < 1.0 + float(a.R.get("r", 0.4)) * 0.5:
+				hit = true
 				break
+		if not hit:
+			for pl in players() + civilians():
+				if not pl.dead and pl.global_position.distance_to(mn["pos"]) < 0.8:
+					hit = true
+					break
+		if hit:
+			_mine_gone.rpc(mines.find(mn))
+			explode(mn["pos"], 3.8, 120.0, mn["by"], true)
 
 @rpc("authority", "call_local", "reliable")
 func _mine_gone(i: int) -> void:
@@ -2062,6 +2132,21 @@ var _airlift := false
 func objective_done() -> bool:
 	return done_banner
 
+## Is there solid world between two points (walls, rocks - not bodies)?
+func blocked_from(a: Vector3, b: Vector3) -> bool:
+	var q := PhysicsRayQueryParameters3D.create(a, b, 1)
+	return not get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+
+## Host: a PG-01 went off here. The ground smoulders (X-WEP-010: what it touches may burn),
+## and near the UFO it cooks part of what we wanted to take home.
+var salvage_burn := 0.0
+func plasma_burst(p: Vector3) -> void:
+	if not multiplayer.is_server():
+		return
+	ignite(p, 0.7)
+	if map.has("ufo") and (map["ufo"] as Vector3).distance_to(p) < 12.0:
+		salvage_burn = minf(0.5, salvage_burn + 0.1)
+
 ## Won missions: everything the aliens dropped is picked up on the way out (no carrying needed).
 func _loot(success: bool) -> Dictionary:
 	var out := {}
@@ -2075,17 +2160,20 @@ func _loot(success: bool) -> Dictionary:
 			out["live_" + a.race] = int(out.get("live_" + a.race, 0)) + 1
 		elif a.dead and a.race in Campaign.WRECKS:
 			out["trosky_" + a.race] = 1      # a blown-up machine: only scraps, one load a mission
-		elif a.dead:
+		elif a.dead and not a.seared:
 			out["corpse_" + a.race] = int(out.get("corpse_" + a.race, 0)) + 1
 	for a in aliens():
-		if a.dead and Campaign.RACE_WEAPON.has(a.race) and r.randf() < 0.6:
+		if a.dead and not a.seared and Campaign.RACE_WEAPON.has(a.race) and r.randf() < 0.6:
 			var w: String = Campaign.RACE_WEAPON[a.race]
 			out[w] = int(out.get(w, 0)) + 1
 	var mt: String = Net.mission_params.get("type", "")
 	var mk: Array = {"crash": [25, 50], "landed": [50, 100], "abduction": [30, 60], "terror": [10, 25], "rescue": [10, 30], "sabotage": [30, 60], "base": [40, 80]}.get(mt, [0, 0])
 	var al: Array = {"crash": [6, 14], "landed": [10, 20], "abduction": [6, 12], "terror": [0, 3], "rescue": [2, 6], "sabotage": [6, 12], "base": [8, 16]}.get(mt, [0, 0])
-	out["moskovium"] = r.randi_range(mk[0], mk[1])
-	out["slitiny"] = r.randi_range(al[0], al[1])
+	out["moskovium"] = int(r.randi_range(mk[0], mk[1]) * (1.0 - salvage_burn))
+	out["slitiny"] = int(r.randi_range(al[0], al[1]) * (1.0 - salvage_burn))
+	# a ship we shot down: the wreck goes to the hangar for the technicians
+	if mt == "crash" and String(Net.mission_params.get("ufo", "")) != "":
+		out["vrak_" + String(Net.mission_params["ufo"])] = 1
 	return out
 
 @rpc("authority", "call_local", "reliable")
@@ -2104,7 +2192,7 @@ func _end(success: bool, why: String, airlift := false) -> void:
 	var campaign := Net.mission_params.has("cid")
 	if me and not campaign:
 		# a quick mission: a try-out, nothing is kept (pay, experience, wounds, death)
-		fate = "rychlá mise - nic se nepočítá, tvůj žoldák z kampaně zůstal doma beze změny"
+		fate = "rychlá mise - nic se nepočítá, tvůj voják z kampaně zůstal doma beze změny"
 	elif me:
 		Game.merc["missions"] = int(Game.merc.get("missions", 0)) + 1
 		Game.merc["kills"] = int(Game.merc.get("kills", 0)) + me.kills
@@ -2122,7 +2210,7 @@ func _end(success: bool, why: String, airlift := false) -> void:
 			# the family is paid off: less when the body came home with the team
 			var cost := 80 if aboard else 250
 			purse = maxi(0, purse - cost)
-			fate = "PADL - žoldák je mrtvý (%s, odškodné rodině -%d kr; úspory převzal nový žoldák)" % ["tělo jste přivezli domů" if aboard else "tělo zůstalo na místě", cost]
+			fate = "PADL - voják je mrtvý (%s, odškodné rodině -%d kr; úspory převzal nový voják)" % ["tělo jste přivezli domů" if aboard else "tělo zůstalo na místě", cost]
 			Game.merc = Game.new_merc()      # the same slot gets a fresh recruit
 		else:
 			# experience: only the living learn
@@ -2142,7 +2230,23 @@ func _end(success: bool, why: String, airlift := false) -> void:
 						Game.merc["heal_days"] = float(Game.merc.get("heal_days", 0.0)) + 3.0
 						days += 3.0
 					if days > 0.0:
-						fate = "zraněn - na marodce %d %s herního času (mezitím můžeš hrát za jiného žoldáka)" % [int(days), "den" if days < 2 else ("dny" if days < 5 else "dní")]
+						fate = "zraněn - na marodce %d %s herního času (mezitím můžeš hrát za jiného vojáka)" % [int(days), "den" if days < 2 else ("dny" if days < 5 else "dní")]
+			if me.infected and Net.mission_params.has("cid"):
+				# the seed came home inside him: only the sick bay (or what the Líhavec autopsy taught us) gets it out
+				var bay := bool(Net.mission_params.get("osetrovna", false))
+				if bay or Game.has_research("pitva_lihnoun"):
+					var op := 3.0 if bay else 6.0
+					if float(Game.merc.get("heal_days", 0.0)) <= 0.0:
+						Game.merc["heal_cid"] = str(Net.mission_params["cid"])
+						Game.merc["heal_seen"] = float(Net.mission_params.get("day", 0.0))
+					Game.merc["heal_days"] = float(Game.merc.get("heal_days", 0.0)) + op
+					Game.merc["injury"] = maxf(float(Game.merc.get("injury", 0.0)), me.max_hp * 0.5)
+					var dd := int(ceilf(float(Game.merc["heal_days"])))
+					fate = "zárodek vyříznut%s - na marodce %d %s herního času" % [" na ošetřovně" if bay else "", dd, "den" if dd < 2 else ("dny" if dd < 5 else "dní")]
+				else:
+					purse = maxi(0, purse - 250)
+					fate = "PADL - zárodek se v něm vylíhl cestou domů (odškodné rodině -250 kr; úspory převzal nový voják)"
+					Game.merc = Game.new_merc()
 		Game.merc["money"] = purse
 		Game.save_merc()
 		# the campaign record lives with the host
@@ -2185,7 +2289,7 @@ func _end(success: bool, why: String, airlift := false) -> void:
 		Net.last_result = camp
 	if campaign:
 		lines.append("Hodnocení mise: %s (odměny ×%.2f)" % [quality_name(q), q])
-	hud.show_result(("MISE SPLNĚNA" if success else "MISE NEÚSPĚŠNÁ"), why + "\n\n" + "\n".join(lines) + "\n\nTvůj žoldák: " + fate + xp_text + ("\n\n" + camp if camp != "" else ""))
+	hud.show_result(("MISE SPLNĚNA" if success else "MISE NEÚSPĚŠNÁ"), why + "\n\n" + "\n".join(lines) + "\n\nTvůj voják: " + fate + xp_text + ("\n\n" + camp if camp != "" else ""))
 	if Game.autotest() != "": print("[END] result shown, leaving in a moment")
 	get_tree().create_timer(8.0 if Game.autotest() != "campaign" else 2.0).timeout.connect(func(): _leave(""))
 
@@ -2288,7 +2392,7 @@ func roster() -> Dictionary:
 		return Net.roster
 	if _local_roster.is_empty():
 		var me: Dictionary = Net.roster.get(Net.multiplayer.get_unique_id(), {}) if Net.is_online() else {}
-		_local_roster = {1: {"merc": me.get("merc", Game.merc), "name": me.get("name", String(Game.merc.get("name", "Žoldák")))}}
+		_local_roster = {1: {"merc": me.get("merc", Game.merc), "name": me.get("name", String(Game.merc.get("name", "Voják")))}}
 	return _local_roster
 
 func _exit_tree() -> void:
@@ -2652,6 +2756,8 @@ func _spawn_objectives(rng: RandomNumberGenerator) -> void:
 				spawn_alien(_crew(1, rng)[0], best + Vector3(rng.randf_range(-12, 12), 0.3, rng.randf_range(-12, 12)))
 		"base":
 			waves_left = 2 + (1 if Game.veteran() else 0) + (1 if Net.roster.size() > 2 else 0)
+			if int(Net.mission_params.get("base_def", 0)) > 0:
+				waves_left = maxi(1, waves_left - 1)      # (the towers keep one of their ships from landing)
 			_wave_t = 75.0
 
 ## Every machine builds the beacons from the map (same seed = same places).
@@ -2822,6 +2928,7 @@ var officer_killers := []
 var _pack_t := 60.0
 var _late_reinf_t := 0.0
 var _reinf_waves := 0
+var _supply_drops := 0
 var _nem_done := false
 ## Host, every frame of a running mission.
 func _late_tick(delta: float) -> void:
@@ -2852,6 +2959,17 @@ func _late_tick(delta: float) -> void:
 					a.stalk(prey)
 					n += 1
 				if n >= 2 and Game.autotest() != "": print("[LATE] night pack of %d after %s" % [n, prey.display_name])
+	# terror: the supply ship over the town makes good their losses - while its holds last
+	if mtype() == "terror" and _supply_drops < 2 and aliens_total > 0 and alive_aliens() <= aliens_total / 2:
+		_supply_drops += 1
+		var g2: Dictionary = GROUPS.get(crew_group, GROUPS.values()[0])
+		var rng2 := RandomNumberGenerator.new()
+		rng2.seed = Net.mission_seed + 700 + _supply_drops
+		var at2: Vector3 = _far_point(rng2, 35.0)
+		var n2 := 2 + maxi(0, Net.roster.size() - 1)
+		for i2 in n2:
+			spawn_alien(String(g2["soldier"]), free_spot(at2 + Vector3(rng2.randf_range(-3, 3), 0.3, rng2.randf_range(-3, 3))))
+		if Game.autotest() != "": print("[TERROR] supply drop %d (%d)" % [_supply_drops, n2])
 	# took too long: another ship drops more of them (the later in the war, the sooner)
 	_late_reinf_t += delta
 	var first := lerpf(600.0, 360.0, late)

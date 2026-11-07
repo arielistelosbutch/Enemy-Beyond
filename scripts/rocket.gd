@@ -5,6 +5,7 @@ extends Node3D
 const SPEED := 32.0
 var dir := Vector3.FORWARD
 var shooter := ""
+var kind := "rocket"       # rocket (high explosive), rocket_ap (armour-piercing), rocket_inc (incendiary)
 var mission: Node
 var travelled := 0.0
 
@@ -54,7 +55,21 @@ func _physics_process(dt: float) -> void:
 	if hit or travelled > 120.0:
 		var p: Vector3 = hit.position if hit else global_position
 		if multiplayer.is_server():
-			mission.explode(p, 4.5, 160.0, shooter, true)
+			match kind:
+				"rocket_ap":
+					# 0.57 (RL-01's entry): the shaped charge - all of it into what it hits, little around
+					var c: Object = hit.get("collider") if hit else null
+					if c and c.has_method("is_alien") and not c.dead:
+						mission.hit_kind = "slug"
+						c.damage(300.0, p, mission.actors.get_node_or_null(shooter))
+						mission.hit_kind = ""
+					mission.explode(p, 1.6, 70.0, shooter, false)
+				"rocket_inc":
+					# a smaller blast and a pool of fire that burns on
+					mission.explode(p, 3.0, 90.0, shooter, true)
+					mission.ignite(p, 1.6)
+				_:
+					mission.explode(p, 4.5, 160.0, shooter, true)
 		queue_free()
 		return
 	global_position = nxt

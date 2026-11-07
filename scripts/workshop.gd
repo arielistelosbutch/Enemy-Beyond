@@ -7,15 +7,23 @@ const PlayerScript := preload("res://scripts/player.gd")
 const AlienScript := preload("res://scripts/alien.gd")
 
 const MODES := [["fp", "Předmět v ruce - z očí"], ["tp", "Předmět v ruce - zvenku (+ ruce)"], ["back", "Zbraň na zádech"],
-	["emote", "Pózy žoldáka (pozdrav, pohov, v bok)"], ["alien", "Vetřelci - práce a postoje"],
+	["emote", "Pózy vojáka (pozdrav, pohov, v bok)"], ["alien", "Vetřelci - práce a postoje"],
 	["anim", "ANIMACE → editor Animace (všechny pohyby)"]]
-const EMOTES := [["salute", "Pozdrav (J)"], ["atease", "Pohov (U)"], ["hips", "Ruce v bok (stání)"]]
+const EMOTES := [["hips", "Ruce v bok (stání)"]]      # (0.57: salute, at ease and the wheel are afk movements)
 const ALIENS := ["grey", "grey_velitel", "jestetan", "bijec", "lihnoun", "zombie", "ohar"]
 const ALIEN_ACTS := {"grey": ["work", "work_high", "talk", "stare"], "grey_velitel": ["work", "work_high", "talk", "stare"],
 	"jestetan": ["guard", "stare"], "bijec": ["guard", "stare"], "lihnoun": ["eat"], "zombie": ["sway"], "ohar": ["sniff"]}
 const ACT_NAMES := {"work": "práce u krávy (klečí)", "work_high": "oprava UFO (ruce nahoru)", "talk": "šeptání ve dvou", "stare": "zírání",
 	"guard": "hlídka", "eat": "hodování", "sway": "kymácení", "sniff": "čmuchání"}
-const HOLD_ACTS := [["", "drží"], ["1", "nabíjí"], ["2", "úder (chladná zbraň)"], ["3", "hrabe v batohu"], ["4", "ošetřuje"]]
+## 0.57: what the soldier does while you place the item - the game's own movements (afk), the
+## handgun ones when it is one. Body movements (tp_body_*) or the hands' actions over standing.
+const HOLD_ACTS := [["tp_body_idle", "stojí"], ["tp_body_idle_2", "stojí 2 (rozhlíží se)"], ["tp_body_idle_3", "stojí 3"],
+	["tp_body_idle_4", "stojí 4"], ["tp_body_idle_5", "stojí 5"], ["tp_body_idle_hurt", "stojí zraněný"], ["tp_body_walk_hurt", "kulhá"], ["tp_body_idle_aim", "míří"], ["tp_body_walk", "chůze"], ["tp_body_walk_back", "chůze dozadu"],
+	["tp_body_walk_left", "úkrok vlevo"], ["tp_body_walk_right", "úkrok vpravo"], ["tp_body_run", "běh"], ["tp_body_sprint", "sprint"],
+	["tp_body_crouch", "klek"], ["tp_body_crouch_aim", "klek - míří"], ["tp_body_crouch_fire", "klek - střílí"], ["tp_body_crouch_fire_walk", "plížení - střílí"], ["tp_body_crouch_walk", "plížení"], ["tp_body_prone", "leh"],
+	["tp_body_jump", "skok"], ["tp_body_turn_left", "otočka"], ["tp_body_fire", "střílí"], ["tp_body_fire_walk", "střílí v chůzi"],
+	["tp_body_fire_run", "střílí v běhu"], ["reload", "přebíjí"], ["strike", "úder"], ["throw", "hod granátu"],
+	["draw", "bere zbraň"], ["use", "použití"], ["heal", "ošetřuje"]]
 
 var mode := "fp"
 var subject := ""            # item id / emote / alien race
@@ -231,7 +239,7 @@ func _win_of(w: Vector3) -> Vector2:
 
 func _clicktest() -> void:
 	var keep := Game.tweaks.duplicate(true)
-	mode = "tp"
+	mode = "emote"          # (0.57: the joints are turned in the poses; "tp" plays the game's movements)
 	_rebuild_panel()
 	for f in 15: await get_tree().process_frame
 	var bi := sk.find_bone("head")
@@ -258,6 +266,9 @@ func _clicktest() -> void:
 	print("[WSC] ring drag: changed %s" % (x1 != x0))
 	if DisplayServer.get_name() != "headless":
 		get_viewport().get_texture().get_image().save_png("user://ws_rings.png")
+	mode = "tp"
+	_rebuild_panel()
+	for f in 15: await get_tree().process_frame
 	var ib: AABB = (item_node.find_children("*", "MeshInstance3D", true, false)[0] as MeshInstance3D).global_transform * (item_node.find_children("*", "MeshInstance3D", true, false)[0] as MeshInstance3D).get_aabb()
 	var far: Vector3 = ib.get_center()
 	for ci in 8:
@@ -405,11 +416,20 @@ func _rebuild_panel() -> void:
 	sub2_opt.item_selected.connect(func(i): sub2 = String(sub2_opt.get_item_metadata(i)); _sync_sliders(); _build_scene())
 	if mode in ["fp", "tp", "back"]:
 		_lbl(dyn, "POSUN A NATOČENÍ PŘEDMĚTU")
+		if mode == "tp":
+			var pc := CheckBox.new()
+			pc.text = "Jen pro tento pohyb (zbraně)"
+			pc.button_pressed = _per_clip
+			pc.tooltip_text = "Zapnuto: posun a natočení platí jen v pohybu vybraném nahoře, navíc k obecnému nastavení.\nVypnuto: obecné nastavení zbraně pro všechny pohyby."
+			pc.toggled.connect(func(on): _per_clip = on; _sync_sliders())
+			dyn.add_child(pc)
 		for k in [["pos.x", "doprava", -0.3, 0.3, 0.002], ["pos.y", "nahoru", -0.3, 0.3, 0.002], ["pos.z", "dozadu", -0.3, 0.3, 0.002],
 				["rot.x", "kývnutí", -180, 180, 1], ["rot.y", "otočení", -180, 180, 1], ["rot.z", "náklon", -180, 180, 1], ["scale", "velikost", 0.5, 2.0, 0.01]]:
 			var key: String = k[0]
 			item_sliders[key] = _slider(dyn, k[1], k[2], k[3], k[4], func(): _item_changed())
-	if mode in ["tp", "emote", "alien"]:
+	if mode == "tp":
+		_lbl(dyn, "Voják hraje pohyby ze hry (afk) - vyber nahoře, co dělá. Mezerník pauza. Dlouhá zbraň: posun a natočení jsou vůči úchopu (x doprava, y nahoru, z podél hlavně), hlaveň míří k levé ruce sama. Platí hned i ve hře.", UiSkin.DIM)
+	if mode in ["emote", "alien"]:
 		_lbl(dyn, "KOST (natočení navíc ke stávající póze)")
 		bone_opt = _opt(dyn)
 		bone_opt.item_selected.connect(func(i): bone = String(bone_opt.get_item_metadata(i)); _sync_sliders())
@@ -417,13 +437,13 @@ func _rebuild_panel() -> void:
 			var a: String = ax[0]
 			bone_sliders[a] = _slider(dyn, ax[1], -180, 180, 1, func(): _bone_changed())
 		_lbl(dyn, "Klikni na kloub v obrázku a táhni: nahoru/dolů ho ohýbá, do stran otáčí, se Shiftem naklání do strany. Pravé tlačítko otáčí pohled.", UiSkin.DIM)
-	if mode == "tp":
+	if false:
 		_lbl(dyn, "LEVÁ RUKA NA ZBRANI (oranžová tečka)")
 		for ax in [["x", "do strany"], ["y", "nahoru"], ["z", "dopředu/zpět"]]:
 			var a2: String = ax[0]
 			grip_sliders[a2] = _slider(dyn, ax[1], -0.8, 0.8, 0.002, func(): _grip_changed())
 		_lbl(dyn, "Levá ruka se sama chytí zbraně - posuneš zbraň nebo pravou ruku a levá jde s ní.", UiSkin.DIM)
-	_lbl(dyn, "Myš: tažení mimo kloub (nebo pravým tlačítkem) otáčí pohled, kolečko přibližuje." if mode != "fp" else "Pohled je přesně z očí žoldáka.", UiSkin.DIM)
+	_lbl(dyn, "Myš: tažení mimo kloub (nebo pravým tlačítkem) otáčí pohled, kolečko přibližuje." if mode != "fp" else "Pohled je přesně z očí vojáka.", UiSkin.DIM)
 	_fill_sub2()
 	_build_scene()
 
@@ -432,6 +452,8 @@ func _fill_sub2() -> void:
 	sub2_opt.visible = mode in ["tp", "alien"]
 	if mode == "tp":
 		for a in HOLD_ACTS:
+			if _tp_clip(String(a[0])).is_empty():
+				continue
 			sub2_opt.add_item(a[1])
 			sub2_opt.set_item_metadata(sub2_opt.item_count - 1, a[0])
 	elif mode == "alien":
@@ -442,7 +464,15 @@ func _fill_sub2() -> void:
 
 ## The tweak key edited right now.
 func _item_key() -> String:
+	if mode == "tp" and _per_clip and sub2.begins_with("tp_body_") and Game.ITEMS.get(subject, {}).get("type", "") == "weapon":
+		return "tpa/%s@%s" % [subject, sub2]      # only in this movement (over the general one)
+	if mode == "tp" and _long_gun():
+		return "tpa/" + subject       # 0.57: the long gun in the afk hands (player.afk_gun_xform)
 	return {"fp": "fp/", "tp": "tp/", "back": "back/"}.get(mode, "") + subject
+
+## A two-handed gun: the game puts it from the right hand towards the left (player.afk_gun_xform).
+func _long_gun() -> bool:
+	return Game.ITEMS.get(subject, {}).get("type", "") == "weapon" and Game.two_handed(subject)
 
 func _pose_key() -> String:
 	match mode:
@@ -679,6 +709,7 @@ func _build_scene() -> void:
 				var rest := sk.get_bone_global_rest(sk.find_bone("spine"))
 				if mode in ["tp", "atp"]:
 					holder.transform = rest.affine_inverse() * Transform3D(Basis(), Vector3(-0.1, 1.2, -0.3))
+					_holder_base = holder.transform
 				else:
 					holder.transform = rest.affine_inverse() * Transform3D(Basis.from_euler(Vector3(-PI / 2 + 0.3, 0, 0.6)), Vector3(0.0, 1.2, 0.2))
 			target = Vector3(0, 1.25 if mode != "back" else 1.2, 0)
@@ -760,8 +791,7 @@ func _process(delta: float) -> void:
 				want = _an_base_pose()
 				want.merge(AnimClips.pose(_ac, _an_t), true)
 			"tp":
-				var a := int(sub2) if sub2 != "" else 0
-				want = Game.tweak_pose("hold/" + subject, PlayerScript.hold_want(subject, "", a, fmod(t, 1.2)))
+				_tp_tick()
 			"back":
 				want = PlayerScript.hold_want("", "", 0, 0.0)
 			"emote":
@@ -779,7 +809,9 @@ func _process(delta: float) -> void:
 		var ri := sk.find_bone("root")
 		if ri >= 0 and drop != 0.0:
 			sk.set_bone_pose_position(ri, sk.get_bone_rest(ri).origin + Vector3(0, drop, 0))
-		if mode in ["tp", "atp"] and holder and item_node:
+		if mode == "tp":
+			_grip_marker(Vector3.INF)
+		elif mode in ["tp", "atp"] and holder and item_node:
 			# exactly as in the game: the gun sits in the right hand, the left hand takes hold of it
 			var hi := sk.find_bone("hand.R")
 			if hi >= 0:
@@ -811,6 +843,94 @@ func _process(delta: float) -> void:
 		cam.position = target + dir * dist
 		cam.look_at(target, Vector3.UP)
 		cam.fov = 50.0
+
+## The game's movement for the chosen act: a body one, or the hands' one (stand under it).
+func _tp_clip(a: String) -> Dictionary:
+	if a.begins_with("tp_body_"):
+		if subject in PlayerScript.HEAVY and not AnimClips.get_clip(a + "_heavy").is_empty():
+			return AnimClips.get_clip(a + "_heavy")
+		if not _long_gun() and not AnimClips.get_clip(a + "_pistol").is_empty():
+			return AnimClips.get_clip(a + "_pistol")
+		return AnimClips.get_clip(a)
+	if a == "draw" and not _long_gun():
+		return AnimClips.find("tp", "drawp", subject)
+	return AnimClips.find("tp", a, subject)
+
+func _apply_clip(c: Dictionary, at: float) -> void:
+	if c.is_empty():
+		return
+	var tt := AnimClips.clip_time(c, at)
+	var p := AnimClips.pose(c, tt)
+	for bn in p:
+		var i := sk.find_bone(bn)
+		if i >= 0:
+			sk.set_bone_pose_rotation(i, sk.get_bone_rest(i).basis.get_rotation_quaternion() * Quaternion.from_euler(p[bn]))
+	var ri := sk.find_bone("root")
+	if ri >= 0:
+		var v := AnimClips.sample(c, "root@pos", tt) if AnimClips.has_track(c, "root@pos") else [0, 0, 0]
+		sk.set_bone_pose_position(ri, sk.get_bone_rest(ri).origin + Vector3(float(v[0]), float(v[1]), float(v[2])))
+
+var _holder_base := Transform3D()
+var _per_clip := false        # tp, long gun: the sliders set it for the chosen movement only
+var _ws_cal := Basis()
+var _ws_grip_basis := Basis()
+var _ws_has_cal := false
+## The soldier as the game shows him (Předmět v ruce - zvenku): the afk movement, the gun put in the
+## hands exactly as player.gd does it (a long gun from the right hand to the left; during an action
+## it stays as it sat in the hand while standing).
+func _tp_tick() -> void:
+	var a := sub2 if sub2 != "" else "tp_body_idle"
+	var body := a.begins_with("tp_body_")
+	var idle := _tp_clip("tp_body_idle")
+	var hi := sk.find_bone("hand.R")
+	var li := sk.find_bone("hand.L")
+	if holder == null or item_node == null or hi < 0:
+		_apply_clip(_tp_clip(a) if body else idle, t)
+		return
+	if not _long_gun():
+		_apply_clip(idle if not body else _tp_clip(a), t)
+		if not body:
+			_apply_clip(_tp_clip(a), t)
+		var hand := sk.global_transform * sk.get_bone_global_pose(hi)
+		holder.transform = _holder_base
+		holder.global_position = hand.origin + hand.basis.y.normalized() * -0.05
+		if body:
+			# a handgun: its correction for this movement, in the gun's frame (as player._mixamo_gun)
+			var adj := Game.tweak_xform("tpa/%s@%s" % [subject, a])
+			if adj != Transform3D():
+				holder.transform = holder.transform * adj
+		return
+	# the long gun: calm standing first (its roll in the wrist, and how it sits in the hand)
+	_apply_clip(idle, 0.0)
+	var g0 := _ws_gun(true, "tp_body_idle")
+	var h0 := sk.global_transform * sk.get_bone_global_pose(hi)
+	var rel := h0.affine_inverse() * g0
+	if body:
+		_apply_clip(_tp_clip(a), t)
+		holder.global_transform = _ws_gun(a.begins_with("tp_body_idle") or a == "tp_body_crouch", a)
+	else:
+		_apply_clip(idle, t)
+		_apply_clip(_tp_clip(a), t)
+		holder.global_transform = sk.global_transform * sk.get_bone_global_pose(hi) * rel
+
+## The gun's holder (world) for the pose the skeleton has now - player._mixamo_gun.
+func _ws_gun(calm: bool, clip: String) -> Transform3D:
+	var hand := sk.global_transform * sk.get_bone_global_pose(sk.find_bone("hand.R"))
+	var origin := hand.origin + hand.basis.y.normalized() * -0.05
+	var lh := (sk.global_transform * sk.get_bone_global_pose(sk.find_bone("hand.L"))).origin
+	var dir := (lh - origin).normalized()
+	var hb := hand.basis.orthonormalized()
+	var up := Vector3.UP
+	if not calm and _ws_has_cal:
+		up = (hb * _ws_cal).y.normalized()
+	if absf(dir.dot(up)) > 0.97:
+		up = Vector3.UP if absf(dir.y) < 0.9 else Vector3.BACK
+	var B := Basis.looking_at(dir, up)
+	_ws_grip_basis = B
+	if calm:
+		_ws_cal = hb.inverse() * B
+		_ws_has_cal = true
+	return PlayerScript.afk_gun_xform(B, origin, item_node, Vector3.ONE, subject, clip)
 
 var _gm: MeshInstance3D
 var _ik_err := -1.0
@@ -958,6 +1078,8 @@ func _handles() -> Array:
 		return [sn.global_position, [fb.x.normalized(), fb.y.normalized(), fb.z.normalized()], "arrows" if _item_tool == "posun" else "rings", signf(fb.determinant()), [fb.x, fb.y, fb.z]]
 	if focus == "item" and item_node != null and is_instance_valid(item_node) and not item_sliders.is_empty():
 		var hb := holder.global_transform.basis
+		if mode == "tp" and _long_gun() and not (_per_clip and false):
+			hb = _ws_grip_basis          # "tpa/": the sliders move it in the grip's frame
 		var ax := [hb.x, hb.y, hb.z]
 		var axn := [hb.x.normalized(), hb.y.normalized(), hb.z.normalized()]
 		return [item_node.global_position, axn, "arrows" if _item_tool == "posun" else "rings", signf(hb.determinant()), ax]

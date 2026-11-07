@@ -8,31 +8,43 @@ const VERSION_NUM := "0.56"
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
 	# hands: "two" = needs both hands. kind: gun / melee / throw / tool / ammo
-	"rifle": {"name": "Puška", "short": "Puška", "weight": 7, "type": "weapon", "two": true, "ammo": "rifle_clip", "damage": 32, "spread": 1.4, "rate": 0.16, "auto": true, "sound": "rifle", "noise": 45.0, "muzzle": 0.72, "reload": 1.5},
-	"pistol": {"name": "Pistole", "short": "Pistole", "weight": 3, "type": "weapon", "ammo": "pistol_clip", "damage": 26, "spread": 2.0, "rate": 0.28, "auto": false, "sound": "pistol", "noise": 35.0, "muzzle": 0.16, "reload": 1.7},
-	"shotgun": {"name": "Brokovnice", "short": "Brokovnice", "weight": 6, "type": "weapon", "two": true, "ammo": "shells", "damage": 16, "pellets": 8, "choke": 3.2, "spread": 3.0, "rate": 0.85, "auto": false, "sound": "shotgun", "noise": 55.0, "muzzle": 0.72, "single": 0.5, "cap": 6, "kick": 2.0},
-	"magnum": {"name": "Revolver Magnum", "short": "Magnum", "weight": 3, "type": "weapon", "ammo": "magnum_rounds", "damage": 78, "spread": 1.1, "rate": 0.75, "auto": false, "sound": "magnum", "noise": 55.0, "muzzle": 0.27, "single": 0.7, "cap": 6, "kick": 2.5},
-	"autocannon": {"name": "Autokanón", "short": "Autokanón", "weight": 16, "type": "weapon", "two": true, "heavy": 0.72, "brace": true, "ammo": "ac_clip", "damage": 55, "splash": 1.8, "spread": 2.4, "rate": 0.5, "auto": true, "sound": "autocannon", "noise": 75.0, "muzzle": 1.2, "reload": 3.0, "kick": 3.0},
-	"minigun": {"name": "Minigun", "short": "Minigun", "weight": 20, "type": "weapon", "two": true, "heavy": 0.6, "brace": true, "ammo": "minigun_belt", "damage": 15, "spread": 3.4, "rate": 0.05, "auto": true, "spinup": 0.9, "sound": "minigun", "noise": 75.0, "muzzle": 0.86, "reload": 4.0, "kick": 0.4},
-	"rocket_launcher": {"name": "Raketomet", "short": "Raketomet", "weight": 12, "type": "weapon", "two": true, "heavy": 0.85, "ammo": "rocket", "damage": 160, "splash": 4.5, "spread": 0.8, "rate": 1.0, "auto": false, "projectile": true, "sound": "launch", "noise": 80.0, "muzzle": 0.9, "reload": 3.0, "kick": 3.0},
-	"plasma_rifle": {"name": "Plazmová puška", "short": "Plazma", "weight": 6, "type": "weapon", "two": true, "ammo": "plasma_cell", "damage": 48, "spread": 0.9, "rate": 0.2, "auto": true, "sound": "plasma", "noise": 30.0, "muzzle": 0.8, "reload": 1.2, "kick": 0.6},
-	"sniper": {"name": "Odstřelovací puška", "short": "Odstřelovačka", "weight": 9, "type": "weapon", "two": true, "ammo": "sniper_clip", "damage": 120, "spread": 0.25, "hip": 5.0, "scope": true, "rate": 1.3, "auto": false, "sound": "sniper", "noise": 75.0, "muzzle": 1.07, "reload": 2.4, "kick": 3.5},
+	"rifle": {"name": "Puška", "short": "Puška", "weight": 7, "type": "weapon", "modes": true, "two": true, "ammo": "rifle_clip", "damage": 32, "spread": 1.4, "rate": 0.16, "auto": true, "sound": "rifle", "noise": 45.0, "muzzle": 0.72, "reload": 1.5},
+	"pistol": {"name": "Pistole", "short": "Pistole", "weight": 3, "type": "weapon", "ammo": "pistol_clip", "damage": 26, "spread": 2.0, "rate": 0.28, "auto": false, "sound": "pistol", "noise": 35.0, "muzzle": 0.16, "reload": 1.7, "ext_mag": 21},
+	"shotgun": {"name": "Brokovnice", "short": "Brokovnice", "weight": 6, "type": "weapon", "two": true, "ammo": "shells", "ammo_alt": ["slugs", "beanbag"], "damage": 16, "pellets": 8, "choke": 3.2, "spread": 3.0, "rate": 0.85, "auto": false, "sound": "shotgun", "noise": 55.0, "muzzle": 0.72, "single": 0.5, "cap": 7, "kick": 2.0},
+	"magnum": {"name": "Revolver Magnum", "short": "Magnum", "weight": 3, "type": "weapon", "ammo": "magnum_rounds", "damage": 78, "ap": true, "spread": 1.1, "rate": 0.75, "auto": false, "sound": "magnum", "noise": 70.0, "muzzle": 0.27, "single": 0.7, "cap": 6, "kick": 2.5},
+	# 0.57 (Ari, HC-01's entry): one heavy armour-piercing incendiary round at a time, a long cycle after every shot
+	"autocannon": {"name": "Těžký kanón", "short": "Kanón", "weight": 16, "type": "weapon", "two": true, "heavy": 0.72, "brace": true, "ammo": "ac_clip", "damage": 150, "ap": true, "incendiary": true, "spread": 1.3, "rate": 1.9, "auto": false, "sound": "autocannon", "noise": 75.0, "muzzle": 1.2, "reload": 3.0, "kick": 3.0},
+	"minigun": {"name": "Minigun", "short": "Minigun", "weight": 20, "type": "weapon", "two": true, "heavy": 0.6, "brace": true, "ammo": "minigun_belt", "damage": 15, "spread": 3.4, "rate": 0.05, "auto": true, "spinup": 0.9, "heat": 0.0085, "sound": "minigun", "noise": 75.0, "muzzle": 0.86, "reload": 4.0, "kick": 0.4},
+	"rocket_launcher": {"name": "Raketomet", "short": "Raketomet", "weight": 12, "type": "weapon", "two": true, "heavy": 0.85, "ammo": "rocket", "ammo_alt": ["rocket_ap", "rocket_inc"], "damage": 160, "splash": 4.5, "spread": 0.8, "rate": 1.0, "auto": false, "projectile": true, "sound": "launch", "noise": 80.0, "muzzle": 0.9, "reload": 3.0, "kick": 3.0},
+	"plasma_rifle": {"name": "Plazmová puška PR-01", "short": "PR-01", "weight": 6, "type": "weapon", "two": true, "ammo": "plasma_cell", "cap": 5, "falloff": [35.0, 80.0], "damage": 92, "spread": 0.8, "rate": 0.32, "auto": false, "heat": 0.2, "sound": "plasma", "noise": 34.0, "muzzle": 0.8, "reload": 1.3, "kick": 0.5},
+	"plasma_pistol": {"name": "Plazmová pistole PP-01", "short": "PP-01", "weight": 3, "type": "weapon", "ammo": "plasma_cell", "cap": 10, "falloff": [20.0, 50.0], "damage": 44, "spread": 1.3, "rate": 0.28, "auto": false, "heat": 0.14, "sound": "plasma", "noise": 28.0, "muzzle": 0.21, "reload": 1.4, "kick": 0.4},
+	"plasma_cannon": {"name": "Plazmový kanón PC-01", "short": "PC-01", "weight": 15, "type": "weapon", "two": true, "heavy": 0.72, "brace": true, "ammo": "plasma_cell", "cap": 2, "damage": 340, "pc": true, "spread": 0.9, "rate": 0.9, "auto": false, "heat": 0.3, "sound": "plasma", "noise": 60.0, "muzzle": 0.86, "reload": 3.0, "kick": 1.2},
+	"plasma_minigun": {"name": "Plazmový minigun PM-01", "short": "PM-01", "weight": 20, "type": "weapon", "two": true, "heavy": 0.58, "brace": true, "ammo": "plasma_cell", "cap": 20, "damage": 30, "spread": 3.0, "rate": 0.08, "auto": true, "bursts": [5, 10, 0], "spinup": 0.7, "heat": 0.03, "sound": "plasma_mg", "noise": 70.0, "muzzle": 0.86, "reload": 3.5, "kick": 0.4},
+	"sniper": {"name": "Odstřelovací puška", "short": "Odstřelovačka", "weight": 9, "type": "weapon", "two": true, "ammo": "sniper_clip", "damage": 120, "ap": true, "spread": 0.25, "hip": 5.0, "scope": true, "rate": 1.3, "auto": false, "sound": "sniper", "noise": 75.0, "muzzle": 1.07, "reload": 2.4, "kick": 3.5, "ext_mag": 8},
 	# lasers: no magazines - the cell recharges by itself after a short pause (cap = shots in the cell)
-	"laser_pistol": {"name": "Laserová pistole", "short": "Laser. pistole", "weight": 2, "type": "weapon", "ammo": "", "laser": true, "cap": 10, "recharge": 2.5, "damage": 27, "spread": 1.2, "rate": 0.3, "auto": false, "sound": "laser", "noise": 25.0, "muzzle": 0.21, "kick": 0.3},
-	"laser_rifle": {"name": "Laserová puška", "short": "Laser. puška", "weight": 6, "type": "weapon", "two": true, "ammo": "", "laser": true, "cap": 24, "recharge": 4.0, "damage": 34, "spread": 0.8, "rate": 0.17, "auto": true, "sound": "laser", "noise": 28.0, "muzzle": 0.6, "kick": 0.4},
-	"laser_cannon": {"name": "Laserový kanón", "short": "Laser. kanón", "weight": 13, "type": "weapon", "two": true, "heavy": 0.75, "brace": true, "ammo": "", "laser": true, "cap": 12, "recharge": 1.6, "damage": 72, "spread": 1.2, "rate": 0.55, "auto": true, "sound": "laser", "noise": 40.0, "muzzle": 0.78, "kick": 1.5},
+	"laser_pistol": {"name": "Laserová pistole LP-01", "short": "Laser. pistole", "weight": 2, "type": "weapon", "ammo": "", "laser": true, "cap": 1, "recharge": 2.0, "falloff": [25.0, 60.0], "damage": 42, "spread": 1.0, "rate": 0.3, "auto": false, "sound": "laser", "noise": 25.0, "muzzle": 0.21, "kick": 0.3},
+	"laser_rifle": {"name": "Laserová puška LR-01", "short": "Laser. puška", "weight": 6, "type": "weapon", "two": true, "ammo": "", "laser": true, "cap": 1, "recharge": 1.55, "heat": 0.2, "damage": 58, "spread": 0.6, "rate": 0.3, "auto": false, "sound": "laser", "noise": 28.0, "muzzle": 0.6, "kick": 0.4},
+	"laser_cannon": {"name": "Laserový kanón LC-01", "short": "Laser. kanón", "weight": 13, "type": "weapon", "two": true, "heavy": 0.75, "brace": true, "ammo": "", "laser": true, "lc": true, "cap": 1, "recharge": 0.18, "damage": 260, "spread": 0.7, "rate": 0.6, "auto": false, "sound": "laser_cannon", "noise": 55.0, "muzzle": 0.78, "kick": 0.6},
+	"laser_minigun": {"name": "Laserový minigun LM-01", "short": "Laser. minigun", "weight": 18, "type": "weapon", "two": true, "heavy": 0.6, "brace": true, "ammo": "", "laser": true, "cap": 60, "recharge": 7.0, "heat": 0.012, "damage": 15, "spread": 2.6, "rate": 0.07, "auto": true, "spinup": 0.5, "sound": "laser_mg", "noise": 45.0, "muzzle": 0.86, "kick": 0.35},
 	"stun_baton": {"name": "Omračovací obušek", "short": "Obušek", "weight": 2, "type": "melee", "blunt": true, "damage": 4, "stun": 42, "reach": 2.1, "rate": 0.8, "sound": "zap"},
 	"knife": {"name": "Bojový nůž", "short": "Nůž", "weight": 1, "type": "melee", "damage": 38, "backstab": 3.0, "reach": 1.7, "rate": 0.45, "sound": "swish"},
+	"energo_nuz": {"name": "Energo nůž EN-01", "short": "Energo nůž", "weight": 1, "type": "melee", "damage": 38, "edge": 66, "backstab": 3.0, "reach": 1.7, "rate": 0.5, "sound": "swish"},
 	"rifle_clip": {"name": "Zásobník pušky", "short": "Zás. puška", "weight": 3, "type": "ammo", "rounds": 20},
 	"sniper_clip": {"name": "Zásobník odstřelovačky", "short": "Zás. odstř.", "weight": 1, "type": "ammo", "rounds": 5},
-	"pistol_clip": {"name": "Zásobník pistole", "short": "Zás. pistole", "weight": 1, "type": "ammo", "rounds": 12},
+	"pistol_clip": {"name": "Zásobník pistole", "short": "Zás. pistole", "weight": 1, "type": "ammo", "rounds": 15},
 	"shells": {"name": "Broky (krabička)", "short": "Broky", "weight": 1, "type": "ammo", "rounds": 8},
+	# 0.57 (Ari, SG-01's entry): other loads for the shotgun - L picks what goes into the tube next
+	"slugs": {"name": "Jednotné střely (krabička)", "short": "Jedn. střely", "weight": 1, "type": "ammo", "rounds": 8},
+	"beanbag": {"name": "Nesmrtící náboje (krabička)", "short": "Nesmrt. náboje", "weight": 1, "type": "ammo", "rounds": 8},
 	"magnum_rounds": {"name": "Náboje Magnum", "short": "Náb. Magnum", "weight": 1, "type": "ammo", "rounds": 6},
-	"ac_clip": {"name": "Zásobník autokanónu", "short": "Zás. AK", "weight": 5, "type": "ammo", "rounds": 8},
-	"minigun_belt": {"name": "Pás do minigunu", "short": "Pás MG", "weight": 7, "type": "ammo", "rounds": 150},
-	"plasma_cell": {"name": "Plazmový článek", "short": "Článek", "weight": 2, "type": "ammo", "rounds": 30},
-	"rocket": {"name": "Raketa", "short": "Raketa", "weight": 4, "type": "ammo", "rounds": 1},
+	"ac_clip": {"name": "Zásobník kanónu", "short": "Zás. kanón", "weight": 5, "type": "ammo", "rounds": 5},
+	"minigun_belt": {"name": "Muniční kontejner minigunu", "short": "Kontejner MG", "weight": 8, "type": "ammo", "rounds": 300},
+	"plasma_cell": {"name": "Plazmový zásobník PL-MAG-01", "short": "PL-MAG", "weight": 2, "type": "ammo", "rounds": 20},
+	"rocket": {"name": "Výbušná raketa", "short": "Raketa", "weight": 4, "type": "ammo", "rounds": 1},
+	"rocket_ap": {"name": "Průbojná raketa", "short": "Průb. raketa", "weight": 4, "type": "ammo", "rounds": 1},
+	"rocket_inc": {"name": "Zápalná raketa", "short": "Záp. raketa", "weight": 4, "type": "ammo", "rounds": 1},
 	"grenade": {"name": "Granát", "short": "Granát", "weight": 2, "type": "grenade"},
+	"plasma_grenade": {"name": "Plazmový granát PG-01", "short": "PG-01", "weight": 2, "type": "grenade"},
 	"smoke_grenade": {"name": "Kouřový granát", "short": "Kouř", "weight": 1, "type": "grenade"},
 	"mine": {"name": "Nášlapná mina", "short": "Mina", "weight": 3, "type": "grenade"},
 	"flare": {"name": "Světlice", "short": "Světlice", "weight": 1, "type": "flare"},
@@ -41,18 +53,25 @@ const ITEMS := {
 	# re-primed (slow and clumsy until research explains how), weak in human hands at first
 	"a_pistol": {"name": "Plazmová pistole vetřelců", "short": "Cizí pistole", "weight": 3, "type": "weapon", "ammo": "", "alien": true, "know": "laser",
 		"cap": 8, "cells": 3, "damage": 42, "spread": 1.3, "rate": 0.35, "auto": false, "sound": "plasma", "noise": 25.0, "muzzle": 0.21, "kick": 0.4, "reload": 2.5},
-	"a_rifle": {"name": "Plazmová puška vetřelců", "short": "Cizí puška", "weight": 6, "type": "weapon", "two": true, "ammo": "", "alien": true, "know": "plazma",
+	"a_rifle": {"name": "Plazmová puška vetřelců", "short": "Cizí puška", "weight": 6, "type": "weapon", "modes": true, "two": true, "ammo": "", "alien": true, "know": "plazma",
 		"cap": 20, "cells": 2, "damage": 50, "spread": 1.0, "rate": 0.22, "auto": true, "sound": "plasma", "noise": 30.0, "muzzle": 0.8, "kick": 0.6, "reload": 3.0},
 	"a_heavy": {"name": "Těžká plazma vetřelců", "short": "Cizí těžká", "weight": 11, "type": "weapon", "two": true, "heavy": 0.8, "ammo": "", "alien": true, "know": "laser_tezky",
 		"cap": 5, "cells": 2, "damage": 110, "splash": 2.2, "spread": 0.9, "rate": 0.9, "auto": false, "sound": "plasma", "noise": 45.0, "muzzle": 0.7, "kick": 2.0, "reload": 4.0},
 	"a_pack": {"name": "Batoh vetřelce", "short": "Batoh vetřelce", "weight": 0, "type": "salvage"},
 	"stit": {"name": "Balistický štít", "short": "Štít", "weight": 6, "type": "shield"},
-	"vesta": {"name": "Bojová výstroj UAI", "short": "Vesta", "weight": 4, "type": "armor", "protect": 0.8},
-	"pancir": {"name": "Slitinový pancíř", "short": "Pancíř", "weight": 7, "type": "armor", "protect": 0.62},
+	"vesta": {"name": "Balistická vesta „Želva“", "short": "Vesta", "weight": 4, "type": "armor", "protect": 0.8},
+	"pancir": {"name": "Experimentální pancéřová vesta ARM-02", "short": "ARM-02", "weight": 5, "type": "armor", "protect": 0.66},
 	"scanner": {"name": "Detektor pohybu", "short": "Detektor", "weight": 4, "type": "scanner"},
 	"radio": {"name": "Vysílačka", "short": "Vysílačka", "weight": 1, "type": "radio"},
-	"nvg": {"name": "Noktovizor PVS-7", "short": "Noktovizor", "weight": 1, "type": "nvg"},
+	"nvg": {"name": "Noktovizor NVG-01", "short": "Noktovizor", "weight": 1, "type": "nvg"},
 }
+
+## The loads a gun takes: its own first, then the others (the shotgun's slugs and less-lethal rounds).
+func ammo_types(wid: String) -> Array:
+	var r: Dictionary = ITEMS.get(wid, {})
+	if String(r.get("ammo", "")) == "":
+		return []
+	return [String(r["ammo"])] + Array(r.get("ammo_alt", []))
 
 ## How many rounds the weapon itself holds.
 ## An alien gun nobody has researched yet: weak, wild and slow to re-prime.
@@ -64,31 +83,58 @@ func mag_size(id: String) -> int:
 	var r: Dictionary = ITEMS[id]
 	var n: int = int(r["cap"]) if r.has("cap") else int(ITEMS[r["ammo"]]["rounds"])
 	if has_mod(id, "zasobnik"):
-		n = int(ceil(n * 1.5))
+		n = int(r["ext_mag"]) if r.has("ext_mag") else int(ceil(n * 1.5))
 	return n
 
 # ---- personal weapon upgrades (each mercenary his own, bought with his money) ---------------
 const MODS := {
-	"svitilna": {"name": "Zbraňová svítilna", "price": 120, "desc": "Silnější a delší kužel světla, když držíš zbraň."},
-	"laser": {"name": "Laserový zaměřovač", "price": 180, "desc": "Červená tečka: střelba od boku skoro o polovinu přesnější."},
+	"svitilna": {"name": "Zbraňová svítilna", "price": 120, "desc": "Silnější a delší kužel světla, když držíš zbraň. Vetřelci tě ale uvidí z větší dálky."},
+	"laser": {"name": "Laserový zaměřovač", "price": 180, "desc": "Červená tečka: střelba od boku skoro o polovinu přesnější. Vetřelec, kterému tečka sedne na tělo, si tě ale všimne."},
 	"optika": {"name": "Optika 2x", "price": 220, "desc": "Při míření větší přiblížení, o 40 % přesnější a klidnější mířidla."},
 	"tlumic": {"name": "Tlumič", "price": 200, "desc": "Výstřel slyší vetřelci jen na pětinu vzdálenosti."},
-	"zasobnik": {"name": "Prodloužený zásobník", "price": 160, "desc": "O polovinu víc ran v zásobníku."},
+	"kolimator": {"name": "Kolimátor", "price": 150, "desc": "Malý kolimátor na pistoli: tečka v okénku, mírně přesnější střelba."},
+	"nosic": {"name": "Nosič nábojů", "price": 90, "desc": "Pár nábojů na pouzdře přímo na zbrani: brokovnice se dobíjí rychleji."},
+	"pazba": {"name": "Ergonomická pažba", "price": 140, "desc": "Pažba, která pohltí část zpětného rázu: další rána jde přesněji."},
+	"dvojnozka": {"name": "Stabilizační dvojnožka", "price": 260, "desc": "Opěra pod hlaveň: když stojíš na místě, kanón je o polovinu přesnější."},
+	"tlumeni": {"name": "Zesílené tlumení rázu", "price": 300, "desc": "Mechanika, která spolkne část zpětného rázu: rychleji jsi zpátky na cíli."},
+	"nosny": {"name": "Ergonomický nosný systém", "price": 220, "desc": "Popruhy a opěry: s kanónem v rukou se pohybuješ o něco rychleji."},
+	"dalkomer": {"name": "Balistický dálkoměr", "price": 280, "desc": "Změří vzdálenost a dopočítá pokles střely: na velkou dálku přesnější rána."},
+	"brzda": {"name": "Úsťová brzda", "price": 200, "desc": "Odvede část plynů do stran: menší ráz, rychleji jsi zpátky na cíli."},
+	"stabilizator": {"name": "Elektronický stabilizátor", "price": 320, "desc": "Gyroskop v postroji: dlouhé dávky se tolik nerozlévají."},
+	"chladic": {"name": "Pokročilý chladicí modul", "price": 300, "desc": "Proudění vzduchu kolem hlavní: přehřívají se pomaleji."},
+	"zamerovac": {"name": "Taktický zaměřovač", "price": 180, "desc": "Jednoduchý zaměřovač na těžkou zbraň: o něco přesnější na střední vzdálenost."},
+	"ergo": {"name": "Ergonomická rukojeť", "price": 120, "desc": "Rukojeť, která sedí v dlani: u revolveru menší postih za zpětný ráz, u nože jistější a o kus delší sek."},
+	"rychlonabijec": {"name": "Rychlonabíječ", "price": 110, "desc": "Šest nábojů v kroužku najednou do bubínku: přebíjení zabere zlomek času."},
+	"kompenzator": {"name": "Kompenzační úsťový modul", "price": 160, "desc": "Méně zdvihu hlavně po ráně. Výstřel je ale ještě hlasitější."},
+	"pocitac": {"name": "Zaměřovací počítač", "price": 350, "desc": "Spočítá předstih na pohyblivý cíl: raketa letí přesněji."},
+	"pouzdro": {"name": "Odlehčené taktické pouzdro", "price": 60, "desc": "Nůž vyjde z pouzdra na jeden pohyb: rychlejší tasení."},
+	"akumulator": {"name": "Vysokokapacitní akumulátor", "price": 200, "desc": "Větší článek v rukojeti obušku: víc výbojů na misi."},
+	"lehky": {"name": "Odlehčená konstrukce", "price": 120, "desc": "Kompozitní tělo obušku: rychleji v ruce, rychlejší rána."},
+	"diagnostika": {"name": "Diagnostický indikátor", "price": 90, "desc": "Displej na rukojeti: ukáže, kolik energie v obušku zbývá."},
+	"zasobnik": {"name": "Prodloužený zásobník", "price": 160, "desc": "O polovinu víc ran v zásobníku, zbraň je ale o 1 kg těžší."},
 	"rukojet": {"name": "Přední rukojeť", "price": 140, "desc": "Poloviční zpětný ráz, rozptyl při dávce roste pomaleji, klidnější ruce."},
 }
 ## Which upgrade fits which weapon (not everything on everything).
 const MOD_FITS := {
-	"pistol": ["svitilna", "laser", "tlumic", "zasobnik"],
+	"pistol": ["kolimator", "svitilna", "laser", "tlumic", "zasobnik"],
 	"rifle": ["svitilna", "laser", "optika", "tlumic", "zasobnik", "rukojet"],
-	"sniper": ["tlumic", "zasobnik", "rukojet"],
-	"shotgun": ["svitilna", "laser", "rukojet"],
-	"magnum": ["svitilna", "laser"],
-	"autocannon": ["svitilna", "optika", "zasobnik", "rukojet"],
-	"minigun": ["svitilna", "rukojet"],
+	"sniper": ["optika", "dvojnozka", "dalkomer", "brzda", "zasobnik"],
+	"shotgun": ["kolimator", "nosic", "svitilna", "laser", "pazba"],
+	"magnum": ["kolimator", "ergo", "rychlonabijec", "kompenzator", "laser"],
+	"autocannon": ["optika", "dvojnozka", "tlumeni", "nosny"],
+	"rocket_launcher": ["optika", "dalkomer", "nosny", "pocitac"],
+	"minigun": ["nosny", "zasobnik", "stabilizator", "chladic", "zamerovac"],
 	"plasma_rifle": ["svitilna", "laser", "optika", "rukojet"],
 	"laser_pistol": ["svitilna", "laser"],
 	"laser_rifle": ["svitilna", "optika", "rukojet"],
 	"laser_cannon": ["svitilna", "optika", "rukojet"],
+	"laser_minigun": ["nosny", "stabilizator", "zamerovac"],
+	"plasma_pistol": ["svitilna", "laser"],
+	"plasma_cannon": ["optika", "rukojet"],
+	"plasma_minigun": ["nosny", "stabilizator", "chladic", "zamerovac"],
+	"knife": ["ergo", "pouzdro"],
+	"energo_nuz": ["pouzdro"],
+	"stun_baton": ["akumulator", "lehky", "diagnostika"],
 }
 func has_mod(weapon: String, mod: String, m: Dictionary = {}) -> bool:
 	var src: Dictionary = m if not m.is_empty() else merc
@@ -113,8 +159,8 @@ func mod_price(mod: String) -> int:
 ## Buy an item for yourself (own money): it goes into your own locker - only you take it on missions.
 func buy_for_me(item: String) -> bool:
 	var p := Campaign.price(item)
-	if not Campaign.unlocked(item) or Campaign.SHOP_MK.has(item):
-		return false      # alien tech (Moskovium) belongs to the base, not to one man
+	if not Campaign.unlocked(item) or Campaign.workshop_item(item):
+		return false      # what the workshop makes belongs to the base, not to one man
 	if not spend(p):
 		return false
 	var lk: Dictionary = merc.get("locker", {})
@@ -240,7 +286,7 @@ func _setup_input() -> void:
 		"pause": [KEY_ESCAPE], "prone": [KEY_Z, KEY_Y], "melee": [KEY_V], "smoke": [KEY_H], "mine": [KEY_B],
 		"primary": [KEY_1], "secondary": [KEY_2],
 		"belt1": [KEY_3], "belt2": [KEY_4], "belt3": [KEY_5], "belt4": [KEY_6],
-		"talk": [KEY_TAB], "radio_talk": [KEY_T, KEY_K], "mic_toggle": [KEY_M], "nvg": [KEY_N], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
+		"talk": [KEY_TAB], "radio_talk": [KEY_T, KEY_K], "mic_toggle": [KEY_M], "nvg": [KEY_N], "firemode": [KEY_L], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
 	}
 	for action in keys:
 		if not InputMap.has_action(action):
@@ -289,7 +335,7 @@ const STAT_RANGE := {"accuracy": [40, 75], "reactions": [30, 65], "strength": [2
 const STAT_HELP := {
 	"accuracy": "Jak daleko od středu zaměřovače letí kulky. Vyšší = menší rozptyl všech zbraní.",
 	"reactions": "Jak rychle se zbraň po pohybu a výstřelu ustálí a jak moc se třese ve strachu.",
-	"strength": "Kolik kilogramů uneseš bez zpomalení. Těžké zbraně (autokanón, minigun) a plný batoh chtějí sílu.",
+	"strength": "Kolik kilogramů uneseš bez zpomalení. Těžké zbraně (kanón, minigun) a plný batoh chtějí sílu.",
 	"bravery": "Jak snášíš tmu, vetřelce a zranění. Nízká odvaha = rychlejší strach, panika, slabší odpor proti psionice.",
 	"health": "Kolik zásahů vydržíš, než padneš. Každý bod se počítá - plazma bere 8-14 (Veterán 18-30).",
 	"stamina": "Jak dlouho vydržíš sprintovat a jak rychle se po běhu uklidní dech (a s ním mířidla).",
@@ -447,7 +493,7 @@ func add_xp(amount: int) -> Array:
 			merc[st] = int(merc[st]) + inc
 			grown.append("%s +%d" % [STAT_NAMES[st], inc])
 		merc["talent_points"] = int(merc.get("talent_points", 0)) + 1
-		out.append("POVÝŠEN na %s! %s. Nový talent k výběru (Můj žoldák)." % [RANKS[lvl], ", ".join(grown)])
+		out.append("POVÝŠEN na %s! %s. Nový talent k výběru (Můj voják)." % [RANKS[lvl], ", ".join(grown)])
 	save_merc()
 	return out
 
@@ -503,7 +549,7 @@ func load_merc() -> void:
 ## wounds and death are thrown away afterwards. Only the campaign shapes a mercenary.
 var skirmish := false
 var _real_merc := {}
-const SKIRMISH_KINDS := {"copy": "Kopie mého žoldáka", "rookie": "Nováček", "veteran": "Ostřílený veterán", "elite": "Elitní žoldák"}
+const SKIRMISH_KINDS := {"copy": "Kopie mého vojáka", "rookie": "Nováček", "veteran": "Ostřílený veterán", "elite": "Elitní voják"}
 func begin_skirmish(kind := "copy") -> void:
 	if skirmish:
 		end_skirmish()
@@ -682,7 +728,7 @@ func tick_injury(m: Dictionary) -> void:
 	var cid := str(Campaign.data.get("cid", ""))
 	var d := float(Campaign.data["day"])
 	if str(m.get("heal_cid", "")) == cid:
-		m["heal_days"] = float(m["heal_days"]) - maxf(0.0, d - float(m.get("heal_seen", d)))
+		m["heal_days"] = float(m["heal_days"]) - maxf(0.0, d - float(m.get("heal_seen", d))) * (2.0 if Campaign.active and Campaign.count("osetrovna") > 0 else 1.0)
 	m["heal_cid"] = cid
 	m["heal_seen"] = d
 	if float(m["heal_days"]) <= 0.0:
@@ -709,11 +755,11 @@ func sick_text(m: Dictionary) -> String:
 
 # ---- loadout: chosen in the menu from what the base can spare ------------------------
 const STASH := {"sniper": 1, "sniper_clip": 3, "rifle": 1, "pistol": 1, "shotgun": 1, "magnum": 1, "autocannon": 1, "minigun": 1, "rocket_launcher": 1,
-	"stun_baton": 1, "knife": 1, "rifle_clip": 4, "pistol_clip": 3, "shells": 3, "magnum_rounds": 3, "ac_clip": 3,
-	"minigun_belt": 2, "rocket": 3, "grenade": 3, "smoke_grenade": 2, "mine": 2, "flare": 4, "medkit": 1, "scanner": 1, "radio": 4,
+	"stun_baton": 1, "knife": 1, "rifle_clip": 4, "pistol_clip": 3, "shells": 3, "slugs": 2, "beanbag": 2, "magnum_rounds": 3, "ac_clip": 3,
+	"minigun_belt": 2, "rocket": 3, "rocket_ap": 1, "rocket_inc": 1, "grenade": 3, "smoke_grenade": 2, "mine": 2, "flare": 4, "medkit": 1, "scanner": 1, "radio": 4,
 	"vesta": 1, "stit": 1, "pancir": 1, "nvg": 1}
 const STASH_VETERAN := {"sniper": 1, "sniper_clip": 2, "rifle": 1, "pistol": 1, "shotgun": 1, "magnum": 1, "autocannon": 1, "minigun": 1, "rocket_launcher": 1,
-	"stun_baton": 1, "knife": 1, "rifle_clip": 2, "pistol_clip": 2, "shells": 2, "magnum_rounds": 2, "ac_clip": 1,
+	"stun_baton": 1, "knife": 1, "rifle_clip": 2, "pistol_clip": 2, "shells": 2, "slugs": 1, "beanbag": 1, "magnum_rounds": 2, "ac_clip": 1,
 	"minigun_belt": 1, "rocket": 1, "grenade": 1, "smoke_grenade": 1, "mine": 1, "flare": 2, "medkit": 1, "scanner": 1, "radio": 4,
 	"vesta": 1, "stit": 1, "pancir": 1}
 const DEFAULT_LOADOUT := {"rh": "rifle", "back": "", "b0": "scanner", "b1": "rifle_clip", "b2": "rifle_clip", "b3": "radio",
@@ -750,7 +796,7 @@ func stash_for(vet: bool) -> Dictionary:
 func has_research(id: String) -> bool:
 	if not Net.mission_params.is_empty():
 		return id in Net.mission_params.get("research", [])
-	return Campaign.researched(id)
+	return Campaign.built(id)
 
 ## The chosen loadout trimmed to what the stash allows on this difficulty.
 func valid_loadout(vet: bool) -> Dictionary:
@@ -1160,12 +1206,13 @@ func blood_splat(world: Node, pos: Vector3, col: Color, size := 0.3, glow := fal
 		if is_instance_valid(old):
 			old.queue_free()
 
-func play_at(world: Node, sname: String, pos: Vector3, volume_db := 0.0) -> void:
+func play_at(world: Node, sname: String, pos: Vector3, volume_db := 0.0, pitch := 1.0) -> void:
 	if world == null or not world.is_inside_tree():
 		return
 	var p := AudioStreamPlayer3D.new()
 	p.stream = sound(sname)
 	p.volume_db = volume_db
+	p.pitch_scale = pitch
 	if sname in ALIEN_SOUNDS and world.has_method("alien_db"):
 		p.volume_db += world.alien_db()      # rain covers them
 	p.unit_size = 6.0
@@ -1536,6 +1583,14 @@ func apply_item_tweak(n: Node3D, key: String) -> void:
 	var s := float(t.get("scale", 1.0))
 	n.transform = Transform3D(Basis.from_euler(r).scaled(Vector3.ONE * s), _v3(t.get("pos", null))) * n.transform
 
+## A workshop tweak as a transform (identity when there is none).
+func tweak_xform(key: String) -> Transform3D:
+	var t: Dictionary = tweaks.get(key, {})
+	if t.is_empty():
+		return Transform3D()
+	var r := _v3(t.get("rot", null)) * (PI / 180.0)
+	return Transform3D(Basis.from_euler(r).scaled(Vector3.ONE * float(t.get("scale", 1.0))), _v3(t.get("pos", null)))
+
 ## A pose with the workshop corrections added (degrees, per bone).
 func tweak_pose(key: String, want: Dictionary) -> Dictionary:
 	var t: Dictionary = tweaks.get(key, {})
@@ -1553,7 +1608,7 @@ func held_model(id: String, third := false) -> Node3D:
 	if ITEMS.get(id, {}).get("blunt", false):
 		m.rotation.x = deg_to_rad(78.0)
 		m.position = Vector3(0, 0.01, 0.01)
-	elif id == "knife":
+	elif id in ["knife", "energo_nuz"]:
 		m.rotation.x = deg_to_rad(80.0 if third else 58.0)
 	elif id in ["radio", "flare", "scanner"]:
 		m.rotation.x = deg_to_rad(80.0 if id == "radio" else 35.0)

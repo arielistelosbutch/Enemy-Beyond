@@ -72,7 +72,8 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	info["evac"] = Vector3.ZERO
 	info["ufo"] = Vector3.ZERO
 	info["waypoints"] = info["cover"].duplicate()
-	nav.bake_navigation_mesh(false)
+	if not params.get("no_nav", false):        # (the base screen's top-down picture needs no paths)
+		nav.bake_navigation_mesh(false)
 	if Game.autotest() != "": print("[BASE] built %d ms" % (Time.get_ticks_msec() - _t0))
 	return info
 
@@ -158,6 +159,11 @@ func _room(gx: int, gz: int, kind: String, building: bool, params: Dictionary) -
 		"cela": _containment(a, w, params.get("live", []))
 		"sklad": _stores(a, w)
 		"strelnice": _range(a, w)
+		"silo": _silo(a, w)
+		"laser_vez": _tower_room(a, w, Color(0.75, 0.35, 1.0))
+		"plazma_vez": _tower_room(a, w, Color(0.35, 1.0, 0.45))
+		"maskovani": _cloak_core(a, w)
+		"psi_gen": _psi_shield(a, w)
 	_cover(a + Vector3(1.0, 0, 1.0)); _cover(a + Vector3(w - 1.0, 0, w - 1.0))
 
 ## A short corridor through the earth between two rooms (2.4 m wide, low ceiling, lamp strip).
@@ -239,7 +245,7 @@ func _big_hangar(gx: int, params: Dictionary) -> void:
 	m.position = a + Vector3(w * 0.5, 0.0, dd * 0.47)
 	m.rotation.y = 0.0
 	# parked: the rotor blades folded along the body (as on a real carrier deck)
-	for rn in ["RotorF", "RotorR"]:
+	for rn in ["RotorF", "RotorR", "PropL", "PropR"]:
 		var r: Node3D = m.find_child(rn, true, false)
 		if r == null:
 			continue
@@ -533,6 +539,165 @@ func _containment(a: Vector3, w: float, live: Array) -> void:
 		else:
 			_chair(p, 0.0 if spots[i].z < w / 2 else PI, Color(0.55, 0.3, 0.6))
 	_terminal(a + Vector3(w / 2, 0, w / 2), 0.0, "ency", "Encyklopedie", Color(0.6, 0.85, 1.0))
+
+# ---- 0.57: the defences -----------------------------------------------------------------------
+## Raketové silo: a round shaft through the middle with a rocket standing in it, the launch desk by the wall.
+func _silo(a: Vector3, w: float) -> void:
+	var c := a + Vector3(w / 2, 0, w / 2)
+	var steel := _col(Color(0.32, 0.34, 0.36))
+	# the shaft: a black hole in the floor with a railing round it (it goes down out of sight)
+	cyl(c + Vector3(0, 0.005, 0), 2.45, 2.45, 0.01, _col(Color(0.8, 0.65, 0.1)), false, 16)
+	cyl(c + Vector3(0, 0.015, 0), 2.3, 2.3, 0.01, _col(Color(0.02, 0.02, 0.025)), false, 16)
+	for k in 12:
+		var ang := TAU * k / 12.0
+		box(c + Vector3(cos(ang) * 2.5, 0.55, sin(ang) * 2.5), Vector3(0.07, 1.1, 0.07), steel, true)
+		var ang2 := ang + TAU / 24.0
+		box(c + Vector3(cos(ang2) * 2.5, 1.08, sin(ang2) * 2.5), Vector3(1.3, 0.06, 0.06), steel, false, -ang2 - PI / 2)
+	# the rocket standing in it, only the top half above the floor: white body, red tip, fins
+	cyl(c + Vector3(0, 0.4, 0), 0.45, 0.45, 3.6, _col(Color(0.88, 0.88, 0.85)), true, 10)
+	cyl(c + Vector3(0, 2.6, 0), 0.05, 0.45, 0.8, _col(Color(0.75, 0.15, 0.12)), false, 10)
+	box(c + Vector3(0, 1.2, 0), Vector3(0.95, 0.12, 0.95), _col(Color(0.75, 0.15, 0.12)), false)
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.45, 0.3)
+	l.light_energy = 0.8
+	l.omni_range = 5.0
+	root.add_child(l)
+	l.position = c + Vector3(0, 2.6, 0)
+	for k in 3:
+		_console(a + Vector3(2.2 + k * 1.5, 0, 0.6), 0.0, Color(1.0, 0.55, 0.3))
+	_cabinet(a + Vector3(w - 0.4, 0, w - 1.5), -PI / 2, Color(0.25, 0.3, 0.25))
+
+## Laserové / plazmové věže: the room under the turrets - the lift column up to them, the gunners' seats.
+func _tower_room(a: Vector3, w: float, col: Color) -> void:
+	var c := a + Vector3(w / 2, 0, w / 2)
+	cyl(c + Vector3(0, (H - 0.6) / 2, 0), 1.0, 1.0, H - 0.6, _col(Color(0.22, 0.24, 0.27)), true, 12)
+	cyl(c + Vector3(0, 1.4, 0), 1.03, 1.03, 0.12, Game.color_mat(col, true), false, 12)
+	cyl(c + Vector3(0, 2.4, 0), 1.03, 1.03, 0.12, Game.color_mat(col, true), false, 12)
+	var l := OmniLight3D.new()
+	l.light_color = col
+	l.light_energy = 0.9
+	l.omni_range = 5.0
+	root.add_child(l)
+	l.position = c + Vector3(0, 2.0, 1.4)
+	for k in 4:
+		var ang := TAU * k / 4.0 + PI / 4
+		var p := c + Vector3(cos(ang) * 3.4, 0, sin(ang) * 3.4)
+		_console(p, atan2(c.x - p.x, c.z - p.z), col)
+		_chair(p + (p - c).normalized() * 0.8, atan2(c.x - p.x, c.z - p.z) + PI)
+	_monitor_wall(a + Vector3(0.08, 0, w - 2.0), PI / 2, 2)
+
+## Maskující jádro: a cage round a slowly pulsing green core, cables out to the walls.
+func _cloak_core(a: Vector3, w: float) -> void:
+	var c := a + Vector3(w / 2, 0, w / 2)
+	cyl(c + Vector3(0, 0.15, 0), 1.6, 1.8, 0.3, _col(Color(0.2, 0.22, 0.24)), true, 12)
+	var core := cyl(c + Vector3(0, 1.5, 0), 0.55, 0.55, 2.2, Game.color_mat(Color(0.3, 1.0, 0.55), true), true, 12)
+	core.set_meta("pulse", true)
+	for k in 8:
+		var ang := TAU * k / 8.0
+		box(c + Vector3(cos(ang) * 1.3, 1.5, sin(ang) * 1.3), Vector3(0.08, 2.8, 0.08), _col(Color(0.4, 0.42, 0.45)), false)
+	cyl(c + Vector3(0, 2.95, 0), 1.4, 1.4, 0.1, _col(Color(0.4, 0.42, 0.45)), false, 12)
+	var l := OmniLight3D.new()
+	l.light_color = Color(0.35, 1.0, 0.55)
+	l.light_energy = 1.4
+	l.omni_range = 7.0
+	root.add_child(l)
+	l.position = c + Vector3(0, 1.6, 0)
+	info["lights"].append(l)
+	for k in 4:
+		var ang2 := TAU * k / 4.0
+		box(c + Vector3(cos(ang2) * 3.4, 0.05, sin(ang2) * 3.4), Vector3(0.25 if k % 2 == 0 else 3.4, 0.08, 3.4 if k % 2 == 0 else 0.25), _col(Color(0.1, 0.1, 0.12)), false)
+	_console(a + Vector3(1.5, 0, 0.6), 0.0, Color(0.35, 1.0, 0.55))
+	info["sounds"].append({"name": "ufo_hum", "pos": c + Vector3(0, 1.5, 0), "db": -14.0})
+
+## X-PSI-001 (0.57): the stationary psionic shield PSF-01 - a ribbed generator column on a plinth,
+## the violet resonator core, two tilted rings turning around it, four emitter masts in the corners
+## aimed at it, coolant pipes into the floor, the control desk and its warning ring on the floor.
+func _psi_shield(a: Vector3, w: float) -> void:
+	var c := a + Vector3(w / 2, 0, w / 2)
+	var steel := _col(Color(0.34, 0.36, 0.4))
+	var dark := _col(Color(0.16, 0.17, 0.2))
+	var violet := Color(0.72, 0.42, 1.0)
+	var glow := Game.color_mat(violet, true)
+	# the floor: a yellow-black warning ring, a dark disc inside, the plinth
+	cyl(c + Vector3(0, 0.006, 0), 2.75, 2.75, 0.012, Game.color_mat(Color(0.9, 0.72, 0.1)), false, 24)
+	cyl(c + Vector3(0, 0.012, 0), 2.5, 2.5, 0.012, dark, false, 24)
+	for k in 12:
+		var ang := TAU * k / 12.0
+		box(c + Vector3(cos(ang) * 2.62, 0.02, sin(ang) * 2.62), Vector3(0.34, 0.012, 0.14), dark, false, -ang)
+	cyl(c + Vector3(0, 0.18, 0), 1.55, 1.75, 0.36, dark, true, 16)
+	cyl(c + Vector3(0, 0.42, 0), 1.25, 1.35, 0.14, steel, false, 16)
+	# the generator: a ribbed housing, the glowing core above it, a heavy cap and the antenna
+	cyl(c + Vector3(0, 0.95, 0), 0.85, 1.0, 0.95, steel, true, 12)
+	for k in 8:
+		var ang2 := TAU * k / 8.0
+		box(c + Vector3(cos(ang2) * 0.93, 0.95, sin(ang2) * 0.93), Vector3(0.12, 0.9, 0.12), dark, false, -ang2)
+	cyl(c + Vector3(0, 1.45, 0), 0.7, 0.85, 0.08, dark, false, 12)
+	var core := cyl(c + Vector3(0, 2.05, 0), 0.32, 0.32, 1.1, glow, false, 12)
+	core.set_meta("pulse", true)
+	for y in [1.6, 2.05, 2.5]:
+		cyl(c + Vector3(0, y, 0), 0.4, 0.4, 0.05, steel, false, 12)
+	cyl(c + Vector3(0, 2.72, 0), 0.55, 0.75, 0.26, steel, false, 12)
+	cyl(c + Vector3(0, 2.92, 0), 0.25, 0.45, 0.16, dark, false, 12)
+	cyl(c + Vector3(0, 3.2, 0), 0.03, 0.05, 0.45, steel, false, 6)
+	cyl(c + Vector3(0, 3.44, 0), 0.07, 0.07, 0.07, glow, false, 8)
+	# the resonator rings: tilted, each turning its own way around the core
+	for rr in [[0.32, 0.55, 1.18], [-0.38, -0.4, 1.38]]:
+		var pivot := Node3D.new()
+		root.add_child(pivot)
+		pivot.position = c + Vector3(0, 2.05, 0)
+		var ring := MeshInstance3D.new()
+		var tm := TorusMesh.new()
+		tm.inner_radius = float(rr[2]) - 0.05
+		tm.outer_radius = float(rr[2]) + 0.05
+		tm.rings = 32
+		tm.ring_segments = 8
+		ring.mesh = tm
+		ring.material_override = glow
+		pivot.add_child(ring)
+		ring.rotation.x = float(rr[0])
+		pivot.set_meta("spin", float(rr[1]))
+		info.get_or_add("spinners", []).append(pivot)
+		# two small emitter beads riding on each ring
+		for side in [-1.0, 1.0]:
+			var bead := MeshInstance3D.new()
+			var bm := SphereMesh.new()
+			bm.radius = 0.09
+			bm.height = 0.18
+			bead.mesh = bm
+			bead.material_override = _col(Color(0.85, 0.85, 0.9))
+			ring.add_child(bead)
+			bead.position = Vector3(float(rr[2]) * side, 0, 0)
+	# four emitter masts on the diagonals (the middle of every wall is a doorway), aimed at the core
+	for k in 4:
+		var ang3 := TAU * k / 4.0 + PI / 4
+		var mp := c + Vector3(cos(ang3), 0, sin(ang3)) * 4.1
+		cyl(mp + Vector3(0, 0.12, 0), 0.32, 0.38, 0.24, dark, true, 8)
+		box(mp + Vector3(0, 1.45, 0), Vector3(0.14, 2.6, 0.14), steel, false)
+		box(mp + Vector3(0, 0.9, 0), Vector3(0.24, 0.5, 0.24), dark, false)
+		var head := cyl(mp + Vector3(0, 2.8, 0), 0.22, 0.12, 0.22, glow, false, 10)
+		var aim := (c + Vector3(0, 2.05, 0) - (mp + Vector3(0, 2.8, 0))).normalized()
+		head.basis = Basis.looking_at(aim, Vector3.UP) * Basis(Vector3.RIGHT, -PI / 2)      # the wide face at the core
+		# the cable along the floor from the mast to the plinth
+		var mid := (mp + c) * 0.5
+		box(mid + Vector3(0, 0.03, 0), Vector3(0.08, 0.05, mp.distance_to(c) - 1.7), dark, false, ang3 + PI / 2)
+	# coolant: three pipes from the housing down into the floor, frosty white
+	var frost := _col(Color(0.78, 0.84, 0.9))
+	for k in 3:
+		var ang4 := TAU * k / 3.0 + 0.5
+		var d := Vector3(cos(ang4), 0, sin(ang4))
+		box(c + d * 1.15 + Vector3(0, 1.1, 0), Vector3(0.1, 0.1, 0.5), frost, false, -ang4 + PI / 2)
+		box(c + d * 1.4 + Vector3(0, 0.6, 0), Vector3(0.1, 1.0, 0.1), frost, false)
+	# the control desk (violet screens) and the field monitor on the wall
+	_console(a + Vector3(1.5, 0, 0.6), 0.0, violet)
+	_console(a + Vector3(w - 0.6, 0, w - 1.5), -PI / 2, Color(0.4, 0.9, 1.0))
+	var l := OmniLight3D.new()
+	l.light_color = violet
+	l.light_energy = 1.6
+	l.omni_range = 8.0
+	root.add_child(l)
+	l.position = c + Vector3(0, 2.1, 0)
+	info["lights"].append(l)
+	info["sounds"].append({"name": "ufo_hum", "pos": c + Vector3(0, 1.8, 0), "db": -16.0})
 
 func _stores(a: Vector3, w: float) -> void:
 	for k in 3:
