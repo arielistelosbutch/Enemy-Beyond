@@ -388,3 +388,9 @@ func sick_in_team() -> Array:
 func update_merc() -> void:
 	if is_online() and not multiplayer.is_server():
 		_register.rpc_id(1, Game.merc)
+	elif is_online() and multiplayer.is_server() and roster.has(1):
+		# (0.57) the host changed his own (parts on a gun): the campaign keeps it, the others see it
+		roster[1] = {"name": Game.merc["name"], "merc": Game.merc}
+		if Campaign.active:
+			Campaign.keep_merc(Game.merc)
+		_set_roster.rpc(roster)

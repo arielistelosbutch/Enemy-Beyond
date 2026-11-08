@@ -516,7 +516,7 @@ static func db_bbcode(t: String) -> String:
 	var paras := t.split("\n\n")
 	var out := []
 	var caps := RegEx.new()
-	caps.compile("^([A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ0-9 ,/()\\-–]{4,}):\\s*")
+	caps.compile("^((?:\\d{1,2}\\. (?=[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ]+ \\d{4}))?[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ0-9 ,/()\\-–]{4,}):\\s*")
 	var field := RegEx.new()
 	field.compile("\\.\\s+(?=[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][^:.]{2,40}:\\s)")
 	var key := RegEx.new()

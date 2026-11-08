@@ -72,3 +72,7 @@ animace/tp_*.json
 !animace/tp_hold_pistol.json
 # pohyb rukou z očí odvozený z Mixama
 animace/fp_*_mocap.json
+# 0.57: pohyby vetřelců z afk.ai (tools/test/afk_install.gd --race) - jen v balíčku hry
+animace/al_*.json
+animace/afk_*.glb
+animace/afk_*.glb.import

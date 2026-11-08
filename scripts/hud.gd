@@ -432,7 +432,16 @@ func _draw_hud() -> void:
 			c.draw_rect(Rect2(mid.x - 60, mid.y + 16, 120 * (1.0 - p.healed_t / maxf(p.healed_total, 0.1)), 5), Color(0.4, 1.0, 0.4))
 	elif not inventory_open and not paused and (p.aiming or p.bracing or hit_t > 0 or (not Game.two_handed(p.item_in("rh").get("id", "")) and not p.weapon().is_empty() and not p.sprinting)):
 		# crosshair only when aiming down the sights: gap grows with the spread
-		if p.scoped():
+		var sm: String = p.sight_mode()
+		if sm == "scope":
+			_scope_picture(c, mid, p)
+		elif sm == "dot":
+			# (0.57) the red dot of the sight, where the bullet goes (the window around it is the model's)
+			c.draw_circle(mid, 3.2, Color(1, 0.15, 0.08, 0.18))
+			c.draw_circle(mid, 1.4, Color(1, 0.22, 0.12, 0.95))
+		elif sm == "iron" or (p.aiming and p.has_sight_line()):
+			pass      # iron sights are the crosshair (or the gun is still coming up to the eye)
+		elif p.scoped():
 			# rifle scope: round view, black around, thin cross with mil dots, breathing sway shows
 			var r := sz.y * 0.46
 			c.draw_arc(mid, r + 400.0, 0, TAU, 72, Color(0, 0, 0), 800.0)
@@ -781,6 +790,21 @@ func _eye_icon(c: Control, o: Vector2, p: Node) -> void:
 	c.draw_rect(Rect2(o.x + 38, o.y + 17, 50 * clampf(w, 0.0, 1.0), 3), col)
 
 ## A plate of the menus' dark metal behind a group of the HUD (UiSkin's inset panel).
+## (0.57) Over the scope's picture (the player draws it, under the night-vision filter): a dark
+## rim, thin crosshairs with a chevron at the centre.
+func _scope_picture(c: CanvasItem, mid: Vector2, p: Node) -> void:
+	var r: float = p.scope_r
+	if p.scope_texture() == null or r < 4.0:
+		return
+	c.draw_arc(mid, r - 1.5, 0, TAU, 48, Color(0, 0, 0, 0.85), 3.0)
+	c.draw_arc(mid, r * 0.93, 0, TAU, 48, Color(0, 0, 0, 0.25), r * 0.1)
+	var cc := Color(0.02, 0.02, 0.02, 0.9)
+	c.draw_line(mid - Vector2(r, 0), mid - Vector2(r * 0.18, 0), cc, 1.0)
+	c.draw_line(mid + Vector2(r * 0.18, 0), mid + Vector2(r, 0), cc, 1.0)
+	c.draw_line(mid + Vector2(0, r * 0.18), mid + Vector2(0, r), cc, 1.0)
+	c.draw_line(mid + Vector2(-3, 3), mid, Color(0.9, 0.2, 0.1), 1.0)
+	c.draw_line(mid + Vector2(3, 3), mid, Color(0.9, 0.2, 0.1), 1.0)
+
 func _plate(c: Control, rect: Rect2) -> void:
 	UiSkin.inset(4).draw(c.get_canvas_item(), rect)
 

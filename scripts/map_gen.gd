@@ -3061,6 +3061,11 @@ func _strip(a: Array, b: Array, mat: Material, skip: Callable) -> void:
 func _passage(a: Vector3, d: Vector3) -> void:
 	var L := SEC_S - SEC_R * 2.0 + 0.4
 	var c := a + d * (L / 2.0 - 0.2)
+	# both hatches of the passage hiss as someone goes through (mission._hatch_tick)
+	if not info.has("ship_doors"):
+		info["ship_doors"] = []
+	info["ship_doors"].append(a + d * 0.3)
+	info["ship_doors"].append(a + d * (L - 0.7))
 	var along_x := absf(d.x) > 0.5
 	var wall := Game.mat("ufo_wall", 0.5)
 	box(c + Vector3(0, 0.05, 0), Vector3(L, 0.1, 3.0) if along_x else Vector3(3.0, 0.1, L), Game.mat("ufo_floor", 0.5))

@@ -285,7 +285,8 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 		_swing_holder.position -= _swing_off
 		_swing_off = Vector3.ZERO
 		_swing_holder = null
-	var k: float = clamp(delta * 12.0, 0.0, 1.0)
+	# (0.57) parts on the gun: a heavy scope or a long suppressor come up to the eye slower
+	var k: float = clamp(delta * 12.0 * Game.part_mult(item_in("rh").get("id", ""), "ads", merc), 0.0, 1.0)
 	var bob: Vector3 = Vector3(sin(_vm_t) * 0.012, -abs(cos(_vm_t)) * 0.01, 0) * clamp(speed / 2.6, 0.0, 1.6)
 	var r := item_in("rh")
 	var rid: String = r.get("id", "")
@@ -296,7 +297,12 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 		# club: low on the right, tip leaning out to the right
 		base = Vector3(0.25, -0.27, -0.46)
 		rot = Vector3(-0.1, 0.1, -0.3)
-	if aiming and two:
+	var sl := _sight_line() if aiming and (two or pistol_grip()) else {}
+	if not sl.is_empty():
+		base = sl["pos"]
+		rot = sl["rot"]
+		bob *= 0.25           # the eye stays behind the sight: only a little of the walk shows
+	elif aiming and two:
 		base = Vector3(0.0, -0.165, -0.3) if rid != "rocket_launcher" else Vector3(0.12, -0.09, -0.22)
 		rot = Vector3(0, 0, 0)
 	elif aiming and pistol_grip():
@@ -337,6 +343,9 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 	var dig := 1.0 if (busy > 0 and busy_stand) else 0.0
 	var target: Vector3 = base + bob + Vector3(0.0, -0.1 * rl - 0.4 * dig, 0.05 * _vm_kick)
 	gun.position = gun.position.lerp(target, k)
+	# the eye is behind the sight once the gun has come up and settled
+	_sight_on = not sl.is_empty() and gun.position.distance_to(base) < 0.006 and absf(gun.rotation.x - rot.x) < 0.02 and rl <= 0.0
+	_scope_tick(sl)
 	gun.rotation.x = lerp(gun.rotation.x, rot.x + _vm_kick * 0.12 * kick_mult - rl * 0.5, k)
 	gun.rotation.y = lerp(gun.rotation.y, rot.y, k)
 	if _twirl > 0.0:
@@ -363,7 +372,13 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 		var ph := 1.0 - _swing
 		var sid: String = item_in("lh" if _swing_left else "rh").get("id", "")
 		var sclip := AnimClips.find("fp", "strike", sid)
-		if not sclip.is_empty():
+		if _swing_kind == 6:
+			# bayonet: back a hand's width, then the lunge, and slowly back on target
+			var back6 := smoothstep(0.0, 0.25, ph) * (1.0 - smoothstep(0.25, 0.4, ph))
+			var out6 := smoothstep(0.25, 0.42, ph) * (1.0 - smoothstep(0.6, 1.0, ph))
+			holder.rotation = Vector3(0.12, -0.05, 0.0) * back6 + Vector3(-0.06, 0.1, 0.0) * out6
+			_swing_shift(holder, Vector3(0.02, -0.02, 0.1) * back6 + Vector3(-0.06, 0.03, -0.3) * out6)
+		elif not sclip.is_empty():
 			# a blow made in the editor (Animace, Z očí: Úder)
 			var st := ph * float(sclip.get("delka", 1.0))
 			for e in AnimClips.events_between(sclip, _sw_last if _sw_last <= st else -1.0, st):
@@ -674,6 +689,9 @@ func _mixamo_gun(hand: Transform3D) -> void:
 static func afk_gun_xform(B: Basis, origin: Vector3, m: Node3D, sc: Vector3, item: String, clip := "") -> Transform3D:
 	var A := Basis.looking_at((m.transform.basis * Vector3(0, 0, -1)).normalized(), (m.transform.basis * Vector3.UP).normalized())
 	var w := Transform3D((B * A.inverse()).scaled(sc), origin)
+	if Game.model_point(item, "Grip") != null:
+		# the model knows where it is held: that point goes into the hand
+		w = w * Transform3D(Basis(), -(m.transform * (Game.model_point(item, "Grip") as Vector3)))
 	var adj := Game.tweak_xform("tpa/" + item)
 	if clip != "":
 		adj = adj * Game.tweak_xform("tpa/%s@%s" % [item, clip.trim_suffix("_heavy").trim_suffix("_pistol")])
@@ -1206,7 +1224,7 @@ var _shown := "-"
 ## Models in the hands (first person) and on the body (others): right hand,
 ## left hand and the weapon slung on the back.
 func _show_items(r: String, l: String, back: String) -> void:
-	var key := r + "|" + l + "|" + back
+	var key := r + "|" + l + "|" + back + "|" + str(Game.fitted(r, merc)) + str(Game.fitted(back, merc))
 	if key == _shown:
 		return
 	_shown = key
@@ -1214,11 +1232,15 @@ func _show_items(r: String, l: String, back: String) -> void:
 		if holder == null:
 			continue
 		for c in holder.get_children():
+			holder.remove_child(c)      # (now: the new model takes the name "Weapon")
 			c.queue_free()
 	var two := Game.two_handed(r)
 	if r != "":
 		if gun:
-			gun.add_child(_held_model(r))
+			var wm := _held_model(r)
+			wm.name = "Weapon"
+			Game.dress_gun(wm, r, merc)
+			gun.add_child(wm)
 			if two:
 				var both2 := Game.model("hands_" + r)
 				both2.name = "GripTwo"
@@ -1237,7 +1259,9 @@ func _show_items(r: String, l: String, back: String) -> void:
 					both.visible = false
 					gun.add_child(both)
 		if body_gun:
-			body_gun.add_child(_held_model(r, true))
+			var tm := _held_model(r, true)
+			Game.dress_gun(tm, r, merc)
+			body_gun.add_child(tm)
 	if l != "" and (not two or l == "radio"):
 		if gun_l:
 			var lm := _held_model(l)
@@ -1247,10 +1271,23 @@ func _show_items(r: String, l: String, back: String) -> void:
 			gun_l.add_child(Game.model("hand_l"))
 		if body_l:
 			body_l.add_child(_held_model(l, true))
+	for holder in [gun, gun_l]:
+		if holder:
+			_fp_layer(holder)
 	if back != "" and body_back:
 		var bk := Game.model(back)
+		Game.dress_gun(bk, back, merc)
 		Game.apply_item_tweak(bk, "back/" + back)
 		body_back.add_child(bk)
+
+## (0.57) What is held in first person lives on its own render layer: the camera of a scope
+## (looking out of the eyepiece) must not see the gun around it.
+const FP_LAYER := 1 << 19
+func _fp_layer(n: Node) -> void:
+	if n is VisualInstance3D:
+		(n as VisualInstance3D).layers = FP_LAYER
+	for c in n.get_children():
+		_fp_layer(c)
 
 ## A held item's model. Clubs (baton) are held upright, ready to come down.
 ## Knife: blade up in the fist. Radio: upright, antenna up.
@@ -1282,11 +1319,11 @@ func has_scanner() -> bool:
 
 func carried_weight() -> int:
 	var w := int(Game.ITEMS[armor]["weight"]) if armor != "" else 0
+	var parts := 0.0
 	for s in inv:
 		w += int(Game.ITEMS[inv[s]["id"]]["weight"])
-		if Game.has_mod(inv[s]["id"], "zasobnik", merc):
-			w += 1      # the long magazine weighs something too
-	return w
+		parts += Game.part_weight(inv[s]["id"], merc)      # (0.57) what is mounted on the guns
+	return w + roundi(parts)
 
 ## Finds an item; belt before backpack (like UFO, the backpack is slow to reach).
 func find_item(pred: Callable) -> String:
@@ -1327,9 +1364,9 @@ func timed_move(a: String, b: String) -> bool:
 	if not r.is_empty() and Game.two_handed(r["id"]) and not l.is_empty():
 		mission.hud.message("Obouruční zbraň potřebuje obě ruce - štít nejdřív odlož.", 2.0)
 		return false
-	var t: float = Game.fetch_time(ia["id"], a)
+	var t: float = Game.fetch_time(ia["id"], a, merc)
 	if ib != null:
-		t = max(t, Game.fetch_time(ib["id"], b))
+		t = max(t, Game.fetch_time(ib["id"], b, merc))
 	t *= 0.65 if Game.has_talent(merc, "rychle_prebiti") else 1.0
 	var dig := a.begins_with("p") or b.begins_with("p")
 	busy_stand = dig
@@ -1385,10 +1422,10 @@ func draw_slot(src: String) -> void:
 		if shield_to == "":
 			mission.hud.message("S dlouhou zbraní štít neudržíš a není kam ho dát.", 2.0)
 			return
-	var t: float = Game.fetch_time(it["id"], src)
+	var t: float = Game.fetch_time(it["id"], src, merc)
 	_draw_id = it["id"]
 	if put != "":
-		t += Game.fetch_time(cur["id"], put) * 0.6
+		t += Game.fetch_time(cur["id"], put, merc) * 0.6
 	t *= 0.65 if Game.has_talent(merc, "rychle_prebiti") else 1.0
 	var dig := src.begins_with("p") or put.begins_with("p")
 	busy_stand = dig
@@ -1570,7 +1607,7 @@ func _physics_process(delta: float) -> void:
 		return
 	var inv_open: bool = mission.hud.inventory_open
 	# look
-	var sens := 0.0012 * Game.mouse_sens * ((0.22 if scoped() else 0.6) if aiming else 1.0)
+	var sens := 0.0012 * Game.mouse_sens * ((0.22 if scoped() or (sight_mode() == "scope" and float(Game.sight_of(weapon().get("id", ""), merc).get("zoom", 1.0)) >= 3.0) else 0.6) if aiming else 1.0)
 	rotation.y -= _mouse.x * sens
 	pitch = clamp(pitch - _mouse.y * sens * (-1.0 if Game.invert_y else 1.0), -1.4, 1.4)
 	_mouse = Vector2.ZERO
@@ -1580,6 +1617,7 @@ func _physics_process(delta: float) -> void:
 	if prone: shake *= 0.5
 	var wid: String = weapon().get("id", "")
 	if aiming and Game.has_mod(wid, "optika", merc): shake *= 0.6      # the scope steadies the picture
+	shake *= Game.part_mult(wid, "sway", merc)      # (0.57) a bayonet or a suppressor make the front heavy
 	if Game.has_mod(wid, "rukojet", merc) or Game.has_mod(wid, "pazba", merc) or Game.has_mod(wid, "tlumeni", merc) or Game.has_mod(wid, "brzda", merc) or Game.has_mod(wid, "ergo", merc) or Game.has_mod(wid, "kompenzator", merc): shake *= 0.8
 	_sway = _sway.lerp(Vector2(randf_range(-1, 1), randf_range(-1, 1)) * shake * 0.02, delta * 2.0)
 	# breathing after a run: the sights rise and fall, slower as it calms down
@@ -1639,7 +1677,11 @@ func _physics_process(delta: float) -> void:
 	if cam:
 		var scoped: bool = aiming and Game.ITEMS[rh["id"]].get("scope", false)
 		var zoom := 0.2 if scoped else (0.45 if Game.has_mod(rh.get("id", ""), "optika", merc) else 0.7)
-		cam.fov = lerp(cam.fov, Game.fov * zoom if aiming else Game.fov, delta * (14.0 if scoped else 8.0) * (1.5 if Game.has_talent(merc, "pevna_ruka") else 1.0))
+		var sg := Game.sight_of(rh.get("id", ""), merc) if two or pistol_grip() else {}
+		if not sg.is_empty():
+			scoped = false      # (a built-in scope too: its picture is in the eyepiece now)
+			zoom = float(sg["fov"])       # (0.57) looking through the sight: the scope magnifies in its eyepiece
+		cam.fov = lerp(cam.fov, Game.fov * zoom if aiming else Game.fov, delta * (14.0 if scoped else 8.0) * (1.5 if Game.has_talent(merc, "pevna_ruka") else 1.0) * Game.part_mult(rh.get("id", ""), "ads", merc))
 		if gun:
 			gun.visible = not (scoped and cam.fov < Game.fov * 0.4)
 	# move
@@ -1924,7 +1966,7 @@ func _laser_charge(delta: float) -> void:
 		# X-WEP-001: a one-shot cell starts charging at once; a pulse reserve (the minigun) after a pause
 		if cap > 1 and _since_shot < 0.7:
 			continue
-		var c: float = float(w.get("charge", 0.0)) + float(r["recharge"]) * delta
+		var c: float = float(w.get("charge", 0.0)) + float(r["recharge"]) * Game.part_mult(w["id"], "charge", merc) * delta
 		while c >= 1.0 and int(w["loaded"]) < cap:
 			w["loaded"] = int(w["loaded"]) + 1
 			c -= 1.0
@@ -2131,6 +2173,101 @@ func pistol_grip() -> bool:
 	var r := item_in("rh")
 	return not r.is_empty() and not inv.has("lh") and Game.ITEMS[r["id"]]["type"] == "weapon" and not Game.two_handed(r["id"])
 
+# ---- (0.57) looking through the sight of a gun: the eye on its line, a scope magnifies ---------
+var _sight_on := false
+var _scope_vp: SubViewport
+var _scope_cam: Camera3D
+var scope_r := 0.0           # the eyepiece's radius on the screen (HUD pixels)
+var _scope_canvas: Control
+
+## The scope's picture cut to the round eyepiece in the middle of the screen.
+func _draw_scope() -> void:
+	var tex := scope_texture()
+	if tex == null or scope_r < 4.0:
+		return
+	var mid := _scope_canvas.size * 0.5
+	var pts := PackedVector2Array()
+	var uvs := PackedVector2Array()
+	for i in 40:
+		var a := TAU * i / 40.0
+		var d := Vector2(cos(a), sin(a))
+		pts.append(mid + d * scope_r)
+		uvs.append(Vector2(0.5, 0.5) + d * 0.5)
+	_scope_canvas.draw_polygon(pts, PackedColorArray([Color(1, 1, 1)]), uvs, tex)
+
+## Where the gun's holder goes for the eye to look along the mounted sight: {"pos", "rot"}, or {}
+## when the gun has no sight line (then the old way: pulled up in front of the face).
+func _sight_line() -> Dictionary:
+	var rid: String = item_in("rh").get("id", "")
+	var sg := Game.sight_of(rid, merc)
+	var wm: Node3D = gun.get_node_or_null("Weapon") if gun else null
+	if sg.is_empty() or wm == null:
+		return {}
+	var p: Vector3 = wm.transform * (sg["at"] as Vector3)
+	var d: Vector3 = wm.transform.basis * Vector3(0, 0, -1)
+	var u: Vector3 = wm.transform.basis * Vector3(0, 1, 0)
+	var b := Basis.looking_at(d, u).inverse()
+	return {"pos": -(b * p) + Vector3(0, 0, -float(sg["relief"])), "rot": b.get_euler(), "sight": sg}
+
+## The gun in the hands is aimed along a sight line (its picture waits until it is at the eye).
+func has_sight_line() -> bool:
+	var rid: String = item_in("rh").get("id", "")
+	return (Game.two_handed(rid) or pistol_grip()) and not Game.sight_of(rid, merc).is_empty()
+
+## "dot" (a red dot in the window), "scope" (the magnified picture in the eyepiece), "iron" or "" - what
+## the eye sees through the sight right now.
+func sight_mode() -> String:
+	if not _sight_on or not aiming:
+		return ""
+	return String(Game.sight_of(item_in("rh").get("id", ""), merc).get("kind", ""))
+
+## The scope's picture (only while looking through one).
+func scope_texture() -> Texture2D:
+	return _scope_vp.get_texture() if _scope_vp and sight_mode() == "scope" else null
+
+## Keeps the scope's own camera in the eyepiece: it looks where the eye looks, as many times
+## closer as the scope magnifies (the eyepiece covers scope_r pixels of the screen).
+func _scope_tick(sl: Dictionary) -> void:
+	var on := _sight_on and not sl.is_empty() and String(sl["sight"].get("kind", "")) == "scope"
+	if not on:
+		if _scope_vp and scope_r > 0.0:
+			_scope_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+			_scope_canvas.queue_redraw()
+		scope_r = 0.0
+		return
+	var sg: Dictionary = sl["sight"]
+	if _scope_vp == null:
+		_scope_vp = SubViewport.new()
+		_scope_vp.size = Vector2i(384, 384)
+		_scope_vp.msaa_3d = Viewport.MSAA_2X
+		add_child(_scope_vp)
+		_scope_cam = Camera3D.new()
+		_scope_cam.cull_mask = 0xFFFFF & ~FP_LAYER
+		_scope_cam.near = 0.1
+		_scope_cam.far = cam.far
+		_scope_vp.add_child(_scope_cam)
+		_scope_cam.current = true
+		# the picture goes under the night-vision and screen filters (they work in the scope too);
+		# the HUD draws the rim and the crosshairs over it
+		var cl := CanvasLayer.new()
+		cl.layer = 0
+		add_child(cl)
+		_scope_canvas = Control.new()
+		_scope_canvas.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_scope_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cl.add_child(_scope_canvas)
+		_scope_canvas.draw.connect(_draw_scope)
+	_scope_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_scope_canvas.queue_redraw()
+	_scope_cam.global_transform = cam.global_transform
+	var wm: Node3D = gun.get_node_or_null("Weapon")
+	var e: Vector3 = wm.global_transform * (sg["at"] as Vector3)
+	var rim := e + cam.global_transform.basis.y * float(sg["r"])
+	scope_r = (cam.unproject_position(rim) - cam.unproject_position(e)).length()
+	var h := get_viewport().get_visible_rect().size.y
+	var t := (scope_r / (h * 0.5)) * tan(deg_to_rad(cam.fov) * 0.5) / float(sg["zoom"])
+	_scope_cam.fov = rad_to_deg(2.0 * atan(t))
+
 ## Looking through a rifle scope right now (zoomed in).
 func scoped() -> bool:
 	return aiming and cam != null and Game.ITEMS.get(item_in("rh").get("id", ""), {}).get("scope", false) and cam.fov < Game.fov * 0.4
@@ -2152,8 +2289,9 @@ func current_spread() -> float:
 	if Game.has_mod(wp["id"], "dvojnozka", merc) and Vector2(velocity.x, velocity.z).length() < 0.3: s *= 0.5     # the bipod, standing still
 	if aiming and Game.has_mod(wp["id"], "dalkomer", merc): s *= 0.75      # the rangefinder (counts at long range, where a small error is metres)
 	if semi and rule.get("modes", false): s *= 0.75       # single shots: steadier than a burst
-	if Game.has_mod(wp["id"], "kolimator", merc) or Game.has_mod(wp["id"], "zamerovac", merc): s *= 0.85      # a red-dot / tactical sight
+	if Game.has_mod(wp["id"], "kolimator", merc) or Game.has_mod(wp["id"], "holo", merc) or Game.has_mod(wp["id"], "zamerovac", merc): s *= 0.85      # a red-dot / tactical sight
 	if rule.has("heat"): s *= 1.0 + mg_heat * 0.5       # hot barrels throw the rounds wider
+	s *= Game.part_mult(wp["id"], "spread", merc)       # (0.57: the plasma focuser)
 	if bracing: s *= 0.55
 	if Vector2(velocity.x, velocity.z).length() > 0.5: s *= 1.8
 	if not gun_in("rh").is_empty() and not gun_in("lh").is_empty(): s *= 1.35    # two guns at once
@@ -2199,7 +2337,7 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 		kick_mult *= 0.5
 	spread_bloom = min(5.0, spread_bloom + 0.7 * kick_mult * (0.6 if grip else 1.0) * (0.5 if Game.has_mod(wp["id"], "stabilizator", merc) else 1.0))
 	if rule.has("heat"):
-		mg_heat += float(rule["heat"]) * (0.6 if Game.has_mod(wp["id"], "chladic", merc) else 1.0)
+		mg_heat += float(rule["heat"]) * (0.6 if Game.has_mod(wp["id"], "chladic", merc) else 1.0) * Game.part_mult(wp["id"], "heat", merc)
 		if mg_heat >= 1.0 and not _mg_hot:
 			_mg_hot = true
 			Game.play_at(self, "hiss", global_position + Vector3.UP, -2)
@@ -2222,7 +2360,7 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 			get_tree().create_timer(randf_range(0.35, 0.6)).timeout.connect(func(): if is_instance_valid(self): Game.play_at(mission, "casing", cpos, -16))
 	var tracers := []
 	var pellets := int(rule.get("pellets", 1))
-	var base_dmg := float(rule.get("damage", 0))
+	var base_dmg := float(rule.get("damage", 0)) * Game.part_mult(wp["id"], "dmg", merc)
 	if shell == "slugs":
 		pellets = 1            # one heavy lead slug: goes where you aim, and deep
 		base_dmg = 95.0
@@ -2322,6 +2460,13 @@ func _melee(slot: String, rule: Dictionary) -> void:
 		Game.play_at(self, "swish", global_position + Vector3.UP, -8)
 		# the blow lands when the club comes down
 		get_tree().create_timer(0.14 / (_swing_speed / 2.2)).timeout.connect(func(): if is_instance_valid(self) and not dead: _melee_hit(rule))
+		return
+	if rule.get("bayonet", false):
+		# (0.57) bayonet: the gun drawn back a little, then a long lunge straight ahead
+		_swing_kind = 6
+		_swing_speed = 2.4
+		Game.play_at(self, "swish", global_position + Vector3.UP, -10)
+		get_tree().create_timer(0.17).timeout.connect(func(): if is_instance_valid(self) and not dead: _melee_hit(rule))
 		return
 	# knife: a thrust, an overhead stab, a slash across - never the same twice in a row
 	var kk: int = [0, 4, 5][randi() % 3]
@@ -2448,6 +2593,8 @@ func _baton_charge() -> bool:
 	Game.play_at(self, "zap", global_position + Vector3.UP, -10)
 	return true
 
+const BAYONET := {"damage": 46, "reach": 2.05, "rate": 0.75, "sound": "swish", "backstab": 2.0, "bayonet": true}
+
 ## V: quick melee with whatever blade/baton is in a hand or on the belt.
 func _quick_melee() -> void:
 	for s in ["rh", "lh"]:
@@ -2455,6 +2602,11 @@ func _quick_melee() -> void:
 		if not it.is_empty() and Game.ITEMS[it["id"]]["type"] == "melee":
 			_melee(s, Game.ITEMS[it["id"]])
 			return
+	# (0.57) a bayonet on the gun in the hands: a long thrust, no drawing
+	var rg := item_in("rh")
+	if not rg.is_empty() and Game.has_mod(rg["id"], "bajonet", merc):
+		_melee("rh", BAYONET)
+		return
 	# (0.57, Ari) V: the knife, wherever he carries it - out and a quick cut; only without one the butt
 	var b := find_item(func(it): return it["id"] in ["knife", "energo_nuz"])
 	if b == "" or not (b.begins_with("b") or b.begins_with("p")):
@@ -2585,7 +2737,7 @@ func _hit_alien(alien_name: String, dmg: float, kind := "bullet", weak := false,
 @rpc("any_peer", "call_local", "unreliable")
 func _shot_fx(from: Vector3, to: Vector3, snd: String) -> void:
 	_fired_at = Time.get_ticks_msec() / 1000.0      # (every machine: the body's firing movement)
-	var green := snd in ["plasma", "plasma_mg"]
+	var green := snd.begins_with("plasma")      # plasma, plasma_p, plasma_mg, plasma_cannon, plasma_heavy
 	if snd == "laser_cannon":
 		_lc_fx(from, to)
 		return
@@ -2826,7 +2978,7 @@ func _reload(wp: Dictionary, rule: Dictionary) -> void:
 			if int(wp["loaded"]) < cap:
 				_reload(wp, rule))
 		return
-	var t2: float = float(rule.get("reload", 1.5)) * fast + (Game.fetch_time(am, slot) if dig else 0.0)
+	var t2: float = float(rule.get("reload", 1.5)) * fast * Game.part_mult(wp["id"], "reload", merc) + (Game.fetch_time(am, slot) if dig else 0.0)
 	var cycle := 0.0
 	if String(wp["id"]).begins_with("plasma_") and _since_shot < PLASMA_CYCLE:
 		cycle = PLASMA_CYCLE - _since_shot      # X-WEP-008: the interlock holds the magazine until the shot cycle dies down

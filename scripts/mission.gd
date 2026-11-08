@@ -426,6 +426,40 @@ func _critters(delta: float) -> void:
 	var c: Vector3 = me.global_position if me else Vector3(map["size"] / 2.0, 0, map["size"] / 2.0)
 	Game.play_at(self, s, c + Vector3(cos(a), 0.2, sin(a)) * randf_range(30.0, 55.0), -6)
 
+## The UFO's hatch and the hatches between the halls of a big ship hiss open as someone
+## (one of us or one of them) steps through: you hear where they come from.
+var _hatch_t := 0.0
+var _hatch_busy := {}
+func _hatch_tick(delta: float) -> void:
+	_hatch_t -= delta
+	if _hatch_t > 0.0:
+		return
+	_hatch_t = 0.15
+	var pts: Array = map.get("ship_doors", []).duplicate()
+	if map.get("ufo_door", Vector3.ZERO) != Vector3.ZERO and map.get("ufo", Vector3.ZERO) != Vector3.ZERO and not mtype() in ["base", "mars"]:
+		pts.append(map["ufo_door"])
+	if pts.is_empty():
+		return
+	var me: Node3D = local_player()
+	var bodies: Array = []
+	for p in players():
+		if not p.dead:
+			bodies.append(p)
+	for a in aliens():
+		if not a.dead and (me == null or a.global_position.distance_to(me.global_position) < 45.0):
+			bodies.append(a)
+	for i in pts.size():
+		var d: Vector3 = pts[i]
+		var near := false
+		for b in bodies:
+			var bp: Vector3 = (b as Node3D).global_position
+			if absf(bp.y - d.y) < 2.5 and Vector2(bp.x - d.x, bp.z - d.z).length() < 1.5:
+				near = true
+				break
+		if near and not _hatch_busy.get(i, false):
+			Game.play_at(self, "ufo_door", d + Vector3(0, 1.4, 0), -6.0, randf_range(0.95, 1.05))
+		_hatch_busy[i] = near
+
 ## Our transport waits at the landing zone with the engines idling: you can find it by ear.
 func _ship_engine() -> void:
 	if map.get("evac", Vector3.ZERO) == Vector3.ZERO or mtype() in ["base", "alienbase"]:
@@ -1168,6 +1202,7 @@ func _process(delta: float) -> void:
 	if started():
 		t += delta
 		_critters(delta)
+		_hatch_tick(delta)
 		_drone_tick(delta)
 		_guard_drone_tick()
 		_late_tick(delta)

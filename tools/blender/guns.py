@@ -191,7 +191,7 @@ def rifle():
         p.append(screw(m["steel"], (x, 0.12, 0.012)))
     p += trigger(m["dark"], 0.045, 0.0)
     # handguard (eight-sided) with M-LOK slots, barrel, gas block, flash hider
-    hg = cyl(m["black"], (0, 0.37, 0.042), 0.03, 0.32, verts=8, rot=(PI2, 0, math.pi / 8))
+    hg = cyl(m["black"], (0, 0.37, 0.042), 0.03, 0.32, verts=8, rot=(PI2, math.pi / 8, 0))   # octagon turned about its own axis (was yawed sideways)
     p.append(bev(hg, 0.002))
     for i in range(5):
         y = 0.25 + i * 0.055
@@ -877,7 +877,9 @@ def plasma_cannon():
         p.append(tb(P["shell2"], (math.cos(a) * 0.035, 0.72, 0.05 + math.sin(a) * 0.035), (math.cos(a) * 0.05, 0.84, 0.05 + math.sin(a) * 0.05), 0.008, 8, r2=0.004))
     p += grip(m["black"], (0, 0.0, -0.07), (0.04, 0.05, 0.11), -0.25, m["poly"])
     p += trigger(m["dark"], 0.045, -0.01)
-    p.append(bx(m["black"], (0, 0.42, -0.05), (0.03, 0.04, 0.08), 0.006, seg=2))           # front grip
+    p.append(bx(m["black"], (0, 0.432, -0.05), (0.03, 0.04, 0.08), 0.006, seg=2))          # front grip
+    p.append(ring(m["dark"], 0.432, 0.05, 0.0495, 0.022, verts=16))                      # its clamp round the barrel
+    p.append(bx(m["dark"], (0, 0.432, -0.004), (0.026, 0.03, 0.024), 0.003))              # clamp foot down to the grip
     p += plasma_mag(P, (0, 0.18, -0.04), s=1.0)
     p.append(bx(m["black"], (0, -0.22, 0.04), (0.08, 0.16, 0.12), 0.01, seg=2))           # rear block
     p.append(bx(m["rubber"], (0, -0.31, 0.03), (0.085, 0.02, 0.14), 0.004, seg=2))        # shoulder pad

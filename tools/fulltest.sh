@@ -34,6 +34,8 @@ run pass_town_$sd 200 h "passcheck .* 0 blocked"           --autotest=passcheck 
 run pass_farm_$sd 200 h "passcheck .* 0 blocked"           --autotest=passcheck --mtype=crash --biome=farm --seed=$sd
 done
 run menu_ui     300 x "\[UI\] ready: 0"                    --autotest=ui
+run mods_ui     200 x "\[MODS\] bought true"              --autotest=modsui
+run sights      700 x "scope mode=scope on=true"          --autotest=sightshot --day=1
 run menu_flick  200 x "RESULT menuflicker 0"               --autotest=menuflicker
 run geo_ui      300 x "\[UI\] geo_ency_grey: 0"            --autotest=uigeo
 run mission_ui  250 x "\[UI\] m_result: 0"                 --autotest=uimission
@@ -70,6 +72,8 @@ run airdeath    150 h "RESULT airdeath ok"                 --autotest=airdeath -
 run vipcheck    200 h "RESULT vipcheck [0-9]+ spots, 0 bad" --autotest=vipcheck --mtype=rescue
 run climb       200 x "RESULT climb ok"                    --autotest=climb --mtype=terror --biome=farm
 run ws_click    100 x "RESULT wsclick bone true ring true item true" --autotest=wsclick
+run agun        150 x "RESULT agun ([0-9]+) of \1"        --autotest=agun
+run modelcheck  120 h "RESULT modelcheck [0-9]+ problems"  --autotest=modelcheck
 run anim_edit   100 x "RESULT animtest mid true fp true"  --autotest=animtest
 run mod_click   100 x "RESULT modclick sel '(Rifle:[0-9]+)' \(want '\1'\)"   --autotest=modclick
 run mod_speed   300 x "RESULT modspeed ok" --autotest=modspeed

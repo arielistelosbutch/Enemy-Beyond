@@ -174,6 +174,8 @@ func blast_near(_at: Vector3) -> void:
 	prey = null
 	_charging = false
 	striking = false
+	leaping = false
+	_leap_on = false
 	windup = 0.0
 	state = S.SEARCH
 	search_t = 4.5
@@ -226,6 +228,7 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 		if race == "zombie":
 			_hatch_later(1.2)
 		return
+	_hurt_voice.rpc()
 	last_seen = from
 	match race:
 		"lihnoun":
@@ -254,10 +257,13 @@ func stun(amount: float, from: Vector3, by: Node) -> void:
 
 func _retreat(secs: float) -> void:
 	_charging = false
+	_leapt = false
 	retreat_t = secs
 	state = S.LURK
 	prey = null
 	striking = false
+	leaping = false
+	_leap_on = false
 	var from := last_seen
 	_relocate(from)
 
@@ -436,6 +442,18 @@ func _roar_scare() -> void:
 
 var _lunge_t := 0.0
 var _lunge_cd := 0.0
+## The leap at the end of the dash (a model with Ari's "pounce" movement: Líhavec). One per run-in:
+## from a few metres it springs, flies the rest of the way and lands with the claws in.
+const LEAP_FROM := 4.2          # m: close enough to spring
+const LEAP_TIME := 0.85         # s: from the spring to the landing blow
+const LEAP_AIR := [0.15, 0.72]  # s: off the ground (the clip's flight, at its leap speed)
+var _leapt := false
+var _leap_on := false
+var _leap_spd := 0.0
+func _can_leap(d: float) -> bool:
+	return _charging and not _leapt and strike_cd <= 0.0 and d < LEAP_FROM and d > float(R["reach"]) \
+		and anim != null and anim.has_animation("pounce")
+
 func _hunt(delta: float) -> void:
 	lurking = false
 	if not is_instance_valid(prey) or prey != _charge_prey:
@@ -468,6 +486,16 @@ func _hunt(delta: float) -> void:
 			windup = 0.32 if race != "zombie" else 0.55
 			_strike_anim.rpc(true)
 		return
+	if _can_leap(d):
+		_leapt = true
+		_leap_on = true
+		_leap_spd = (d - float(R["reach"]) * 0.6) / (LEAP_AIR[1] - LEAP_AIR[0])
+		windup = LEAP_TIME
+		var to := pp - global_position
+		rotation.y = atan2(-to.x, -to.z)
+		_leap_anim.rpc(true)
+		_tlog("leap %.1f m" % d)
+		return
 	if repath_t <= 0:
 		repath_t = 0.25
 		_go(_snap(pp))
@@ -492,6 +520,7 @@ func _hunt(delta: float) -> void:
 		else:
 			if not _charging:
 				_charging = true
+				_leapt = false
 				_charge_fx.rpc()
 				if race == "ohar":
 					_roar_scare()
@@ -503,12 +532,27 @@ func _hunt(delta: float) -> void:
 func _strike_tick(delta: float) -> void:
 	velocity.x = 0; velocity.z = 0
 	windup -= delta
-	if is_instance_valid(prey):
+	if _leap_on:
+		# in the air: straight at it (it does not steer once it has sprung)
+		var air := LEAP_TIME - windup
+		if air > LEAP_AIR[0] and air < LEAP_AIR[1]:
+			var fw := -global_transform.basis.z
+			fw.y = 0
+			fw = fw.normalized()
+			velocity.x = fw.x * _leap_spd
+			velocity.z = fw.z * _leap_spd
+	elif is_instance_valid(prey):
 		_face(prey.global_position, delta * 2.0)
 	if windup > 0:
 		return
 	strike_cd = float(R["strike_cd"]) * rng.randf_range(0.85, 1.2)
-	get_tree().create_timer(0.35).timeout.connect(func(): if is_inside_tree(): _strike_anim.rpc(false))
+	if _leap_on:
+		# getting up again after the landing: a moment to shoot it
+		_leap_on = false
+		strike_cd += 0.6
+		get_tree().create_timer(0.8).timeout.connect(func(): if is_inside_tree(): _leap_anim.rpc(false))
+	else:
+		get_tree().create_timer(0.35).timeout.connect(func(): if is_inside_tree(): _strike_anim.rpc(false))
 	if not is_instance_valid(prey) or prey.dead:
 		return
 	if global_position.distance_to(prey.global_position) > float(R["reach"]) + 0.5:
@@ -544,6 +588,12 @@ func _strike_anim(on: bool) -> void:
 	striking = on
 	if on:
 		Game.play_at(mission, "lunge" if race != "zombie" else "groan", global_position, -2)
+
+@rpc("authority", "call_local", "reliable")
+func _leap_anim(on: bool) -> void:
+	leaping = on
+	if on:
+		Game.play_at(mission, "lunge", global_position, 0)
 
 @rpc("authority", "call_local", "reliable")
 func _hit_fx(p: Vector3) -> void:

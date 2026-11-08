@@ -482,9 +482,13 @@ func _show_merc() -> void:
 		_small_btn(brow, "Nahradit novým", func(): _show_create(true)).custom_minimum_size = Vector2(96, 18)
 	_small_btn(brow, "Zpět", _back).custom_minimum_size = Vector2(80, 18)
 
-## 0.57: weapon upgrades - the guns on the left, what fits the chosen one on the right with what
-## it does and what it costs. They belong to the soldier and work whenever he holds that gun.
+## 0.57: weapon upgrades - the guns on the left; on the right the chosen gun in 3D as the soldier
+## has it, what its parts change, and its slots: each slot holds one part (optic, muzzle, under the
+## barrel, rails, magazine...). A part is bought once and stays in the soldier's box; mounting and
+## taking off is free. Almost every part is something for something (weight, aiming, reloading).
+## Everything belongs to the soldier (saved with him; in a campaign the host keeps him).
 var _mods_sel := ""
+var _mods_info: Label
 func _show_mods() -> void:
 	_logo(false)
 	_free_preview()
@@ -492,7 +496,8 @@ func _show_mods() -> void:
 		if c is PanelContainer:
 			c.queue_free()
 	if _mods_sel == "" or not Game.MOD_FITS.has(_mods_sel):
-		_mods_sel = String(Game.MOD_FITS.keys()[0])
+		_mods_sel = "rifle" if Game.MOD_FITS.has("rifle") else String(Game.MOD_FITS.keys()[0])
+	var wsel := _mods_sel
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", UiSkin.panel(8))
 	p.position = Vector2(8, 4)
@@ -500,10 +505,10 @@ func _show_mods() -> void:
 	add_child(p)
 	_cr_ui = p
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
+	row.add_theme_constant_override("separation", 8)
 	p.add_child(row)
 	var left := VBoxContainer.new()
-	left.custom_minimum_size = Vector2(196, 0)
+	left.custom_minimum_size = Vector2(160, 0)
 	left.add_theme_constant_override("separation", 2)
 	row.add_child(left)
 	var title := Label.new()
@@ -517,7 +522,7 @@ func _show_mods() -> void:
 	money.add_theme_color_override("font_color", TEXT)
 	left.add_child(money)
 	var sc := ScrollContainer.new()
-	sc.custom_minimum_size = Vector2(196, 300)
+	sc.custom_minimum_size = Vector2(160, 300)
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	left.add_child(sc)
 	var list := VBoxContainer.new()
@@ -525,93 +530,223 @@ func _show_mods() -> void:
 	sc.add_child(list)
 	for w in Game.MOD_FITS:
 		var wid: String = w
-		var owned := 0
-		for mid in Game.MOD_FITS[wid]:
-			if Game.has_mod(wid, mid):
-				owned += 1
-		var b := _small_btn(list, "%s   %d/%d" % [Game.ITEMS[wid]["name"], owned, Game.MOD_FITS[wid].size()], func(): _mods_sel = wid; _show_mods())
-		b.custom_minimum_size = Vector2(186, 22)
+		var on := 0
+		for s in Game.fitted(wid):
+			if not Game.MODS[Game.fitted(wid)[s]].get("stock", false):
+				on += 1
+		var b := _small_btn(list, "%s%s" % [Game.ITEMS[wid]["short"], ("   +%d" % on) if on > 0 else ""], func(): _mods_sel = wid; _show_mods())
+		b.custom_minimum_size = Vector2(150, 22)
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.tooltip_text = String(Game.ITEMS[wid]["name"])
 		UiSkin.item_icon(b, wid, 34)
-		if wid == _mods_sel:
+		if wid == wsel:
 			b.add_theme_color_override("font_color", ACCENT)
 	# right: the chosen gun
 	var right := VBoxContainer.new()
-	right.custom_minimum_size = Vector2(400, 0)
+	right.custom_minimum_size = Vector2(440, 0)
 	right.add_theme_constant_override("separation", 3)
 	row.add_child(right)
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 8)
-	right.add_child(head)
-	var ic := TextureRect.new()
-	ic.texture = UiSkin.icon(_mods_sel)
-	ic.custom_minimum_size = Vector2(96, 48)
-	ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	head.add_child(ic)
-	var hv := VBoxContainer.new()
-	head.add_child(hv)
 	var wn := Label.new()
-	wn.text = String(Game.ITEMS[_mods_sel]["name"]).to_upper()
+	wn.text = String(Game.ITEMS[wsel]["name"]).to_upper()
 	wn.add_theme_font_override("font", UiSkin.font(true))
 	wn.add_theme_font_size_override("font_size", 12)
 	wn.add_theme_color_override("font_color", ACCENT)
-	hv.add_child(wn)
-	var wd := Label.new()
-	wd.text = "Úpravy patří tvému vojákovi a fungují, kdykoli tu zbraň drží."
-	wd.add_theme_font_size_override("font_size", 8)
-	wd.add_theme_color_override("font_color", FRAME)
-	wd.autowrap_mode = TextServer.AUTOWRAP_WORD
-	wd.custom_minimum_size = Vector2(290, 0)
-	hv.add_child(wd)
+	right.add_child(wn)
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 6)
+	right.add_child(top)
+	_gun_preview(top, wsel)
+	var stats := Label.new()
+	stats.text = _mods_stats(wsel)
+	stats.add_theme_font_size_override("font_size", 8)
+	stats.add_theme_color_override("font_color", TEXT)
+	stats.autowrap_mode = TextServer.AUTOWRAP_WORD
+	stats.custom_minimum_size = Vector2(150, 0)
+	top.add_child(stats)
+	# the slots, one row each: what fits there (mounted / in the box / for sale)
 	var sc2 := ScrollContainer.new()
-	sc2.custom_minimum_size = Vector2(400, 252)
+	sc2.custom_minimum_size = Vector2(440, 118)
 	sc2.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	right.add_child(sc2)
-	var mods := VBoxContainer.new()
-	mods.add_theme_constant_override("separation", 3)
-	sc2.add_child(mods)
-	for m in Game.MOD_FITS[_mods_sel]:
-		var mid: String = m
-		var has := Game.has_mod(_mods_sel, mid)
-		var box := PanelContainer.new()
-		box.add_theme_stylebox_override("panel", UiSkin.inset(4))
-		box.custom_minimum_size = Vector2(390, 0)
-		mods.add_child(box)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 2)
+	sc2.add_child(rows)
+	var slots := []
+	for m in Game.MOD_FITS[wsel]:
+		var sl := Game.mod_slot(m)
+		if not sl in slots:
+			slots.append(sl)
+	var fit := Game.fitted(wsel)
+	for sl in slots:
+		var slot: String = sl
 		var r2 := HBoxContainer.new()
-		r2.add_theme_constant_override("separation", 6)
-		box.add_child(r2)
-		var tv := VBoxContainer.new()
-		tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		tv.add_theme_constant_override("separation", 0)
-		r2.add_child(tv)
-		var mn := Label.new()
-		mn.text = Game.MODS[mid]["name"]
-		mn.add_theme_font_size_override("font_size", 9)
-		mn.add_theme_color_override("font_color", Color(0.45, 0.95, 0.75) if has else ACCENT)
-		tv.add_child(mn)
-		var md := Label.new()
-		md.text = Game.MODS[mid]["desc"]
-		md.autowrap_mode = TextServer.AUTOWRAP_WORD
-		md.custom_minimum_size = Vector2(290, 0)
-		md.add_theme_font_size_override("font_size", 7)
-		md.add_theme_color_override("font_color", TEXT)
-		tv.add_child(md)
-		var wid2 := _mods_sel
-		var bb := _small_btn(r2, "NAMONTOVÁNO" if has else "%d kr" % Game.mod_price(mid), func():
-			if Game.buy_mod(wid2, mid):
-				_show_mods()
+		r2.add_theme_constant_override("separation", 3)
+		rows.add_child(r2)
+		var opts := []
+		for m in Game.MOD_FITS[wsel]:
+			if Game.mod_slot(m) == slot:
+				opts.append(m)
+		var sn := Label.new()
+		sn.text = String(Game.MOD_SLOTS.get(slot, "Doplněk"))
+		sn.custom_minimum_size = Vector2(66, 0)
+		sn.add_theme_font_size_override("font_size", 8)
+		sn.add_theme_color_override("font_color", FRAME)
+		r2.add_child(sn)
+		var has_stock := false
+		for m in opts:
+			if Game.MODS[m].get("stock", false):
+				has_stock = true
+		if not has_stock:
+			var nb := _small_btn(r2, "nic", func():
+				Game.unmount_slot(wsel, slot)
+				_show_mods())
+			nb.custom_minimum_size = Vector2(30, 18)
+			if not fit.has(slot):
+				nb.add_theme_color_override("font_color", Color(0.45, 0.95, 0.75))
+			nb.mouse_entered.connect(func(): _mods_hint("Nic v tomhle místě: zbraň je lehčí, nic tu nepřekáží."))
+		for m in opts:
+			var mid: String = m
+			var on: bool = fit.get(slot, "") == mid
+			var own := Game.owns_mod(wsel, mid)
+			var price := Game.mod_price(mid)
+			var txt := String(Game.MODS[mid]["name"])
+			if on:
+				txt = "✓ " + txt
+			elif not own:
+				txt += "  %d kr" % price
+			var bb := _small_btn(r2, txt, func():
+				if on:
+					Game.unmount_slot(wsel, slot)
+				elif own:
+					Game.mount_mod(wsel, mid)
+				elif not Game.buy_mod(wsel, mid):
+					_show_main_msg("Nemáš dost peněz.")
+					return
+				_show_mods())
+			bb.custom_minimum_size = Vector2(0, 18)
+			if on:
+				bb.add_theme_color_override("font_color", Color(0.45, 0.95, 0.75))
+			elif own:
+				bb.add_theme_color_override("font_color", TEXT)
 			else:
-				_show_main_msg("Nemáš dost peněz."))
-		bb.custom_minimum_size = Vector2(84, 20)
-		bb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		bb.disabled = has or Game.purse() < Game.mod_price(mid)
+				bb.add_theme_color_override("font_color", ACCENT)
+				bb.disabled = Game.purse() < price
+			var how := "Klikni a sundáš." if on and not Game.MODS[mid].get("stock", false) else ("Nasazeno." if on else ("Máš v bedně: klikni a namontuješ (zdarma)." if own else "Koupit za %d kr a hned namontovat." % price))
+			bb.mouse_entered.connect(func(): _mods_hint("%s - %s\n%s  %s" % [Game.MODS[mid]["name"], Game.MODS[mid]["desc"], _part_effects(mid), how]))
+	var info := Label.new()
+	info.text = "Najeď na díl: co umí a co tě stojí. Úpravy patří tvému vojákovi a fungují, kdykoli tu zbraň drží."
+	info.autowrap_mode = TextServer.AUTOWRAP_WORD
+	info.custom_minimum_size = Vector2(440, 40)
+	info.add_theme_font_size_override("font_size", 8)
+	info.add_theme_color_override("font_color", TEXT)
+	right.add_child(info)
+	_mods_info = info
 	var back := _small_btn(right, "Zpět", func():
 		if _back_target != "":
 			_back()
 		else:
 			_show_merc())
 	back.custom_minimum_size = Vector2(80, 18)
+	back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+
+func _mods_hint(t: String) -> void:
+	if _mods_info and is_instance_valid(_mods_info):
+		_mods_info.text = t
+
+## What a part costs besides money, in words ("+0,5 kg, do oka o 25 % pomaleji").
+func _part_effects(mid: String) -> String:
+	var d: Dictionary = Game.MODS[mid]
+	var out := []
+	var w := float(d.get("w", 0.0))
+	if absf(w) > 0.001:
+		out.append(("+" if w > 0.0 else "") + String.num(w, 2).replace(".", ",") + " kg")
+	for k in [["ads", "do oka", true], ["reload", "přebíjení", false], ["draw", "tasení", false], ["sway", "klepání rukou", false], ["charge", "nabíjení článku", true]]:
+		var v := float(d.get(k[0], 1.0))
+		if absf(v - 1.0) < 0.001:
+			continue
+		var pct := roundi(absf(v - 1.0) * 100.0)
+		var worse: bool = (v < 1.0) if k[2] else (v > 1.0)
+		if not worse and k[0] == "charge":
+			continue      # (the cell's faster charging is its gain, the description says it)
+		out.append("%s o %d %% %s" % [k[1], pct, ("pomaleji" if k[0] != "sway" else "víc") if worse else ("rychleji" if k[0] != "sway" else "míň")])
+	return ("Daň: " + ", ".join(out) + ".") if not out.is_empty() else ""
+
+## The whole gun as the soldier carries it: weight and how the parts add up.
+func _mods_stats(wid: String) -> String:
+	var w := float(Game.ITEMS[wid]["weight"]) + Game.part_weight(wid)
+	var t := "Váha se vším: %s kg\n" % ("%.1f" % w).replace(".", ",")
+	var lines := []
+	for k in [["ads", "Do oka"], ["reload", "Přebíjení"], ["draw", "Tasení"], ["sway", "Klepání"]]:
+		var v := Game.part_mult(wid, k[0])
+		if k[0] == "ads":
+			v = 1.0 / v
+		lines.append("%s: %d %%" % [k[1], roundi(v * 100.0)])
+	if Game.ITEMS[wid].get("laser", false):
+		lines.append("Nabíjení: %d %%" % roundi(100.0 / Game.part_mult(wid, "charge")))
+	t += "\n".join(lines)
+	var sg := Game.sight_of(wid)
+	if not sg.is_empty():
+		t += "\nMíření: %s" % ("skrz objektiv %dx" % int(sg.get("zoom", 1.0)) if sg["kind"] == "scope" else ("vlastní mířidla" if sg["kind"] == "iron" else "červený bod"))
+	return t + "\n(100 % = holá zbraň, víc = pomaleji / víc)"
+
+## The chosen gun in 3D with its parts, slowly turning (the merc preview's little world).
+func _gun_preview(parent: Node, wid: String) -> void:
+	var vp := SubViewport.new()
+	vp.size = Vector2i(560, 240)
+	vp.own_world_3d = true
+	vp.msaa_3d = Viewport.MSAA_4X
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(vp)
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.05, 0.07, 0.12)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.55, 0.6, 0.7)
+	env.ambient_light_energy = 0.7
+	var we := WorldEnvironment.new()
+	we.environment = env
+	vp.add_child(we)
+	var cam := Camera3D.new()
+	cam.fov = 30
+	vp.add_child(cam)
+	var sun := DirectionalLight3D.new()
+	sun.light_energy = 1.4
+	sun.rotation = Vector3(-0.7, 0.5, 0)
+	vp.add_child(sun)
+	var holder := Node3D.new()
+	vp.add_child(holder)
+	var gm := Game.model(wid)
+	Game.dress_gun(gm, wid)
+	holder.add_child(gm)
+	# centre it on its outline, the camera far enough for the whole gun
+	var box := AABB()
+	var first := true
+	for mi in gm.find_children("*", "MeshInstance3D", true, false):
+		var bb: AABB = (mi as MeshInstance3D).get_aabb()
+		var xf := Transform3D()
+		var n: Node = mi
+		while n != gm and n is Node3D:
+			xf = (n as Node3D).transform * xf
+			n = n.get_parent()
+		bb = xf * bb
+		box = bb if first else box.merge(bb)
+		first = false
+	gm.position = -box.get_center()
+	var reach := maxf(box.size.z, maxf(box.size.x, box.size.y))
+	cam.position = Vector3(0, reach * 0.14, reach * 1.35)
+	cam.look_at(Vector3.ZERO)
+	_cr_vp = vp
+	_cr_model = holder
+	_cr_face = false
+	_cr_lock = false
+	_cr_rot = PI * 0.5 + 0.35
+	holder.rotation.y = _cr_rot
+	var tr := TextureRect.new()
+	tr.texture = vp.get_texture()
+	tr.custom_minimum_size = Vector2(280, 120)
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	parent.add_child(tr)
 
 # ---- creating a mercenary: name, looks, stats by points or by dice ---------------------------
 var _scroll: ScrollContainer
@@ -1298,7 +1433,7 @@ func _autotest() -> void:
 			queue_free()
 		"animator", "animatorshots", "animmixamo":
 			get_tree().change_scene_to_file("res://scenes/Animator.tscn")
-		"workshop", "wsclick", "animtest", "animshots":
+		"workshop", "wsclick", "animtest", "animshots", "agun", "modelcheck":
 			get_tree().change_scene_to_file("res://scenes/Workshop.tscn")
 		"tileeditor", "tileshots":
 			get_tree().change_scene_to_file("res://scenes/TileEditor.tscn")
@@ -1358,6 +1493,29 @@ func _autotest() -> void:
 				if DisplayServer.get_name() != "headless":
 					get_viewport().get_texture().get_image().save_png("user://ui_%s.png" % e[0])
 			get_tree().quit()
+		"modsui":
+			# 0.57: the weapon parts screen - buy, mount, swap (user://modsui_N.png, [UI] audit);
+			# on a copy of the soldier that is never saved
+			Game.skirmish = true
+			Game.merc = Game.merc.duplicate(true)
+			Game.merc["money"] = 1500
+			Game.merc.erase("fit")
+			Game.merc.erase("mods")
+			_mods_sel = "rifle"
+			_show_mods()
+			await get_tree().create_timer(1.2).timeout
+			Game.ui_audit(self, "mods_plain")
+			get_viewport().get_texture().get_image().save_png("user://modsui_1.png")
+			var ok1 := Game.buy_mod("rifle", "optika") and Game.buy_mod("rifle", "bajonet") and Game.buy_mod("rifle", "rukojet")
+			_show_mods()
+			_mods_hint("%s - %s\n%s" % [Game.MODS["optika"]["name"], Game.MODS["optika"]["desc"], _part_effects("optika")])
+			await get_tree().create_timer(1.2).timeout
+			Game.ui_audit(self, "mods_parts")
+			get_viewport().get_texture().get_image().save_png("user://modsui_2.png")
+			Game.mount_mod("rifle", "kolimator_t")
+			Game.unmount_slot("rifle", "hlaven")
+			print("[MODS] bought %s fit %s owns optika %s money %d kg %.2f" % [ok1, Game.fitted("rifle"), Game.owns_mod("rifle", "optika"), Game.purse(), Game.part_weight("rifle")])
+			get_tree().quit()
 		"create":
 			_show_create(true)
 			await get_tree().create_timer(1.0).timeout
@@ -1387,7 +1545,7 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "softparts", "fpmocap", "tpwalk", "testroom", "plasmatest", "aitest", "latetest", "gunshots", "topshot", "shieldtest", "locktest", "mocapgame", "beltthrow", "fireshot", "abase":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "sightshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "tpwalk", "testroom", "plasmatest", "aitest", "latetest", "gunshots", "topshot", "shieldtest", "locktest", "mocapgame", "beltthrow", "fireshot", "abase":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",

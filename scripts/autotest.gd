@@ -96,6 +96,7 @@ func _process(delta: float) -> void:
 		"mirotest": _mirotest(p)
 		"bijtest": _bijtest(p)
 		"bijanim": _bijanim(p)
+		"afkalien": _afkalien(p)
 		"softparts": _softparts(p)
 		"fpmocap": _fpmocap(p)
 		"tpwalk": _tpwalk(p)
@@ -132,6 +133,7 @@ func _process(delta: float) -> void:
 		"uimission": _ui_mission(p)
 		"stance": _stance(p)
 		"wshot": _wshot(p)
+		"sightshot": _sightshot(p)
 		"pose": _pose(p)
 		"invtest": _invtest(p)
 		"rlanim": _rlanim(p)
@@ -1042,6 +1044,79 @@ func _wshot(p: Node) -> void:
 			Input.action_press("aim")
 	await get_tree().create_timer(1.5).timeout
 	get_viewport().get_texture().get_image().save_png("user://weather_%s.png" % m().weather)
+	get_tree().quit()
+
+## 0.57: the rifle with parts, through its sights: user://sight_<name>.png - from the hip, aimed
+## with the factory red dot, aimed through the 2x scope (+ the scope's own picture), with a bayonet
+## and a stab on V. RESULT line: the eye on the sight line, scope radius, weight and times.
+func _sightshot(p: Node) -> void:
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	_skip_brief()
+	await get_tree().create_timer(3.0).timeout
+	m().hud.inventory_open = false
+	p.global_position = m().map["ufo"] + Vector3(4, 0.3, 16)
+	_aim_at(p, m().map["ufo"] + Vector3(0, 1.0, 0))
+	p.inv.erase("lh")
+	p.inv["rh"] = {"id": "rifle", "loaded": 30}
+	p.merc = p.merc.duplicate(true)      # (the test's parts never reach the saved soldier)
+	var res := []
+	for setup in [["hip", {"optika": "kolimator_t"}, false], ["dot", {"optika": "kolimator_t", "spodek": "rukojet", "bok_l": "svitilna"}, true],
+			["scope", {"optika": "optika", "hlaven": "tlumic", "bok_p": "laser"}, true], ["bayonet", {"optika": "kolimator_t", "hlaven": "bajonet"}, false]]:
+		var fit: Dictionary = p.merc.get("fit", {})
+		fit["rifle"] = setup[1]
+		p.merc["fit"] = fit
+		p._shown = "-"
+		p._update_held()
+		if setup[2]:
+			Input.action_press("aim")
+		await get_tree().create_timer(1.6).timeout
+		get_viewport().get_texture().get_image().save_png("user://sight_%s.png" % setup[0])
+		if setup[0] == "scope" and p.scope_texture():
+			p.scope_texture().get_image().save_png("user://sight_scope_view.png")
+		res.append("%s mode=%s on=%s r=%.0f fov=%.1f kg=%d ads=%.2f" % [setup[0], p.sight_mode(), p._sight_on, p.scope_r, p.cam.fov, p.carried_weight(), Game.part_mult("rifle", "ads", p.merc)])
+		Input.action_release("aim")
+		await get_tree().create_timer(0.6).timeout
+	# the bayonet on V: a thrust
+	p._quick_melee()
+	await get_tree().create_timer(0.25).timeout
+	get_viewport().get_texture().get_image().save_png("user://sight_stab.png")
+	# 0.57: the basic guns, their own sights and the small red dot
+	var basic := [["pistol", {}], ["pistol_dot", {"optika": "kolimator", "hlaven": "tlumic", "bok_l": "svitilna", "bok_p": "laser"}],
+			["magnum", {}], ["magnum_dot", {"optika": "kolimator", "bok_p": "laser"}], ["shotgun", {}],
+			["shotgun_dot", {"optika": "kolimator", "bok_l": "svitilna", "bok_p": "laser"}], ["sniper", {}]]
+	if Game.cmd_arg("guns", "") == "laser":
+		basic = [["laser_pistol", {}], ["laser_pistol_dot", {"optika": "holo", "clanek": "clanek", "hlaven": "cocka", "bok_l": "svitilna", "bok_p": "laser"}],
+			["laser_rifle", {}], ["laser_rifle_dot", {"optika": "holo", "clanek": "clanek", "hlaven": "cocka", "chladic": "chladic", "bok_l": "svitilna", "bok_p": "laser", "spodek": "rukojet"}],
+			["laser_cannon", {"clanek": "clanek", "hlaven": "cocka", "bok_l": "svitilna"}]]
+	elif Game.cmd_arg("guns", "") == "all":
+		basic = [["sniper", {"spodek": "dvojnozka", "dalkomer": "dalkomer", "hlaven": "brzda", "zasobnik": "zasobnik"}],
+			["rocket_launcher_scope", {"optika": "optika", "dalkomer": "dalkomer", "pocitac": "pocitac", "nosny": "nosny"}],
+			["plasma_pistol_dot", {"optika": "holo", "hlaven": "fokus", "zasobnik": "zasobnik", "chladic": "chladic"}],
+			["plasma_rifle_dot", {"optika": "holo", "hlaven": "fokus", "zasobnik": "zasobnik", "chladic": "chladic", "bok_l": "svitilna", "bok_p": "laser"}],
+			["plasma_cannon", {"hlaven": "fokus", "chladic": "chladic", "zasobnik": "zasobnik", "nosny": "nosny"}],
+			["minigun", {"nosny": "nosny", "zasobnik": "zasobnik", "stabilizator": "stabilizator", "chladic": "chladic", "optika": "zamerovac"}],
+			["autocannon", {"optika": "zamerovac", "spodek": "dvojnozka", "tlumeni": "tlumeni", "nosny": "nosny"}],
+			["shotgun_dot", {"optika": "kolimator", "nosic": "nosic", "pazba": "pazba"}], ["magnum_dot", {"optika": "kolimator", "ergo": "ergo", "hlaven": "kompenzator"}]]
+	for setup in basic:
+		var gid := String(setup[0]).trim_suffix("_dot").trim_suffix("_scope")
+		p.inv["rh"] = {"id": gid, "loaded": 5}
+		var fit: Dictionary = p.merc.get("fit", {})
+		fit[gid] = setup[1]
+		p.merc["fit"] = fit
+		p._shown = "-"
+		p._update_held()
+		await get_tree().create_timer(0.8).timeout
+		Input.action_press("aim")
+		await get_tree().create_timer(1.6).timeout
+		get_viewport().get_texture().get_image().save_png("user://sight_%s.png" % setup[0])
+		if p.sight_mode() == "scope" and p.scope_texture():
+			p.scope_texture().get_image().save_png("user://sight_%s_view.png" % setup[0])
+		res.append("%s mode=%s on=%s fov=%.1f" % [setup[0], p.sight_mode(), p._sight_on, p.cam.fov])
+		Input.action_release("aim")
+		await get_tree().create_timer(0.6).timeout
+	out("RESULT sightshot " + " | ".join(res))
 	get_tree().quit()
 
 ## 0.50: the whole map from straight above (orthographic), to check the layout: user://top_<biome>_<seed>.png
@@ -3170,6 +3245,102 @@ func _bijanim(p: Node) -> void:
 	out("RESULT bijanim mixamo %s roar %s" % [mx, roar])
 	get_tree().quit()
 
+## 0.57: Ari's afk movements on an alien (--race=grey --group=sedaci): its clips standing, walking,
+## running, aiming, hiding, then it is shot and dies by its own death movement.
+func _afkalien(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	var race := Game.cmd_arg("race", "grey")
+	var bs: Array = m().aliens().filter(func(x): return x.race == race and not x.dead)
+	if bs.is_empty():
+		if not has_meta("afk_spawned"):
+			set_meta("afk_spawned", true)      # (this crew has none: one comes)
+			m().spawn_alien(race, p.global_position + Vector3(0, 0.3, 14))
+		return
+	step = 1
+	p.hp = 9999.0
+	m().hud.inventory_open = false
+	await get_tree().create_timer(1.5).timeout
+	_skip_brief()
+	var a: Node = bs[0]
+	for x in m().aliens():
+		x.set_physics_process(false)
+		x.set_process(false)
+		if x != a:
+			x.global_position += Vector3(0, -50, 0)
+	p.global_position = m().free_spot(m().map["evac"] + Vector3(6, 0.3, -6))
+	var side: Vector3 = p.global_transform.basis.x
+	a.global_position = p.global_position - p.global_transform.basis.z * 3.2 + Vector3(0, -0.3, 0)
+	a.look_at(a.global_position + side, Vector3.UP)
+	_aim_at(p, a.global_position + Vector3(0, 0.8, 0))
+	var lamp := OmniLight3D.new()
+	lamp.omni_range = 9.0
+	lamp.light_energy = 2.5
+	m().add_child(lamp)
+	lamp.global_position = p.global_position + Vector3(0, 2.6, 0) - p.global_transform.basis.z * 1.5
+	var shots := DisplayServer.get_name() != "headless"
+	var have := []
+	for clip in ["idle", "walk", "run", "aim", "lurk", "lurk_walk", "attack", "attack_2", "pounce", "fire", "roar"]:
+		if not a.anim.has_animation(clip):
+			continue
+		have.append(clip)
+		a.anim.play(clip, 0.0)
+		var L: float = a.anim.get_animation(clip).length
+		a.anim.seek(L * 0.4, true)
+		await get_tree().create_timer(0.15).timeout
+		if shots:
+			get_viewport().get_texture().get_image().save_png("user://afk_%s_%s.png" % [race, clip])
+	var leap := ""
+	if a.anim.has_animation("pounce"):
+		# the real run-in: from 14 m it creeps, dashes, springs and lands its claws
+		a.anim.play("idle", 0.0)
+		var spot: Vector3 = p.global_position - p.global_transform.basis.z * 12.0 + Vector3(0, 0.3, 0)
+		a.global_position = spot
+		a.prey = p
+		a.state = a.S.COMBAT
+		a.alert = true
+		a._leapt = false
+		a._charging = false
+		a.retreat_t = 0.0
+		a.windup = 0.0
+		a.strike_cd = 0.0
+		a.striking = false
+		out("leaptest start %.1f m at %s" % [a.global_position.distance_to(p.global_position), spot])
+		a.set_physics_process(true)
+		a.set_process(true)
+		var hp0: float = p.hp
+		var seen := false
+		var leap_d := -1.0
+		var k := 0
+		var k2 := 0
+		while k2 < 900:
+			await get_tree().process_frame
+			if not seen and a.windup <= 0.0:
+				a.prey = p          # (the test wants this run-in, not a passer-by)
+				a.state = a.S.COMBAT
+				a.retreat_t = 0.0
+			if a.leaping and not seen:
+				seen = true
+				leap_d = a.global_position.distance_to(p.global_position)
+			if seen and a.leaping and shots and k < 4 and a.anim.current_animation == "pounce":
+				if int(a.anim.current_animation_position * 10.0) >= [3, 6, 10, 14][k]:
+					get_viewport().get_texture().get_image().save_png("user://afk_%s_leap_%d.png" % [race, k])
+					k += 1
+			if seen and not a.leaping:
+				break
+			k2 += 1
+		leap = " leap %s from %.1f hit %s end %.1f" % [seen, leap_d, p.hp < hp0, a.global_position.distance_to(p.global_position)]
+		a.set_process(false)
+	a.set_physics_process(true)
+	a.damage(99999.0, p.global_position, p)
+	for i in 4:
+		await get_tree().create_timer(0.7).timeout
+		if shots:
+			get_viewport().get_texture().get_image().save_png("user://afk_%s_death_%d.png" % [race, i])
+	out("RESULT afkalien %s clips %s deaths %d dying %s dead %s" % [race, ",".join(have), a._afk_deaths.size(), a._afk_dying, a.dead] + leap)
+	get_tree().quit()
+
 func _bijtest(p: Node) -> void:
 	_skip_brief()
 	if p == null or step > 0 or not m().started():
@@ -3612,6 +3783,24 @@ func _soundcheck(p: Node) -> void:
 			if snd != "" and not ResourceLoader.exists("res://assets/sounds/%s.wav" % snd): errs.append("chybí zvuk " + snd)
 		if not errs.is_empty(): bad += 1
 		out("[SND] %-22s vítr=%-14s podklad=%-14s zvířata=%s %s" % [c[0], wind, bed if bed != "" else "-", "ano" if crit else "ne", ("CHYBA: " + ", ".join(errs)) if not errs.is_empty() else "ok"])
+	# every sound the weapons, footsteps and cries of the aliens ask for must be there
+	var AL = load("res://scripts/alien.gd")
+	var names := {}
+	for id in Game.ITEMS:
+		if Game.ITEMS[id].has("sound"): names[String(Game.ITEMS[id]["sound"])] = "zbraň " + id
+	for r in AL.STEPS:
+		var st: String = AL.STEPS[r][0]
+		names[{"step_alien": "step_alien0", "surface": "step_dirt0"}.get(st, st)] = "kroky " + r
+	for r in AL.HURT: names[String(AL.HURT[r][0])] = "zásah " + r
+	names["ufo_door"] = "dveře UFO"
+	for n in names:
+		var f: String = Game.PITCHED[n][0] if Game.PITCHED.has(n) else n
+		if Game.VARIANTS.has(f): f = "%s_0" % f
+		if f in ["laser_cannon", "laser_mg", "plasma_mg"]: continue      # (made in player._shot_fx)
+		if not ResourceLoader.exists("res://assets/sounds/%s.wav" % f):
+			bad += 1
+			out("[SND] CHYBA: chybí zvuk %s (%s)" % [f, names[n]])
+	out("[SND] zbraně, kroky a zásahy vetřelců: %d zvuků zkontrolováno" % names.size())
 	Net.mission_params = keep_params
 	m().map["terrain"] = keep_terr
 	out("RESULT soundcheck %d chyb" % bad)

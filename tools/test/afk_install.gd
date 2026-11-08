@@ -137,6 +137,55 @@ const LIST := {
 	"tp_hit_8_vse": ["Rifle_Hit", true, false, "upper"],
 }
 
+## 0.57: --race=<race>: Ari's afk.ai movements for an alien whose game model has our merc's bones
+## (grey, zombie...). The clips go to animace/al_<race>_<clip>.json and alien.gd takes them in place of
+## the model's own (an officer takes his ordinary race's ones unless he has his own). The aliens are not
+## shown mirrored like the merc, so every movement is mirrored here (the gun stays in the hand the model holds it in).
+## clip: [afk movement, travel taken out, loop, kind, from, to, option, arms from] (as LIST)
+const RACE_LISTS := {
+	"grey": {
+		"idle": ["Pistol_Idle", true, true, "body"],
+		"walk": ["Pistol_Walk", true, true, "body"],
+		"run": ["Pistol_Run", true, true, "body"],
+		"aim": ["Pistol_Aim_Neutral", true, true, "body"],
+		"lurk": ["Pistol_Kneel_Idle", true, true, "body"],
+		"death_1": ["Death_A", false, false, "body"],
+		"death_2": ["Death_B", false, false, "body"],
+		"death_3": ["Death_C", false, false, "body"],
+		"death_4": ["Death_D", false, false, "body"],
+		"death_5": ["Death_Flying_Back", false, false, "body"],
+		"death_6": ["Rifle_Death", false, false, "body"],
+		"death_crouch": ["Death_Crouching", false, false, "body"],
+	},
+	# the officer: his psionic strike (alien._psi_fx plays "attack"; the rest he takes from "grey")
+	"grey_velitel": {
+		"attack": ["Spell_Simple_Idle", true, true, "body"],
+	},
+	# the Bijec officer keeps his own model (cape, red armour): Ari's Bijec movements put on his bones
+	# (the plain Bijec is Ari's afk model itself, alien.AFK_MODELS)
+	"bijec_velitel": {
+		"idle": ["Rifle_Idle", true, true, "body"],
+		"walk": ["Rifle_Walk", true, true, "body"],
+		"run": ["Rifle_Run", true, true, "body"],
+		"aim": ["Rifle_Aim_Idle", true, true, "body"],
+		"lurk": ["Rifle_Kneel_Idle", true, true, "body"],
+		"lurk_walk": ["Rifle_Crouch_Walk", true, true, "body"],
+		"fire": ["Rifle_Fire", true, true, "body"],
+		"attack": ["Rifle_Butt", true, false, "body"],
+		"roar": ["Roar", true, false, "body"],
+		"death_1": ["Death_B", false, false, "body"],
+		"death_2": ["Death_D", false, false, "body"],
+		"death_3": ["Death_Backward", false, false, "body"],
+		"death_4": ["Death_Flying_Back", false, false, "body"],
+		"death_5": ["Death_Headshot", false, false, "body"],
+		"death_6": ["Death_Left", false, false, "body"],
+		"death_7": ["Death_Right", false, false, "body"],
+		"death_8": ["Death_To_Knees", false, false, "body"],
+		"death_9": ["Rifle_Death", false, false, "body"],
+		"death_crouch": ["Death_Crouching", false, false, "body"],
+	},
+}
+
 ## --set=heavy: the same movements for the heavy guns (cannons, miniguns, the rocket launcher) from
 ## Ari's heavy pack (give it LAST in --src: its Rifle_* movements win, the legs of the empty-handed
 ## ones still come from the others) - ids with "_heavy" (player.HEAVY picks them), and the hands'
@@ -163,7 +212,12 @@ func _run() -> void:
 	var srcs := Game.cmd_arg("src", "").split(",")
 	var out := Game.cmd_arg("out", "res://animace")
 	var only := Game.cmd_arg("only", "")
-	var target: Node3D = Game.model("merc")
+	var race := Game.cmd_arg("race", "")
+	if race != "" and not RACE_LISTS.has(race):
+		print("RESULT afkinstall no list for race %s" % race)
+		get_tree().quit()
+		return
+	var target: Node3D = Game.model("merc" if race == "" else race)
 	add_child(target)
 	var tsk: Skeleton3D = target.find_child("Skeleton3D", true, false)
 	var holder := Node3D.new()
@@ -196,6 +250,10 @@ func _run() -> void:
 	var kept := 0
 	var cache := {}
 	var list := LIST
+	if race != "":
+		list = {}
+		for c in RACE_LISTS[race]:
+			list["al_%s_%s" % [race, c]] = RACE_LISTS[race][c]
 	if Game.cmd_arg("set", "") == "heavy":
 		list = _heavy_list(scenes[0].find_children("*", "AnimationPlayer", true, false)[0])
 	for id in list:
@@ -204,6 +262,8 @@ func _run() -> void:
 		var e: Array = list[id]
 		var dst := out.path_join(id + ".json")
 		var opt: String = e[6] if e.size() > 6 else ""
+		if race != "":
+			opt += " mirror"
 		if FileAccess.file_exists(dst) and not "force" in opt:
 			var old := AnimClips.get_clip(id)
 			if not String(old.get("zdroj", "")) in ["Mixamo", "afk"]:
