@@ -32,6 +32,11 @@ func _ready() -> void:
 		if multiplayer.is_server() and is_online() and Campaign.active and sc and sc.name != "Mission":
 			broadcast_team())
 	add_child(tm)
+	var lt := Timer.new()
+	lt.wait_time = 1.0
+	lt.autostart = true
+	lt.timeout.connect(_link_tick)
+	add_child(lt)
 
 ## A client whose connection died without a word (a long load, a hiccup on the line): ENet stays
 ## "not connected" and every message fails - thousands of errors and a broken game. Notice it and
@@ -69,6 +74,7 @@ func host(port := PORT) -> String:
 
 func join(ip: String, port := PORT) -> String:
 	close()
+	_kick_why = ""
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_client(ip, port)
 	if err != OK:
@@ -82,6 +88,7 @@ func close() -> void:
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	roster = {}
 	wallets = {}
+	link = {}
 	if Campaign.viewer:
 		Campaign.viewer = false
 		Campaign.data = {}
@@ -96,8 +103,17 @@ func _on_connected() -> void:
 func _on_peer_connected(id: int) -> void:
 	if multiplayer.is_server() and multiplayer.multiplayer_peer is ENetMultiplayerPeer:
 		_patient(multiplayer.multiplayer_peer, id)
+		# sent away a moment ago: not back in so soon
+		var addr := _addr(id)
+		if _banned.has(addr) and Time.get_ticks_msec() < int(_banned[addr]):
+			_refused[id] = true
+			var mins := ceili((int(_banned[addr]) - Time.get_ticks_msec()) / 60000.0)
+			_kicked.rpc_id(id, "Hostitel tě před chvílí vyhodil. Znovu se připojit můžeš za %d min." % mins)
+			_cut.call_deferred(id)
 
 func _on_peer_disconnected(id: int) -> void:
+	_refused.erase(id)
+	link.erase(id)
 	if multiplayer.is_server() and roster.has(id):
 		_note.rpc("%s odešel ze hry." % roster[id]["name"])
 	if roster.erase(id):
@@ -106,14 +122,24 @@ func _on_peer_disconnected(id: int) -> void:
 			_set_roster.rpc(roster)
 
 func _on_server_gone() -> void:
+	var why := _kick_why if _kick_why != "" else "Hostitel ukončil hru."
+	_kick_why = ""
 	close()
-	connection_failed.emit("Hostitel ukončil hru.")
+	var sc := get_tree().current_scene
+	if sc == null or sc.name == "Main":
+		connection_failed.emit(why)
+	else:
+		# on the host's globe or walking our base copy: back to the menu, which says why
+		drop_reason = why
+		back_to_menu()
 
 @rpc("any_peer", "reliable")
 func _register(merc: Dictionary) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := multiplayer.get_remote_sender_id()
+	if _refused.has(id):
+		return
 	var fresh := not roster.has(id)
 	if Campaign.active:
 		# the campaign's mercenaries are kept by the host: an older copy on the client is replaced
@@ -399,3 +425,106 @@ func update_merc() -> void:
 		if Campaign.active:
 			Campaign.keep_merc(Game.merc)
 		_set_roster.rpc(roster)
+
+# ---- (0.61) the lobby: everyone's ping and microphone, the host can send a player away -----
+## peer -> {"ping": ms to the host, "mic": "off" | "ptt" | "open" | "dead"}. The host measures
+## the pings and collects the microphones; everyone gets the table once a second.
+var link := {}
+var drop_reason := ""      # why the connection ended, for the menu after a scene change
+const KICK_BAN_MS := 5 * 60 * 1000   # a kicked player may come back after five minutes
+var _banned := {}          # host: address -> until (msec)
+var _refused := {}         # host: peers being shown the door (their messages are ignored)
+var _kick_why := ""        # client: the host said why he is cutting us off
+
+func _addr(id: int) -> String:
+	var p := multiplayer.multiplayer_peer
+	if p is ENetMultiplayerPeer and (p as ENetMultiplayerPeer).get_peer(id):
+		return (p as ENetMultiplayerPeer).get_peer(id).get_remote_address()
+	return ""
+
+## Round trip to the host in milliseconds (the host to a client, a client to the host); -1 = unknown.
+func _rtt(id: int) -> int:
+	var p := multiplayer.multiplayer_peer
+	if not (p is ENetMultiplayerPeer):
+		return -1
+	var pp := (p as ENetMultiplayerPeer).get_peer(id)
+	if pp == null:
+		return -1
+	return int(pp.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME))
+
+## What the lobby shows by a player: his ping to the host (the host himself 0).
+func ping_of(id: int) -> int:
+	if id == 1:
+		return 0
+	if not multiplayer.is_server() and id == my_id():
+		return _rtt(1)
+	if multiplayer.is_server():
+		return _rtt(id)
+	return int(link.get(id, {}).get("ping", -1))
+
+func mic_of(id: int) -> String:
+	if id == my_id():
+		return get_node("LobbyVoice").mic_state()
+	return str(link.get(id, {}).get("mic", ""))
+
+func _link_tick() -> void:
+	if not is_online() or multiplayer.multiplayer_peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
+		return
+	var sc := get_tree().current_scene
+	if sc and sc.name == "Mission":
+		return      # the lobby table is not needed in a mission (keep the line for the game)
+	var mine: String = get_node("LobbyVoice").mic_state()
+	if multiplayer.is_server():
+		for id in roster:
+			if not link.has(id):
+				link[id] = {}
+			link[id]["ping"] = 0 if id == 1 else _rtt(id)
+		link[1]["mic"] = mine
+		for id in link.keys():
+			if not roster.has(id):
+				link.erase(id)
+		_set_link.rpc(link)
+	else:
+		_mic_report.rpc_id(1, mine)
+
+@rpc("any_peer", "unreliable_ordered")
+func _mic_report(state: String) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if not multiplayer.is_server() or not roster.has(id) or not state in ["off", "ptt", "open", "dead"]:
+		return
+	if not link.has(id):
+		link[id] = {}
+	link[id]["mic"] = state
+
+@rpc("authority", "unreliable_ordered")
+func _set_link(l: Dictionary) -> void:
+	link = l
+
+## The host sends a player away (from the lobby). He hears why and may come back in five minutes.
+func kick(id: int) -> void:
+	if not multiplayer.is_server() or not is_online() or id == 1 or not roster.has(id):
+		return
+	var who := str(roster[id]["name"])
+	var addr := _addr(id)
+	if addr != "":
+		_banned[addr] = Time.get_ticks_msec() + KICK_BAN_MS
+	_refused[id] = true
+	_kicked.rpc_id(id, "Hostitel tě vyhodil ze hry.")
+	roster.erase(id)
+	wallets.erase(id)
+	link.erase(id)
+	_set_roster.rpc(roster)
+	roster_changed.emit()
+	_note.rpc("%s byl vyhozen ze hry." % who)
+	_cut.call_deferred(id)
+
+## Let the last word reach him first, then cut the line.
+func _cut(id: int) -> void:
+	await get_tree().create_timer(0.4).timeout
+	var p := multiplayer.multiplayer_peer
+	if p is ENetMultiplayerPeer and (p as ENetMultiplayerPeer).get_peer(id):
+		(p as ENetMultiplayerPeer).disconnect_peer(id)
+
+@rpc("authority", "reliable")
+func _kicked(why: String) -> void:
+	_kick_why = why

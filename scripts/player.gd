@@ -110,6 +110,7 @@ func setup(data: Dictionary) -> void:
 	flash.spot_angle = 16.0
 	flash.light_color = Color(1.0, 0.95, 0.8)
 	flash.shadow_enabled = true
+	flash.light_cull_mask = 0xFFFFF & ~SHIELD_LAYER
 	head.add_child(flash)
 	flash.position = Vector3(0.1, -0.15, -0.7)
 	# body for the others
@@ -1336,6 +1337,7 @@ func _show_items(r: String, l: String, back: String) -> void:
 			var lm := _held_model(l)
 			if l == "stit":
 				lm.position = Vector3(0.05, -0.05, -0.15)
+				lm.name = "FpShield"
 			gun_l.add_child(lm)
 			gun_l.add_child(Game.model("hand_l"))
 		if body_l:
@@ -1344,6 +1346,9 @@ func _show_items(r: String, l: String, back: String) -> void:
 		if holder:
 			_fp_layer(holder)
 			Game.dress_hands(holder, merc.get("look", {}))       # (0.57: bare arms = skin-coloured sleeve)
+	var fps: Node = gun_l.get_node_or_null("FpShield") if gun_l else null
+	if fps:
+		_shield_fp(fps)
 	if back != "" and body_back:
 		var bk := Game.model(back)
 		Game.dress_gun(bk, back, merc)
@@ -1353,6 +1358,17 @@ func _show_items(r: String, l: String, back: String) -> void:
 ## (0.57) What is held in first person lives on its own render layer: the camera of a scope
 ## (looking out of the eyepiece) must not see the gun around it.
 const FP_LAYER := 1 << 19
+const SHIELD_LAYER := 1 << 18     # the shield from the eyes: the own flashlight does not light it
+
+## The shield before the eyes: the own lamp (on the helmet or on the gun, a hand's width behind
+## it) neither lights its window (a white glare over the whole view) nor casts its shadow
+## forward (the beam stopped by its own shield - dark ahead). Other lights still show it.
+func _shield_fp(n: Node) -> void:
+	if n is GeometryInstance3D:
+		(n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		(n as VisualInstance3D).layers = SHIELD_LAYER
+	for c in n.get_children():
+		_shield_fp(c)
 func _fp_layer(n: Node) -> void:
 	if n is VisualInstance3D:
 		(n as VisualInstance3D).layers = FP_LAYER
@@ -1682,7 +1698,7 @@ func _physics_process(delta: float) -> void:
 	pitch = clamp(pitch - _mouse.y * sens * (-1.0 if Game.invert_y else 1.0), -1.4, 1.4)
 	_mouse = Vector2.ZERO
 	# sway: steady hands come from reactions; stress shakes them
-	var shake := (0.25 + stress / 60.0) * (1.6 - float(merc.get("reactions", 45)) / 100.0)
+	var shake := (0.25 + stress / 90.0) * (1.6 - float(merc.get("reactions", 45)) / 100.0)
 	if Game.has_talent(merc, "pevna_ruka"): shake *= 0.65
 	if prone: shake *= 0.5
 	var wid: String = weapon().get("id", "")
@@ -2179,10 +2195,20 @@ func _actions(delta: float) -> void:
 			mission.use_terminal(tm)
 		elif _use_teammate() or _use_civilian():
 			pass
-		elif mission.door_near(global_position) >= 0 and mission.nearest_pickup(global_position).is_empty():
+		elif mission.door_near(global_position) >= 0 and _door_first():
 			mission.use_door.rpc_id(1, mission.door_near(global_position), global_position)
 		else:
 			_pick_up()
+
+## E at a door with something lying by it: the door, unless the thing is nearer (0.60: a weapon
+## dropped in the doorway kept the door from shutting).
+func _door_first() -> bool:
+	var pk: Dictionary = mission.nearest_pickup(global_position)
+	if pk.is_empty():
+		return true
+	var d: Dictionary = mission.doors[mission.door_near(global_position)]
+	var dd: float = (d["c"] as Vector3).distance_to(Vector3(global_position.x, (d["c"] as Vector3).y, global_position.z))
+	return dd < (mission.pickups[pk["pid"]]["node"] as Node3D).global_position.distance_to(global_position)
 
 ## What a hand does with its item when its button is pressed.
 func _use_hand(slot: String, pressed: bool, just: bool, delta: float) -> void:
@@ -2324,7 +2350,7 @@ func _scope_tick(sl: Dictionary) -> void:
 		_scope_vp.msaa_3d = Viewport.MSAA_2X
 		add_child(_scope_vp)
 		_scope_cam = Camera3D.new()
-		_scope_cam.cull_mask = 0xFFFFF & ~FP_LAYER
+		_scope_cam.cull_mask = 0xFFFFF & ~FP_LAYER & ~SHIELD_LAYER
 		_scope_cam.near = 0.1
 		_scope_cam.far = cam.far
 		_scope_vp.add_child(_scope_cam)
@@ -2377,7 +2403,7 @@ func current_spread() -> float:
 	if Vector2(velocity.x, velocity.z).length() > 0.5: s *= 1.8
 	if not gun_in("rh").is_empty() and not gun_in("lh").is_empty(): s *= 1.35    # two guns at once
 	if Game.has_talent(merc, "strelec"): s *= 0.75
-	s *= 1.0 + stress / 80.0 + breath * 0.6
+	s *= 1.0 + stress / 120.0 + breath * 0.6
 	return s + spread_bloom
 
 func _muzzle(slot: String, rule: Dictionary) -> Vector3:
@@ -4049,7 +4075,7 @@ func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
 				mission.hud.message("Štít je prožraný - dlouho nevydrží (%d %%)." % int(100.0 * hp_left / SHIELD_HP), 2.5)
 	hp -= dmg
 	wounded = true
-	stress = min(100.0, stress + dmg * (1.4 - float(merc.get("bravery", 40)) / 100.0) * 2.0)
+	stress = min(100.0, stress + dmg * (1.4 - float(merc.get("bravery", 40)) / 100.0) * 1.3)
 	if dmg > 6.0:
 		bleeding += 0.25
 	Game.play_ui(self, "hurt_female" if merc.get("look", {}).get("female", false) else "hurt_male", -4)
@@ -4494,9 +4520,9 @@ func _stress(delta: float) -> void:
 			continue
 		var d: float = a.global_position.distance_to(global_position)
 		if d < 13.0:
-			gain += (13.0 - d) * 0.35      # you cannot see it, but you feel it
+			gain += (13.0 - d) * 0.22      # you cannot see it, but you feel it
 		if d < 16.0 and a.visible_to(self):
-			gain += (16.0 - d) * 0.6
+			gain += (16.0 - d) * 0.38      # (0.60: gentler - it used to freeze you at once)
 	for p in mission.players():
 		if p != self and p.downed and p.global_position.distance_to(global_position) < 20.0:
 			gain += 2.0
@@ -4504,7 +4530,7 @@ func _stress(delta: float) -> void:
 		gain += 0.4
 	gain *= 1.3 - float(merc.get("bravery", 40)) / 100.0
 	if Game.has_talent(merc, "zelezne_nervy"): gain *= 0.6
-	stress = clamp(stress + (gain - 2.5) * delta, 0.0, 100.0)
+	stress = clamp(stress + (gain - 3.5) * delta, 0.0, 100.0)
 	if stress > 45:
 		_hb -= delta
 		if _hb <= 0:
@@ -4524,7 +4550,7 @@ func _panic_check(delta: float) -> void:
 	var limit := 85.0 if Game.veteran() else 98.0
 	if stress < limit:
 		return
-	var chance := (1.25 - float(merc.get("bravery", 40)) / 100.0) * (0.35 if Game.veteran() else 0.15)
+	var chance := (1.25 - float(merc.get("bravery", 40)) / 100.0) * (0.25 if Game.veteran() else 0.1)
 	if randf() > chance * delta:
 		return
 	var r := randf()

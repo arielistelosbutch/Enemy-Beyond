@@ -1846,8 +1846,9 @@ func _go(p: Vector3) -> void:
 		activity = 0         # off somewhere else: the job is left
 	if tac == "levit" and not flying and not dead and multiplayer.is_server() \
 			and (airborne or (state == S.COMBAT and global_position.distance_to(p) > 7.0)):
-		_jet_to(p)          # in a fight it does not walk: it flies
-		return
+		if _jet_to(p):      # in a fight it does not walk: it flies (where the air is open)
+			return
+		airborne = false    # no way through the air from here: down, and on foot
 	goal = p
 	agent.target_position = p
 
@@ -2903,6 +2904,7 @@ func _brute(delta: float, seen: Node) -> void:
 var airborne := false     # host: hovering where there is no floor (roof, window)
 var _jet: Array = []
 var _jet_perch := false
+var _jet_free := 0        # the last legs of the flight not checked for walls (in through a window)
 var _jet_snd: AudioStreamPlayer3D
 var _jet_light: OmniLight3D
 var _was_flying := false
@@ -2958,17 +2960,62 @@ func _levit_hop(at: Vector3, away: bool) -> bool:
 				entry = c - n * 1.6 * sd
 	if best == Vector3.INF:
 		return false
-	_jet_to(best, entry, true)
+	return _jet_to(best, entry, true)
+
+## Is the air open from @a to @b (the alien's origin, its feet)? A ball the size of its body
+## swept along the way - walls, ceilings, roofs, doors, glass. (The flight itself moves it without
+## physics, so before this they flew through the base's ceilings and walls.)
+func _air_clear(a: Vector3, b: Vector3) -> bool:
+	if a.distance_to(b) < 0.01:
+		return true
+	var ball := SphereShape3D.new()
+	ball.radius = clampf(float(R["r"]) * 0.9, 0.25, 0.45)
+	var up := Vector3(0, maxf(ball.radius + 0.25, 0.9), 0)
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = ball
+	q.transform = Transform3D(Basis(), a + up)
+	q.motion = b - a
+	q.collision_mask = Game.WORLD | Game.GLASS
+	q.exclude = [get_rid()]
+	var ss := get_world_3d().direct_space_state
+	var r := ss.cast_motion(q)
+	var ok := r.size() >= 2 and r[0] >= 1.0
+	if not ok and Game.autotest() != "":
+		q.transform.origin += q.motion * (r[1] if r.size() >= 2 else 0.0)
+		q.motion = Vector3.ZERO
+		q.margin = 0.05
+		var hit := ss.intersect_shape(q, 1)
+		_tlog("air blocked %s -> %s at %.2f by %s" % [str(a.snapped(Vector3.ONE * 0.1)), str(b.snapped(Vector3.ONE * 0.1)), r[1] if r.size() >= 2 else -1.0,
+			str(hit[0]["collider"].get_parent().name) + "/" + str(hit[0]["collider"].name) if not hit.is_empty() and hit[0]["collider"] else "?"])
+	return ok
+
+func _path_clear(pts: Array, from: Vector3, unchecked: int) -> bool:
+	var at := from
+	for i in pts.size() - unchecked:
+		if not _air_clear(at, pts[i]):
+			return false
+		at = pts[i]
 	return true
 
-func _jet_to(dest: Vector3, entry := Vector3.INF, perch := false) -> void:
+## Plans a flight and takes off; false when there is no open way through the air (indoors: the
+## base, a ship - the ceiling is over its head), then it has to walk.
+func _jet_to(dest: Vector3, entry := Vector3.INF, perch := false) -> bool:
 	var from := global_position
 	var last := entry if entry != Vector3.INF else dest
 	var cruise := maxf(maxf(from.y, last.y) + 4.0, 8.5)
-	_jet = [Vector3(from.x, cruise, from.z), Vector3(last.x, cruise, last.z)]
+	var pts: Array = [Vector3(from.x, cruise, from.z), Vector3(last.x, cruise, last.z)]
 	if entry != Vector3.INF:
-		_jet.append(entry)
-	_jet.append(dest)
+		pts.append(entry)
+	pts.append(dest)
+	var unchecked := 1 if entry != Vector3.INF else 0     # the last leg goes in through the window
+	if not _path_clear(pts, from, unchecked):
+		# no sky over it: straight across, at body height, if nothing is in the way
+		pts = [dest] if entry == Vector3.INF else [entry, dest]
+		if not _path_clear(pts, from, unchecked):
+			_tlog("jet blocked h=%.1f" % dest.y)
+			return false
+	_jet = pts
+	_jet_free = unchecked
 	_jet_perch = perch
 	_tlog("jet %s perch=%s h=%.1f" % ["window" if entry != Vector3.INF else "", perch, dest.y])
 	flying = true
@@ -2977,8 +3024,10 @@ func _jet_to(dest: Vector3, entry := Vector3.INF, perch := false) -> void:
 	goal = dest
 	if not perch:
 		agent.target_position = dest
+	return true
 
-## Host: follows the flight path (straight through the air - nothing up there to hit).
+## Host: follows the flight path (checked open when it took off; a door shut since, or anything
+## new in the way, ends the flight - it drops and goes on foot).
 func _fly(delta: float) -> void:
 	if _jet.is_empty():
 		flying = false
@@ -2987,7 +3036,15 @@ func _fly(delta: float) -> void:
 	var tgt: Vector3 = _jet[0]
 	var flat := Vector2(tgt.x - global_position.x, tgt.z - global_position.z).length()
 	var spd := (9.25 if flat > 0.3 else 6.25) * float(R.get("jet", 1.0))    # 0.44 slowed them from 12 to 6.5, too much: half of it back
-	global_position = global_position.move_toward(tgt, spd * delta)
+	var nxt := global_position.move_toward(tgt, spd * delta)
+	if _jet.size() > _jet_free and not _air_clear(global_position, nxt):
+		_tlog("jet stopped by a wall")
+		_jet.clear()
+		flying = false
+		airborne = false     # falls (gravity) and walks on
+		velocity = Vector3.ZERO
+		return
+	global_position = nxt
 	if flat > 0.3:
 		_face(tgt, delta)
 	elif is_instance_valid(target):

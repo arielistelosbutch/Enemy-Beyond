@@ -122,8 +122,10 @@ func _room(gx: int, gz: int, kind: String, building: bool, params: Dictionary) -
 	# corridors to the east and south neighbours (each pair once)
 	if e:
 		_corridor(o + Vector3(BLOCK - IN, 0, BLOCK / 2), true)
+		if not building and _ready(gx + 1, gz): _blast_door(o + Vector3(BLOCK, 0, BLOCK / 2), false)
 	if s:
 		_corridor(o + Vector3(BLOCK / 2, 0, BLOCK - IN), false)
+		if not building and _ready(gx, gz + 1): _blast_door(o + Vector3(BLOCK / 2, 0, BLOCK), true)
 	# light: panels in the ceiling
 	var lc := Color(1.0, 0.93, 0.82) if not building else Color(1.0, 0.7, 0.4)
 	for lp in ([Vector3(w * 0.3, 0, w * 0.5), Vector3(w * 0.7, 0, w * 0.5)] if kind != "hangar" else [Vector3(w * 0.25, 0, w * 0.25), Vector3(w * 0.75, 0, w * 0.25), Vector3(w * 0.25, 0, w * 0.75), Vector3(w * 0.75, 0, w * 0.75)]):
@@ -165,6 +167,12 @@ func _room(gx: int, gz: int, kind: String, building: bool, params: Dictionary) -
 		"maskovani": _cloak_core(a, w)
 		"psi_gen": _psi_shield(a, w)
 	_cover(a + Vector3(1.0, 0, 1.0)); _cover(a + Vector3(w - 1.0, 0, w - 1.0))
+
+## 0.60: a steel blast door in the middle of a corridor between two working rooms (E shuts and
+## opens it, it slides into the wall; the mission hangs it like the house doors, see mission._hang_doors).
+## Open in peace, so the walk round the base is as before; the defenders shut them themselves.
+func _blast_door(c: Vector3, along_x: bool) -> void:
+	info["doors"].append({"c": c, "along_x": along_x, "w": DOOR[1] - DOOR[0], "h": H - 0.6, "open": true, "kind": "blast"})
 
 ## A short corridor through the earth between two rooms (2.4 m wide, low ceiling, lamp strip).
 func _corridor(mid: Vector3, along_x: bool) -> void:
@@ -215,8 +223,10 @@ func _big_hangar(gx: int, params: Dictionary) -> void:
 			if _ready(sd[3], gz): info["passages"].append({"c": a + Vector3(sd[1], 0, BLOCK + dm), "n": sd[2]})
 	if e:
 		_corridor(Vector3(gx * BLOCK, 0, 0) + Vector3(BLOCK - IN, 0, BLOCK / 2), true)
+		if _ready(gx + 1, gz): _blast_door(Vector3(gx * BLOCK, 0, 0) + Vector3(BLOCK, 0, BLOCK / 2), false)
 	if s:
 		_corridor(Vector3(gx * BLOCK, 0, 0) + Vector3(BLOCK / 2, 0, BLOCK - IN), false)
+		if _ready(gx, gz + 1): _blast_door(Vector3(gx * BLOCK, 0, 0) + Vector3(BLOCK / 2, 0, BLOCK), true)
 	# floodlights in rows
 	for lz in [0.2, 0.5, 0.8]:
 		for lx in [0.3, 0.7]:

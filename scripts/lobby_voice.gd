@@ -254,3 +254,11 @@ func speaking(peer: int) -> bool:
 	if peer == Net.my_id():
 		return talking
 	return _chan.has(peer) and Time.get_ticks_msec() - int(_chan[peer]["last"]) < 300
+
+## (0.61) For the lobby list: is my microphone off, on Tab, open, or open but silent (a dead device).
+func mic_state() -> String:
+	if Game.voice_mode == "off" and not Game.mic_live:
+		return "off"
+	if mic != null and Time.get_ticks_msec() - opened_at > 3000 and frames_in == 0:
+		return "dead"
+	return "open" if Game.voice_mode == "open" or Game.mic_live else "ptt"

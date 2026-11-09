@@ -208,7 +208,11 @@ func _guard_drone_tick() -> void:
 ## near the ship for the first SAFE_LANDING seconds.
 const SAFE_LANDING := 45.0
 func landing_safe(p: Node3D) -> bool:
+	if mtype() == "base":
+		return t < BASE_WAKE      # our base: they have only just broken in, the team is still waking up
 	return t < SAFE_LANDING and map.get("evac", Vector3.ZERO) != Vector3.ZERO and p.global_position.distance_to(map["evac"]) < 25.0 and not mtype() in ["base", "home"]
+## Our base attacked: for the first seconds the aliens are still coming in and have not found anyone.
+const BASE_WAKE := 15.0
 
 ## (tests) A solid block in the world.
 func map_box(pos: Vector3, size: Vector3) -> StaticBody3D:
@@ -864,6 +868,8 @@ func _maybe_spawn() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = Net.mission_seed + 99
 	var spawns: Array = map["alien_spawns"].duplicate()
+	if mtype() == "base":
+		spawns = _base_entries_far(map["player_spawns"], spawns, false)    # (the walls are not in the physics yet: distance only)
 	var count := (1 if roster().size() <= 1 else 2) + Net.roster.size() + (5 if String(map.get("ufo_kind", "")) in ["battleship", "supply"] else 0) + int(Net.mission_params.get("extra_aliens", 0)) + (1 if Game.veteran() else (-1 if Game.easy() else 0)) + int({"large": 1, "huge": 2, "colossal": 4}.get(Net.mission_params.get("size", ""), 0))
 	# co-op: every mercenary beyond the first brings more of them (on top of the one above)
 	count += maxi(0, Net.roster.size() - 1)
@@ -929,12 +935,13 @@ func _far_point(rng: RandomNumberGenerator, min_d: float) -> Vector3:
 	return wp[0]
 
 ## The alien groups, as in the old game: who serves with whom, and the terror
-## creature each group brings. "from": campaign month from which the group appears.
+## creature each group brings. "from": campaign month from which the group appears (0.61, Ari: the war
+## opens with the Šediváci alone, the Levité come in the 2nd month, Ještěřani 3rd, Bijci and Myslodějové 4th).
 const GROUPS := {
 	"sedaci": {"name": "Šediváci", "soldier": "grey", "officer": "grey_velitel", "beast": "diskoll", "terror": "diskoll", "from": 0},
-	"levite": {"name": "Levité", "soldier": "levit", "officer": "levit_velitel", "beast": "ohar", "terror": "ohar", "from": 0},
-	"jestetani": {"name": "Ještěřani", "soldier": "jestetan", "officer": "jestetan_velitel", "beast": "lihnoun", "terror": "lihnoun", "from": 1},
-	"bijci": {"name": "Bijci", "soldier": "bijec", "officer": "bijec_velitel", "beast": "nador", "terror": "ohnivec", "from": 2},
+	"levite": {"name": "Levité", "soldier": "levit", "officer": "levit_velitel", "beast": "ohar", "terror": "ohar", "from": 1},
+	"jestetani": {"name": "Ještěřani", "soldier": "jestetan", "officer": "jestetan_velitel", "beast": "lihnoun", "terror": "lihnoun", "from": 2},
+	"bijci": {"name": "Bijci", "soldier": "bijec", "officer": "bijec_velitel", "beast": "nador", "terror": "ohnivec", "from": 3},
 	"myslodejove": {"name": "Myslodějové", "soldier": "bijec", "officer": "myslodej", "beast": "kolos", "terror": "kolos", "from": 3},
 }
 
@@ -2652,30 +2659,70 @@ func _hang_doors() -> void:
 		bs.size = Vector3(w - 0.04, h, 0.06)
 		cs.shape = bs
 		sb.add_child(cs)
+		var blast := String(spec.get("kind", "")) == "blast"
+		if blast:
+			bs.size.z = 0.12
 		var mi := MeshInstance3D.new()
 		var bm := BoxMesh.new()
 		bm.size = bs.size
 		mi.mesh = bm
-		mi.material_override = Game.mat("planks", 1.0)
+		mi.material_override = Game.mat("planks", 1.0) if not blast else Game.mat("metal", 0.5)
 		sb.add_child(mi)
-		var knob := MeshInstance3D.new()
-		var km := SphereMesh.new()
-		km.radius = 0.035; km.height = 0.07
-		knob.mesh = km
-		knob.material_override = Game.color_mat(Color(0.7, 0.6, 0.3))
-		sb.add_child(knob)
-		knob.position = Vector3(w / 2 - 0.12, -h / 2 + 1.0, 0.05)
+		if blast:
+			_blast_look(sb, w, h)
+		else:
+			var knob := MeshInstance3D.new()
+			var km := SphereMesh.new()
+			km.radius = 0.035; km.height = 0.07
+			knob.mesh = km
+			knob.material_override = Game.color_mat(Color(0.7, 0.6, 0.3))
+			sb.add_child(knob)
+			knob.position = Vector3(w / 2 - 0.12, -h / 2 + 1.0, 0.05)
 		pivot.add_child(sb)
 		sb.position = Vector3(w / 2, h / 2, 0)
-		# it breaks like a plank wall
+		# it breaks like a plank wall (the base's steel only to plasma and blasts)
 		sb.set_meta("break", map["breakables"].size())
-		sb.set_meta("break_kind", "wood")
-		sb.set_meta("hp", 120.0)
+		sb.set_meta("break_kind", "wood" if not blast else "metal")
+		sb.set_meta("hp", 120.0 if not blast else BLAST_HP)
 		map["breakables"].append(sb)
 		var d := {"pivot": pivot, "body": sb, "open": false, "c": c, "base": pivot.rotation.y}
+		if blast:
+			d["slide"] = pivot.global_position     # it slides along itself into the wall
+			d["ax"] = ax
 		doors.append(d)
 		if spec.get("open", false):
 			_swing(d, 1.0, true)
+
+## 0.60 blast door of the base: steel plate with a frame of ribs, yellow-black stripes at the
+## bottom edge and a small window (looks the same from both sides).
+const BLAST_HP := 360.0           # metal: plasma x0.4, blast x0.7 (~12 plasma rifle hits, 3 grenades)
+const BLAST_PRY := 3.2            # seconds of an alien prying it before it gives (a Bijec or more aliens faster)
+func _blast_look(sb: Node3D, w: float, h: float) -> void:
+	var dark := Game.color_mat(Color(0.2, 0.21, 0.22))
+	var yel := Game.color_mat(Color(0.85, 0.7, 0.1))
+	var blk := Game.color_mat(Color(0.08, 0.08, 0.08))
+	var add := func(pos: Vector3, size: Vector3, m: Material) -> void:
+		var mm := MeshInstance3D.new()
+		var b := BoxMesh.new()
+		b.size = size
+		mm.mesh = b
+		mm.material_override = m
+		sb.add_child(mm)
+		mm.position = pos
+	for zs in [-1.0, 1.0]:
+		var z: float = zs * 0.07
+		# ribs round the edge and across the middle
+		add.call(Vector3(0, h / 2 - 0.06, z), Vector3(w - 0.04, 0.1, 0.03), dark)
+		add.call(Vector3(-w / 2 + 0.06, 0, z), Vector3(0.1, h - 0.04, 0.03), dark)
+		add.call(Vector3(w / 2 - 0.06, 0, z), Vector3(0.1, h - 0.04, 0.03), dark)
+		add.call(Vector3(0, 0.1, z), Vector3(w - 0.2, 0.08, 0.03), dark)
+		# the stripes at the bottom
+		var n := 8
+		for k in n:
+			add.call(Vector3(-w / 2 + (k + 0.5) * w / n, -h / 2 + 0.17, z), Vector3(w / n, 0.22, 0.02), yel if k % 2 == 0 else blk)
+		# a small window, a handle
+		add.call(Vector3(0, h / 2 - 0.55, z), Vector3(0.5, 0.25, 0.02), Game.color_mat(Color(0.25, 0.4, 0.45)))
+		add.call(Vector3(w / 2 - 0.3, -0.15, z * 1.3), Vector3(0.06, 0.4, 0.05), blk)
 
 ## Power cores (big ship, alien base) hum until somebody breaks them.
 func _core_hums() -> void:
@@ -2692,9 +2739,20 @@ func _core_hums() -> void:
 
 func _swing(d: Dictionary, side: float, instant := false) -> void:
 	d["open"] = side != 0.0
-	var want: float = float(d["base"]) + side * 1.65
 	if d.has("tween") and (d["tween"] as Tween).is_valid():
 		(d["tween"] as Tween).kill()       # a new push wins over a swing still going
+	if d.has("slide"):
+		# the blast door: along itself into the corridor wall (0.1 m of it stays in sight, a handle)
+		var w: float = ((d["body"] as Node3D).get_child(0).shape as BoxShape3D).size.x
+		var to: Vector3 = (d["slide"] as Vector3) + (d["ax"] as Vector3) * (w - 0.1 if d["open"] else 0.0)
+		if instant:
+			(d["pivot"] as Node3D).global_position = to
+			return
+		var tws := create_tween()
+		d["tween"] = tws
+		tws.tween_property(d["pivot"], "global_position", to, 0.9).set_trans(Tween.TRANS_SINE)
+		return
+	var want: float = float(d["base"]) + side * 1.65
 	if instant:
 		(d["pivot"] as Node3D).rotation.y = want
 		return
@@ -2737,27 +2795,61 @@ func _door_state(i: int, side: float, slam: bool) -> void:
 	if not is_instance_valid(d["body"]):
 		return
 	_swing(d, side)
-	if slam:
+	if d.has("slide"):
+		# steel on rails: the old hatch of the ship's hull is the closest we have (Ari records his own later)
+		Game.play_at(self, "door_bash" if slam else "ufo_door", d["c"] + Vector3(0, 1.2, 0), 0 if slam else -4)
+	elif slam:
 		Game.play_at(self, "door_bash", d["c"] + Vector3(0, 1.2, 0), 0)
 	else:
 		Game.play_at(self, "door_open" if side != 0.0 else "door_close", d["c"] + Vector3(0, 1.2, 0), -3)
 		if side != 0.0 and randf() < 0.35:
 			Game.play_at(self, "door_creak", d["c"] + Vector3(0, 1.4, 0), -8)     # old hinges
 
-## Host: an alien at a shut door shoves it open (loudly).
+## Host: an alien at a shut door shoves it open (loudly). A blast door of the base it has to pry
+## for a while (BLAST_PRY; a Bijec or several of them faster), with blows the whole corridor hears.
 var _door_t := 0.0
 func _doors_tick(delta: float) -> void:
 	_door_t -= delta
 	if _door_t > 0.0 or doors.is_empty():
 		return
 	_door_t = 0.3
+	var pried := {}
 	for a in aliens():
 		if a.dead or a.husk:
 			continue
 		var i := door_near(a.global_position, 1.4)
-		if i >= 0 and not doors[i]["open"]:
-			var normal := Vector3(0, 0, 1).rotated(Vector3.UP, float(doors[i]["base"]))
-			_door_state.rpc(i, 1.0 if normal.dot(a.global_position - (doors[i]["c"] as Vector3)) > 0.0 else -1.0, true)
+		if i < 0 or doors[i]["open"]:
+			continue
+		if doors[i].has("slide"):
+			pried[i] = float(pried.get(i, 0.0)) + (2.0 if String(a.race).begins_with("bijec") or String(a.race).begins_with("kolos") else 1.0)
+			continue
+		var normal := Vector3(0, 0, 1).rotated(Vector3.UP, float(doors[i]["base"]))
+		_door_state.rpc(i, 1.0 if normal.dot(a.global_position - (doors[i]["c"] as Vector3)) > 0.0 else -1.0, true)
+	for i in doors.size():
+		var d: Dictionary = doors[i]
+		if not d.has("slide"):
+			continue
+		if not pried.has(i):
+			d["pry"] = maxf(0.0, float(d.get("pry", 0.0)) - 0.3 * 0.5)     # it does not heal at once
+			continue
+		var before := float(d.get("pry", 0.0))
+		d["pry"] = before + 0.3 * float(pried[i])
+		if int(before / 0.9) != int(float(d["pry"]) / 0.9):
+			_door_blow.rpc(i)
+			noise(d["c"], 14.0)
+		if float(d["pry"]) >= BLAST_PRY:
+			d["pry"] = 0.0
+			_door_state.rpc(i, 1.0, true)
+
+@rpc("authority", "call_local", "unreliable")
+func _door_blow(i: int) -> void:
+	if i < 0 or i >= doors.size() or not is_instance_valid(doors[i]["body"]):
+		return
+	Game.play_at(self, "door_bash", doors[i]["c"] + Vector3(0, 1.2, 0), -2)
+	var b: Node3D = doors[i]["body"]
+	var tw := create_tween()
+	tw.tween_property(b, "rotation:x", 0.025, 0.06)
+	tw.tween_property(b, "rotation:x", 0.0, 0.15)
 
 func terminal_near(p: Vector3) -> Dictionary:
 	for tm in map.get("terminals", []):
@@ -2967,20 +3059,41 @@ func _objectives_tick(delta: float) -> void:
 				spawn_alien(crew[k], from + Vector3(rr2.randf_range(-3, 3), 0.3, rr2.randf_range(-3, 3)))
 			hud_note.rpc(("DALŠÍ VLNA! Lezou dovnitř hangárem nebo šachtou výtahu (%d)." if indoor() else "DALŠÍ VLNA! Útočí od okraje rokle (%d).") % crew.size())
 
+## Our base attacked: the ways in (hangar hatch, lift shaft) that are far from the team. Not the
+## one in the room they woke in, nor one they can see - nobody is shot in the back the moment the
+## mission starts. (None far enough: the farthest one.)
+const BASE_ENTRY_FAR := 20.0
+func _base_entries_far(team: Array, entries: Array, los := true) -> Array:
+	if entries.is_empty() or team.is_empty():
+		return entries
+	var ss := get_world_3d().direct_space_state
+	var ok: Array = []
+	var best: Vector3 = entries[0]
+	var bd := -1.0
+	for e in entries:
+		var near := 1e9
+		var seen := false
+		for tp in team:
+			var pos: Vector3 = tp.global_position if tp is Node3D else tp
+			near = minf(near, pos.distance_to(e))
+			var q := PhysicsRayQueryParameters3D.create(e + Vector3(0, 1.4, 0), pos + Vector3(0, 1.4, 0), Game.WORLD)
+			if los and ss.intersect_ray(q).is_empty():
+				seen = true
+		if Game.autotest() != "": print("[BASE]   entry %s: %.1f m%s" % [str(e), near, " seen" if seen else ""])
+		if near > bd:
+			bd = near
+			best = e
+		if near >= BASE_ENTRY_FAR and not seen:
+			ok.append(e)
+	if Game.autotest() != "": print("[BASE] alien entries %d of %d far from the team (farthest %.1f m)" % [ok.size(), entries.size(), bd])
+	return ok if not ok.is_empty() else [best]
+
 ## A point at the edge of the map, far from the team.
 func _edge_point(rr: RandomNumberGenerator) -> Vector3:
 	if not map.get("entries", []).is_empty():
-		# inside our base: through the hangar hatch or down the lift shaft, whichever is farther from us
-		var bestE: Vector3 = map["entries"][0]
-		var bdE := -1.0
-		for e2 in map["entries"]:
-			var near2 := 999.0
-			for pl in players():
-				near2 = minf(near2, pl.global_position.distance_to(e2))
-			if near2 + rr.randf() * 6.0 > bdE:
-				bdE = near2
-				bestE = e2
-		return bestE
+		# inside our base: through the hangar hatch or down the lift shaft - one far from us
+		var far := _base_entries_far(players().filter(func(pl): return not pl.downed), map["entries"])
+		return far[rr.randi() % far.size()]
 	var s: float = map["size"]
 	var best := Vector3(s / 2, 0.3, s - 4)
 	var bd := 0.0

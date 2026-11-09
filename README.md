@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.60
+# Operace X - Enemy Beyond — prototyp 0.61
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,17 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.61
+- Obtížnost po prvním hraní: strach vojáka roste pomaleji a hned ho neochromí, ruce se třesou méně a panika přijde vzácněji.
+- Kampaň začíná jen se Šediváky. Další druhy přicházejí postupně: Levité od druhého měsíce, Ještěřani od třetího, Bijci a Myslodějové od čtvrtého.
+- Ocelové posuvné dveře v chodbách základny: E je zavře i otevře, vetřelci je musí chvíli páčit (Bijec rychleji) a plazma nebo výbuch je prorazí. E u dveří funguje i s věcí na zemi.
+- Levité už při útoku na základnu nelétají stropem a zdmi a neobjeví se týmu za zády. Kde nemůžou letět, jdou pěšky.
+- Kameny jsou pevné – už se nedá vejít dovnitř ani projít skrz, vetřelci je obcházejí.
+- Štít: vlastní lampa už v něm z očí nedělá bílou skvrnu a zvednutý štít opravdu zastaví většinu kulek a střepin.
+- Šablony vojáků a sady výstroje: vzhled, jméno a body nového vojáka i oblíbenou výstroj si uložím a příště je jen vyberu.
+- V lobby vidím u každého hráče ping a jestli mu jde mikrofon, a jako hostitel můžu hráče vyhodit.
+- Zpět z tvorby vojáka mě vrátí tam, odkud jsem přišel (glóbus, co-op lobby), ne do hlavního menu.
 
 ## Novinky 0.60
 - Vojáci se konečně hýbou podle pohybů, které jsem sám natočil v afk.ai: běžné, s pistolí i s těžkými zbraněmi, střelba za chůze i běhu, kulhání raněného, tasení zbraně a kolo emocí na J.
