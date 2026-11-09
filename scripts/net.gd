@@ -169,6 +169,11 @@ func _start(s: int, diff := "normal", params := {}, ff := true) -> void:
 	mission_seed = s
 	mission_difficulty = diff
 	mission_params = params
+	var real := params.has("cid") and String(params.get("type", "")) != "home"
+	if real and multiplayer.is_server() and Campaign.active:
+		Campaign.mission_begun(int(params.get("id", -1)))
+	if real and not Game.skirmish and Game.autotest() == "":
+		Game.mission_out(true)      # (0.57) until the mission's end: a crash on the way counts as missing
 	mission_started.emit()
 	get_tree().change_scene_to_file("res://scenes/Mission.tscn")
 

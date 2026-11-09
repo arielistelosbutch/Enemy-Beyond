@@ -573,6 +573,14 @@ func _rebuild_panel() -> void:
 			_build_scene())
 	if mode in ["fp", "tp", "back", "agun"]:
 		_lbl(dyn, "POSUN A NATOČENÍ PŘEDMĚTU")
+		if mode == "fp":
+			# (0.57, Ari) the left hand on its own: the gun stays where it aims
+			var lc := CheckBox.new()
+			lc.text = "Posouvám levou ruku (ne zbraň)"
+			lc.button_pressed = _fp_left
+			lc.tooltip_text = "Zapnuto: posuvníky hýbou jen levou rukou na dlouhé zbrani (úprava fpl/<zbraň>), zbraň a míření zůstávají.\nVypnuto: posouváš zbraň (fp/<zbraň>)."
+			lc.toggled.connect(func(on): _fp_left = on; _sync_sliders())
+			dyn.add_child(lc)
 		if mode in ["tp", "agun"]:
 			var pc := CheckBox.new()
 			pc.text = "Jen pro tento pohyb (zbraně)"
@@ -650,6 +658,8 @@ func _item_key() -> String:
 		return "tpa/%s@%s" % [subject, sub2]      # only in this movement (over the general one)
 	if mode == "tp" and _long_gun():
 		return "tpa/" + subject       # 0.57: the long gun in the afk hands (player.afk_gun_xform)
+	if mode == "fp" and _fp_left:
+		return "fpl/" + subject       # 0.57: the left hand alone (Game.apply_left_hand)
 	return {"fp": "fp/", "tp": "tp/", "back": "back/"}.get(mode, "") + subject
 
 ## A two-handed gun: the game puts it from the right hand towards the left (player.afk_gun_xform).
@@ -787,6 +797,8 @@ func _item_changed() -> void:
 	Game.tweaks[_item_key()] = t2
 	_place_item()
 	_mark_sub2()
+	if mode == "fp" and holder and holder.get_node_or_null("GripTwo"):
+		Game.apply_left_hand(holder.get_node("GripTwo"), subject)
 
 func _bone_changed() -> void:
 	if bone == "":
@@ -871,6 +883,7 @@ func _build_scene() -> void:
 				var hb := Game.model("hands_" + subject)
 				hb.name = "GripTwo"
 				holder.add_child(hb)
+				Game.apply_left_hand(hb, subject)
 				if mode == "afp":
 					var h1 := Game.model("hand_r")
 					h1.name = "GripOne"
@@ -1206,6 +1219,7 @@ func _apply_clip(c: Dictionary, at: float) -> void:
 		sk.set_bone_pose_position(ri, sk.get_bone_rest(ri).origin + Vector3(float(v[0]), float(v[1]), float(v[2])))
 
 var _holder_base := Transform3D()
+var _fp_left := false      # (fp) the sliders move the left hand, not the gun
 var _per_clip := false        # tp, long gun: the sliders set it for the chosen movement only
 var _ws_cal := Basis()
 var _ws_grip_basis := Basis()

@@ -857,6 +857,7 @@ func _build_scene(show := "") -> void:
 			var hb := Game.model("hands_" + item)
 			hb.name = "GripTwo"
 			holder.add_child(hb)
+			Game.apply_left_hand(hb, item)
 			var h1 := Game.model("hand_r")
 			h1.name = "GripOne"
 			h1.visible = false

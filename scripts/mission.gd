@@ -2164,6 +2164,10 @@ func _judge() -> void:
 ## Is the job done? Then Enter anywhere ends the mission - the transport comes for everybody.
 ## Every machine knows it from the host's banner (_show_done), so the client's Enter works too.
 var _airlift := false
+## (0.57) The mission was given up from the pause menu: who is not at the evac point stays out there.
+var _abandoned := false
+## Host: co-op players who walked out of it through the menu (their mercs count as lost).
+var _deserters := 0
 func objective_done() -> bool:
 	return done_banner
 
@@ -2194,7 +2198,8 @@ func _loot(success: bool) -> Dictionary:
 		if a.captured:
 			out["live_" + a.race] = int(out.get("live_" + a.race, 0)) + 1
 		elif a.dead and a.race in Campaign.WRECKS:
-			out["trosky_" + a.race] = 1      # a blown-up machine: only scraps, one load a mission
+			# a blown-up machine: only scraps - the Diskolls one load a mission, every Kolos its own
+			out["trosky_" + a.race] = int(out.get("trosky_" + a.race, 0)) + 1 if a.race == "kolos" else 1
 		elif a.dead and not a.seared:
 			out["corpse_" + a.race] = int(out.get("corpse_" + a.race, 0)) + 1
 	for a in aliens():
@@ -2212,10 +2217,11 @@ func _loot(success: bool) -> Dictionary:
 	return out
 
 @rpc("authority", "call_local", "reliable")
-func _end(success: bool, why: String, airlift := false) -> void:
-	_airlift = airlift
+func _end(success: bool, why: String, airlift := false, abandoned := false) -> void:
 	if finished:
 		return
+	_airlift = airlift
+	_abandoned = abandoned
 	finished = true
 	if Game.autotest() != "":
 		print("[END] success=%s why=%s" % [success, why])
@@ -2229,6 +2235,7 @@ func _end(success: bool, why: String, airlift := false) -> void:
 		# a quick mission: a try-out, nothing is kept (pay, experience, wounds, death)
 		fate = "rychlá mise - nic se nepočítá, tvůj voják z kampaně zůstal doma beze změny"
 	elif me:
+		Game.on_mission = ""        # (0.57) he came to the end of it (saved with him below)
 		Game.merc["missions"] = int(Game.merc.get("missions", 0)) + 1
 		Game.merc["kills"] = int(Game.merc.get("kills", 0)) + me.kills
 		Game.merc["captures"] = int(Game.merc.get("captures", 0)) + me.captures
@@ -2241,7 +2248,12 @@ func _end(success: bool, why: String, airlift := false) -> void:
 		if pay > 0:
 			xp_text += "\nTvůj žold: +%d kr (máš %d kr)%s" % [pay, purse, ("  - z toho nálezy %d kr" % me.salvage) if me.salvage > 0 else ""]
 		var aboard: bool = _airlift or me.global_position.distance_to(map["evac"]) < 3.5
-		if me.dead or (me.downed and not aboard):
+		if left_behind(me) and not me.dead and not me.downed:
+			# (0.57) the mission given up from the menu: nobody comes for him
+			purse = maxi(0, purse - 250)
+			fate = "NEZVĚSTNÝ - mise opuštěna a on nestál u místa výsadku; zůstal na místě (odškodné rodině -250 kr; úspory převzal nový voják)"
+			Game.merc = Game.new_merc()
+		elif left_behind(me):
 			# the family is paid off: less when the body came home with the team
 			var cost := 80 if aboard else 250
 			purse = maxi(0, purse - cost)
@@ -2309,12 +2321,13 @@ func _end(success: bool, why: String, airlift := false) -> void:
 		for p in players():
 			tk += p.kills
 			tc += p.captures
-			if p.dead or (p.downed and not _airlift and p.global_position.distance_to(map["evac"]) >= 3.5):
+			if left_behind(p):
 				lost += 1
+		lost += _deserters
 		if not officer_killers.is_empty():
 			Campaign.mark_nemesis(officer_killers)
 		var gl := gear_lost(success)
-		camp = Campaign.mission_done(int(Net.mission_params.get("id", -1)), success, tk, tc, lost, civ_saved, civ_dead, crew_names, _loot(success), lost >= players().size(), kits, q, gl, kits_locker)
+		camp = Campaign.mission_done(int(Net.mission_params.get("id", -1)), success, tk, tc, lost, civ_saved, civ_dead, crew_names, _loot(success), lost >= players().size() + _deserters and not _abandoned, kits, q, gl, kits_locker)
 		# what came out of their own lockers: each one crosses it off his own list
 		for peer in gl:
 			var ll := Campaign.locker_part(kits.get(peer, []), gl[peer], kits_locker.get(peer, {}))
@@ -2336,9 +2349,10 @@ func quality(success: bool) -> float:
 	var caps := 0
 	for p in players():
 		caps += p.captures
-		if p.dead or (p.downed and not _airlift and p.global_position.distance_to(map["evac"]) >= 3.5):
+		if left_behind(p):
 			lost += 1
-	q -= 0.25 * float(lost) / maxf(1.0, float(players().size()))
+	lost += _deserters
+	q -= 0.25 * float(lost) / maxf(1.0, float(players().size() + _deserters))
 	for c in civilians():
 		if c.saved: q += 0.06
 		elif c.dead: q -= 0.05
@@ -2351,14 +2365,60 @@ static func quality_name(q: float) -> String:
 	if q >= 0.6: return "ucházející"
 	return "špatně"
 
+## Does this one stay out there? Dead; down and not carried aboard; or (the mission given up from
+## the menu) simply not standing at the evac point when the transport went.
+func left_behind(p: Node) -> bool:
+	if p.dead:
+		return true
+	var aboard: bool = _airlift or p.global_position.distance_to(map["evac"]) < 3.5
+	return not aboard and (p.downed or _abandoned)
+
+## (0.57) Hardcore: "Opustit misi" in the pause menu (alive, down or dead) is not a way out of a
+## mission going badly - it was possible to walk out and fly straight back in from the globe.
+## Alone or the host: the mission ends as a FAILURE for the whole team (the globe drops it like
+## any lost mission); who does not stand at the evac point is left behind (X-COM's abort).
+## A co-op client: only he walks out - his merc is lost unless he stands at the evac point,
+## the others play on and he counts among the lost at their end.
+func leave_from_menu() -> void:
+	if finished or home() or local():
+		Net.after_mission()
+		return
+	if multiplayer.is_server():
+		_end.rpc(false, "Mise opuštěna. Transport odletěl jen s tím, kdo stál u místa výsadku.", false, true)
+		return
+	# his own end, only on this machine (the result screen, his merc's fate, then out to the lobby;
+	# the host takes his body out of the game as he goes - see _leave)
+	_walked_out = true
+	_end(false, "Opustil jsi misi. Tým pokračuje bez tebe.", false, true)
+
+var _walked_out := false
+
+## Host: a co-op player walked out of the mission (he is in the lobby now, still connected).
+@rpc("any_peer", "call_remote", "reliable")
+func _deserted() -> void:
+	if not multiplayer.is_server() or finished:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var n := actors.get_node_or_null("P%d" % id)
+	if n == null:
+		return
+	_deserters += 1
+	hud_note.rpc("%s opustil misi." % String(n.display_name))
+	n.queue_free()
+
 func _leave(why: String) -> void:
 	if Game.autotest() != "": print("[END] leave '%s'" % why)
 	if Game.autotest() != "" and Game.autotest() != "campaign" and not Game.autotest().begins_with("coopwipe"):
 		return
 	if why != "":
+		# the host went away (his game, his connection): not this player's doing - his merc lives
+		if Game.on_mission != "":
+			Game.mission_out(false)
 		Net.close()
 		Net.back_to_menu()
 		return
+	if _walked_out and Net.is_online() and not multiplayer.is_server():
+		_deserted.rpc_id(1)
 	Net.after_mission()
 
 ## Host: how close each mercenary is to being spotted (the eye on his HUD).
@@ -3083,7 +3143,7 @@ func gear_lost(success: bool) -> Dictionary:
 	var out := {}
 	for peer in kits:
 		var pl: Node = actors.get_node_or_null("P%d" % peer)
-		var home: bool = success and pl != null and not pl.dead and not (pl.downed and not _airlift and pl.global_position.distance_to(map["evac"]) >= 3.5)
+		var home: bool = success and pl != null and not left_behind(pl)
 		var now: Array = (kits_now.get(peer, []) as Array).duplicate() if home else []
 		var lost := {}
 		for i in kits[peer]:

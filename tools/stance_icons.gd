@@ -37,6 +37,13 @@ func _init() -> void:
 		var e: Array = POSES[name]
 		var m: Node3D = load("res://assets/models/merc.glb").instantiate()
 		root3.add_child(m)
+		# (0.57: one outfit - the jacket and the helmet - not every Look_ piece at once)
+		for mi in m.find_children("*", "MeshInstance3D", true, false):
+			var nm := String(mi.name)
+			if (nm.begins_with("Look_Top") or nm.begins_with("Look_Vest") or nm.begins_with("Look_Flag") or nm.begins_with("Look_Tat")
+					or nm.begins_with("Look_Paint") or nm.begins_with("Look_Glass") or nm.begins_with("Look_Neck") or nm.begins_with("Look_Mouth")
+					or nm.begins_with("Look_Armband") or nm in ["Gear_Beret", "Gear_Boonie", "Gear_Bandana", "Gear_Headset"]):
+				mi.visible = nm in ["Look_TopJacket", "Look_VestHarness"]
 		for mi in m.find_children("*", "MeshInstance3D", true, false):
 			(mi as MeshInstance3D).material_override = white
 		var sk: Skeleton3D = m.find_children("*", "Skeleton3D", true, false)[0]

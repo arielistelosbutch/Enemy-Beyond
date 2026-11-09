@@ -209,7 +209,13 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 					a._disarray_t = maxf(a._disarray_t, 8.0)
 		var ex: Array = R.get("explode", [4.0, 50.0])
 		var at := global_position + Vector3(0, float(R.get("hover", 0.0)) + (1.8 if race == "kolos" else 0.0), 0)
-		get_tree().create_timer(0.6).timeout.connect(func(): mission.explode(at, float(ex[0]), float(ex[1]), "-", true))
+		# the Kolos sinks down on its legs, then beeps faster and faster before it goes up
+		var fuse := KOLOS_FUSE if race == "kolos" else 0.6
+		if race == "kolos":
+			_beep_fx.rpc()
+		get_tree().create_timer(fuse).timeout.connect(func():
+			mission.explode(at, float(ex[0]), float(ex[1]), "-", true)
+			_wreck_fx.rpc(at))
 
 @rpc("authority", "call_local", "reliable")
 func _vent_fx() -> void:
@@ -288,3 +294,108 @@ func _mark_fx(who: String, at: Vector3) -> void:
 	if me and String(me.name) == who:
 		Game.play_ui(me, "radar_ping", -6)
 		pass
+
+const KOLOS_FUSE := 4.2
+
+## Kolos, dying: its self-destruct beeps, slowly, then faster and faster (the last ~4 s).
+@rpc("authority", "call_local", "reliable")
+func _beep_fx() -> void:
+	var t := 0.9
+	var gap := 0.55
+	while t < KOLOS_FUSE - 0.1:
+		var at_t := t
+		# Ari's own recording kolos_alarm when it is there, until then the plasma grenade's beep
+		var beep := "kolos_alarm" if ResourceLoader.exists("res://assets/sounds/kolos_alarm.wav") else "plasma_grenade_beep"
+		get_tree().create_timer(at_t).timeout.connect(func():
+			if is_inside_tree():
+				Game.play_at(mission, beep, global_position + Vector3(0, 1.2, 0), 2.0 + at_t * 1.5))
+		t += gap
+		gap = maxf(0.09, gap * 0.8)
+	# the red eye flashes with it
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.1, 0.05)
+	l.omni_range = 6.0
+	add_child(l)
+	l.position = Vector3(0, 1.6, -0.8)
+	var tw := l.create_tween().set_loops(int(KOLOS_FUSE / 0.2))
+	tw.tween_property(l, "light_energy", 4.0, 0.1)
+	tw.tween_property(l, "light_energy", 0.0, 0.1)
+
+## Diskoll and Kolos: the blast tears it apart - the machine is gone, its pieces fly and lie about on the ground.
+@rpc("authority", "call_local", "reliable")
+func _wreck_fx(at: Vector3) -> void:
+	if body:
+		body.visible = false
+	var mats := {}
+	for mi in body.find_children("*", "MeshInstance3D", true, false) if body else []:
+		var mesh: Mesh = (mi as MeshInstance3D).mesh
+		if mesh == null:
+			continue
+		for si in mesh.get_surface_count():
+			var mt := mesh.surface_get_material(si)
+			if mt:
+				mats[mt.resource_name] = mt
+	var pick := func(names: Array) -> Material:
+		for n in names:
+			if mats.has(n):
+				return mats[n]
+		return Game.color_mat(Color(0.35, 0.37, 0.4))
+	var r := RandomNumberGenerator.new()
+	r.seed = hash(String(name))
+	# hull plates, the dark frame, light strips, the lens, a gun barrel, the mast
+	var kinds := [["DisHull", "DisHull2"], ["DisHull2", "DisHull"], ["DisDark"], ["DisDark"], ["DisLight"], ["TroLens"], ["DisDark"], ["DisThrust", "DisDark"]]
+	var big := 1.0
+	var count := 14
+	if race == "kolos":
+		kinds = [["TroHull"], ["TroHull2"], ["TroDark"], ["TroDark"], ["KolGlow"], ["TroLens"], ["TroHull2"], ["TroDark"]]
+		big = 2.6
+		count = 26
+	for i in count:
+		var rb := RigidBody3D.new()
+		rb.collision_layer = 0
+		rb.collision_mask = Game.WORLD
+		rb.mass = r.randf_range(0.5, 3.0) * big * big
+		var mi := MeshInstance3D.new()
+		var size := Vector3.ZERO
+		match i % 5:
+			0, 1:      # a bent plate of the hull
+				var bm := BoxMesh.new()
+				size = Vector3(r.randf_range(0.18, 0.45) * big, r.randf_range(0.03, 0.06) * big, r.randf_range(0.15, 0.35) * big)
+				bm.size = size
+				mi.mesh = bm
+			2:         # a piece of the frame / a barrel
+				var cm := CylinderMesh.new()
+				cm.top_radius = r.randf_range(0.025, 0.05) * big
+				cm.bottom_radius = cm.top_radius
+				cm.height = r.randf_range(0.2, 0.5) * big * (1.6 if big > 1.0 else 1.0)
+				cm.radial_segments = 8
+				mi.mesh = cm
+				size = Vector3(cm.top_radius * 2.0, cm.height, cm.top_radius * 2.0)
+			3:         # a shard of the rim
+				var pm := PrismMesh.new()
+				size = Vector3(r.randf_range(0.15, 0.3) * big, r.randf_range(0.04, 0.08) * big, r.randf_range(0.12, 0.25) * big)
+				pm.size = size
+				mi.mesh = pm
+			_:         # a lump of the machinery
+				var sm := SphereMesh.new()
+				sm.radius = r.randf_range(0.06, 0.12) * big
+				sm.height = sm.radius * 1.4
+				sm.radial_segments = 10
+				sm.rings = 5
+				mi.mesh = sm
+				size = Vector3(sm.radius * 2.0, sm.height, sm.radius * 2.0)
+		mi.material_override = pick.call(kinds[i % kinds.size()])
+		rb.add_child(mi)
+		var cs := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = size.max(Vector3(0.03, 0.03, 0.03))
+		cs.shape = bs
+		rb.add_child(cs)
+		mission.add_child(rb)
+		var dir := Vector3(r.randf_range(-1, 1), r.randf_range(0.4, 1.2), r.randf_range(-1, 1)).normalized()
+		rb.global_position = at + dir * 0.3 * big
+		rb.rotation = Vector3(r.randf() * TAU, r.randf() * TAU, r.randf() * TAU)
+		rb.linear_velocity = dir * r.randf_range(4.0, 9.0) * (1.3 if big > 1.0 else 1.0)
+		rb.angular_velocity = Vector3(r.randf_range(-12, 12), r.randf_range(-12, 12), r.randf_range(-12, 12))
+		# they come to rest and stay there as wreckage (no more physics then)
+		get_tree().create_timer(6.0).timeout.connect(func(): if is_instance_valid(rb): rb.freeze = true)

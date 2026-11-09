@@ -848,13 +848,19 @@ def plasma_mag(P, c, rot=(0, 0, 0), s=1.0):
 def plasma_pistol():
     """X-WEP-008: a human pistol frame and grip, an alien emitter tube with green slits, the PL-MAG in the grip."""
     reset(); m, P = plasma_mats(); p = []
-    p.append(bx(m["dark"], (0, 0.06, 0.03), (0.034, 0.16, 0.045), 0.004, seg=2))
-    sh = cyl(P["shell"], (0, 0.13, 0.035), 0.022, 0.16, verts=12, rot=(PI2, 0, 0), r2=0.015)
+    # (0.57, Ari: the body ran into the barrel) a shorter frame with a step down to a collar, then
+    # the lighter alien emitter tube on its own in front of it
+    p.append(bx(m["dark"], (0, 0.04, 0.03), (0.034, 0.12, 0.045), 0.004, seg=2))
+    p.append(bx(m["dark"], (0, 0.096, 0.03), (0.03, 0.012, 0.038), 0.003))                # the frame's front step
+    p.append(ring(P["shell2"], 0.106, 0.035, 0.025, 0.01, verts=14))                      # the collar
+    for sx in (1, -1):
+        p.append(bx(P["core"], (sx * 0.0172, 0.04, 0.036), (0.0015, 0.07, 0.006), 0.0005))  # glow lines on the frame
+    sh = cyl(P["shell"], (0, 0.16, 0.035), 0.019, 0.1, verts=14, rot=(PI2, 0, 0), r2=0.014)
     p.append(smooth(sh))
     for i in range(2):
-        p.append(ring(P["shell2"], 0.1 + i * 0.05, 0.035, 0.022, 0.012, verts=12))
-        p.append(bx(P["core"], (0, 0.11 + i * 0.05, 0.056), (0.008, 0.025, 0.004), 0.001))
-    p.append(sphere(P["core"], (0, 0.215, 0.035), 0.013, seg=10, rings=8))
+        p.append(ring(P["shell2"], 0.135 + i * 0.045, 0.035, 0.019 - i * 0.002, 0.008, verts=14))
+        p.append(bx(P["core"], (0, 0.157 + i * 0.03, 0.0525 - i * 0.002), (0.006, 0.018, 0.003), 0.001))
+    p.append(sphere(P["core"], (0, 0.213, 0.035), 0.012, seg=10, rings=8))
     p += grip(m["black"], (0, -0.005, -0.04), (0.032, 0.04, 0.09), -0.25, m["poly"])
     p += trigger(m["dark"], 0.03, -0.005)
     p += plasma_mag(P, (0, -0.012, -0.05), rot=(-0.25, 0, 0), s=0.7)

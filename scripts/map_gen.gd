@@ -21,7 +21,6 @@ var info := {
 var us := 2                # how many blocks the ship takes on a side
 var _sky_x := -9           # the Kondor's column (roads keep off it)
 var _circle_done := false
-var _truck_done := false
 
 var biome := "farm"
 var capturing := false        # (MapPieces.capture: the editor takes a block down into data)
@@ -947,9 +946,6 @@ func _road(o: Vector3, ew := false, cross := false) -> void:
 		if not _cross_done and rng.randf() < 0.6:
 			_cross_done = true
 			_prop("cross", _rp(o, Vector3(BLOCK / 2 + 3.0, 0, BLOCK / 2 + 3.5), ew), PI / 2 + (PI / 2 if ew else 0.0))
-	if not _truck_done and not cross:
-		_truck_done = true
-		_truck(_rp(o, Vector3(BLOCK / 2 + 0.6, 0, BLOCK / 2), ew), ew)
 	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
 
 ## Nothing much: open grass (snow, sand) - room to breathe, and nowhere to hide.
@@ -1123,38 +1119,6 @@ func _dunes(o: Vector3) -> void:
 
 ## The farmer's pickup: engine dead, headlights still on, driver's door open,
 ## the radio hissing to nobody.
-func _truck(p: Vector3, ew := false) -> void:
-	info["truck"] = p
-	var ry := PI / 2 if ew else 0.0
-	var tp := func(v: Vector3) -> Vector3: return p + (Vector3(v.z, v.y, -v.x) if ew else v)
-	var paint := Game.color_mat(Color(0.35, 0.12, 0.10))
-	var dark := Game.color_mat(Color(0.05, 0.05, 0.06))
-	var glass := Game.color_mat(Color(0.1, 0.14, 0.16))
-	box(tp.call(Vector3(0, 0.8, 0)), Vector3(1.9, 0.7, 4.6), paint, true, ry)
-	box(tp.call(Vector3(0, 1.45, -0.4)), Vector3(1.8, 0.65, 1.6), glass, true, ry)
-	box(tp.call(Vector3(0, 1.8, -0.4)), Vector3(1.85, 0.08, 1.7), paint, false, ry)
-	for wx in [-0.95, 0.95]:
-		for wz in [-1.5, 1.5]:
-			cyl(tp.call(Vector3(wx, 0.38, wz)), 0.38, 0.38, 0.3, dark, false, 8).rotation = Vector3(0, ry, PI / 2)
-	# open door
-	box(tp.call(Vector3(-1.55, 1.1, -0.9)), Vector3(0.08, 1.0, 1.1), paint, false, 0.9 + ry)
-	for hx in [-0.6, 0.6]:
-		var lens := box(tp.call(Vector3(hx, 0.95, -2.32)), Vector3(0.3, 0.2, 0.05), Game.color_mat(Color(1.0, 0.95, 0.75), true), false, ry)
-		var sl := SpotLight3D.new()
-		sl.light_color = Color(1.0, 0.93, 0.75)
-		sl.light_energy = 2.5
-		sl.spot_range = 22.0
-		sl.spot_angle = 24.0
-		sl.shadow_enabled = hx < 0
-		root.add_child(sl)
-		sl.position = tp.call(Vector3(hx, 0.95, -2.4))
-		sl.rotation = Vector3(-0.08, ry, 0)
-		sl.set_meta("base", 2.5)
-		sl.set_meta("lens", lens)
-		info["elec_lights"].append(sl)
-	info["sounds"].append({"name": "static", "pos": tp.call(Vector3(0, 1.3, -0.5)), "db": -14.0})
-	_cover(tp.call(Vector3(1.6, 0, 0.5))); _cover(tp.call(Vector3(-1.8, 0, 1.5)))
-
 ## Walls with openings: segments along an axis; gaps are [from, to] in metres.
 ## Gaps are [from, to] (a doorway) or [from, to, sill] (a window: wall below the sill).
 ## Returns the wall pieces (each can be broken - see _breakable).
@@ -2370,7 +2334,8 @@ func _shop(o: Vector3) -> void:
 	var m := Game.mat("plaster", 1.0)
 	box(c + Vector3(w / 2, 0.05, d / 2), Vector3(w, 0.1, d), Game.mat("tiles", 0.5), false)
 	_wall(c, w, true, h, m, [[0.6, 3.2, 0.5], [3.8, 5.4], [6.0, 9.6, 0.5]], "brick")
-	_wall(c + Vector3(0, 0, d), w, true, h, m, [[8.6, 10.1]], "brick")
+	# the back door leads into the store room (0.57: it was at the top of the roof stair)
+	_wall(c + Vector3(0, 0, d), w, true, h, m, [[6.0, 7.5]], "brick")
 	_wall(c, d, false, h, m, [[1.5, 3.0, 1.0]], "brick")
 	_wall(c + Vector3(w, 0, 0), d, false, h, m, [], "brick")
 	_wall(c + Vector3(0, 0, 6.4), w - 2.4, true, h, m, [[3.6, 5.1]], "brick")      # store room behind
@@ -2409,9 +2374,9 @@ func _shop(o: Vector3) -> void:
 	box(c + Vector3(w - 2.0, 1.02, 1.2), Vector3(1.7, 0.04, 0.8), Game.color_mat(Color(0.75, 0.72, 0.65)), false)
 	box(c + Vector3(w - 2.4, 1.15, 1.25), Vector3(0.4, 0.2, 0.35), Game.color_mat(Color(0.2, 0.2, 0.22)), false)          # the register
 	box(c + Vector3(w - 2.4, 1.32, 1.35), Vector3(0.28, 0.16, 0.04), Game.color_mat(Color(0.2, 0.45, 0.3), true), false)
-	# the drinks fridge along the side wall, its glass still lit
-	box(c + Vector3(w - 0.5, 1.0, 4.2), Vector3(0.7, 1.9, 2.4), Game.color_mat(Color(0.85, 0.85, 0.85)))
-	box(c + Vector3(w - 0.87, 1.05, 4.2), Vector3(0.02, 1.5, 2.2), Game.color_mat(Color(0.6, 0.75, 0.8), true), false)
+	# the drinks fridge along the side wall by the till (not on the foot of the stair), its glass still lit
+	box(c + Vector3(w - 0.5, 1.0, 1.35), Vector3(0.7, 1.9, 2.4), Game.color_mat(Color(0.85, 0.85, 0.85)))
+	box(c + Vector3(w - 0.87, 1.05, 1.35), Vector3(0.02, 1.5, 2.2), Game.color_mat(Color(0.6, 0.75, 0.8), true), false)
 	# the sign over the shop window
 	box(c + Vector3(w / 2, 2.8, -0.2), Vector3(6.0, 0.7, 0.08), Game.color_mat(Color(0.12, 0.3, 0.5)), false)
 	box(c + Vector3(w / 2, 2.8, -0.245), Vector3(4.4, 0.24, 0.02), Game.color_mat(Color(0.9, 0.85, 0.6), true), false)
@@ -2485,10 +2450,12 @@ func _park(o: Vector3) -> void:
 		var tp := qp + Vector3(1.8 if q % 2 == 0 else -1.8, 0, -1.8 if q < 2 else 1.8)
 		var t := _tree(tp, ["tree_oak", "tree_oak2", "tree_birch", "tree_oak"])
 		t.scale *= 0.8
-	for b in [[Vector3(4.6, 0, 6.0), -PI / 2], [Vector3(7.4, 0, 6.0), PI / 2]]:
+	# benches along the paths between the flower beds, the seat facing the path
+	# (the bench model sits facing -z; 0.57: they used to stand in the fountain)
+	for b in [[Vector3(4.62, 0, 2.9), -PI / 2], [Vector3(7.38, 0, 9.1), PI / 2], [Vector3(9.1, 0, 4.62), PI], [Vector3(2.9, 0, 7.38), 0.0]]:
 		_prop("bench", o + (b[0] as Vector3), float(b[1]), false)
-	_prop("litter_bin", o + Vector3(4.7, 0, 7.3), -PI / 2, false)
-	_prop("litter_bin", o + Vector3(7.3, 0, 4.7), PI / 2, false)
+	_prop("litter_bin", o + Vector3(4.7, 0, 4.0), -PI / 2, false)
+	_prop("litter_bin", o + Vector3(7.3, 0, 8.0), PI / 2, false)
 	for lp in [Vector3(4.6, 0, 4.6), Vector3(7.4, 0, 7.4)]:
 		cyl(o + lp + Vector3(0, 1.6, 0), 0.05, 0.07, 3.2, Game.color_mat(Color(0.12, 0.12, 0.13)), true, 6)
 		_lamp(o + lp + Vector3(0, 3.25, 0), 0.9, 6.0, Color(1.0, 0.85, 0.6))

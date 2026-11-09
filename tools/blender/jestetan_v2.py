@@ -3,13 +3,19 @@ a long neck carrying a narrow crocodile skull with open jaws and yellow eyes, a 
 chest cuirass on a harness with red light strips, muscular clawed arms, digitigrade legs with big hooked claws,
 a heavy tail with back scutes. No weapon, T-pose, one unrigged mesh (for afk.ai); the tail is built as an even
 chain of rings so it bends well on a bone chain (see TAIL below and --rig).
-Commander (velitel, the picture with the visor): heavy dark grey plate armour with yellow stripes, a glowing visor.\nRun: python jestetan_v2.py [velitel] <out_base_without_ext> [--preview <dir>] [--rig]"""
+Commander (velitel, the picture with the visor): heavy dark grey plate armour with yellow stripes, a glowing visor.
+bezocasu: the body without the tail (only a short rounded stump) for afk.ai - its humanoid rig has no tail and a tail
+in the mesh makes the motions look awful. The tail is then written separately as <out>_ocas.glb: one closed mesh
+with its scutes and its own bones tail_root + tail.1..tail.6, in the same coordinates as the body, to be hung on
+the hips bone in the game (tail_root head = TAIL[0]).
+Run: python jestetan_v2.py [velitel] [bezocasu] <out_base_without_ext> [--preview <dir>] [--rig]"""
 import sys, os, math
 sys.path.insert(0, os.path.dirname(__file__))
 from creature_v2 import *
 
 VEL = "velitel" in sys.argv
-NAME = "jestetan_velitel_v2" if VEL else "jestetan_v2"
+NOTAIL = "bezocasu" in sys.argv
+NAME = ("jestetan_velitel_v2" if VEL else "jestetan_v2") + ("_bezocasu" if NOTAIL else "")
 reset()
 scale_m = mat2("JesScale", (0.2, 0.23, 0.09), rough=0.5)
 scale_d = mat2("JesScaleDark", (0.12, 0.14, 0.05), rough=0.55)
@@ -37,10 +43,14 @@ N = [((0, -0.03, 1.0), 0.19),     # 0 pelvis
      ((0, 0.2, 2.04), 0.09)]      # 6 head base
 E = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6)]
 prev = 0
-for p, r in zip(TAIL[1:], TAIL_R[1:]):
-    N.append((p, r))
-    E.append((prev, len(N) - 1))
-    prev = len(N) - 1
+if NOTAIL:                                                         # short rounded stump where the tail plugs in
+    N.append((Vector(TAIL[0]).lerp(Vector(TAIL[1]), 0.4)[:], 0.15))
+    E.append((0, len(N) - 1))
+else:
+    for p, r in zip(TAIL[1:], TAIL_R[1:]):
+        N.append((p, r))
+        E.append((prev, len(N) - 1))
+        prev = len(N) - 1
 for x in (1, -1):
     b = len(N)
     N += [((0.34 * x, 0, AY), 0.13), ((0.5 * x, 0, AY), 0.1), ((0.66 * x, 0, AY), 0.075),
@@ -105,18 +115,31 @@ SC = []   # scutes and back spikes: fused into the body skin below, so auto-rigg
 for k in range(5):
     z = AY - k * 0.12
     SC.append(spike(scale_d, (0, -0.2 + k * 0.01, z), (0, -0.28 + k * 0.01, z - 0.04), 0.03))
+TSC = []  # tail scutes (go with the separate tail when bezocasu)
 for i in range(len(TAIL) - 2):
     a, b = Vector(TAIL[i]), Vector(TAIL[i + 1])
     for t in (0.25, 0.75):
         p = a.lerp(b, t)
         r = TAIL_R[i] + (TAIL_R[i + 1] - TAIL_R[i]) * t
-        SC.append(bbox(belly, p + Vector((0, 0, r * 0.8)), (0.03 + r * 0.25, 0.07, 0.04 + r * 0.25), rot=(0.4, 0, 0), bevel=0.35))
+        TSC.append(bbox(belly, p + Vector((0, 0, r * (0.62 if NOTAIL else 0.8))), (0.03 + r * 0.25, 0.07, 0.04 + r * 0.25), rot=(0.4, 0, 0), bevel=0.35))
+from creature_v2 import _apply_mods
+TAILO = None
+if NOTAIL:
+    # the separate tail: from inside the stump to the tip, scutes fused in, one closed mesh
+    TAILO = skin(scale_m, [(TAIL[0], TAIL_R[0] * 0.92)] + list(zip(TAIL[1:], TAIL_R[1:])),
+                 [(i, i + 1) for i in range(len(TAIL) - 1)], "JesTail", subsurf=1)
+    TAILO.data.materials.append(belly)
+    ts = join(TSC, "TailScutes")
+    tb = TAILO.modifiers.new("Fuse", 'BOOLEAN'); tb.operation = 'UNION'; tb.solver = 'EXACT'; tb.object = ts
+    _apply_mods(TAILO)
+    bpy.data.objects.remove(ts)
+else:
+    SC += TSC
 sc = join(SC, "Scutes")
 bo = P[0].modifiers.new("Fuse", 'BOOLEAN')
 bo.operation = 'UNION'
 bo.solver = 'EXACT'
 bo.object = sc
-from creature_v2 import _apply_mods
 _apply_mods(P[0])
 bpy.data.objects.remove(sc)
 # ---- the head: long crocodile skull, jaws open, yellow eyes, red spiny crest -----------------------------------------
@@ -186,7 +209,7 @@ if VEL:   # commander (picture with the visor): heavy dark grey plate armour wit
 
 o = finish_mesh(P, NAME)
 print("STATS", stats(o))
-ARGS = [a for a in sys.argv[1:] if a != "velitel"]
+ARGS = [a for a in sys.argv[1:] if a not in ("velitel", "bezocasu")]
 OUT = ARGS[0] if ARGS and not ARGS[0].startswith("--") else NAME
 
 
@@ -251,11 +274,61 @@ def build_rig(o):
         b.rotation_mode = 'XYZ'
     return rig
 
+def export_tail(t, path):
+    """Skinned tail: tail_root (at the base, hang it on hips) -> tail.1..tail.6 along TAIL, distance weights."""
+    from mathutils.geometry import intersect_point_line
+    t.name = NAME.replace("_bezocasu", "") + "_ocas"
+    for p in t.data.polygons:
+        p.use_smooth = True
+    ad = bpy.data.armatures.new("JesTailRig")
+    rig = bpy.data.objects.new("JesTailRig", ad)
+    bpy.context.scene.collection.objects.link(rig)
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode='EDIT')
+    r0 = ad.edit_bones.new("tail_root")
+    r0.head = TAIL[0]; r0.tail = Vector(TAIL[0]) + Vector((0, 0, 0.1))
+    prev = r0
+    for i in range(6):
+        eb = ad.edit_bones.new("tail.%d" % (i + 1))
+        eb.head, eb.tail = TAIL[i], TAIL[i + 1]
+        eb.parent = prev
+        eb.use_connect = i > 0
+        prev = eb
+    bpy.ops.object.mode_set(mode='OBJECT')
+    names = ["tail.%d" % (i + 1) for i in range(6)]
+    groups = {n: t.vertex_groups.new(name=n) for n in names}
+    for v in t.data.vertices:
+        ds = []
+        for i, n in enumerate(names):
+            h, e = Vector(TAIL[i]), Vector(TAIL[i + 1])
+            q, f = intersect_point_line(v.co, h, e)
+            f = min(1.0, max(0.0, f))
+            ds.append(((v.co - h.lerp(e, f)).length, n))
+        ds.sort()
+        (d1, n1), (d2, n2) = ds[0], ds[1]
+        if d2 < d1 * 1.6 and d2 > 1e-6:
+            w2 = 0.5 * (1.0 - (d2 - d1) / (0.6 * d1))
+            groups[n1].add([v.index], 1.0 - w2, 'REPLACE')
+            groups[n2].add([v.index], w2, 'REPLACE')
+        else:
+            groups[n1].add([v.index], 1.0, 'REPLACE')
+    m = t.modifiers.new("Armature", 'ARMATURE'); m.object = rig
+    t.parent = rig
+    bpy.ops.object.select_all(action='DESELECT')
+    rig.select_set(True); t.select_set(True)
+    bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=True, export_yup=True,
+                              export_apply=False, export_animations=False, export_skins=True)
+
+
 if "--preview" in sys.argv:
     d = sys.argv[sys.argv.index("--preview") + 1]
     render(os.path.join(d, NAME + "_front.png"), (0, 0, 1.15), 5.0, 0.0, 0.2)
     render(os.path.join(d, NAME + "_34.png"), (0, -0.3, 1.15), 5.0, 1.1, 0.4)
     render(os.path.join(d, NAME + "_head.png"), (0, 0.3, 2.05), 1.3, 1.0, 0.1)
+    if TAILO:                                                    # body alone (as it goes to afk)
+        TAILO.hide_render = True
+        render(os.path.join(d, NAME + "_bez.png"), (0, -0.3, 1.15), 5.0, 1.9, 0.6)
 elif "--rig" in sys.argv:
     rig = build_rig(o)
     if "--rigtest" in sys.argv:
@@ -277,3 +350,6 @@ elif "--rig" in sys.argv:
 else:
     export_all(o, OUT)
     print("written", OUT)
+    if TAILO:
+        export_tail(TAILO, OUT + "_ocas.glb")
+        print("written", OUT + "_ocas.glb")

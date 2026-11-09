@@ -76,3 +76,11 @@ animace/fp_*_mocap.json
 animace/al_*.json
 animace/afk_*.glb
 animace/afk_*.glb.import
+
+# VR nahravani (tools/vr_nahravani.bat): cesta k Godotu a surove zaznamy
+tools/godot_cesta.txt
+animace/vr_zaznamy/
+
+# Godot a vygenerované zprávy na Ariho PC
+tools/*.exe
+kontrola_modelu.txt

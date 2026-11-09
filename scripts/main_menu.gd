@@ -264,6 +264,11 @@ func _show_main(msg := "") -> void:
 	_upd_label = _label("", ACCENT, 9)
 	_upd_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_upd_label.custom_minimum_size = Vector2(300, 0)
+	if Game.crash_note != "":
+		# (0.57) the game went down mid-mission last time: say once what it cost
+		var cn := _label(Game.crash_note, Color(1, 0.45, 0.35), 9)
+		cn.custom_minimum_size = Vector2(300, 0)
+		Game.crash_note = ""
 	_upd_btn = _button("Restartovat a hrát novou verzi", func(): Game.restart_game())
 	_upd_refresh()
 	_button("KAMPAŇ", _show_campaign)
@@ -793,6 +798,7 @@ var _cr_vp: SubViewport
 var _cr_model: Node3D
 var _cr_rot := PI + 0.4
 var _cr_face := false
+var _cr_tab := 0          # 0.57: looks tab (face / clothes / trinkets)
 var _cr_lock := false
 var _cr_cam: Camera3D
 var _cr_ui: PanelContainer
@@ -847,21 +853,55 @@ func _build_create() -> void:
 	left.add_child(title)
 	_build_preview(left)
 	var look: Dictionary = _cr["look"]
-	_cycle(left, "Pohlaví", ["Muž", "Žena"], 1 if look.get("female", false) else 0, func(i):
-		look["female"] = i == 1
-		if look["female"]:
-			look["beard"] = 0
-		if _cr_auto_name and _cr_full:
-			var r := RandomNumberGenerator.new(); r.randomize()
-			_cr["name"] = Game.random_name(look["female"], r)
-		_build_create())
-	_cycle(left, "Vlasy", Game.HAIR_STYLES.map(func(h): return h[1]), _index_of(Game.HAIR_STYLES, look.get("hair", "short")), func(i): look["hair"] = Game.HAIR_STYLES[i][0]; _refresh_preview())
-	_cycle(left, "Barva vlasů", Game.HAIR_COLORS.map(func(h): return h[0]), int(look.get("hair_color", 1)), func(i): look["hair_color"] = i; _refresh_preview())
-	if not look.get("female", false):
-		_cycle(left, "Vousy", Game.BEARDS.map(func(h): return h[1]), int(look.get("beard", 0)), func(i): look["beard"] = i; _refresh_preview())
-	_cycle(left, "Oči", Game.EYE_COLORS.map(func(h): return h[0]), int(look.get("eye_color", 0)), func(i): look["eye_color"] = i; _refresh_preview())
-	_cycle(left, "Pleť", Game.SKIN_TONES.map(func(h): return h[0]), int(look.get("skin", 1)), func(i): look["skin"] = i; _refresh_preview())
-	_cycle(left, "Na hlavě", Game.HEADGEAR.map(func(h): return h[1]), int(look.get("headgear", 0)), func(i): look["headgear"] = i; _refresh_preview())
+	# 0.57 facelift: the looks in three tabs (face / clothes / trinkets) - the column would not fit otherwise
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 2)
+	left.add_child(tabs)
+	for t in [[0, "Tvář"], [1, "Oblečení"], [2, "Doplňky"]]:
+		var tb := _small_btn(tabs, ("● " if _cr_tab == t[0] else "") + str(t[1]), func(): _cr_tab = t[0]; _build_create())
+		tb.custom_minimum_size = Vector2(68, 0)
+	if _cr_tab == 0:
+		_cycle(left, "Pohlaví", ["Muž", "Žena"], 1 if look.get("female", false) else 0, func(i):
+			look["female"] = i == 1
+			if look["female"]:
+				look["beard"] = 0
+			if _cr_auto_name and _cr_full:
+				var r := RandomNumberGenerator.new(); r.randomize()
+				_cr["name"] = Game.random_name(look["female"], r)
+			_build_create())
+		_cycle(left, "Vlasy", Game.HAIR_STYLES.map(func(h): return h[1]), _index_of(Game.HAIR_STYLES, look.get("hair", "short")), func(i): look["hair"] = Game.HAIR_STYLES[i][0]; _refresh_preview())
+		_cycle(left, "Barva vlasů", Game.HAIR_COLORS.map(func(h): return h[0]), int(look.get("hair_color", 1)), func(i): look["hair_color"] = i; _refresh_preview())
+		if not look.get("female", false):
+			_cycle(left, "Vousy", Game.BEARDS.map(func(h): return h[1]), int(look.get("beard", 0)), func(i): look["beard"] = i; _refresh_preview())
+		_cycle(left, "Oči", Game.EYE_COLORS.map(func(h): return h[0]), int(look.get("eye_color", 0)), func(i): look["eye_color"] = i; _refresh_preview())
+		_cycle(left, "Pleť", Game.SKIN_TONES.map(func(h): return h[0]), int(look.get("skin", 1)), func(i): look["skin"] = i; _refresh_preview())
+		_cycle(left, "Maskování", _look_names(Game.PAINTS), Game.look_i(look, "paint", Game.PAINTS), _look_pick(look, "paint"))
+	elif _cr_tab == 1:
+		var tops: Array = _look_names(Game.TOPS)
+		if look.get("female", false):
+			tops[3] = "Tílko"
+		_cycle(left, "Na sobě", tops, Game.look_i(look, "top", Game.TOPS), _look_pick(look, "top"))
+		_cycle(left, "Vesta", _look_names(Game.VESTS), Game.look_i(look, "vest", Game.VESTS), _look_pick(look, "vest"))
+		_cycle(left, "Kalhoty", _look_names(Game.PANTS), Game.look_i(look, "pants", Game.PANTS), _look_pick(look, "pants"))
+		_cycle(left, "Na hlavě", _look_names(Game.HEADGEAR), int(look.get("headgear", 0)), func(i): look["headgear"] = i; _build_create())
+		if Game.HEADGEAR[Game.look_i(look, "headgear", Game.HEADGEAR)][0] in ["beret", "bandana"]:
+			_cycle(left, "Barva látky", Game.BERET_COLORS.map(func(h): return h[0]), Game.look_i(look, "beret_color", Game.BERET_COLORS), _look_pick(look, "beret_color"))
+		_cycle(left, "Vlajka", Game.FLAGS.map(func(f): return f[1]), Game.flag_index(str(look.get("flag", ""))), func(i): look["flag"] = Game.FLAGS[i][0]; _refresh_preview())
+		var note := Label.new()
+		note.text = "Vesta jen na pohled - pancíř z výstroje ji překryje.\nKamufláž se na misi řídí terénem."
+		note.add_theme_font_size_override("font_size", 7)
+		note.add_theme_color_override("font_color", FRAME)
+		left.add_child(note)
+	else:
+		_cycle(left, "Tetování", _look_names(Game.TATTOOS), Game.look_i(look, "tattoo", Game.TATTOOS), _look_pick(look, "tattoo"))
+		_cycle(left, "Brýle", _look_names(Game.GLASSES), Game.look_i(look, "glasses", Game.GLASSES), _look_pick(look, "glasses"))
+		_cycle(left, "Krk a tvář", _look_names(Game.NECKS), Game.look_i(look, "neck", Game.NECKS), _look_pick(look, "neck"))
+		_cycle(left, "V puse", _look_names(Game.MOUTHS), Game.look_i(look, "mouth", Game.MOUTHS), _look_pick(look, "mouth"))
+		var note := Label.new()
+		note.text = "Tetování je vidět jen na holých pažích\n(ohrnuté rukávy, tričko, bez trička)."
+		note.add_theme_font_size_override("font_size", 7)
+		note.add_theme_color_override("font_color", FRAME)
+		left.add_child(note)
 	# ---- right: name, stats, the finish
 	var right := VBoxContainer.new()
 	right.add_theme_constant_override("separation", 2)
@@ -977,6 +1017,13 @@ func _bump(st: String, d: int) -> void:
 	lv[st] = nv
 	Game.set_levels(_cr, lv)
 	_build_create()
+
+## 0.57: the option names of a look list ([key, name] pairs) and a cycle callback that stores the index.
+func _look_names(list: Array) -> Array:
+	return list.map(func(h): return h[1])
+
+func _look_pick(look: Dictionary, key: String) -> Callable:
+	return func(i): look[key] = i; _refresh_preview()
 
 func _index_of(arr: Array, key: String) -> int:
 	for i in arr.size():
@@ -1545,7 +1592,7 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "sightshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "tpwalk", "testroom", "plasmatest", "aitest", "latetest", "gunshots", "topshot", "shieldtest", "locktest", "mocapgame", "beltthrow", "fireshot", "abase":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "lookshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "tpwalk", "blendtest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "latetest", "gunshots", "topshot", "shieldtest", "locktest", "mocapgame", "beltthrow", "fireshot", "abase":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
@@ -1793,13 +1840,15 @@ func _autotest() -> void:
 			await get_tree().create_timer(1.0).timeout
 			print("[LB] client goes down to the base alone")
 			Net.start_local_base({"type": "home", "type_name": "Základna", "base": Campaign.data["base"].duplicate(true), "grid_w": Campaign.GRID_W, "grid_h": Campaign.GRID_H, "transport": "heli", "live": [], "research": [], "night": false, "hour": 12.0, "blips": []})
-		"coophealhost":
+		"coophealhost", "aimphost":
+			if Game.autotest() == "aimphost":
+				Game.seed_override = int(Game.cmd_arg("seed", "4242"))     # (the same map for the old and the new AI)
 			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
 			while Net.roster.size() < 2:
 				await get_tree().create_timer(0.2).timeout
 			await get_tree().create_timer(0.5).timeout
 			Net.start_mission({"type": "crash", "biome": "farm", "night": false, "hour": 14.0, "place": "Test", "type_name": "Test", "id": -1})
-		"coophealclient":
+		"coophealclient", "aimpclient":
 			Game.merc["name"] = "Klient"
 			await get_tree().create_timer(1.0).timeout
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))

@@ -138,17 +138,21 @@ def hands(kind):
     r = Vector(r)
     fist(m, r, (-0.3, 0, 0), p, 1, True)
     arm(m, r + Vector((0.022, -0.045, -0.035)), r + Vector((0.1, -0.42, -0.22)), p)
+    objs = [join(p, "Hands_" + kind)]
     if l is not None:
+        # (0.57) the left hand is a piece of its own, "HandL", so the game and the Dílna can move it
+        # along the gun (the pump of the shotgun, Ari's fine-tuning of the grip)
+        pl = []
         l = Vector(l)
         if kind in PISTOLS:
             # the left hand round the right one (a pistol held in both hands)
-            fist(m, l + Vector((0.0, 0.0, 0.005)), (-0.25, 0, 0.3), p, -1, False)
-            arm(m, l + Vector((-0.03, -0.045, -0.04)), l + Vector((-0.25, -0.38, -0.24)), p, watch=True)
+            fist(m, l + Vector((0.0, 0.0, 0.005)), (-0.25, 0, 0.3), pl, -1, False)
+            arm(m, l + Vector((-0.03, -0.045, -0.04)), l + Vector((-0.25, -0.38, -0.24)), pl, watch=True)
         else:
-            support(m, l, p)
-            arm(m, l + Vector((-0.012, -0.045, -0.04)), l + Vector((-0.24, -0.4, -0.22)), p, watch=True)
-    o = join(p, "Hands_" + kind)
-    export_glb(os.path.join(OUTDIR, "hands_%s.glb" % kind), [o])
+            support(m, l, pl)
+            arm(m, l + Vector((-0.012, -0.045, -0.04)), l + Vector((-0.24, -0.4, -0.22)), pl, watch=True)
+        objs.append(join(pl, "HandL"))
+    export_glb(os.path.join(OUTDIR, "hands_%s.glb" % kind), objs)
 
 def single_hand(side):
     """One gloved hand + forearm holding something at the origin (a radio, a grenade, a knife)."""

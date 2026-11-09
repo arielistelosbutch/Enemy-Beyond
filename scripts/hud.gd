@@ -644,7 +644,9 @@ func _hand_text(c: Control, p: Node, slot: String, at: Vector2) -> void:
 				var ready := int(it.get("loaded", 0)) >= 1
 				_text(c, at + Vector2(0, 12), "článek připraven" if ready else "článek se nabíjí", ACCENT if ready else FRAME, 10)
 				if not ready:
-					c.draw_rect(Rect2(at + Vector2(118, 5), Vector2(60.0 * clampf(float(it.get("charge", 0.0)), 0.0, 1.0), 6)), FRAME)
+					# (0.57) the bar under the text, inside the panel (before, it ran out past its edge)
+					c.draw_rect(Rect2(at + Vector2(0, 16), Vector2(90.0, 3)), Color(FRAME, 0.25))
+					c.draw_rect(Rect2(at + Vector2(0, 16), Vector2(90.0 * clampf(float(it.get("charge", 0.0)), 0.0, 1.0), 3)), FRAME)
 			else:
 				_text(c, at + Vector2(0, 12), "%d / %d pulzů%s" % [int(it.get("loaded", 0)), cap, "   nabíjí se doplna" if it.get("drained", false) else ""], ACCENT, 10)
 		else:
@@ -1140,8 +1142,30 @@ func _build_pause() -> void:
 	sc.add_child(box)
 	_lbl(box, "Hra běží dál - vetřelci nečekají.", FRAME, 9)
 	settings_ui(box)
-	_btn(outer, "Opustit misi", func(): Net.after_mission())
+	# (0.57) hardcore: walking out of a real mission is its failure - the first press only warns
+	_leave_warn = _lbl(outer, "", RED, 9)
+	_leave_warn.visible = false
+	_leave_btn = _btn(outer, "Opustit misi", _leave_pressed)
 	pause_panel.visible = false
+
+var _leave_btn: Button
+var _leave_warn: Label
+var _leave_armed := false
+func _leave_pressed() -> void:
+	var m := mission()
+	if _leave_armed or m.finished or m.home() or m.local():
+		m.leave_from_menu()
+		return
+	_leave_armed = true
+	var glob := " a zmizí z globu" if Net.mission_params.has("cid") else ""
+	if multiplayer.is_server() and m.players().size() > 1:
+		_leave_warn.text = "Jsi hostitel: mise skončí NEÚSPĚCHEM pro celý tým%s. Kdo nestojí u místa výsadku, zůstane na místě (nezvěstný)." % glob
+	elif multiplayer.is_server():
+		_leave_warn.text = "Mise skončí NEÚSPĚCHEM%s. Pokud nestojíš u místa výsadku, voják zůstane na místě (nezvěstný)." % glob
+	else:
+		_leave_warn.text = "Odejdeš z mise sám, tým pokračuje. Pokud nestojíš u místa výsadku, tvůj voják zůstane na místě (nezvěstný)."
+	_leave_warn.visible = true
+	_leave_btn.text = "Opravdu opustit misi"
 
 ## Mouse sensitivity, invert, field of view - shared by the pause menu and main menu.
 static func settings_ui(box: Control) -> void:
@@ -1368,6 +1392,10 @@ func _pause() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func _resume() -> void:
+	if _leave_armed:
+		_leave_armed = false
+		_leave_warn.visible = false
+		_leave_btn.text = "Opustit misi"
 	_back_to_game()
 	paused = false
 	inventory_open = false

@@ -466,12 +466,28 @@ def chladic_pl():
     p.append(ring(P["core"], 0.0275, 0.0, 0.036, 0.04, verts=18))
     out(p, "Chladic_pl")
 
+def motor():
+    """Stronger rotor drive for the miniguns: a finned electric motor with its battery pack on the left of
+    the rear housing, a cable into the gun. Origin = the mount on the housing's side, the motor sticks out
+    to -X; its axis runs along the gun (Blender Y)."""
+    reset(); m = M(); p = []
+    p.append(bx(m["black"], (-0.004, 0.0, 0.0), (0.008, 0.09, 0.05), 0.002))                 # mounting plate
+    mo = cyl(m["dark"], (-0.032, -0.005, 0.0), 0.026, 0.085, verts=18, rot=(PI2, 0, 0))
+    p.append(smooth(mo))
+    for i in range(6):                                                                       # cooling fins
+        p.append(smooth(cyl(m["steel"], (-0.032, -0.04 + i * 0.014, 0.0), 0.029, 0.004, verts=18, rot=(PI2, 0, 0))))
+    p.append(smooth(cyl(m["black"], (-0.032, 0.042, 0.0), 0.018, 0.012, verts=14, rot=(PI2, 0, 0))))   # front bearing cap
+    p.append(bx(m["olive2"], (-0.03, -0.075, -0.012), (0.044, 0.05, 0.04), 0.004, seg=2))    # battery pack behind
+    p.append(box(m["red"], (-0.0525, -0.075, -0.004), (0.002, 0.012, 0.004)))
+    p.append(tb(m["black"], (-0.03, -0.05, 0.012), (-0.006, -0.02, 0.022), 0.004, 6))          # cable into the gun
+    out(p, "Motor")
+
 ALL = dict(kolimator_t=kolimator_t, kolimator=kolimator, optika=optika, bajonet=bajonet, tlumic=tlumic, rukojet=rukojet, svitilna=svitilna, laser=laser,
            holo=holo, clanek=clanek, cocka=cocka, chladic=chladic,
            zasobnik_r=zasobnik_r, zasobnik_p=zasobnik_p, zasobnik_s=zasobnik_s, zasobnik_mg=zasobnik_mg, dvojnozka=dvojnozka,
            brzda=brzda, kompenzator=kompenzator, dalkomer=dalkomer, pocitac=pocitac, nosic=nosic, pazba=pazba, ergo=ergo,
            zamerovac=zamerovac, stabilizator=stabilizator, chladic_mg=chladic_mg, tlumeni=tlumeni, nosny=nosny,
-           holo_pl=holo_pl, fokus=fokus, zasobnik_pl=zasobnik_pl, chladic_pl=chladic_pl)
+           holo_pl=holo_pl, fokus=fokus, zasobnik_pl=zasobnik_pl, chladic_pl=chladic_pl, motor=motor)
 for k, f in ALL.items():
     if not ONLY or k in ONLY:
         f()

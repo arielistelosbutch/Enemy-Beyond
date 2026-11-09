@@ -97,7 +97,7 @@ const LIST := {
 	"tp_throw_vse": ["Grenade_Toss", true, false, "hand", 0.3, 2.2],
 	"tp_throw_crouch_vse": ["Grenade_Toss", true, false, "hand", 0.3, 2.2],
 	"tp_strike_vse": ["Rifle_Butt", true, false, "hand", 0.0, 99.0],
-	"tp_strike_knife": ["Knife_Stab", true, false, "hand", 0.0, 99.0],
+	"tp_strike_knife": ["Knife_Stab", true, false, "hand", 0.0, 99.0, "mirror"],      # afk stabs with the left: the knife is in the right
 	"tp_strike_stun_baton": ["Sword_Attack", true, false, "hand", 0.0, 99.0],
 	"tp_heal_vse": ["Fixing_Kneeling", true, true, "hand"],
 	"tp_salute_vse": ["Salute", true, false, "hand", -1, -1, "force"],
@@ -125,6 +125,11 @@ const LIST := {
 	"tp_emote_sit_in": ["Sitting_Enter", true, false, "body"],
 	"tp_emote_sit": ["Sitting_Idle", true, true, "body"],
 	"tp_emote_sit_out": ["Sitting_Exit", true, false, "body"],
+	# dragging a downed teammate (Ari's Solider-drag.glb; its names clash with the common pack's, so
+	# install it from a copy renamed Jog_Backward -> Drag_Pull, Sitting_Idle -> Drag_Sit, given alone in --src):
+	# the one who drags walks backwards holding him, the one dragged sits and slides along
+	"tp_body_drag": ["Drag_Pull", true, true, "body"],
+	"tp_body_dragged": ["Drag_Sit", true, true, "body"],
 	"tp_atease_vse": ["Idle_FoldArms", true, true, "body", -1, -1, "noroot force"],
 	"tp_use_vse": ["Interact", true, false, "hand", 0.0, 99.0],
 	"tp_hit_1_vse": ["Hit_Small_Front", true, false, "upper"],

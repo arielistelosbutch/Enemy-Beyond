@@ -239,7 +239,7 @@ const SHOP_AL := {"pancir": 6, "laser_cannon": 4, "plasma_rifle": 4, "plasma_can
 ## What the team brings home from a won mission (collected automatically).
 ## Machines that blow up when they fall: what is left are scraps. After this many won missions
 ## with one shot down the workshop puts a whole one together (that counts as the body for research).
-const WRECKS := {"diskoll": 3}
+const WRECKS := {"diskoll": 3, "kolos": 3}
 
 const LOOT_NAMES := {"a_pistol": "Plazmová pistole vetřelců", "a_rifle": "Plazmová puška vetřelců", "a_heavy": "Těžká plazma vetřelců",
 	"slitiny": "Vetřelecké slitiny", "moskovium": "Moskovium 115"}
@@ -376,7 +376,21 @@ func load_campaign() -> bool:
 				if not rid in done:
 					done.append(rid)
 	active = not data.is_empty()
+	# (0.57) the game went down in the middle of a mission (Alt+F4, a crash): it is not waiting on
+	# the globe to be tried again - it counts as lost, like walking out of it from the menu
+	if active and data.has("in_mission"):
+		var mid := int(data["in_mission"])
+		data.erase("in_mission")
+		_log("Spojení s výsadkem se přerušilo uprostřed mise. Mise se počítá jako neúspěch.")
+		mission_done(mid, false, 0, 0, 0)
 	return active
+
+## (0.57) Host: a mission has begun - remembered in the save until mission_done closes it.
+func mission_begun(id: int) -> void:
+	if not active or id < 0 or Game.autotest() != "":
+		return
+	data["in_mission"] = id
+	save()
 
 ## The host keeps every campaign mercenary (his own and the players'): name -> record.
 ## Returns the record to play with: the kept one when it is further along, else the given one (stored).
@@ -1404,6 +1418,7 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 	if m.is_empty():
 		return ""
 	data["missions"].erase(m)
+	data.erase("in_mission")
 	# the transport (and its escort) fly home - unless the whole team fell and it is lost out there
 	for c in crafts().duplicate():
 		if c["kind"] != "jet" and int(c["target"]) == id:

@@ -15,6 +15,7 @@ const RUN := 3.4
 const GRAVITY := 18.0
 const SIGHT_ANGLE := 0.5   # cos(60°)
 const BoltScript := preload("res://scripts/bolt.gd")
+const AT := preload("res://scripts/alien_tactics.gd")    # (the AI plan: threats, grenades, fear, searching)
 
 ## Race table. hp, speeds, armor (damage taken x), capsule, eye height, bolt power,
 ## shots per burst, accuracy (miss x), rate (time between shots x), glint (eye shine),
@@ -61,7 +62,7 @@ const RACES := {
 	"pylon": {"name": "Pylon štítu", "hp": 260.0, "walk": 0.0, "run": 0.0, "armor": 0.7, "model": "pylon", "h": 2.9, "r": 0.6, "eye": 2.8,
 		"hide": 0.0, "explode": [3.0, 25.0], "weak": {"explosion": 2.0}},
 	"kolos": {"name": "Kolos", "hp": 340.0, "walk": 2.4, "run": 4.6, "armor": 0.45, "model": "kolos", "h": 2.4, "r": 0.9, "eye": 2.0,
-		"bolt": 1.3, "shots": [2, 3], "miss": 0.8, "explode": [6.0, 90.0], "hide": 0.0, "tac": "brute", "weak": {"explosion": 1.3}, "climb": true, "jet": 0.45},
+		"bolt": 1.3, "shots": [2, 3], "miss": 0.8, "explode": [8.5, 100.0], "hide": 0.0, "tac": "brute", "weak": {"explosion": 1.3}, "climb": true, "jet": 0.45},
 }
 
 ## Heavy weapons of the soldier races (each one carries one of its race's "guns").
@@ -163,6 +164,20 @@ var _duck_t := 0.0
 var _seen_t := -99.0
 var nemesis: Node = null      # the marked mercenary it hunts (killed one of their commanders)
 var _nem_t := 0.0
+# (alien_tactics.gd keeps its state here)
+var _seen_pos := {}           # player name -> [where, mission time] it was last seen or reported
+var _thr_t := -1.0
+var _thr_cache := []
+var _hurt_by := {}            # player name -> mission time he last hit it
+var _fear := 0.0
+var _hurt_scare := false
+var _dodge_t := 0.0
+var _nade_chk := 0.0
+var _nade_at := Vector3.ZERO
+var _nades_seen := {}
+var _search_spots := []
+var _srch_look := 0.0
+var _rehide_t := -99.0
 
 func is_alien() -> bool:
 	return true
@@ -259,7 +274,7 @@ func setup(data: Dictionary) -> void:
 		eye_glint.position = gl[0]
 	if R.has("hover"):
 		# (Ari's afk Levit hangs its tentacles down to the ground itself: just off it)
-		m.position.y = float(R["hover"]) if not _afk_native else 0.0
+		m.position.y = float(R["hover"]) if not (_afk_native and race in AFK_GROUNDED) else 0.0
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"
 	var cfg := SceneReplicationConfig.new()
@@ -327,7 +342,10 @@ func _physics_process(delta: float) -> void:
 	if husk:
 		# fallen, twitching on the ground
 		bob_t += delta * 0.4
-		body.position.y = lerp(body.position.y, -float(R.get("hover", 0.0)) * 0.75, delta * 4.0)
+		var down_y := -float(R.get("hover", 0.0)) * 0.75
+		if race == "nador" and _afk_native and _rig:
+			down_y = _head_down_y()      # its head on the ground, the tentacles out to the sides
+		body.position.y = lerp(body.position.y, down_y, delta * 4.0)
 		body.rotation.z = sin(bob_t * 3.0) * 0.05
 		_rigid_anim(delta * 0.3)
 	elif R.has("hover"):
@@ -433,13 +451,16 @@ func _soft_parts(m: Node) -> void:
 	var sk: Skeleton3D = m.find_child("Skeleton3D", true, false)
 	if sk and sk.find_bone("cape.L.0") >= 0:
 		_cape_springs(sk)
+	for k: Skeleton3D in m.find_children("*", "Skeleton3D", true, false):
+		if k.find_bone("tent_0_0") >= 0 or k.find_bone("tailx_0") >= 0 or k.find_bone("tail.1") >= 0:
+			_afk_springs(k)
 	for mi in m.find_children("*", "MeshInstance3D", true, false):
 		var mesh: Mesh = (mi as MeshInstance3D).mesh
 		if mesh == null:
 			continue
 		for si in mesh.get_surface_count():
 			var mat := mesh.surface_get_material(si) as StandardMaterial3D
-			if mat == null or not TENTACLES.has(mat.resource_name):
+			if mat == null or not TENTACLES.has(mat.resource_name) or _springs != null:
 				continue
 			if _tent_shader == null:
 				_tent_shader = load("res://shaders/tentacle_sway.gdshader")
@@ -481,6 +502,103 @@ func _cape_springs(sk: Skeleton3D) -> void:
 		cap.position_offset = Vector3(0, c[3], 0)
 		sim.add_child(cap)
 
+## 0.57: Ari's afk models with spring bones added (tools: afk_springs, see CLAUDE.md): the Levit's
+## twelve tentacles (tent_<i>_0..3, tip) and the Ještěřan's tail (tailx_0..3, tip). They hang on the
+## animated body and swing after it by themselves - the afk movements stay as they are. The ground
+## (a plane on the root bone) keeps them out of the floor, also when the body falls dead.
+var _springs: SpringBoneSimulator3D = null
+func _afk_springs(sk: Skeleton3D) -> void:
+	var sim := SpringBoneSimulator3D.new()
+	sim.name = "Springs"
+	sk.add_child(sim)
+	var chains: Array = []
+	var i := 0
+	while sk.find_bone("tent_%d_0" % i) >= 0:
+		chains.append(["tent_%d_0" % i, "tent_%d_tip" % i, 1.0, 0.35, 1.2, 0.05])
+		i += 1
+	if sk.find_bone("tailx_0") >= 0:
+		chains.append(["tailx_0", "tailx_tip", 0.9, 0.5, 0.35, 0.08])
+	if sk.find_bone("tail.1") >= 0:
+		chains.append(["tail.1", "tail.6", 0.9, 0.5, 0.35, 0.08])     # the tail as a part of its own (afk_tail)
+	sim.setting_count = chains.size()
+	for k in chains.size():
+		var c: Array = chains[k]
+		sim.set_root_bone_name(k, c[0])
+		sim.set_end_bone_name(k, c[1])
+		sim.set_stiffness(k, c[2])
+		sim.set_drag(k, c[3])
+		sim.set_gravity(k, c[4])
+		sim.set_gravity_direction(k, Vector3.DOWN)
+		sim.set_radius(k, c[5])
+		if c[1] == "tail.6":
+			sim.set_extend_end_bone(k, true)
+			sim.set_end_bone_length(k, 0.25)
+	var root := sk.find_bone("root")
+	var ground := SpringBoneCollisionPlane3D.new()
+	if root >= 0 and (race in AFK_GROUNDED or not R.has("hover")):
+		ground.bone_name = "root"
+		ground.position_offset = Vector3(0, -sk.get_bone_global_rest(root).origin.y + 0.02, 0)
+	else:
+		# a skeleton of its own (the tail): the ground follows the alien (_spring_tick)
+		ground.top_level = true
+		_spring_ground = ground
+	sim.add_child(ground)
+	_springs = sim
+var _spring_ground: Node3D = null
+
+## Dead: nothing holds them in shape any more - they flop to the ground.
+func _springs_limp() -> void:
+	if _springs == null:
+		return
+	_springs.set_external_force(Vector3.ZERO)
+	var sk := _springs.get_parent() as Skeleton3D
+	for k in _springs.setting_count:
+		_springs.set_stiffness(k, 0.06)
+		_springs.set_drag(k, 0.55)
+		_springs.set_gravity(k, 4.0)
+		if race == "nador" and sk:
+			# Nádor: its head lies on the ground, the tentacles slide out to all sides
+			var r := sk.find_bone(_springs.get_root_bone_name(k))
+			var e := sk.find_bone(_springs.get_end_bone_name(k))
+			if r >= 0 and e >= 0:
+				var out := sk.get_bone_global_pose(e).origin - sk.get_bone_global_pose(r).origin
+				out.y = 0.0
+				if out.length() < 0.01:
+					out = Vector3(cos(k * 2.4), 0, sin(k * 2.4))
+				_springs.set_gravity_direction(k, (out.normalized() * 1.0 + Vector3.DOWN * 0.35).normalized())
+				_springs.set_gravity(k, 3.0)
+
+## Up again (the Nádor rising from its husk): the tentacles hang and swing as before.
+func _springs_firm() -> void:
+	if _springs == null:
+		return
+	for k in _springs.setting_count:
+		if not String(_springs.get_root_bone_name(k)).begins_with("tent_"):
+			continue
+		_springs.set_stiffness(k, 1.0)
+		_springs.set_drag(k, 0.35)
+		_springs.set_gravity(k, 1.2)
+		_springs.set_gravity_direction(k, Vector3.DOWN)
+
+## Nádor down: the body height that lays its head (the round body) on the ground.
+func _head_down_y() -> float:
+	var hi := _rig.find_bone("head")      # (the middle of the round body)
+	if hi < 0:
+		return body.position.y
+	var hy: float = (_rig.global_transform * _rig.get_bone_global_pose(hi)).origin.y - global_position.y
+	return body.position.y + 0.34 * float(R.get("scale", 1.0)) - hy
+
+## The Levit's tentacles stir a little even when it hangs still (as if in a current).
+func _spring_tick() -> void:
+	if _spring_ground and is_inside_tree():
+		_spring_ground.global_transform = Transform3D(Basis(), global_position + Vector3(0, 0.02, 0))
+	if _springs == null or not R.has("hover"):
+		return
+	if dead or husk:
+		return
+	var t := bob_t
+	_springs.set_external_force(global_transform.basis * Vector3(sin(t * 1.3) * 0.25, 0, cos(t * 0.9) * 0.25))
+
 var _tent_last := Vector3.INF
 var _tent_vel := Vector3.ZERO
 func _tentacle_tick(delta: float) -> void:
@@ -495,7 +613,7 @@ func _tentacle_tick(delta: float) -> void:
 ## Mixamo motion for some races (animace/mixamo_<race>.glb, made by tools/blender/retarget_mixamo.py).
 ## It is only in the game package, not in the sources (Mixamo licence): without it the old clips stay.
 const MIXAMO_CLIPS := {"bijec": "res://animace/mixamo_bijec.glb", "bijec_velitel": "res://animace/mixamo_bijec.glb"}
-const ONE_SHOT := ["roar"]
+const ONE_SHOT := ["roar", "vanish", "materialize"]
 static var _mx_cache := {}
 func _mixamo_clips() -> void:
 	var path: String = MIXAMO_CLIPS.get(race, "")
@@ -610,16 +728,55 @@ const AFK_MODELS := {
 		"pounce": "Mutant_Jump_Attack",
 		"death": ["Death_B", "Death_C", "Death_D", "Death_Forward", "Death_Headshot", "Death_Left", "Death_Right", "Death_Flying_Back"],
 		"death_crouch": "Death_Crouching"},
+	# Ještěřan: animated in afk without its tail (it gets the tail of its own, afk_tail); the commander
+	# is his model on the very same afk rig (his armour skinned onto it), so the same movements
 	"jestetan": {"idle": "Rifle_Idle", "walk": "Rifle_Walk", "run": "Rifle_Run", "aim": "Rifle_Aim_Idle",
 		"lurk": "Rifle_Kneel_Idle", "lurk_walk": "Rifle_Crouch_Walk", "attack": ["Rifle_Butt", "Headbutt"], "fire": "Rifle_Fire",
-		"death": ["Death_A", "Death_B", "Death_C", "Death_D", "Death_Backward", "Death_Left", "Death_Right", "Death_Flying_Back", "Rifle_Death"]},
+		"death": ["Death_A", "Death_B", "Death_C", "Death_Backward", "Death_Forward", "Death_Headshot", "Death_Left", "Death_Right", "Rifle_Death"],
+		"death_crouch": "Death_Crouching"},
+	"jestetan_velitel": {"idle": "Rifle_Idle", "walk": "Rifle_Walk", "run": "Rifle_Run", "aim": "Rifle_Aim_Idle",
+		"lurk": "Rifle_Kneel_Idle", "lurk_walk": "Rifle_Crouch_Walk", "attack": ["Rifle_Butt", "Headbutt"], "fire": "Rifle_Fire",
+		"death": ["Death_A", "Death_B", "Death_C", "Death_Backward", "Death_Forward", "Death_Headshot", "Death_Left", "Death_Right", "Rifle_Death"],
+		"death_crouch": "Death_Crouching"},
 	"bijec": {"idle": "Rifle_Idle", "walk": "Rifle_Walk", "run": "Rifle_Run", "aim": "Rifle_Aim_Idle",
 		"lurk": "Rifle_Kneel_Idle", "lurk_walk": "Rifle_Crouch_Walk", "attack": "Rifle_Butt", "fire": "Rifle_Fire", "roar": "Roar",
 		"death": ["Death_B", "Death_D", "Death_Backward", "Death_Flying_Back", "Death_Headshot", "Death_Left", "Death_Right", "Death_To_Knees", "Rifle_Death"],
 		"death_crouch": "Death_Crouching"},
-	# Levit: Ari's own rig (skirt, tentacles); floats, so it dies by the code (no deaths in the pack)
-	"levit": {"idle": "Float_Idle", "walk": "Drift", "run": "Chase", "aim": "Float_Idle", "lurk": "Float_Idle"},
+	# Levit: Ari's own rig (skirt, tentacles - these on spring bones now); its deaths are the Ještěřan's
+	# afk deaths moved onto its upper body (tools/blender/afk_springs.py), the tentacles fall by themselves
+	"levit": {"idle": "Float_Idle", "walk": "Drift", "run": "Chase", "aim": "Float_Idle", "lurk": "Float_Idle",
+		"death": ["Death_A", "Death_B", "Death_C", "Death_D", "Death_Flying_Back", "Rifle_Death"]},
+	# Ohař: Ari's own four-legged rig (ohar_v3), 89 movements
+	"ohar": {"idle": "Idle", "walk": "Walk", "run": "Run", "aim": "Combat_Idle", "lurk": "Stalk_Crouch", "lurk_walk": "Sneak",
+		"attack": ["Bite", "Paw_Swipe_Left", "Bite_Lunge", "Paw_Swipe_Right"], "pounce": "Leap_Attack", "roar": "Howl",
+		"death": ["Death", "Knockdown"]},
+	# the races Ari animated first (their old models on rigs of his own, the same meshes and places):
+	# Nakažený on afk's humanoid rig (its strikes are the Líhavec's, moved over: tools/blender/afk_zombie.py)
+	"zombie": {"idle": "Idle Hurt", "walk": "Injured_Walk", "run": "Walk", "aim": "Idle Hurt", "lurk": "Idle_Rail", "lurk_walk": "Crouch_Walk",
+		"attack": ["Zombie_Scratch", "Hook_Lead"],
+		"death": ["Death_A", "Death_B", "Death_C", "Death_D", "Death_Backward", "Death_Forward", "Death_Left", "Death_Right", "Death_To_Knees"],
+		"death_crouch": "Death_Crouching"},
+	"diskoll": {"idle": "Look_Around", "walk": "Float", "run": "Spin", "aim": "Float", "lurk": "Float"},
+	"kolos": {"idle": "Idle", "walk": "Walk", "run": "Walk", "aim": "Idle", "lurk": "Groom", "attack": "Bite"},
+	"myslodej": {"idle": "Float_Idle", "walk": "Drift", "run": "Drift", "aim": "Sway", "lurk": "Float_Idle", "attack": ["Wail", "Cackle"],
+		"vanish": "Vanish", "materialize": "Materialize"},
+	"nador": {"idle": "Float_Idle", "walk": "Sway", "run": "Chase", "aim": "Float_Idle", "lurk": "Float_Idle", "fire": "Spook"},
+	# Ohnivec: the walk and the death Ari added later (tools/blender/afk_merge.py)
+	"ohnivec": {"idle": "Idle", "walk": "Walk", "run": "Walk", "aim": "Idle", "lurk": "Eat", "fire": "Snap", "attack": "Snap",
+		"death": ["Death"]},
 }
+## afk exports that face -Z already (like ours): not turned round.
+const AFK_NO_TURN := ["ohnivec"]
+## afk models that stand on the ground by themselves (the hover is in their movements): the others
+## keep the old model's hover (the same mesh, the same place) and fall out of the air when they die.
+const AFK_GROUNDED := ["levit"]
+## Pieces of the old model the afk export lost, hung on a bone of it: race -> {piece: bone}.
+const AFK_GRAFT := {"diskoll": {"Guns": "body"}}
+## The size of an afk model against the game's old one (Ari's Ohař is a head taller than the hit capsule).
+const AFK_SCALE := {"ohar": 0.85}
+## The leap clip for a race whose leap differs from the Líhavec's: [skip at the start, speed] -
+## so that it springs ~0.15 s and lands ~0.85 s after the start, like the brain's leap (melee_alien LEAP_*).
+const AFK_LEAP := {"ohar": [0.37, 0.66]}
 ## Our bone names on Ari's afk skeleton (Unreal style).
 const AFK_BONE := {"hips": "pelvis", "spine": "spine_02", "neck": "neck_01", "head": "head",
 	"upperarm.L": "upperarm_l", "forearm.L": "lowerarm_l", "hand.L": "hand_l",
@@ -651,8 +808,12 @@ static func afk_scene(race_id: String) -> Node3D:
 		return null
 	var holder := Node3D.new()
 	var inst: Node3D = ps.instantiate()
-	inst.rotation.y = PI          # afk stands facing +Z, ours face -Z
+	if not race_id in AFK_NO_TURN:
+		inst.rotation.y = PI          # afk stands facing +Z, ours face -Z
+	inst.scale *= float(AFK_SCALE.get(race_id, 1.0))
+	afk_tail(inst, race_id)
 	holder.add_child(inst)
+	_afk_graft(inst, race_id)
 	Game._restyle(inst)
 	var ap: AnimationPlayer = inst.find_child("AnimationPlayer", true, false)
 	var lib: AnimationLibrary = ap.get_animation_library(&"") if ap else null
@@ -674,11 +835,81 @@ static func afk_scene(race_id: String) -> Node3D:
 		_pin_forward(lib.get_animation("pounce"))
 	return holder
 
+## 0.57: Ari animates the Ještěřan in afk without its tail (afk's humanoid rig has none and the
+## tail spoiled the movements); the tail is a model of its own (assets/models/<race>_ocas.glb, made
+## by tools/blender/jestetan_v2.py ... bezocasu: tail_root, tail.1-6, in the body's own coordinates)
+## hung on the pelvis here, swinging on spring bones (_afk_springs). A model that has its own tail
+## bones (tailx_0 from afk_springs.py) gets none.
+const AFK_TAIL := {"jestetan": "jestetan_ocas", "jestetan_velitel": "jestetan_velitel_ocas"}
+static func afk_tail(inst: Node3D, race_id: String) -> void:
+	var path := "res://assets/models/%s.glb" % AFK_TAIL.get(race_id, "")
+	if not AFK_TAIL.has(race_id) or not ResourceLoader.exists(path):
+		return
+	var sk: Skeleton3D = inst.find_child("Skeleton3D", true, false)
+	if sk == null or sk.find_bone("tailx_0") >= 0 or sk.find_bone("tail.1") >= 0:
+		return
+	var pi := sk.find_bone("pelvis")
+	var hi := sk.find_bone("head")
+	if pi < 0:
+		return
+	var tail: Node3D = (load(path) as PackedScene).instantiate()
+	tail.name = "Tail"
+	Game._restyle(tail)
+	# the skeleton's place in the afk scene (its Armature may be turned or scaled)
+	var to_sk := Transform3D()
+	var n: Node = sk
+	while n != inst and n is Node3D:
+		to_sk = (n as Node3D).transform * to_sk
+		n = n.get_parent()
+	var rest := sk.get_bone_global_rest(pi)
+	# the tail was made facing -Z like our models; afk's export faces +Z (head ahead of the pelvis)
+	var flip := hi >= 0 and (to_sk * sk.get_bone_global_rest(hi).origin).z > (to_sk * rest.origin).z
+	var place := Transform3D(Basis(Vector3.UP, PI) if flip else Basis(), Vector3.ZERO)
+	var att := BoneAttachment3D.new()
+	att.name = "TailMount"
+	att.bone_name = "pelvis"
+	sk.add_child(att)
+	att.add_child(tail)
+	tail.transform = rest.affine_inverse() * to_sk.affine_inverse() * place
+
+## The old model's piece (in the old model's own place) on a bone of the afk model.
+static func _afk_graft(inst: Node3D, race_id: String) -> void:
+	if not AFK_GRAFT.has(race_id):
+		return
+	var sk: Skeleton3D = inst.find_child("Skeleton3D", true, false)
+	if sk == null:
+		return
+	var old: Node3D = Game.model(String(RACES[race_id]["model"]))
+	for pn: String in AFK_GRAFT[race_id]:
+		var bi := sk.find_bone(String(AFK_GRAFT[race_id][pn]))
+		var piece: Node3D = old.find_child(pn, true, false)
+		if bi < 0 or piece == null:
+			continue
+		var at := Transform3D()
+		var n: Node = piece
+		while n != old and n is Node3D:
+			at = (n as Node3D).transform * at
+			n = n.get_parent()
+		piece.get_parent().remove_child(piece)
+		var att := BoneAttachment3D.new()
+		att.name = "Graft" + pn
+		att.bone_name = sk.get_bone_name(bi)
+		sk.add_child(att)
+		att.add_child(piece)
+		# the skeleton's place in the model as the holder (turned round) sees it
+		var to_sk := Transform3D()
+		n = sk
+		while n != null and n is Node3D:
+			to_sk = (n as Node3D).transform * to_sk
+			n = n.get_parent()
+		piece.transform = sk.get_bone_global_rest(bi).affine_inverse() * to_sk.affine_inverse() * at
+	old.free()
+
 ## The leap carries the body itself (the brain moves it to the prey): the pelvis keeps its height and
 ## bob, but not its own way forward - or it would land twice as far and snap back afterwards.
 static func _pin_forward(a: Animation) -> void:
 	for t in a.get_track_count():
-		if a.track_get_type(t) != Animation.TYPE_POSITION_3D or String(a.track_get_path(t).get_concatenated_subnames()) != "pelvis":
+		if a.track_get_type(t) != Animation.TYPE_POSITION_3D or not String(a.track_get_path(t).get_concatenated_subnames()) in ["pelvis", "Hips"]:
 			continue
 		if a.track_get_key_count(t) == 0:
 			continue
@@ -735,9 +966,11 @@ static func _afk_build(c: Dictionary, sk: Skeleton3D, sk_path: String, ref: Anim
 const ROAR_TIME := 3.4
 var seared := false      # burnt by a plasma grenade (PG-01): nothing left for the lab or the armory
 var _cry_anim_t := 0.0      # the Bijec officer's war cry: the whole body roars for a moment
+var _tele_anim_t := 0.0     # Mysloděj after a teleport: Ari's Materialize
 
 func _animate(delta: float) -> void:
 	_flinch_tick(delta)
+	_spring_tick()
 	if not _tent_meshes.is_empty():
 		_tentacle_tick(delta)
 	if anim == null:
@@ -750,7 +983,10 @@ func _animate(delta: float) -> void:
 	var want := "idle"
 	_cry_anim_t -= delta
 	_fire_anim_t -= delta
-	if _cry_anim_t > 0.0 and anim.has_animation("roar"):
+	_tele_anim_t -= delta
+	if _tele_anim_t > 0.0 and anim.has_animation("materialize"):
+		want = "materialize"       # Mysloděj takes shape again where it went
+	elif _cry_anim_t > 0.0 and anim.has_animation("roar"):
 		want = "roar"
 	elif _fire_anim_t > 0.0 and _speed < 0.5 and not lurking and anim.has_animation("fire"):
 		want = "fire"              # the recoil of the shot (Ještěřan)
@@ -779,15 +1015,15 @@ func _animate(delta: float) -> void:
 	if anim.current_animation != want:
 		anim.play(want, 0.25 if want != "pounce" else 0.1)
 		if want == "pounce":
-			anim.seek(LEAP_SKIP, true)    # straight into the crouch before the spring
-	if want == "roar":
+			anim.seek(float(AFK_LEAP.get(race, [LEAP_SKIP])[0]), true)    # straight into the crouch before the spring
+	if want == "roar" or want == "materialize":
 		anim.speed_scale = 1.0
 		anim.advance(delta)
 		_activity_pose(delta)
 		return
 	anim.speed_scale = clamp(_speed / walk_spd, 0.7, 1.6) if want == "walk" else (clamp(_speed / run_spd * 1.2, 0.7, 1.4) if want == "run" else 1.0)
 	if want == "pounce":
-		anim.speed_scale = LEAP_ANIM_SPEED
+		anim.speed_scale = float(AFK_LEAP.get(race, [0.0, LEAP_ANIM_SPEED])[1])
 	elif want == "lurk_walk":
 		anim.speed_scale = clampf(_speed / walk_spd, 0.6, 1.6)
 	elif want.begins_with("attack") and _afk_native:
@@ -825,11 +1061,15 @@ var _limp := {}                  # bone index -> target extra rotation
 
 func _death_setup() -> void:
 	_death_t = 0.0
+	_springs_limp()
 	if anim:
 		anim.pause()
 	var hov := float(R.get("hover", 0.0))
-	if anim and not _afk_deaths.is_empty() and hov <= 0.0:
-		# Ari's own deaths: the whole body falls by itself (crouched in hiding: from the crouch)
+	if anim and not _afk_deaths.is_empty() and (hov <= 0.0 or (_afk_native and race in AFK_GROUNDED)):
+		# Ari's own deaths: the whole body falls by itself (crouched in hiding: from the crouch;
+		# the afk Levit stands on the ground already, its bob stops)
+		body.position.y = 0.0
+		body.rotation.z = 0.0
 		var pick: String = _afk_deaths[absi(hash(String(name))) % _afk_deaths.size()]
 		if lurking and anim.has_animation("death_crouch"):
 			pick = "death_crouch"
@@ -850,10 +1090,17 @@ func _death_setup() -> void:
 	if first:
 		bb = AABB(Vector3(-0.3, 0, -0.3), Vector3(0.6, float(R["h"]), 0.6))
 	var dir := absi(hash(String(name))) % 4
-	if hov > 0.0:
+	if hov > 0.0 and race == "nador" and _afk_native and _rig:
+		# Nádor: the head comes down upright onto the ground (the tentacles splay out: _springs_limp)
+		_fall = Vector3.ZERO
+		_rest_y = hov + _head_down_y() - body.position.y
+	elif hov > 0.0:
 		# floaters drop out of the air and land on their side
 		_fall = Vector3(0, 0, 0.35 if dir % 2 == 0 else -0.35)
 		_rest_y = -bb.position.y + 0.02 - 0.05
+	elif race == "kolos" and _afk_native and _rig:
+		_kolos_splay()
+		return
 	else:
 		match dir:
 			0: _fall = Vector3(PI / 2, 0, 0); _rest_y = bb.end.z           # on its back
@@ -876,6 +1123,33 @@ func _death_setup() -> void:
 				var v: Vector3 = want[bn] * r.randf_range(0.7, 1.2)
 				_limp[i] = [_skel.get_bone_pose_rotation(i), _skel.get_bone_pose_rotation(i) * Quaternion.from_euler(v)]
 
+## Kolos: no toppling - the body sinks onto the ground, all its legs slide out to the sides.
+var _splay_drop := 0.0
+func _kolos_splay() -> void:
+	_fall = Vector3.ZERO
+	_skel = _rig
+	var up := Vector3.UP
+	var hi := _rig.find_bone("hips")
+	var c: Vector3 = _rig.get_bone_global_pose(hi).origin if hi >= 0 else Vector3.ZERO
+	for b in _rig.get_bone_count():
+		var bn := _rig.get_bone_name(b)
+		if not bn.begins_with("leg_") or not (bn.contains("_1_") or bn.contains("_2_") or bn.contains("_3_")):
+			continue
+		var g := _rig.get_bone_global_pose(b)
+		var h := g.origin - c
+		h.y = 0.0
+		if h.length() < 0.01:
+			continue
+		# turn the leg about the axis that swings its lower end outward and up
+		var axis := (-up).cross(h.normalized()).normalized()
+		var ang := 0.55 if bn.contains("_1_") else (0.35 if bn.contains("_2_") else 0.2)
+		var local_axis := (g.basis.inverse() * axis).normalized()
+		var q0 := _rig.get_bone_pose_rotation(b)
+		_limp[b] = [q0, q0 * Quaternion(local_axis, ang)]
+	# the hull comes down to rest on the ground
+	_splay_drop = float(R["h"]) * 0.45
+	_rest_y = -_splay_drop
+
 var _landed_dead := false
 func _death_anim(delta: float) -> void:
 	if _death_t < 0.0:
@@ -891,6 +1165,13 @@ func _death_anim(delta: float) -> void:
 		var k := clampf(t / 0.55, 0.0, 1.0)
 		body.position.y = lerpf(0.0, _rest_y - hov, k * k) + (sin(clampf((t - 0.55) / 0.3, 0.0, 1.0) * PI) * 0.12 if t > 0.55 else 0.0)
 		body.rotation.z = lerpf(0.0, _fall.z, clampf(t / 0.8, 0.0, 1.0))
+		return
+	if _splay_drop > 0.0:
+		var ks := clampf(t / 0.9, 0.0, 1.0)
+		ks = ks * ks * (3.0 - 2.0 * ks)
+		body.position.y = -_splay_drop * ks
+		for i in _limp:
+			_skel.set_bone_pose_rotation(i, (_limp[i][0] as Quaternion).slerp(_limp[i][1], ks))
 		return
 	# 1) the knees go (0 - 0.3 s), 2) it topples, faster and faster (0.3 - 0.95 s),
 	# 3) a small bounce as it hits the ground, then still
@@ -1117,6 +1398,7 @@ func hear(pos: Vector3, radius: float) -> void:
 	if global_position.distance_to(pos) > radius:
 		return
 	if radius >= 25.0 and multiplayer.is_server() and global_position.distance_to(pos) < 130.0:
+		AT.heard_shot(self, pos)
 		# a gunshot: the muzzle flash shows exactly where he is (a silencer keeps it small)
 		for p in mission.players():
 			if not p.dead and p.global_position.distance_to(pos) < 2.0 and _los(pos + Vector3(0, 1.2, 0)):
@@ -1296,6 +1578,7 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 	var shooter_known := by != null and by.has_method("is_player")
 	if shooter_known:
 		# it knows where that came from - and so do the others nearby
+		_hurt_by[String(by.name)] = mission.t
 		_know(by, 15.0)
 		target = by
 		_warn_squad(by, 40.0)
@@ -1314,6 +1597,7 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 		_death_pool.rpc()
 		_drop_gun()
 		_drop_pack()
+		AT.comrade_down(self, by)
 		if by and by.has_method("is_player"):
 			_credit.rpc_id(by.get_multiplayer_authority(), by.name)
 			_warn_squad(by, 30.0)     # one of theirs falls: the rest come for the killer
@@ -1323,6 +1607,7 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 	# hurt: break contact at once and come back from somewhere else
 	if hp < float(R["hp"]) * 0.45:
 		bleeding = true
+		AT.wounded(self)
 	# a Šedivák's suit is what makes him fast: hit him hard and it fails (sparks, he slows down, aims worse)
 	if tac == "grey" and not suit_down and hp < float(R["hp"]) * 0.4:
 		_suit_fail.rpc()
@@ -1632,7 +1917,8 @@ func _find_target() -> Node:
 			if v < 1.0:
 				continue
 		if seen_now:
-			var score := global_position.distance_to(p.global_position)
+			AT.saw(self, p)
+			var score := global_position.distance_to(p.global_position) + AT.target_bias(self, p)
 			if p == nemesis:
 				score -= 25.0             # him first
 			# a lone mercenary is the preferred prey
@@ -1663,11 +1949,16 @@ var _touch_t := 0.0
 @rpc("authority", "call_local", "reliable")
 func _husk_fx(down: bool) -> void:
 	Game.play_at(mission, "burst" if down else "groan", global_position, -4)
+	if down:
+		_springs_limp()
+	else:
+		_springs_firm()
 	if not down and mission.local_player() and mission.local_player().global_position.distance_to(global_position) < 25.0:
 		pass
 
 func _think(delta: float) -> void:
 	_think_dt = delta
+	AT.tick(self, delta)
 	if R.has("bite"):
 		_bite_tick(delta)
 	if R.has("mend"):
@@ -1760,6 +2051,7 @@ func _think(delta: float) -> void:
 				state = S.SEARCH
 				lurking = true
 				search_t = rng.randf_range(6.0, 12.0)
+				AT.begin_search(self, search_t)
 		S.STALK:
 			_walk(walk_spd * 1.3, delta)
 			if _arrived():
@@ -1769,6 +2061,8 @@ func _think(delta: float) -> void:
 				hide_t = rng.randf_range(4.0, 9.0)
 				lurking = true
 		S.SEARCH:
+			if AT.search_tick(self, delta):
+				return
 			search_t -= delta
 			velocity.x = 0; velocity.z = 0
 			rotation.y += delta * 0.6
@@ -1822,6 +2116,7 @@ func _combat(delta: float, seen: Node) -> void:
 	if unseen_t > 45.0:
 		state = S.SEARCH
 		search_t = rng.randf_range(8.0, 14.0)
+		AT.begin_search(self, search_t)
 		return
 	if tac == "brute":
 		_brute(delta, seen)
@@ -1872,6 +2167,8 @@ func _combat(delta: float, seen: Node) -> void:
 				phase = "shoot"           # (a firing position: straight to it)
 				shots_left = _shots()
 				react = rng.randf_range(0.2, 0.45) * _react_k
+			elif _arrived() and AT.rehide(self):
+				pass                      # (in the open for one of them: on to real cover first)
 			elif _arrived():
 				phase = "hide"
 				hide_t = rng.randf_range(2.5, 6.0) * float(R["hide"]) * (1.0 - 0.45 * _late)
@@ -1914,7 +2211,9 @@ func _combat(delta: float, seen: Node) -> void:
 		"flank":
 			lurking = false
 			_walk(walk_spd * 1.4 if tac != "grey" else run_spd * 0.85, delta)
-			if _arrived():
+			if _arrived() and AT.rehide(self):
+				pass
+			elif _arrived():
 				phase = "hide"
 				hide_t = rng.randf_range(3.0, 7.0) * float(R["hide"])
 				if tac == "levit":
@@ -2096,6 +2395,8 @@ func _set_frenzy(on: bool) -> void:
 
 ## A burst is over: away from where it was seen.
 func _after_burst() -> void:
+	if AT.maybe_fall_back(self):
+		return
 	if _can_grab() and rng.randf() < 0.5:
 		_tlog("grab start")
 		phase = "grab"
@@ -2112,7 +2413,7 @@ func _after_burst() -> void:
 			if a != self and not a.dead and a.phase in ["move", "flank"] and a.global_position.distance_to(global_position) < 20.0:
 				p += 0.2
 				break
-		if rng.randf() < p:
+		if rng.randf() < p and AT.duck_ok(self):
 			phase = "duck"
 			_duck_t = rng.randf_range(0.5, 1.4) * (1.0 - 0.3 * _late)
 			return
@@ -2121,6 +2422,8 @@ func _after_burst() -> void:
 
 ## Done hiding: where next.
 func _next_move() -> void:
+	if AT.maybe_fall_back(self):
+		return
 	var dist := global_position.distance_to(last_seen)
 	phase = "flank"
 	# hurt ones keep their heads down longer
@@ -2200,6 +2503,7 @@ func _fire_spot(at: Vector3) -> Vector3:
 		for a in mission.aliens():
 			if a != self and not a.dead and a.goal.distance_to(cp) < 3.0:
 				sc += 6.0
+		sc += AT.exposure_extra(self, cp, at, 1.0) * 8.0     # (co-op: the other man must not have it in the open)
 		if sc < bs:
 			bs = sc
 			best = cp
@@ -2235,6 +2539,7 @@ func _relocate(from: Vector3) -> void:
 		if far or tac == "soldier":
 			# a shooter far away: each move brings it closer to him
 			score += (c.distance_to(from) - global_position.distance_to(from)) * 0.6
+		score += AT.exposure_extra(self, c, from, 0.8) * 12.0   # hidden from him, but not in the open for the others
 		if score < bs:
 			bs = score
 			best = c
@@ -2250,7 +2555,7 @@ func _flank() -> void:
 		v = Vector3(1, 0, 0)
 	var ang := rng.randf_range(1.2, 2.3) * (1.0 if rng.randf() < 0.5 else -1.0)
 	var p := last_seen + v.normalized().rotated(Vector3.UP, ang) * rng.randf_range(7.0, 12.0)
-	_go(_snap(p))
+	_go(AT.pick_flank(self, _snap(p), v))
 
 # ---- tactics -------------------------------------------------------------------------------
 ## What this mercenary is known to bring (the aliens have learned it over the campaign).
@@ -2353,6 +2658,7 @@ func _know(p: Node, secs: float) -> void:
 	var k := String(p.name)
 	known[k] = maxf(float(known.get(k, 0.0)), mission.t + secs)
 	sus[k] = 1.0
+	AT.saw(self, p)
 
 func _knows(p: Node) -> bool:
 	return float(known.get(String(p.name), -1.0)) > mission.t
@@ -2428,6 +2734,7 @@ func _flank_rear(p: Node) -> void:
 		mid.y = 0
 		if mid.length() > 0.1 and (-p.global_transform.basis.z).dot(mid.normalized()) > 0.5:
 			sc += 15.0
+		sc += AT.exposure_extra(self, c, p.global_position + Vector3(0, 1.3, 0), 1.0) * 10.0   # (behind him is in front of his mate?)
 		if sc < bs:
 			bs = sc
 			best = c
@@ -2447,6 +2754,7 @@ func _advance(at: Vector3) -> bool:
 		if get_world_3d().direct_space_state.intersect_ray(q).is_empty():
 			continue
 		var sc: float = c.distance_to(at) + d * 0.5 + rng.randf() * 3.0
+		sc += AT.exposure_extra(self, c, at, 0.9) * 10.0
 		if sc < bs:
 			bs = sc
 			best = c
@@ -2469,6 +2777,7 @@ func _keep_away(at: Vector3) -> void:
 		if get_world_3d().direct_space_state.intersect_ray(q).is_empty():
 			continue
 		var sc: float = d + rng.randf() * 4.0
+		sc += AT.exposure_extra(self, c, at, 1.0) * 10.0
 		if sc < bs:
 			bs = sc
 			best = c
@@ -3351,6 +3660,21 @@ func _teleport_away(from: Vector3) -> bool:
 
 @rpc("authority", "call_local", "reliable")
 func _teleport_fx(from: Vector3, to: Vector3) -> void:
+	if anim and anim.has_animation("materialize"):
+		# Ari's movements: where it was, it fades out (a copy of it, Vanish); here it takes shape
+		_tele_anim_t = anim.get_animation("materialize").length
+		anim.play("materialize", 0.0)
+		var ghost := afk_scene(race)
+		if ghost:
+			mission.add_child(ghost)
+			ghost.global_transform = Transform3D(body.global_transform.basis, from + Vector3(0, body.position.y + (body.get_child(0) as Node3D).position.y, 0))
+			var gap: AnimationPlayer = ghost.find_child("AnimationPlayer", true, false)
+			if gap and gap.has_animation("vanish"):
+				gap.get_animation("vanish").loop_mode = Animation.LOOP_NONE
+				gap.play("vanish")
+				get_tree().create_timer(gap.get_animation("vanish").length).timeout.connect(ghost.queue_free)
+			else:
+				ghost.queue_free()
 	for at in [from, to]:
 		Game.play_at(mission, "psi", at + Vector3.UP, 0)
 		var l := OmniLight3D.new()

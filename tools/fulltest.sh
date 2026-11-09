@@ -68,6 +68,7 @@ pair coop_heal    coophealhost coophealclient "RESULT coopheal host ok" "client 
 pair coop_base    lbhost lbclient       "start_mission"            "RESULT lb lbclient players 2" 7903
 pair coop_wipe    coopwipehost coopwipeclient "globe ready"     "END\\] leave"                  7904
 pair geo_live geolivehost geoliveclient "globe ready \(viewer false\)" "RESULT geolive day \+0\.0[1-9][0-9]* craft moved [1-9]" 7912
+pair ai_coop    aimphost aimpclient "RESULT aimp old 0 hide [1-9]" "AIMP aimpclient" 7913
 run airdeath    150 h "RESULT airdeath ok"                 --autotest=airdeath --group=levite
 run vipcheck    200 h "RESULT vipcheck [0-9]+ spots, 0 bad" --autotest=vipcheck --mtype=rescue
 run climb       200 x "RESULT climb ok"                    --autotest=climb --mtype=terror --biome=farm
@@ -79,6 +80,7 @@ run mod_click   100 x "RESULT modclick sel '(Rifle:[0-9]+)' \(want '\1'\)"   --a
 run mod_speed   300 x "RESULT modspeed ok" --autotest=modspeed
 run animator   150 x "RESULT animator click true imported true turned true keyed true moved true follows true fp true" --autotest=animator
 run locktest   120 h "RESULT locktest follows true turned true body true root true fp true" --autotest=locktest
+run blendtest  150 x "RESULT blendtest off [0-9.]+ on [0-9.]+ smoother true" --autotest=blendtest
 run beltthrow  120 h "RESULT beltthrow started true belt_used true pack_kept true" --autotest=beltthrow
 run mocapgame  200 h "RESULT mocapgame 19 of 19" --autotest=mocapgame
 run tileround  300 h "RESULT tileround ok 38 bad 0" --autotest=tileround
@@ -103,10 +105,13 @@ run mystest    150 h "RESULT mystest moved true again false alive true" --autote
 run koltest    200 h "RESULT koltest found true up true top [0-9.]+ down true" --autotest=koltest --mtype=terror --biome=town
 run lasertest  120 h "RESULT lasertest drained true waiting true ready true mg_dry true mg_full true edge true" --autotest=lasertest --mtype=landed
 run lcshot     150 h "RESULT lcshot hit true shards true hum true ready true" --autotest=lcshot --mtype=landed
-run plasmatest 150 h "RESULT plasmatest pistol 10 hot true interlock true cannon 2 minigun true rifle 5 grenade true seared true mags_left 0" --autotest=plasmatest --mtype=landed
+run plasmatest 150 h "RESULT plasmatest pistol 20 hot true interlock true cannon 4 minigun true rifle 10 grenade true seared true mags_left 0" --autotest=plasmatest --mtype=landed
 run shieldtest 100 h "RESULT shieldtest low 10 up 2 broke true after [0-9]+ plasma 8 knock true vest 16/13 worn true" --autotest=shieldtest --mtype=landed
 run gearloss    60 h "RESULT gearloss order_wait true arrived true sold true won_grenades 4->3 clips_kept true lost_grenades 1 vests 1" --autotest=gearloss
 run workshoptest 60 h "RESULT workshoptest ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok$" --autotest=workshoptest
+run nadetest   150 h "RESULT nadetest old 0 away [4-8] of 8" --autotest=nadetest --mtype=crash --biome=farm --seed=3 --hour=13
+run searchtest 150 h "RESULT searchtest old 0 searched true walked ([2-9][0-9]|[1-9][0-9][0-9]) m" --autotest=searchtest --mtype=crash --biome=farm --seed=3 --hour=13
+run feartest   120 h "RESULT feartest old 0 .* fell_back [1-9]" --autotest=feartest --mtype=crash --biome=farm --seed=3 --hour=13
 run ai_late    160 h "RESULT aitest jestetan late 1 dmg [1-9][0-9][0-9]" --autotest=aitest --mtype=crash --biome=farm --late=1 --seed=5 --hour=13
 run latetest   120 h "RESULT latetest pack [2-9] nemesis [1-9][0-9]* marked true waves 3 added [3-9]" --autotest=latetest --mtype=crash --biome=farm --late=1 --seed=5 --hour=23
 run maptown   220 x "RESULT topshot untangled" --autotest=topshot --mtype=crash --biome=town --hour=13 --seed=11 --late=1
