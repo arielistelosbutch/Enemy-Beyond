@@ -1,0 +1,11 @@
+{
+  "new": [],
+  "parts": {
+    "Bench:3": {
+      "del": true
+    },
+    "Bench:7": {
+      "del": true
+    }
+  }
+}

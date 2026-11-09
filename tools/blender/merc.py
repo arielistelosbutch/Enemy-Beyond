@@ -80,8 +80,13 @@ def piece(name, parts):
     return o
 
 # ---- body --------------------------------------------------------------------------
+# 0.57 facelift: the body is the bare soldier (skin torso and arms, trousers, boots, belt);
+# what he wears on top comes from the Look_* pieces below, all on the same bones (rigid skin,
+# so the afk movements, the weapon grips and the Workshop anchors stay exactly as they were).
+# Clothes are a bit bigger than the skin under them: a jacket simply hides the bare arm (and a tattoo on it).
+tee = mat("Tee", (0.13, 0.14, 0.11))
 body = []
-body.append(bb(cloth, (0, 0, 1.24), (0.38, 0.22, 0.38), "spine", 0.03))            # torso
+body.append(bb(skin, (0, 0, 1.24), (0.36, 0.2, 0.36), "spine", 0.03))              # bare torso (under the clothes)
 body.append(bb(cloth, (0, 0, 1.0), (0.34, 0.2, 0.16), "hips", 0.02))
 body.append(cyl(skin, (0, 0, 1.49), 0.055, 0.1, verts=6, group="neck"))
 body.append(box(skin, (0, 0.01, 1.66), (0.18, 0.2, 0.23), group="head"))           # head
@@ -98,41 +103,276 @@ for x in (1, -1):
     body.append(box(hairm, (0.042 * x, 0.108, 1.712), (0.05, 0.012, 0.01), group="head"))
 for s, x in (("L", 1), ("R", -1)):
     U, F, HD, T, S = "upperarm." + s, "forearm." + s, "hand." + s, "thigh." + s, "shin." + s
-    body.append(bb(cloth, (0.215 * x, 0, 1.28), (0.105, 0.115, 0.26), U))
-    body.append(bb(cloth, (0.235 * x, 0, 1.01), (0.09, 0.1, 0.25), F))
-    body.append(bb(webbing, (0.237 * x, 0, 0.9), (0.096, 0.106, 0.035), F, 0.006))        # cuff strap
+    body.append(bb(skin, (0.215 * x, 0, 1.28), (0.085, 0.095, 0.24), U))                  # bare arms
+    body.append(bb(skin, (0.235 * x, 0, 1.01), (0.075, 0.085, 0.24), F))
     body.append(bb(glove, (0.24 * x, 0.01, 0.83), (0.075, 0.085, 0.1), HD))
     body.append(bb(webbing, (0.24 * x, 0.052, 0.845), (0.06, 0.012, 0.035), HD, 0.004))    # knuckle guard
     body.append(bb(cloth, (0.1 * x, 0, 0.74), (0.145, 0.155, 0.42), T))
-    body.append(bb(cloth, (0.17 * x, 0.01, 0.7), (0.035, 0.11, 0.13), T, 0.008))           # cargo pocket
-    body.append(bb(webbing, (0.1 * x, 0.0, 0.62), (0.155, 0.165, 0.028), T, 0.005))        # thigh strap
     body.append(bb(cloth, (0.1 * x, 0, 0.33), (0.125, 0.135, 0.36), S))
-    body.append(bb(plate, (0.1 * x, 0.075, 0.5), (0.11, 0.035, 0.13), S, 0.012))           # armoured knee pad
-    body.append(bb(webbing, (0.1 * x, 0.0, 0.42), (0.13, 0.14, 0.025), S, 0.005))
     body.append(bb(boots, (0.1 * x, 0.04, 0.09), (0.125, 0.26, 0.16), S, 0.02))            # boot
     body.append(bb(boots, (0.1 * x, 0.0, 0.19), (0.13, 0.14, 0.08), S, 0.01))              # boot shaft
     body.append(box(sole, (0.1 * x, 0.04, 0.012), (0.13, 0.27, 0.025), group=S))
     for k in range(3):                                                                     # laces
         body.append(box(webbing, (0.1 * x, 0.105 - k * 0.015, 0.14 + k * 0.03), (0.05, 0.006, 0.008), group=S))
-    # the UAI patch on the shoulder (its colour tells the players apart)
-    body.append(box(patch, (0.268 * x, 0, 1.33), (0.008, 0.075, 0.05), group=U))
+# the wrist unit with its little screen (left forearm)
+body.append(bb(webbing, (0.245, 0.03, 0.94), (0.06, 0.07, 0.05), "forearm.L", 0.006))
+body.append(box(idlight, (0.245, 0.067, 0.94), (0.04, 0.004, 0.032), group="forearm.L"))
+# the belt (always worn)
+body.append(bb(webbing, (0, 0.0, 0.955), (0.36, 0.22, 0.045), "hips", 0.008))
+body.append(box(metal, (0, 0.112, 0.955), (0.05, 0.008, 0.03), group="hips"))                  # buckle
+piece("Body", body)
+
+# ---- tops (Game.TOPS): jacket, rolled sleeves, T-shirt, no shirt (the woman: a tank top) ----
+def sleeve_patch(x, U):
+    """The UAI patch on the shoulder (its colour tells the players apart)."""
+    out = [box(patch, (0.268 * x, 0, 1.33), (0.008, 0.075, 0.05), group=U)]
     for (dy, dz, w, h) in ((-0.025, 0, 0.006, 0.03), (-0.012, -0.012, 0.02, 0.006), (0.0, 0, 0.006, 0.03),     # U
                            (0.008, 0, 0.006, 0.03), (0.02, 0, 0.006, 0.03), (0.014, 0.012, 0.016, 0.006), (0.014, 0.0, 0.016, 0.005),  # A
                            (0.03, 0, 0.006, 0.03)):                                                              # I
-        body.append(box(letter, (0.273 * x, dy * x, 1.33 + dz), (0.003, w, h), group=U))
-# the wrist unit with its little screen (left forearm), and a collar
-body.append(bb(webbing, (0.245, 0.03, 0.94), (0.06, 0.07, 0.05), "forearm.L", 0.006))
-body.append(box(idlight, (0.245, 0.067, 0.94), (0.04, 0.004, 0.032), group="forearm.L"))
-body.append(bb(cloth, (0, 0.0, 1.45), (0.2, 0.17, 0.05), "spine", 0.015))
-piece("Body", body)
-# the harness and the belt (always worn)
-v = [bb(webbing, (0, 0.0, 0.955), (0.36, 0.22, 0.045), "hips", 0.008)]
-v.append(box(metal, (0, 0.112, 0.955), (0.05, 0.008, 0.03), group="hips"))                  # buckle
+        out.append(box(letter, (0.273 * x, dy * x, 1.33 + dz), (0.003, w, h), group=U))
+    return out
+for s, x in (("L", 1), ("R", -1)):
+    piece("Look_Patch" + s, sleeve_patch(x, "upperarm." + s))
+    # with bare shoulders: an armband in the player's colour instead
+    piece("Look_Armband" + s, [box(patch, (0.215 * x, 0, 1.33), (0.093, 0.103, 0.035), group="upperarm." + s)])
+
+def torso(m):
+    return bb(m, (0, 0, 1.24), (0.38, 0.22, 0.38), "spine", 0.03)
+collar = lambda: bb(cloth, (0, 0.0, 1.45), (0.2, 0.17, 0.05), "spine", 0.015)
+top = [torso(cloth), collar()]
+for s, x in (("L", 1), ("R", -1)):
+    U, F = "upperarm." + s, "forearm." + s
+    top.append(bb(cloth, (0.215 * x, 0, 1.28), (0.105, 0.115, 0.26), U))
+    top.append(bb(cloth, (0.235 * x, 0, 1.01), (0.09, 0.1, 0.25), F))
+    top.append(bb(webbing, (0.237 * x, 0, 0.9), (0.096, 0.106, 0.035), F, 0.006))        # cuff strap
+piece("Look_TopJacket", top)
+top = [torso(cloth), collar()]
+for s, x in (("L", 1), ("R", -1)):
+    U = "upperarm." + s
+    top.append(bb(cloth, (0.215 * x, 0, 1.29), (0.105, 0.115, 0.24), U))
+    top.append(bb(cloth, (0.215 * x, 0, 1.175), (0.115, 0.125, 0.05), U, 0.01))          # the roll above the elbow
+piece("Look_TopRolled", top)
+top = [torso(tee), bb(tee, (0, 0.0, 1.435), (0.16, 0.15, 0.03), "spine", 0.01)]            # crew neck
+for s, x in (("L", 1), ("R", -1)):
+    top.append(bb(tee, (0.215 * x, 0, 1.345), (0.105, 0.115, 0.13), "upperarm." + s))      # short sleeves
+piece("Look_TopTee", top)
+piece("Look_TopTank", [torso(tee)])                    # the woman's "no shirt": a tank top
+
+# ---- trousers (Game.PANTS): cargo pockets and the armoured knee pads are pieces of their own ----
+pk, kp = [], []
+for s, x in (("L", 1), ("R", -1)):
+    T, S = "thigh." + s, "shin." + s
+    pk.append(bb(cloth, (0.17 * x, 0.01, 0.7), (0.035, 0.11, 0.13), T, 0.008))           # cargo pocket
+    pk.append(bb(webbing, (0.1 * x, 0.0, 0.62), (0.155, 0.165, 0.028), T, 0.005))        # thigh strap
+    kp.append(bb(plate, (0.1 * x, 0.075, 0.5), (0.11, 0.035, 0.13), S, 0.012))           # armoured knee pad
+    kp.append(bb(webbing, (0.1 * x, 0.0, 0.42), (0.13, 0.14, 0.025), S, 0.005))
+piece("Look_PantsCargo", pk)
+piece("Look_KneePads", kp)
+
+# ---- vests (Game.VESTS), only looks: armour from the inventory (Gear_Vest / Gear_Plate) hides them ----
+v = []
 for x in (1, -1):
     v.append(bb(webbing, (0.11 * x, 0.115, 1.27), (0.045, 0.012, 0.36), "spine", 0.004))     # shoulder straps
     v.append(bb(webbing, (0.11 * x, -0.115, 1.27), (0.045, 0.012, 0.36), "spine", 0.004))
     v.append(bb(webbing, (0.11 * x, 0.0, 1.448), (0.05, 0.24, 0.012), "spine", 0.004))
-piece("Vest", v)
+piece("Look_VestHarness", v)
+v = [bb(vest, (0, 0.13, 1.28), (0.33, 0.045, 0.3), "spine", 0.012),                      # the plate carrier
+     bb(vest, (0, -0.13, 1.28), (0.33, 0.045, 0.3), "spine", 0.012),
+     bb(webbing, (0, 0.166, 1.36), (0.14, 0.025, 0.06), "spine", 0.006)]                   # admin pouch
+for x in (1, -1):
+    v.append(bb(vest, (0.11 * x, 0.0, 1.44), (0.07, 0.27, 0.025), "spine", 0.006))
+    v.append(bb(vest, (0.19 * x, 0.0, 1.2), (0.03, 0.24, 0.12), "spine", 0.006))           # cummerbund
+for xx in (-0.075, 0.0, 0.075):
+    v.append(bb(webbing, (xx, 0.168, 1.2), (0.065, 0.03, 0.1), "spine", 0.006))           # magazine pouches
+    v.append(bb(webbing, (xx, 0.17, 1.245), (0.067, 0.033, 0.018), "spine", 0.004))
+piece("Look_VestCarrier", v)
+v = [bb(vest, (0, 0.14, 1.17), (0.32, 0.05, 0.13), "spine", 0.01)]                        # the chest rig
+for xx in (-0.115, -0.04, 0.04, 0.115):
+    v.append(bb(webbing, (xx, 0.172, 1.2), (0.06, 0.03, 0.1), "spine", 0.006))
+for x in (1, -1):
+    v.append(bb(webbing, (0.11 * x, 0.115, 1.33), (0.04, 0.012, 0.2), "spine", 0.004))
+    v.append(bb(webbing, (0.11 * x, 0.0, 1.448), (0.045, 0.24, 0.012), "spine", 0.004))
+    v.append(box(webbing, (0, -0.116, 1.3), (0.04, 0.012, 0.38), rot=(0, 0.6 * x, 0), group="spine"))   # X on the back
+piece("Look_VestRig", v)
+
+# ---- flag on the right shoulder (Game.FLAGS: layout + three colours set by the game) ----
+F1, F2, F3 = mat("Flag1", (0.95, 0.95, 0.95)), mat("Flag2", (0.8, 0.1, 0.1)), mat("Flag3", (0.1, 0.25, 0.6))
+FX, FZ, FW, FH, FT = -0.268, 1.33, 0.075, 0.05, 0.008       # (y: +front = the hoist)
+FG = "upperarm.R"
+def fb(m, y0, y1, z0, z1, t=FT):
+    return box(m, (FX - (t - FT) / 2, (y0 + y1) / 2, FZ + (z0 + z1) / 2), (t, y1 - y0, z1 - z0), group=FG)
+def fover(m, yc, zc, w, h, rot=0.0):
+    """A shape laid over the flag (a cross, a disc ...)."""
+    return box(m, (FX - 0.001, yc, FZ + zc), (FT + 0.0015, w, h), rot=(rot, 0, 0), group=FG)
+def ftri(m, pts):
+    """A flat triangle over the flag, pts = [(y, z), ...] relative to its centre."""
+    me = bpy.data.meshes.new("tri")
+    x0, x1 = FX - FT / 2 - 0.001, FX + FT / 2 + 0.0005
+    vs = [(x0, y, FZ + z) for y, z in pts] + [(x1, y, FZ + z) for y, z in pts]
+    me.from_pydata(vs, [], [(0, 1, 2), (5, 4, 3), (0, 3, 4, 1), (1, 4, 5, 2), (2, 5, 3, 0)])
+    me.update()
+    o = bpy.data.objects.new("tri", me)
+    bpy.context.scene.collection.objects.link(o)
+    bm = bmesh.new(); bm.from_mesh(me); bmesh.ops.recalc_face_normals(bm, faces=bm.faces); bm.to_mesh(me); bm.free()
+    me.materials.append(m)
+    vg = o.vertex_groups.new(name=FG)
+    vg.add(list(range(6)), 1.0, 'REPLACE')
+    return o
+W2, H2 = FW / 2, FH / 2
+piece("Look_Flag_h2", [fb(F1, -W2, W2, 0, H2), fb(F2, -W2, W2, -H2, 0)])
+piece("Look_Flag_h3", [fb(F1, -W2, W2, H2 / 3, H2), fb(F2, -W2, W2, -H2 / 3, H2 / 3), fb(F3, -W2, W2, -H2, -H2 / 3)])
+piece("Look_Flag_v3", [fb(F1, W2 / 3, W2, -H2, H2), fb(F2, -W2 / 3, W2 / 3, -H2, H2), fb(F3, -W2, -W2 / 3, -H2, H2)])
+piece("Look_Flag_cz", [fb(F1, -W2, W2, 0, H2), fb(F2, -W2, W2, -H2, 0), ftri(F3, [(W2, H2), (0.0, 0.0), (W2, -H2)])])
+NY = W2 - FW * 0.36
+piece("Look_Flag_nordic", [fb(F1, -W2, W2, -H2, H2), fover(F2, NY, 0, 0.011, FH), fover(F2, 0, 0, FW, 0.011)])
+piece("Look_Flag_nordic3", [fb(F1, -W2, W2, -H2, H2), fover(F2, NY, 0, 0.016, FH), fover(F2, 0, 0, FW, 0.016),
+                            box(F3, (FX - 0.0015, NY, FZ), (FT + 0.0025, 0.007, FH), group=FG),
+                            box(F3, (FX - 0.0015, 0, FZ), (FT + 0.0025, FW, 0.007), group=FG)])
+piece("Look_Flag_cross", [fb(F1, -W2, W2, -H2, H2), fover(F2, 0, 0, 0.011, FH), fover(F2, 0, 0, FW, 0.011)])
+piece("Look_Flag_swiss", [fb(F1, -W2, W2, -H2, H2), fover(F2, 0, 0, 0.009, 0.032), fover(F2, 0, 0, 0.032, 0.009)])
+piece("Look_Flag_jp", [fb(F1, -W2, W2, -H2, H2),
+                       cyl(F2, (FX - 0.001, 0, FZ), 0.0135, FT + 0.0015, verts=12, rot=(0, math.pi / 2, 0), group=FG)])
+us = []
+for k in range(7):
+    us.append(fb(F1 if k % 2 == 0 else F2, -W2, W2, H2 - (k + 1) * FH / 7, H2 - k * FH / 7))
+us.append(box(F3, (FX - 0.001, W2 - 0.016, FZ + H2 - 0.0143), (FT + 0.0015, 0.032, 0.0286), group=FG))   # the canton
+for iy in range(3):
+    for iz in range(2):
+        us.append(box(F2, (FX - 0.0015, W2 - 0.006 - iy * 0.01, FZ + H2 - 0.008 - iz * 0.012), (FT + 0.0025, 0.004, 0.004), group=FG))
+piece("Look_Flag_us", us)
+dang = math.atan2(FH, FW)
+dlen = math.hypot(FW, FH) - 0.012
+piece("Look_Flag_uk", [fb(F3, -W2, W2, -H2, H2),
+                       fover(F1, 0, 0, dlen, 0.011, dang), fover(F1, 0, 0, dlen, 0.011, -dang),
+                       box(F2, (FX - 0.0015, 0, FZ), (FT + 0.0025, dlen, 0.004), rot=(dang, 0, 0), group=FG),
+                       box(F2, (FX - 0.0015, 0, FZ), (FT + 0.0025, dlen, 0.004), rot=(-dang, 0, 0), group=FG),
+                       box(F1, (FX - 0.002, 0, FZ), (FT + 0.0035, 0.016, FH), group=FG), box(F1, (FX - 0.002, 0, FZ), (FT + 0.0035, FW, 0.016), group=FG),
+                       box(F2, (FX - 0.0025, 0, FZ), (FT + 0.0045, 0.009, FH), group=FG), box(F2, (FX - 0.0025, 0, FZ), (FT + 0.0045, FW, 0.009), group=FG)])
+
+# ---- face paint (Game.PAINTS): the colours follow the mission's camouflage ----
+paint1 = mat("FacePaint", (0.08, 0.09, 0.06))
+paint2 = mat("FacePaint2", (0.25, 0.3, 0.16))
+FY = HF_FACE = 0.112
+def fp(m, x0, x1, z0, z1, y=FY):
+    return box(m, ((x0 + x1) / 2, y, (z0 + z1) / 2), (x1 - x0, 0.004, z1 - z0), group="head")
+piece("Look_PaintEyes", [fp(paint1, 0.02, 0.066, 1.666, 1.678), fp(paint1, -0.066, -0.02, 1.666, 1.678)])
+st = []
+for x in (1, -1):
+    for dz in (0.0, -0.024):
+        st.append(box(paint1, (0.052 * x, FY, 1.648 + dz), (0.062, 0.004, 0.011), rot=(0, 0.45 * x, 0), group="head"))
+    st.append(box(paint1, (0.091 * x, 0.04, 1.63), (0.004, 0.08, 0.011), rot=(0.45, 0, 0), group="head"))  # on to the side
+piece("Look_PaintStripes", st)
+piece("Look_PaintBand", [fp(paint1, -0.09, 0.09, 1.718, 1.734), fp(paint1, -0.09, 0.09, 1.664, 1.679),
+                         fp(paint1, 0.064, 0.09, 1.679, 1.718), fp(paint1, -0.09, -0.064, 1.679, 1.718),
+                         fp(paint1, -0.02, 0.02, 1.679, 1.718),
+                         box(paint1, (0.091, 0.07, 1.699), (0.004, 0.08, 0.07), group="head"),
+                         box(paint1, (-0.091, 0.07, 1.699), (0.004, 0.08, 0.07), group="head")])
+piece("Look_PaintFull", [fp(paint2, -0.09, 0.09, 1.734, 1.775), fp(paint1, -0.05, 0.03, 1.745, 1.765, FY + 0.001),
+                         fp(paint1, -0.09, 0.09, 1.664, 1.679), fp(paint1, 0.064, 0.09, 1.679, 1.718),
+                         fp(paint1, -0.09, -0.064, 1.679, 1.718), fp(paint2, -0.02, 0.02, 1.679, 1.718),
+                         fp(paint2, 0.02, 0.09, 1.595, 1.664), fp(paint2, -0.09, -0.02, 1.595, 1.664),
+                         fp(paint1, 0.04, 0.075, 1.615, 1.645, FY + 0.001), fp(paint1, -0.07, -0.035, 1.6, 1.625, FY + 0.001),
+                         box(paint2, (0.091, 0.05, 1.66), (0.004, 0.12, 0.12), group="head"),
+                         box(paint2, (-0.091, 0.05, 1.66), (0.004, 0.12, 0.12), group="head"),
+                         box(paint1, (0.0925, 0.06, 1.68), (0.004, 0.05, 0.03), group="head"),
+                         box(paint1, (-0.0925, 0.03, 1.64), (0.004, 0.05, 0.03), group="head")])
+
+# ---- tattoos (Game.TATTOOS) on the bare skin: a jacket covers them (they sit under the sleeve) ----
+ink = mat("Tattoo", (0.07, 0.09, 0.14), rough=0.7)
+PX = 0.0105
+def pixels(art, x, zc, yc=0.0, group="forearm.R"):
+    """Pixel art on the outer side of an arm (x = that surface), centred at (yc, zc)."""
+    rows = art.strip("\n").split("\n")
+    out = []
+    for r, line in enumerate(rows):
+        for c, ch in enumerate(line):
+            if ch == "X":
+                y = yc + (c - (len(line) - 1) / 2) * PX
+                z = zc + ((len(rows) - 1) / 2 - r) * PX
+                out.append(box(ink, (x, y, z), (0.003, PX, PX), group=group))
+    return out
+FO = -(0.235 + 0.0375 + 0.0012)          # the outer face of the right forearm (the gun arm in the game)
+UO = -(0.215 + 0.0425 + 0.0012)
+SKULL = """
+.XXXXX.
+XXXXXXX
+X..X..X
+XXXXXXX
+XX.X.XX
+.XXXXX.
+.X.X.X.
+"""
+ANCHOR = """
+...X...
+..X.X..
+...X...
+.XXXXX.
+...X...
+...X...
+X..X..X
+.X.X.X.
+..XXX..
+"""
+XMARK = """
+X.....X
+.X...X.
+..X.X..
+...X...
+..X.X..
+.X...X.
+X.....X
+"""
+FLAME = """
+..X....
+..XX...
+.XXX..X
+.XXXX.X
+XXXXXXX
+XX.XXXX
+.X..XX.
+"""
+def band(x, zc, group, w, d, h=0.008):
+    return box(ink, (x, 0, zc), (w, d, h), group=group)
+piece("Look_TatSkull", pixels(SKULL, FO, 1.03))
+piece("Look_TatAnchor", pixels(ANCHOR, FO, 1.02))
+piece("Look_TatX", pixels(XMARK, FO, 1.03))
+tribal = [band(-0.235, 0.98, "forearm.R", 0.078, 0.088), band(-0.235, 1.08, "forearm.R", 0.078, 0.088, 0.006)]
+tribal += pixels("X.X.X.X\n.X.X.X.", FO, 1.0) + pixels(".X.X.X.\nX.X.X.X", FO, 1.06)
+piece("Look_TatTribal", tribal)
+sl = [band(-0.235, 0.98, "forearm.R", 0.078, 0.088), band(-0.215, 1.18, "upperarm.R", 0.088, 0.098, 0.01)]
+sl += pixels(FLAME, FO, 1.05) + pixels(SKULL, UO, 1.24, group="upperarm.R") + pixels("X.X.X.X.\n.X.X.X.X", UO, 1.32, group="upperarm.R")
+sl += [band(0.235, 1.0, "forearm.L", 0.078, 0.088, 0.006)] + pixels(XMARK, -FO, 1.06, group="forearm.L")
+piece("Look_TatSleeve", sl)
+
+# ---- glasses, things round the neck and in the mouth (Game.GLASSES, NECKS, MOUTHS) ----
+shades = mat("Shades", (0.025, 0.025, 0.03), rough=0.15)
+amber = mat("LensAmber", (0.75, 0.5, 0.1), rough=0.15)
+def temples():
+    return [box(shades, (0.093 * x, 0.05, 1.698), (0.006, 0.13, 0.006), group="head") for x in (1, -1)]
+piece("Look_GlassShades", [box(shades, (0.042, 0.117, 1.692), (0.05, 0.006, 0.028), group="head"),
+                           box(shades, (-0.042, 0.117, 1.692), (0.05, 0.006, 0.028), group="head"),
+                           box(shades, (0, 0.117, 1.699), (0.036, 0.006, 0.006), group="head")] + temples())
+piece("Look_GlassBallistic", [box(amber, (0, 0.118, 1.692), (0.176, 0.006, 0.032), group="head"),
+                              box(shades, (0, 0.119, 1.71), (0.18, 0.008, 0.007), group="head")] + temples())
+scarf = mat("Scarf", (0.36, 0.33, 0.25))
+scarf2 = mat("ScarfLine", (0.06, 0.06, 0.05))
+piece("Look_NeckShemagh", [bb(scarf, (0, 0.01, 1.47), (0.17, 0.165, 0.07), "spine", 0.02),
+                           box(scarf, (0, 0.098, 1.42), (0.09, 0.02, 0.07), rot=(0.25, 0, 0), group="spine"),
+                           box(scarf2, (0, 0.0, 1.47), (0.172, 0.167, 0.008), group="spine")])
+piece("Look_NeckMask", [box(scarf, (0, 0.04, 1.595), (0.2, 0.172, 0.12), group="head"),
+                        box(scarf2, (0, 0.04, 1.62), (0.202, 0.174, 0.008), group="head"),
+                        bb(scarf, (0, 0.005, 1.49), (0.15, 0.15, 0.08), "neck", 0.015)])
+tag = mat("DogTag", (0.6, 0.6, 0.62), rough=0.35)
+piece("Look_NeckTags", [box(tag, (0.035, 0.08, 1.43), (0.003, 0.06, 0.003), rot=(-0.6, 0, -0.5), group="spine"),
+                        box(tag, (-0.035, 0.08, 1.43), (0.003, 0.06, 0.003), rot=(-0.6, 0, 0.5), group="spine"),
+                        box(tag, (0, 0.116, 1.37), (0.02, 0.004, 0.032), group="spine"),
+                        box(tag, (0.008, 0.119, 1.362), (0.02, 0.004, 0.032), rot=(0, 0.2, 0), group="spine")])
+cigar = mat("Cigar", (0.3, 0.17, 0.08))
+ember = mat("Ember", (1.0, 0.35, 0.05), emit=2.0)
+piece("Look_MouthCigar", [cyl(cigar, (0.03, 0.135, 1.577), 0.007, 0.06, verts=6, rot=(math.pi / 2, 0, -0.3), group="head"),
+                          cyl(ember, (0.0395, 0.1655, 1.577), 0.0072, 0.004, verts=6, rot=(math.pi / 2, 0, -0.3), group="head")])
+piece("Look_MouthMatch", [box(mat("Match", (0.8, 0.7, 0.45)), (0.024, 0.13, 1.577), (0.003, 0.05, 0.003), rot=(0, 0, -0.35), group="head"),
+                          box(mat("MatchHead", (0.6, 0.1, 0.05)), (0.0325, 0.153, 1.577), (0.005, 0.006, 0.005), rot=(0, 0, -0.35), group="head")])
 # ---- looks: hair, beards, female face details (shown / hidden by the game) ----
 def hp(name, parts):
     piece(name, parts)
@@ -201,6 +441,36 @@ piece("Gear_Helmet", hm)
 cap = [box(cloth, (0, 0.005, 1.797), (0.232, 0.252, 0.078), group="head"),
        box(cloth, (0, 0.158, 1.766), (0.2, 0.11, 0.02), group="head")]
 piece("Gear_Cap", cap)
+# 0.57 facelift: more on the head (Game.HEADGEAR 3..6): the beret, a bush hat, a bandana, a headset
+beret = mat("Beret", (0.16, 0.25, 0.12), rough=0.95)          # recoloured in game (Game.BERET_COLORS)
+leather = mat("Leather", (0.09, 0.06, 0.04), rough=0.6)
+gold = mat("Gold", (0.8, 0.62, 0.2), rough=0.35)
+br = [sphere(beret, (0.02, -0.005, 1.792), 0.13, seg=14, rings=8, scale=(1.2, 1.2, 0.42), rot=(0, 0.2, 0), group="head"),
+      bb(leather, (0, 0.008, 1.762), (0.236, 0.266, 0.026), "head", 0.006),             # the leather band (over the hair)
+      box(leather, (0, -0.127, 1.758), (0.006, 0.004, 0.03), group="head"),            # the ribbon at the back
+      box(mat("BadgeBack", (0.12, 0.12, 0.1)), (-0.05, 0.143, 1.768), (0.032, 0.004, 0.036), group="head")]
+for r in (0.75, -0.75):                                                               # the X badge
+    br.append(box(gold, (-0.05, 0.146, 1.768), (0.006, 0.004, 0.032), rot=(0, r, 0), group="head"))
+piece("Gear_Beret", br)
+bh = [bb(cloth, (0, 0.005, 1.812), (0.218, 0.238, 0.075), "head", 0.015),
+      box(cloth, (0, 0.005, 1.771), (0.34, 0.36, 0.012), group="head"),
+      box(webbing, (0, 0.005, 1.786), (0.222, 0.242, 0.016), group="head")]
+for x in (1, -1):
+    bh.append(box(webbing, (0.112 * x, 0.0, 1.69), (0.004, 0.006, 0.15), rot=(0.25, 0, 0), group="head"))   # chin cord
+piece("Gear_Boonie", bh)
+bandana = mat("Bandana", (0.16, 0.25, 0.12), rough=0.95)      # same colours as the beret
+piece("Gear_Bandana", [box(bandana, (0, -0.004, 1.766), (0.228, 0.24, 0.062), group="head"),
+                       box(bandana, (0, -0.004, 1.799), (0.21, 0.222, 0.01), group="head"),
+                       box(bandana, (0.012, -0.132, 1.745), (0.03, 0.02, 0.03), group="head"),        # the knot
+                       box(bandana, (0.02, -0.14, 1.7), (0.028, 0.008, 0.07), rot=(0.25, 0.2, 0), group="head"),
+                       box(bandana, (-0.005, -0.138, 1.705), (0.026, 0.008, 0.06), rot=(0.2, -0.25, 0), group="head")])
+hs = [box(webbing, (0, -0.005, 1.8), (0.22, 0.026, 0.012), group="head")]
+for x in (1, -1):
+    hs.append(box(webbing, (0.11 * x, -0.005, 1.76), (0.012, 0.026, 0.08), group="head"))
+    hs.append(bb(metal, (0.118 * x, -0.005, 1.68), (0.026, 0.065, 0.075), "head", 0.008))   # ear cups
+hs.append(box(metal, (0.115, 0.055, 1.63), (0.008, 0.11, 0.008), rot=(0.45, 0, 0.2), group="head"))   # the microphone
+hs.append(box(webbing, (0.1, 0.108, 1.603), (0.014, 0.016, 0.014), group="head"))
+piece("Gear_Headset", hs)
 # helmet torch (on the left side)
 piece("Gear_Torch", [cyl(metal, (0.138, 0.05, 1.765), 0.022, 0.12, verts=6, rot=(math.pi / 2, 0, 0), group="head"),
                      cyl(lens, (0.138, 0.112, 1.765), 0.02, 0.005, verts=6, rot=(math.pi / 2, 0, 0), group="head")])
@@ -366,13 +636,22 @@ if "--preview" in sys.argv:
             o.hide_render = True
         if "--kit" in sys.argv and (o.name.startswith("Look_") and o.name not in ("Look_HairBuzz", "Look_Jaw") or o.name in ("Gear_Plate", "Gear_Scanner", "Gear_Flare", "Gear_Grenade")):
             o.hide_render = True
-    if "--head" in sys.argv:
+    if "--show" in sys.argv:
+        want = sys.argv[sys.argv.index("--show") + 1].split(",")
+        for o in meshes:
+            if o.name.startswith("Look_") or o.name.startswith("Gear_"):
+                o.hide_render = o.name not in want
+    if "--face" in sys.argv:
+        preview(sys.argv[i + 3], target=(0, 0, 1.66), dist=0.8, angle=float(sys.argv[i + 4]), height=0.0, res=(420, 420))
+    elif "--head" in sys.argv:
         for o in meshes:
             if o.name.startswith("Look_") and o.name not in sys.argv[sys.argv.index("--head") + 1].split(","):
                 o.hide_render = True
             if o.name in ("Gear_Cap", "Gear_Helmet"):
                 o.hide_render = o.name != sys.argv[sys.argv.index("--head") + 2]
         preview(sys.argv[i + 3], target=(0, 0, 1.68), dist=0.75, angle=float(sys.argv[i + 4]), height=0.05)
+    elif "--show" in sys.argv:
+        preview(sys.argv[i + 3], target=(0, 0, 1.05), dist=2.4, angle=float(sys.argv[i + 4]), height=0.1, res=(400, 600))
     else:
         preview(sys.argv[i + 3], target=(0, 0, 1.0), dist=2.6 if "--kit" in sys.argv else 3.4, angle=float(sys.argv[i + 4]), height=0.25, res=(420, 560) if "--kit" in sys.argv else (480, 480))
 else:

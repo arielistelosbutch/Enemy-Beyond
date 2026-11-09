@@ -10,10 +10,10 @@ OUTDIR = sys.argv[-1]
 
 def shield():
     reset(); p = []
-    alloy = mat("ShieldAlloy", (0.26, 0.27, 0.3), rough=0.35)
+    alloy = mat("ShieldAlloy", (0.15, 0.155, 0.16), rough=0.85)      # BSH-01: matt dark grey
     rim = mat("ShieldRim", (0.1, 0.1, 0.11), rough=0.5)
     slit = mat("ShieldSlit", (0.05, 0.08, 0.1), rough=0.05)
-    paint = mat("ShieldPaint", (0.75, 0.62, 0.12))
+    paint = mat("ShieldPaint", (0.55, 0.57, 0.58), rough=0.7)            # the UAI marking
     glass = mat("ShieldGlass", (0.55, 0.7, 0.75), rough=0.05)               # see-through in the game
     # three angled panels; across all of them, at eye height, a band of ballistic glass
     # (0.50: you can see through the shield)
@@ -28,7 +28,7 @@ def shield():
         p.append(box(rim, (x, 0.075, 0.335), (0.02, 0.04, 0.3)))
     p.append(box(rim, (0, 0.06, 0.53), (0.56, 0.04, 0.03)))                   # top rim
     p.append(box(rim, (0, 0.06, -0.43), (0.56, 0.04, 0.03)))                  # bottom rim
-    p.append(box(paint, (0, 0.095, -0.15), (0.3, 0.005, 0.05)))               # yellow stripe
+    p.append(box(paint, (0, 0.095, -0.15), (0.3, 0.005, 0.05)))               # the UAI marking stripe
     p.append(box(rim, (0, 0.0, 0.0), (0.03, 0.12, 0.12)))                     # grip
     p.append(box(rim, (0, 0.03, 0.25), (0.1, 0.05, 0.03)))                    # forearm strap
     ap.save(p, "Stit")

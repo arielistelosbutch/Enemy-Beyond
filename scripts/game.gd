@@ -2,37 +2,49 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.56 prototyp"
-const VERSION_NUM := "0.56"
+const VERSION := "0.60 prototyp"
+const VERSION_NUM := "0.60"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
 	# hands: "two" = needs both hands. kind: gun / melee / throw / tool / ammo
-	"rifle": {"name": "Puška", "short": "Puška", "weight": 7, "type": "weapon", "two": true, "ammo": "rifle_clip", "damage": 32, "spread": 1.4, "rate": 0.16, "auto": true, "sound": "rifle", "noise": 45.0, "muzzle": 0.72, "reload": 1.5},
-	"pistol": {"name": "Pistole", "short": "Pistole", "weight": 3, "type": "weapon", "ammo": "pistol_clip", "damage": 26, "spread": 2.0, "rate": 0.28, "auto": false, "sound": "pistol", "noise": 35.0, "muzzle": 0.16, "reload": 1.7},
-	"shotgun": {"name": "Brokovnice", "short": "Brokovnice", "weight": 6, "type": "weapon", "two": true, "ammo": "shells", "damage": 16, "pellets": 8, "choke": 3.2, "spread": 3.0, "rate": 0.85, "auto": false, "sound": "shotgun", "noise": 55.0, "muzzle": 0.72, "single": 0.5, "cap": 6, "kick": 2.0},
-	"magnum": {"name": "Revolver Magnum", "short": "Magnum", "weight": 3, "type": "weapon", "ammo": "magnum_rounds", "damage": 78, "spread": 1.1, "rate": 0.75, "auto": false, "sound": "magnum", "noise": 55.0, "muzzle": 0.27, "single": 0.7, "cap": 6, "kick": 2.5},
-	"autocannon": {"name": "Autokanón", "short": "Autokanón", "weight": 16, "type": "weapon", "two": true, "heavy": 0.72, "brace": true, "ammo": "ac_clip", "damage": 55, "splash": 1.8, "spread": 2.4, "rate": 0.5, "auto": true, "sound": "autocannon", "noise": 75.0, "muzzle": 1.2, "reload": 3.0, "kick": 3.0},
-	"minigun": {"name": "Minigun", "short": "Minigun", "weight": 20, "type": "weapon", "two": true, "heavy": 0.6, "brace": true, "ammo": "minigun_belt", "damage": 15, "spread": 3.4, "rate": 0.05, "auto": true, "spinup": 0.9, "sound": "minigun", "noise": 75.0, "muzzle": 0.86, "reload": 4.0, "kick": 0.4},
-	"rocket_launcher": {"name": "Raketomet", "short": "Raketomet", "weight": 12, "type": "weapon", "two": true, "heavy": 0.85, "ammo": "rocket", "damage": 160, "splash": 4.5, "spread": 0.8, "rate": 1.0, "auto": false, "projectile": true, "sound": "launch", "noise": 80.0, "muzzle": 0.9, "reload": 3.0, "kick": 3.0},
-	"plasma_rifle": {"name": "Plazmová puška", "short": "Plazma", "weight": 6, "type": "weapon", "two": true, "ammo": "plasma_cell", "damage": 48, "spread": 0.9, "rate": 0.2, "auto": true, "sound": "plasma", "noise": 30.0, "muzzle": 0.8, "reload": 1.2, "kick": 0.6},
-	"sniper": {"name": "Odstřelovací puška", "short": "Odstřelovačka", "weight": 9, "type": "weapon", "two": true, "ammo": "sniper_clip", "damage": 120, "spread": 0.25, "hip": 5.0, "scope": true, "rate": 1.3, "auto": false, "sound": "sniper", "noise": 75.0, "muzzle": 1.07, "reload": 2.4, "kick": 3.5},
+	"rifle": {"name": "Puška", "short": "Puška", "weight": 7, "type": "weapon", "modes": true, "two": true, "ammo": "rifle_clip", "damage": 32, "spread": 1.4, "rate": 0.16, "auto": true, "sound": "rifle", "noise": 45.0, "muzzle": 0.72, "reload": 1.5},
+	"pistol": {"name": "Pistole", "short": "Pistole", "weight": 3, "type": "weapon", "ammo": "pistol_clip", "damage": 26, "spread": 2.0, "rate": 0.28, "auto": false, "sound": "pistol", "noise": 35.0, "muzzle": 0.16, "reload": 1.7, "ext_mag": 21},
+	"shotgun": {"name": "Brokovnice", "short": "Brokovnice", "weight": 6, "type": "weapon", "two": true, "ammo": "shells", "ammo_alt": ["slugs", "beanbag"], "damage": 16, "pellets": 8, "choke": 3.2, "spread": 3.0, "rate": 0.85, "auto": false, "sound": "shotgun", "noise": 55.0, "muzzle": 0.72, "single": 0.5, "cap": 7, "kick": 2.0},
+	"magnum": {"name": "Revolver Magnum", "short": "Magnum", "weight": 3, "type": "weapon", "ammo": "magnum_rounds", "damage": 78, "ap": true, "spread": 1.1, "rate": 0.75, "auto": false, "sound": "magnum", "noise": 70.0, "muzzle": 0.27, "single": 0.7, "cap": 6, "kick": 2.5},
+	# 0.57 (Ari, HC-01's entry): one heavy armour-piercing incendiary round at a time, a long cycle after every shot
+	"autocannon": {"name": "Těžký kanón", "short": "Kanón", "weight": 16, "type": "weapon", "two": true, "heavy": 0.72, "brace": true, "ammo": "ac_clip", "damage": 150, "ap": true, "incendiary": true, "spread": 1.3, "rate": 1.9, "auto": false, "sound": "autocannon", "noise": 75.0, "muzzle": 1.2, "reload": 3.0, "kick": 3.0},
+	"minigun": {"name": "Minigun", "short": "Minigun", "weight": 20, "type": "weapon", "two": true, "heavy": 0.6, "brace": true, "ammo": "minigun_belt", "damage": 15, "spread": 3.4, "rate": 0.05, "auto": true, "spinup": 0.9, "heat": 0.0085, "sound": "minigun", "noise": 75.0, "muzzle": 0.86, "reload": 4.0, "kick": 0.4},
+	"rocket_launcher": {"name": "Raketomet", "short": "Raketomet", "weight": 12, "type": "weapon", "two": true, "heavy": 0.85, "ammo": "rocket", "ammo_alt": ["rocket_ap", "rocket_inc"], "damage": 160, "splash": 4.5, "spread": 0.8, "rate": 1.0, "auto": false, "projectile": true, "sound": "launch", "noise": 80.0, "muzzle": 0.9, "reload": 3.0, "kick": 3.0},
+	"plasma_rifle": {"name": "Plazmová puška PR-01", "short": "PR-01", "weight": 6, "type": "weapon", "two": true, "ammo": "plasma_cell", "cap": 10, "falloff": [35.0, 80.0], "damage": 75, "spread": 0.8, "rate": 0.32, "auto": false, "heat": 0.2, "sound": "plasma", "noise": 34.0, "muzzle": 0.8, "reload": 1.3, "kick": 0.5},
+	"plasma_pistol": {"name": "Plazmová pistole PP-01", "short": "PP-01", "weight": 3, "type": "weapon", "ammo": "plasma_cell", "cap": 20, "falloff": [20.0, 50.0], "damage": 34, "spread": 1.3, "rate": 0.28, "auto": false, "heat": 0.14, "sound": "plasma_p", "noise": 28.0, "muzzle": 0.21, "reload": 1.4, "kick": 0.4},
+	"plasma_cannon": {"name": "Plazmový kanón PC-01", "short": "PC-01", "weight": 15, "type": "weapon", "two": true, "heavy": 0.72, "brace": true, "ammo": "plasma_cell", "cap": 4, "damage": 290, "pc": true, "spread": 0.9, "rate": 0.9, "auto": false, "heat": 0.3, "sound": "plasma_cannon", "noise": 60.0, "muzzle": 0.86, "reload": 3.0, "kick": 1.2},
+	"plasma_minigun": {"name": "Plazmový minigun PM-01", "short": "PM-01", "weight": 20, "type": "weapon", "two": true, "heavy": 0.58, "brace": true, "ammo": "plasma_cell", "cap": 50, "damage": 26, "spread": 3.0, "rate": 0.08, "auto": true, "bursts": [5, 10, 0], "spinup": 0.7, "heat": 0.02, "sound": "plasma_mg", "noise": 70.0, "muzzle": 0.86, "reload": 3.5, "kick": 0.4},
+	"sniper": {"name": "Odstřelovací puška", "short": "Odstřelovačka", "weight": 9, "type": "weapon", "two": true, "ammo": "sniper_clip", "damage": 120, "ap": true, "spread": 0.25, "hip": 5.0, "scope": true, "rate": 1.3, "auto": false, "sound": "sniper", "noise": 75.0, "muzzle": 1.07, "reload": 2.4, "kick": 3.5, "ext_mag": 8},
 	# lasers: no magazines - the cell recharges by itself after a short pause (cap = shots in the cell)
-	"laser_pistol": {"name": "Laserová pistole", "short": "Laser. pistole", "weight": 2, "type": "weapon", "ammo": "", "laser": true, "cap": 10, "recharge": 2.5, "damage": 27, "spread": 1.2, "rate": 0.3, "auto": false, "sound": "laser", "noise": 25.0, "muzzle": 0.21, "kick": 0.3},
-	"laser_rifle": {"name": "Laserová puška", "short": "Laser. puška", "weight": 6, "type": "weapon", "two": true, "ammo": "", "laser": true, "cap": 24, "recharge": 4.0, "damage": 34, "spread": 0.8, "rate": 0.17, "auto": true, "sound": "laser", "noise": 28.0, "muzzle": 0.6, "kick": 0.4},
-	"laser_cannon": {"name": "Laserový kanón", "short": "Laser. kanón", "weight": 13, "type": "weapon", "two": true, "heavy": 0.75, "brace": true, "ammo": "", "laser": true, "cap": 12, "recharge": 1.6, "damage": 72, "spread": 1.2, "rate": 0.55, "auto": true, "sound": "laser", "noise": 40.0, "muzzle": 0.78, "kick": 1.5},
+	"laser_pistol": {"name": "Laserová pistole LP-01", "short": "Laser. pistole", "weight": 2, "type": "weapon", "ammo": "", "laser": true, "cap": 1, "recharge": 2.0, "falloff": [25.0, 60.0], "damage": 42, "spread": 1.0, "rate": 0.3, "auto": false, "sound": "laser_p", "noise": 25.0, "muzzle": 0.21, "kick": 0.3},
+	"laser_rifle": {"name": "Laserová puška LR-01", "short": "Laser. puška", "weight": 6, "type": "weapon", "two": true, "ammo": "", "laser": true, "cap": 1, "recharge": 1.55, "heat": 0.2, "damage": 58, "spread": 0.6, "rate": 0.3, "auto": false, "sound": "laser", "noise": 28.0, "muzzle": 0.6, "kick": 0.4},
+	"laser_cannon": {"name": "Laserový kanón LC-01", "short": "Laser. kanón", "weight": 13, "type": "weapon", "two": true, "heavy": 0.75, "brace": true, "ammo": "", "laser": true, "lc": true, "cap": 1, "recharge": 0.18, "damage": 260, "spread": 0.7, "rate": 0.6, "auto": false, "sound": "laser_cannon", "noise": 55.0, "muzzle": 0.78, "kick": 0.6},
+	"laser_minigun": {"name": "Laserový minigun LM-01", "short": "Laser. minigun", "weight": 18, "type": "weapon", "two": true, "heavy": 0.6, "brace": true, "ammo": "", "laser": true, "cap": 60, "recharge": 7.0, "heat": 0.012, "damage": 15, "spread": 2.6, "rate": 0.07, "auto": true, "spinup": 0.5, "sound": "laser_mg", "noise": 45.0, "muzzle": 0.86, "kick": 0.35},
 	"stun_baton": {"name": "Omračovací obušek", "short": "Obušek", "weight": 2, "type": "melee", "blunt": true, "damage": 4, "stun": 42, "reach": 2.1, "rate": 0.8, "sound": "zap"},
 	"knife": {"name": "Bojový nůž", "short": "Nůž", "weight": 1, "type": "melee", "damage": 38, "backstab": 3.0, "reach": 1.7, "rate": 0.45, "sound": "swish"},
+	"energo_nuz": {"name": "Energo nůž EN-01", "short": "Energo nůž", "weight": 1, "type": "melee", "damage": 38, "edge": 66, "backstab": 3.0, "reach": 1.7, "rate": 0.5, "sound": "swish"},
 	"rifle_clip": {"name": "Zásobník pušky", "short": "Zás. puška", "weight": 3, "type": "ammo", "rounds": 20},
 	"sniper_clip": {"name": "Zásobník odstřelovačky", "short": "Zás. odstř.", "weight": 1, "type": "ammo", "rounds": 5},
-	"pistol_clip": {"name": "Zásobník pistole", "short": "Zás. pistole", "weight": 1, "type": "ammo", "rounds": 12},
+	"pistol_clip": {"name": "Zásobník pistole", "short": "Zás. pistole", "weight": 1, "type": "ammo", "rounds": 15},
 	"shells": {"name": "Broky (krabička)", "short": "Broky", "weight": 1, "type": "ammo", "rounds": 8},
+	# 0.57 (Ari, SG-01's entry): other loads for the shotgun - L picks what goes into the tube next
+	"slugs": {"name": "Jednotné střely (krabička)", "short": "Jedn. střely", "weight": 1, "type": "ammo", "rounds": 8},
+	"beanbag": {"name": "Nesmrtící náboje (krabička)", "short": "Nesmrt. náboje", "weight": 1, "type": "ammo", "rounds": 8},
 	"magnum_rounds": {"name": "Náboje Magnum", "short": "Náb. Magnum", "weight": 1, "type": "ammo", "rounds": 6},
-	"ac_clip": {"name": "Zásobník autokanónu", "short": "Zás. AK", "weight": 5, "type": "ammo", "rounds": 8},
-	"minigun_belt": {"name": "Pás do minigunu", "short": "Pás MG", "weight": 7, "type": "ammo", "rounds": 150},
-	"plasma_cell": {"name": "Plazmový článek", "short": "Článek", "weight": 2, "type": "ammo", "rounds": 30},
-	"rocket": {"name": "Raketa", "short": "Raketa", "weight": 4, "type": "ammo", "rounds": 1},
+	"ac_clip": {"name": "Zásobník kanónu", "short": "Zás. kanón", "weight": 5, "type": "ammo", "rounds": 5},
+	"minigun_belt": {"name": "Muniční kontejner minigunu", "short": "Kontejner MG", "weight": 8, "type": "ammo", "rounds": 300},
+	"plasma_cell": {"name": "Plazmový zásobník PL-MAG-01", "short": "PL-MAG", "weight": 2, "type": "ammo", "rounds": 20},
+	"rocket": {"name": "Výbušná raketa", "short": "Raketa", "weight": 4, "type": "ammo", "rounds": 1},
+	"rocket_ap": {"name": "Průbojná raketa", "short": "Průb. raketa", "weight": 4, "type": "ammo", "rounds": 1},
+	"rocket_inc": {"name": "Zápalná raketa", "short": "Záp. raketa", "weight": 4, "type": "ammo", "rounds": 1},
 	"grenade": {"name": "Granát", "short": "Granát", "weight": 2, "type": "grenade"},
+	"plasma_grenade": {"name": "Plazmový granát PG-01", "short": "PG-01", "weight": 2, "type": "grenade"},
 	"smoke_grenade": {"name": "Kouřový granát", "short": "Kouř", "weight": 1, "type": "grenade"},
 	"mine": {"name": "Nášlapná mina", "short": "Mina", "weight": 3, "type": "grenade"},
 	"flare": {"name": "Světlice", "short": "Světlice", "weight": 1, "type": "flare"},
@@ -41,18 +53,25 @@ const ITEMS := {
 	# re-primed (slow and clumsy until research explains how), weak in human hands at first
 	"a_pistol": {"name": "Plazmová pistole vetřelců", "short": "Cizí pistole", "weight": 3, "type": "weapon", "ammo": "", "alien": true, "know": "laser",
 		"cap": 8, "cells": 3, "damage": 42, "spread": 1.3, "rate": 0.35, "auto": false, "sound": "plasma", "noise": 25.0, "muzzle": 0.21, "kick": 0.4, "reload": 2.5},
-	"a_rifle": {"name": "Plazmová puška vetřelců", "short": "Cizí puška", "weight": 6, "type": "weapon", "two": true, "ammo": "", "alien": true, "know": "plazma",
+	"a_rifle": {"name": "Plazmová puška vetřelců", "short": "Cizí puška", "weight": 6, "type": "weapon", "modes": true, "two": true, "ammo": "", "alien": true, "know": "plazma",
 		"cap": 20, "cells": 2, "damage": 50, "spread": 1.0, "rate": 0.22, "auto": true, "sound": "plasma", "noise": 30.0, "muzzle": 0.8, "kick": 0.6, "reload": 3.0},
 	"a_heavy": {"name": "Těžká plazma vetřelců", "short": "Cizí těžká", "weight": 11, "type": "weapon", "two": true, "heavy": 0.8, "ammo": "", "alien": true, "know": "laser_tezky",
-		"cap": 5, "cells": 2, "damage": 110, "splash": 2.2, "spread": 0.9, "rate": 0.9, "auto": false, "sound": "plasma", "noise": 45.0, "muzzle": 0.7, "kick": 2.0, "reload": 4.0},
+		"cap": 5, "cells": 2, "damage": 110, "splash": 2.2, "spread": 0.9, "rate": 0.9, "auto": false, "sound": "plasma_heavy", "noise": 45.0, "muzzle": 0.7, "kick": 2.0, "reload": 4.0},
 	"a_pack": {"name": "Batoh vetřelce", "short": "Batoh vetřelce", "weight": 0, "type": "salvage"},
 	"stit": {"name": "Balistický štít", "short": "Štít", "weight": 6, "type": "shield"},
-	"vesta": {"name": "Bojová výstroj UAI", "short": "Vesta", "weight": 4, "type": "armor", "protect": 0.8},
-	"pancir": {"name": "Slitinový pancíř", "short": "Pancíř", "weight": 7, "type": "armor", "protect": 0.62},
+	"vesta": {"name": "Balistická vesta „Želva“", "short": "Vesta", "weight": 4, "type": "armor", "protect": 0.8},
+	"pancir": {"name": "Experimentální pancéřová vesta ARM-02", "short": "ARM-02", "weight": 5, "type": "armor", "protect": 0.66},
 	"scanner": {"name": "Detektor pohybu", "short": "Detektor", "weight": 4, "type": "scanner"},
 	"radio": {"name": "Vysílačka", "short": "Vysílačka", "weight": 1, "type": "radio"},
-	"nvg": {"name": "Noktovizor PVS-7", "short": "Noktovizor", "weight": 1, "type": "nvg"},
+	"nvg": {"name": "Noktovizor NVG-01", "short": "Noktovizor", "weight": 1, "type": "nvg"},
 }
+
+## The loads a gun takes: its own first, then the others (the shotgun's slugs and less-lethal rounds).
+func ammo_types(wid: String) -> Array:
+	var r: Dictionary = ITEMS.get(wid, {})
+	if String(r.get("ammo", "")) == "":
+		return []
+	return [String(r["ammo"])] + Array(r.get("ammo_alt", []))
 
 ## How many rounds the weapon itself holds.
 ## An alien gun nobody has researched yet: weak, wild and slow to re-prime.
@@ -64,35 +83,370 @@ func mag_size(id: String) -> int:
 	var r: Dictionary = ITEMS[id]
 	var n: int = int(r["cap"]) if r.has("cap") else int(ITEMS[r["ammo"]]["rounds"])
 	if has_mod(id, "zasobnik"):
-		n = int(ceil(n * 1.5))
+		n = int(r["ext_mag"]) if r.has("ext_mag") else int(ceil(n * 1.5))
 	return n
 
 # ---- personal weapon upgrades (each mercenary his own, bought with his money) ---------------
+## 0.57: a part sits in a slot of the gun (one optic, one thing on the muzzle, ...); a bought part
+## stays in the soldier's box when another is mounted instead. Almost every part is "something for
+## something": "w" = kilograms more on the gun; multipliers: "ads" = how fast the sights come up,
+## "reload" = reload time, "draw" = time to get the gun into the hands, "sway" = shaking hands.
 const MODS := {
-	"svitilna": {"name": "Zbraňová svítilna", "price": 120, "desc": "Silnější a delší kužel světla, když držíš zbraň."},
-	"laser": {"name": "Laserový zaměřovač", "price": 180, "desc": "Červená tečka: střelba od boku skoro o polovinu přesnější."},
-	"optika": {"name": "Optika 2x", "price": 220, "desc": "Při míření větší přiblížení, o 40 % přesnější a klidnější mířidla."},
-	"tlumic": {"name": "Tlumič", "price": 200, "desc": "Výstřel slyší vetřelci jen na pětinu vzdálenosti."},
-	"zasobnik": {"name": "Prodloužený zásobník", "price": 160, "desc": "O polovinu víc ran v zásobníku."},
-	"rukojet": {"name": "Přední rukojeť", "price": 140, "desc": "Poloviční zpětný ráz, rozptyl při dávce roste pomaleji, klidnější ruce."},
+	"svitilna": {"name": "Zbraňová svítilna", "price": 120, "slot": "bok_l", "w": 0.2, "desc": "Silnější a delší kužel světla, když držíš zbraň. Vetřelci tě ale uvidí z větší dálky."},
+	"laser": {"name": "Laserový zaměřovač", "price": 180, "slot": "bok_p", "w": 0.15, "desc": "Červená tečka: střelba od boku skoro o polovinu přesnější. Vetřelec, kterému tečka sedne na tělo, si tě ale všimne."},
+	"optika": {"name": "Optika 2x", "price": 220, "slot": "optika", "w": 0.5, "ads": 0.75, "draw": 1.1, "desc": "Dvojnásobné zvětšení v objektivu, o 40 % přesnější a klidnější mířidla. Do oka jde pomaleji a kolem objektivu toho vidíš míň."},
+	"kolimator_t": {"name": "Tovární kolimátor", "price": 0, "slot": "optika", "w": 0.3, "stock": true, "desc": "Průhled s červeným bodem, je na pušce z výroby. Bez zvětšení, ale rychle do oka: tečka sedí tam, kam letí kulka."},
+	"tlumic": {"name": "Tlumič", "price": 200, "slot": "hlaven", "w": 0.6, "ads": 0.92, "draw": 1.15, "sway": 1.05, "desc": "Výstřel slyší vetřelci jen na pětinu vzdálenosti. Zbraň je delší a vpředu těžší."},
+	"bajonet": {"name": "Bajonet", "price": 130, "slot": "hlaven", "w": 0.45, "ads": 0.95, "draw": 1.1, "sway": 1.12, "desc": "Čepel pod hlavní: na V bodneš bajonetem místo rány pažbou, silný a dlouhý výpad. Vpředu těžší zbraň se ale víc klepe."},
+	"kolimator": {"name": "Kolimátor", "price": 150, "slot": "optika", "w": 0.1, "draw": 1.1, "desc": "Malý kolimátor na pistoli: tečka v okénku, mírně přesnější střelba. Z pouzdra jde o kus pomaleji."},
+	"nosic": {"name": "Nosič nábojů", "price": 90, "w": 0.25, "desc": "Pár nábojů na pouzdře přímo na zbrani: brokovnice se dobíjí rychleji."},
+	"pazba": {"name": "Ergonomická pažba", "price": 140, "slot": "pazba", "w": 0.3, "desc": "Pažba, která pohltí část zpětného rázu: další rána jde přesněji."},
+	"dvojnozka": {"name": "Stabilizační dvojnožka", "price": 260, "slot": "spodek", "w": 0.6, "ads": 0.9, "desc": "Sklopné nožky pod hlaveň: když stojíš na místě, je zbraň o polovinu přesnější. Kanón s nimi jde položit i vleže."},
+	"tlumeni": {"name": "Zesílené tlumení rázu", "price": 300, "w": 1.0, "desc": "Mechanika, která spolkne část zpětného rázu: rychleji jsi zpátky na cíli."},
+	"nosny": {"name": "Ergonomický nosný systém", "price": 220, "w": 0.5, "desc": "Popruhy a opěry: s kanónem v rukou se pohybuješ o něco rychleji."},
+	"dalkomer": {"name": "Balistický dálkoměr", "price": 280, "w": 0.3, "desc": "Změří vzdálenost a dopočítá pokles střely: na velkou dálku přesnější rána."},
+	"brzda": {"name": "Úsťová brzda", "price": 200, "slot": "hlaven", "w": 0.3, "desc": "Odvede část plynů do stran: menší ráz, rychleji jsi zpátky na cíli."},
+	"stabilizator": {"name": "Elektronický stabilizátor", "price": 320, "w": 1.0, "desc": "Gyroskop v postroji: dlouhé dávky se tolik nerozlévají."},
+	"chladic": {"name": "Pokročilý chladicí modul", "price": 300, "w": 0.8, "desc": "Žebra a proudění vzduchu kolem hlavně nebo emitoru: zbraň se přehřívá pomaleji."},
+	"fokus": {"name": "Magnetický fokusér", "price": 280, "slot": "hlaven", "w": 0.35, "spread": 0.75, "heat": 1.25, "desc": "Prstence kolem emitoru stáhnou plazmu do užšího proudu: o čtvrtinu menší rozptyl. Emitor se ale víc zahřívá."},
+	"motor": {"name": "Výkonnější pohon rotoru", "price": 260, "w": 0.7, "spin": 0.55, "draw": 1.05, "desc": "Silnější elektromotor s větším akumulátorem: hlavně se roztočí skoro dvakrát rychleji. Pohon je ale o dost těžší."},
+	"zamerovac": {"name": "Taktický zaměřovač", "price": 180, "slot": "optika", "w": 0.4, "desc": "Jednoduchý zaměřovač na těžkou zbraň: o něco přesnější na střední vzdálenost."},
+	"ergo": {"name": "Ergonomická rukojeť", "price": 120, "w": 0.1, "desc": "Rukojeť, která sedí v dlani: u revolveru menší postih za zpětný ráz, u nože jistější a o kus delší sek."},
+	"rychlonabijec": {"name": "Rychlonabíječ", "price": 110, "w": 0.1, "desc": "Šest nábojů v kroužku najednou do bubínku: přebíjení zabere zlomek času."},
+	"kompenzator": {"name": "Kompenzační úsťový modul", "price": 160, "slot": "hlaven", "w": 0.2, "desc": "Méně zdvihu hlavně po ráně. Výstřel je ale ještě hlasitější."},
+	"pocitac": {"name": "Zaměřovací počítač", "price": 350, "w": 0.8, "desc": "Spočítá předstih na pohyblivý cíl: raketa letí přesněji."},
+	"pouzdro": {"name": "Odlehčené taktické pouzdro", "price": 60, "desc": "Nůž vyjde z pouzdra na jeden pohyb: rychlejší tasení."},
+	"akumulator": {"name": "Vysokokapacitní akumulátor", "price": 200, "w": 0.3, "desc": "Větší článek v rukojeti obušku: víc výbojů na misi."},
+	"lehky": {"name": "Odlehčená konstrukce", "price": 120, "w": -0.3, "desc": "Kompozitní tělo obušku: rychleji v ruce, rychlejší rána."},
+	"diagnostika": {"name": "Diagnostický indikátor", "price": 90, "desc": "Displej na rukojeti: ukáže, kolik energie v obušku zbývá."},
+	"zasobnik": {"name": "Prodloužený zásobník", "price": 160, "slot": "zasobnik", "w": 1.0, "reload": 1.15, "ads": 0.95, "desc": "O polovinu víc ran v zásobníku. Zbraň je o kilo těžší a delší zásobník se hůř zasouvá."},
+	"holo": {"name": "Holografický zaměřovač", "price": 170, "slot": "optika", "w": 0.15, "draw": 1.05, "desc": "Lehký rámeček se sklíčkem pro laserové zbraně: červený bod se promítá do skla, rychle do oka a o kus přesnější rána."},
+	"clanek": {"name": "Vysokokapacitní článek", "price": 240, "slot": "clanek", "w": 0.5, "charge": 1.4, "ads": 0.95, "desc": "Větší napájecí článek: zbraň se mezi výstřely nabije o dost rychleji. Je ale o půl kila těžší a vpředu objemnější."},
+	"cocka": {"name": "Zaostřovací čočka", "price": 260, "slot": "hlaven", "w": 0.25, "dmg": 1.2, "charge": 0.85, "desc": "Nástavec s čočkou, který stáhne paprsek do užšího svazku: o pětinu silnější zásah. Článek se ale po ráně nabíjí déle."},
+	"rukojet": {"name": "Přední rukojeť", "price": 140, "slot": "spodek", "w": 0.3, "ads": 0.92, "desc": "Poloviční zpětný ráz, rozptyl při dávce roste pomaleji, klidnější ruce. Do oka jde o chlup pomaleji."},
 }
+## The slots a part goes into (only one part per slot); a part without one has a slot of its own.
+const MOD_SLOTS := {"optika": "Mířidla", "hlaven": "Ústí hlavně", "spodek": "Pod hlavní", "bok_l": "Levá lišta",
+	"bok_p": "Pravá lišta", "zasobnik": "Zásobník", "pazba": "Pažba", "clanek": "Článek"}
+## Parts a gun has from the factory: free, mounted from the start; their slot is never empty
+## (the factory part goes back on when another comes off).
+const STOCK_PARTS := {"rifle": ["kolimator_t"]}
 ## Which upgrade fits which weapon (not everything on everything).
 const MOD_FITS := {
-	"pistol": ["svitilna", "laser", "tlumic", "zasobnik"],
-	"rifle": ["svitilna", "laser", "optika", "tlumic", "zasobnik", "rukojet"],
-	"sniper": ["tlumic", "zasobnik", "rukojet"],
-	"shotgun": ["svitilna", "laser", "rukojet"],
-	"magnum": ["svitilna", "laser"],
-	"autocannon": ["svitilna", "optika", "zasobnik", "rukojet"],
-	"minigun": ["svitilna", "rukojet"],
-	"plasma_rifle": ["svitilna", "laser", "optika", "rukojet"],
-	"laser_pistol": ["svitilna", "laser"],
-	"laser_rifle": ["svitilna", "optika", "rukojet"],
-	"laser_cannon": ["svitilna", "optika", "rukojet"],
+	"pistol": ["kolimator", "svitilna", "laser", "tlumic", "zasobnik"],
+	"rifle": ["kolimator_t", "optika", "tlumic", "bajonet", "rukojet", "svitilna", "laser", "zasobnik"],
+	"sniper": ["dvojnozka", "dalkomer", "brzda", "zasobnik"],
+	"shotgun": ["kolimator", "nosic", "svitilna", "laser", "pazba"],
+	"magnum": ["kolimator", "ergo", "rychlonabijec", "kompenzator", "laser"],
+	"autocannon": ["zamerovac", "dvojnozka", "tlumeni", "nosny"],
+	"rocket_launcher": ["optika", "dalkomer", "nosny", "pocitac"],
+	"minigun": ["nosny", "zasobnik", "stabilizator", "chladic", "motor"],
+	"plasma_rifle": ["holo", "fokus", "zasobnik", "chladic", "svitilna", "laser"],
+	"laser_pistol": ["holo", "clanek", "cocka", "svitilna", "laser"],
+	"laser_rifle": ["holo", "clanek", "cocka", "chladic", "svitilna", "laser", "rukojet"],
+	"laser_cannon": ["clanek", "cocka", "svitilna", "nosny"],
+	"laser_minigun": ["nosny", "stabilizator", "motor", "clanek", "chladic"],
+	"plasma_pistol": ["holo", "fokus", "zasobnik", "chladic"],
+	"plasma_cannon": ["fokus", "chladic", "zasobnik", "nosny"],
+	"plasma_minigun": ["nosny", "stabilizator", "chladic", "motor", "zasobnik"],
+	"knife": ["ergo", "pouzdro"],
+	"energo_nuz": ["pouzdro"],
+	"stun_baton": ["akumulator", "lehky", "diagnostika"],
 }
+## Where a part's model sits on a gun (the gun model's own space; parts without an entry are not
+## seen): a point, or a whole transform (turned under the barrel, smaller on a pistol).
+## Part models: assets/models/part_<part>.glb (tools/blender/gun_parts.py).
+const PART_AT := {
+	"pistol": {"zasobnik": [Vector3(0, -0.103, 0.019), 0.0, 1, "zasobnik_p"],
+		"kolimator": Vector3(0, 0.0475, -0.03), "tlumic": Vector3(0, 0.03, -0.194),
+		"svitilna": [Vector3(0, -0.014, -0.1), 90.0, 0.8],
+		"laser": [Vector3(0.014, 0.006, -0.09), 0.0, 0.7]},
+	"shotgun": {"nosic": Vector3(-0.025, 0.033, -0.05), "pazba": Vector3(0, -0.02, 0.364),
+		"kolimator": Vector3(0, 0.0655, -0.08), "svitilna": Vector3(-0.016, 0.035, -0.62), "laser": Vector3(0.016, 0.035, -0.6)},
+	"magnum": {"ergo": Vector3(0, -0.035, 0.01), "kompenzator": Vector3(0, 0.045, -0.27),
+		"kolimator": Vector3(0, 0.061, -0.12),
+		"laser": [Vector3(0, 0.023, -0.18), -90.0, 0.7]},
+	"laser_pistol": {"holo": Vector3(0, 0.066, -0.06), "clanek": [Vector3(-0.023, 0.03, -0.09), -90.0, 0.7], "cocka": [Vector3(0, 0.03, -0.205), 0.0, 0.85],
+		"svitilna": [Vector3(0, 0.005, -0.13), 90.0, 0.8], "laser": [Vector3(0.023, 0.03, -0.12), 0.0, 0.7]},
+	"laser_rifle": {"holo": Vector3(0, 0.115, -0.1), "clanek": Vector3(0, -0.065, -0.12), "cocka": Vector3(0, 0.04, -0.6), "chladic": Vector3(0, 0.04, -0.335),
+		"svitilna": Vector3(-0.026, 0.04, -0.42), "laser": Vector3(0.026, 0.04, -0.45), "rukojet": Vector3(0, -0.005, -0.26)},
+	"laser_cannon": {"nosny": Vector3(0.056, 0, 0.2),
+		"cocka": [Vector3(0, 0.05, -0.78), 0.0, 1.5], "clanek": [Vector3(0, -0.02, 0.2), 0.0, 1.5], "svitilna": Vector3(-0.044, 0.05, -0.6)},
+	"rifle": {"zasobnik": [Vector3(0, -0.06, -0.128), 0.0, 1, "zasobnik_r"],
+		"kolimator_t": Vector3(0, 0.079, -0.08), "optika": Vector3(0, 0.079, -0.06), "bajonet": Vector3(0, 0.042, -0.565), "tlumic": Vector3(0, 0.042, -0.725),
+		"rukojet": Vector3(0, 0.012, -0.33), "svitilna": Vector3(-0.032, 0.042, -0.42), "laser": Vector3(0.032, 0.042, -0.44)},
+	"sniper": {"zasobnik": [Vector3(0, -0.06, -0.04), 0.0, 1, "zasobnik_s"], "dvojnozka": Vector3(0, -0.005, -0.5), "brzda": Vector3(0, 0.045, -0.98), "dalkomer": Vector3(0.019, 0.115, -0.15)},
+	"autocannon": {"zamerovac": Vector3(0, 0.195, -0.05), "dvojnozka": [Vector3(0, 0.03, -0.6), 0.0, 1.3], "tlumeni": Vector3(0, 0.1, 0.2), "nosny": Vector3(0.058, 0, 0.1)},
+	"rocket_launcher": {"optika": Vector3(0, 0.125, -0.05), "dalkomer": [Vector3(-0.055, 0.07, -0.2), 180.0, 1], "pocitac": Vector3(0.04, 0.03, 0), "nosny": Vector3(0.055, 0.04, 0.25)},
+	"minigun": {"nosny": Vector3(0.072, 0.03, 0.15), "zasobnik": [Vector3(-0.12, -0.12, 0.05), 0.0, 1, "zasobnik_mg"], "stabilizator": Vector3(0, -0.03, 0.15), "chladic": [Vector3(0, 0.05, -0.18), 0.0, 1, "chladic_mg"], "motor": Vector3(-0.06, 0.085, 0.1)},
+	"laser_minigun": {"nosny": Vector3(0.072, 0.03, 0.15), "stabilizator": Vector3(0, -0.03, 0.15), "motor": Vector3(-0.06, 0.085, 0.1), "clanek": [Vector3(-0.12, -0.12, 0.05), 0.0, 1.6], "chladic": [Vector3(0, 0.05, -0.18), 0.0, 2.4]},
+	"plasma_minigun": {"nosny": Vector3(0.072, 0.03, 0.15), "stabilizator": Vector3(0, -0.03, 0.15), "motor": Vector3(-0.06, 0.085, 0.1), "zasobnik": [Vector3(-0.12, -0.134, 0.01), 0.0, 0.9, "zasobnik_pl"], "chladic": [Vector3(0, 0.05, -0.18), 0.0, 1.4, "chladic_pl"]},
+	"plasma_pistol": {"holo": [Vector3(0, 0.057, -0.04), 0.0, 1, "holo_pl"], "fokus": [Vector3(0, 0.035, -0.19), 0.0, 0.6], "zasobnik": [Vector3(0, -0.08, 0.02), 0.0, 0.7, "zasobnik_pl"], "chladic": [Vector3(0, 0.035, -0.145), 0.0, 0.6, "chladic_pl"]},
+	"plasma_rifle": {"holo": [Vector3(0, 0.105, -0.12), 0.0, 1, "holo_pl"], "fokus": Vector3(0, 0.04, -0.5), "zasobnik": [Vector3(0, -0.076, -0.11), 0.0, 1, "zasobnik_pl"], "chladic": [Vector3(0, 0.04, -0.2), 0.0, 1, "chladic_pl"], "svitilna": Vector3(-0.036, 0.04, -0.3), "laser": Vector3(0.036, 0.04, -0.32)},
+	"plasma_cannon": {"fokus": [Vector3(0, 0.05, -0.72), 0.0, 1.5], "chladic": [Vector3(0, 0.05, -0.355), 0.0, 1.3, "chladic_pl"], "zasobnik": [Vector3(0, -0.075, -0.18), 0.0, 1, "zasobnik_pl"], "nosny": Vector3(0.052, 0, 0.2)},
+}
+## Factory parts that are baked into the gun's own mesh: the islands inside this box go away (by
+## Game.dress_gun) when the part is taken off, or when it has a model of its own in PART_AT (the
+## rifle's red dot: the baked one is a solid cylinder, the part an open tube to look through).
+const STOCK_MESH := {"rifle": {"kolimator_t": AABB(Vector3(-0.03, 0.0805, -0.135), Vector3(0.06, 0.08, 0.115))},
+	# (0.57: the sniper's folded bipod and its muzzle brake are bought parts now - without them the gun has none)
+	"sniper": {"dvojnozka": AABB(Vector3(-0.035, -0.02, -0.785), Vector3(0.07, 0.032, 0.288)), "brzda": AABB(Vector3(-0.03, 0.02, -1.08), Vector3(0.06, 0.05, 0.1))}}
+## (0.57) The magazine as its own piece in the eyes' view (the reload hides it, the hand brings it):
+## the blocks of the gun's mesh inside "box" (the gun model's space), or made of the material "mat"
+## (with the small bits of other materials stuck to it). The pistol has its own "Mag" in the model.
+## "Pump" the same way: the shotgun's forend (the left hand racks it). "mats": only blocks of these
+## materials inside the box.
+const MAG_PART := {"rifle": {"box": AABB(Vector3(-0.03, -0.21, -0.22), Vector3(0.06, 0.157, 0.13))},
+	"plasma_pistol": {"mat": "PlasmaMag"}, "plasma_rifle": {"box": AABB(Vector3(-0.025, -0.085, -0.145), Vector3(0.05, 0.065, 0.07))},
+	"plasma_cannon": {"mat": "PlasmaMag"}, "plasma_minigun": {"mat": "PlasmaMag"},
+	"shotgun": {"name": "Pump", "box": AABB(Vector3(-0.04, -0.02, -0.52), Vector3(0.08, 0.08, 0.2)), "mats": ["Walnut", "WalnutDark"]}}
+## Looking through a sight (aiming): the point the eye looks along, in the gun model's space (a
+## mounted part: in the part's space, PART_AT is added), the eye's distance behind it, the view's
+## narrowing (x Game.fov) and for a scope its magnification and the eyepiece radius.
+const SIGHTS := {
+	"kolimator_t": {"at": Vector3(0, 0.036, -0.032), "relief": 0.2, "kind": "dot", "fov": 0.75},
+	"optika": {"at": Vector3(0, 0.045, 0.076), "relief": 0.075, "kind": "scope", "fov": 0.8, "zoom": 2.0, "r": 0.0165},
+	"holo": {"at": Vector3(0, 0.024, -0.012), "relief": 0.24, "kind": "dot", "fov": 0.8},
+	"kolimator": {"at": Vector3(0, 0.016, -0.011), "relief": 0.26, "kind": "dot", "fov": 0.8},
+}
+## A gun's own sights (used when no sight part is mounted): "iron" = the notch and post line up in
+## the middle of the screen; the sniper rifle's built-in scope magnifies in its eyepiece.
+const GUN_SIGHTS := {
+	"pistol": {"at": Vector3(0, 0.054, 0.015), "relief": 0.3, "kind": "iron", "fov": 0.85},
+	"magnum": {"at": Vector3(0, 0.0705, -0.03), "relief": 0.3, "kind": "iron", "fov": 0.85},
+	"shotgun": {"at": Vector3(0, 0.085, -0.02), "relief": 0.22, "kind": "iron", "fov": 0.8},      # (0.57: the eye further back - the receiver went through the view)
+	"laser_pistol": {"at": Vector3(0, 0.074, 0.0), "relief": 0.3, "kind": "iron", "fov": 0.85},
+	"laser_rifle": {"at": Vector3(0, 0.119, -0.045), "relief": 0.12, "kind": "iron", "fov": 0.8},
+	"sniper": {"at": Vector3(0, 0.115, 0.087), "relief": 0.08, "kind": "scope", "fov": 0.8, "zoom": 4.5, "r": 0.022},
+}
+
+## Where a part sits on a gun, as a transform (identity: no place for it).
+## The model a part shows on this gun (PART_AT may give its own: a plasma gun's cooler looks alien).
+func part_model(weapon: String, mid: String) -> String:
+	var v: Variant = PART_AT.get(weapon, {}).get(mid, null)
+	return String(v[3]) if v is Array and (v as Array).size() > 3 else mid
+
+func part_xf(weapon: String, mid: String) -> Transform3D:
+	var v: Variant = PART_AT.get(weapon, {}).get(mid, null)
+	if v is Array:  # [poloha, otočení kolem osy hlavně ve stupních, měřítko(, jiný model dílu)]
+		return Transform3D(Basis(Vector3(0, 0, 1), deg_to_rad(v[1])).scaled(Vector3.ONE * float(v[2])), v[0])
+	return Transform3D(Basis(), v as Vector3) if v is Vector3 else Transform3D()
+
+func _mod_src(m: Dictionary) -> Dictionary:
+	return m if not m.is_empty() else merc
+
+func mod_slot(mod: String) -> String:
+	return String(MODS.get(mod, {}).get("slot", mod))
+
+## The soldier has this part for this gun (bought, or it came with the gun).
+func owns_mod(weapon: String, mod: String, m: Dictionary = {}) -> bool:
+	return mod in STOCK_PARTS.get(weapon, []) or mod in _mod_src(m).get("mods", {}).get(weapon, [])
+
+## What is mounted on a gun: slot -> part. Saved with the soldier ("fit"); a soldier from before
+## 0.57 gets the factory parts and everything he bought (one per slot) mounted.
+func fitted(weapon: String, m: Dictionary = {}) -> Dictionary:
+	var src := _mod_src(m)
+	var f: Dictionary = src.get("fit", {})
+	if f.has(weapon):
+		var fits: Array = MOD_FITS.get(weapon, [])
+		for sl in (f[weapon] as Dictionary).keys():
+			if not f[weapon][sl] in fits:       # a part that no longer fits this gun (0.57 changes) comes off
+				f[weapon].erase(sl)
+		return f[weapon]
+	var out := {}
+	for mid in STOCK_PARTS.get(weapon, []) + Array(src.get("mods", {}).get(weapon, [])):
+		if MODS.has(mid):
+			out[mod_slot(mid)] = mid
+	if out.is_empty():
+		return out
+	f[weapon] = out
+	src["fit"] = f
+	return out
+
 func has_mod(weapon: String, mod: String, m: Dictionary = {}) -> bool:
-	var src: Dictionary = m if not m.is_empty() else merc
-	return mod in src.get("mods", {}).get(weapon, [])
+	return fitted(weapon, m).get(mod_slot(mod), "") == mod
+
+## The product of the mounted parts' multipliers ("ads", "reload", "draw", "sway").
+func part_mult(weapon: String, key: String, m: Dictionary = {}) -> float:
+	var k := 1.0
+	for s in fitted(weapon, m):
+		k *= float(MODS.get(fitted(weapon, m)[s], {}).get(key, 1.0))
+	return k
+
+## Kilograms the mounted parts add to a gun.
+func part_weight(weapon: String, m: Dictionary = {}) -> float:
+	var w := 0.0
+	for s in fitted(weapon, m):
+		w += float(MODS.get(fitted(weapon, m)[s], {}).get("w", 0.0))
+	return w
+
+## Puts an owned part on the gun (what was in its slot goes back to the box).
+func mount_mod(weapon: String, mod: String) -> bool:
+	if not owns_mod(weapon, mod) or not mod in MOD_FITS.get(weapon, []):
+		return false
+	var fit := fitted(weapon).duplicate()
+	fit[mod_slot(mod)] = mod
+	_set_fit(weapon, fit)
+	return true
+
+## Takes the part off a slot; a factory part goes back in its place.
+func unmount_slot(weapon: String, slot: String) -> void:
+	var fit := fitted(weapon).duplicate()
+	fit.erase(slot)
+	for sp in STOCK_PARTS.get(weapon, []):
+		if mod_slot(sp) == slot:
+			fit[slot] = sp
+	_set_fit(weapon, fit)
+
+func _set_fit(weapon: String, fit: Dictionary) -> void:
+	var f: Dictionary = merc.get("fit", {})
+	f[weapon] = fit
+	merc["fit"] = f
+	save_merc()
+	Net.update_merc()
+
+## The sight the soldier looks through when he aims this gun (empty: the old way, no sight line).
+func sight_of(weapon: String, m: Dictionary = {}) -> Dictionary:
+	var opt := String(fitted(weapon, m).get("optika", ""))
+	if not SIGHTS.has(opt) or not PART_AT.get(weapon, {}).has(opt):
+		# no sight part with a place on this gun's model: its own sights (or the old way)
+		return GUN_SIGHTS.get(weapon, {}).duplicate()
+	var s: Dictionary = SIGHTS[opt].duplicate()
+	s["at"] = part_xf(weapon, opt) * (s["at"] as Vector3)
+	s["part"] = opt
+	return s
+
+## Dresses a gun model for this soldier: the mounted parts on it, factory parts taken off hidden.
+func dress_gun(n: Node3D, weapon: String, m: Dictionary = {}, split_mag := false) -> void:
+	if not MOD_FITS.has(weapon):
+		return
+	var fit := fitted(weapon, m)
+	split_mag = split_mag and MAG_PART.has(weapon)
+	var at: Dictionary = PART_AT.get(weapon, {})
+	for s in fit:
+		var mid: String = fit[s]
+		var pmid := part_model(weapon, mid)
+		if at.has(mid) and ResourceLoader.exists("res://assets/models/part_%s.glb" % pmid):
+			var pm := model("part_" + pmid)
+			pm.name = "Part_" + mid
+			pm.transform = part_xf(weapon, mid)
+			n.add_child(pm)
+	var hide := []
+	for sp in STOCK_MESH.get(weapon, {}):
+		if not fit.values().has(sp) or at.has(sp):
+			hide.append(STOCK_MESH[weapon][sp])
+	if hide.is_empty() and not split_mag:
+		return
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		if String(mi.name).begins_with("Part_") or String(mi.get_parent().name).begins_with("Part_"):
+			continue
+		if split_mag:
+			_split_mag(mi, weapon, hide)
+			continue
+		var ck := "%s/%s/%s" % [weapon, mi.name, str(hide)]
+		if _dress_cache.has(ck):
+			if _dress_cache[ck] != null:
+				_redress(mi, _dress_cache[ck])
+			continue
+		var src: Mesh = mi.get_meta("eb_src") if mi.has_meta("eb_src") else mi.mesh
+		var mods: Dictionary = model_mods.get(weapon, {}).duplicate(true)
+		if not mods.has("parts"):
+			mods["parts"] = {}
+		var isl := ModelMods.islands(src)
+		var gone := 0
+		for i in isl.size():
+			for box in hide:
+				if (box as AABB).has_point(isl[i]["center"]):
+					var k := "%s:%d" % [mi.name, i]
+					var e: Dictionary = mods["parts"].get(k, {})
+					e["del"] = true
+					mods["parts"][k] = e
+					gone += 1
+		if gone > 0:
+			ModelMods.rebuild(mi, mods)
+			_dress_cache[ck] = mi.mesh
+			_redress(mi, mi.mesh)
+		else:
+			_dress_cache[ck] = null
+
+## The gun's mesh without the magazine (and the factory parts taken off), and the magazine as a
+## mesh of its own next to it, named "Mag" (made once per gun and hidden parts).
+func _split_mag(mi: MeshInstance3D, weapon: String, hide: Array) -> void:
+	var ck := "mag/%s/%s/%s" % [weapon, mi.name, str(hide)]
+	if not _dress_cache.has(ck):
+		var src: Mesh = mi.get_meta("eb_src") if mi.has_meta("eb_src") else mi.mesh
+		var isl := ModelMods.islands(src)
+		var rule: Dictionary = MAG_PART[weapon]
+		var is_mag := {}
+		if rule.has("box"):
+			for i in isl.size():
+				if (rule["box"] as AABB).has_point(isl[i]["center"]):
+					if rule.has("mats"):
+						var mt0 := src.surface_get_material(int(isl[i]["surf"]))
+						if mt0 == null or not mt0.resource_name in (rule["mats"] as Array):
+							continue
+					is_mag[i] = true
+		elif rule.has("mat"):
+			var box := AABB()
+			var any := false
+			for i in isl.size():
+				var mt := src.surface_get_material(int(isl[i]["surf"]))
+				if mt and mt.resource_name == String(rule["mat"]):
+					is_mag[i] = true
+					box = isl[i]["box"] if not any else box.merge(isl[i]["box"])
+					any = true
+			if any:
+				box = box.grow(0.004)
+				for i in isl.size():
+					if not is_mag.has(i) and box.encloses(isl[i]["box"]):
+						is_mag[i] = true
+		var gun_mods: Dictionary = model_mods.get(weapon, {}).duplicate(true)
+		if not gun_mods.has("parts"):
+			gun_mods["parts"] = {}
+		var mag_mods: Dictionary = gun_mods.duplicate(true)
+		mag_mods["new"] = []
+		for i in isl.size():
+			var k := "%s:%d" % [mi.name, i]
+			var gone := false
+			for b in hide:
+				if (b as AABB).has_point(isl[i]["center"]):
+					gone = true
+			# a magazine block leaves the gun's mesh, every other block leaves the magazine's
+			# (a factory part taken off leaves both)
+			var drop_from: Array = []
+			if is_mag.has(i) or gone:
+				drop_from.append(gun_mods)
+			if not is_mag.has(i) or gone:
+				drop_from.append(mag_mods)
+			for target in drop_from:
+				var e: Dictionary = ((target as Dictionary)["parts"] as Dictionary).get(k, {}).duplicate()
+				e["del"] = true
+				target["parts"][k] = e
+		var mm := MeshInstance3D.new()
+		mm.mesh = src
+		mm.name = mi.name
+		ModelMods.rebuild(mm, mag_mods)
+		var mag_mesh: Mesh = mm.mesh if not is_mag.is_empty() else null
+		mm.free()
+		ModelMods.rebuild(mi, gun_mods)
+		_dress_cache[ck] = [mi.mesh, mag_mesh]
+	var got: Array = _dress_cache[ck]
+	_redress(mi, got[0])
+	var pname := String(MAG_PART[weapon].get("name", "Mag"))
+	if got[1] != null and mi.get_node_or_null(pname) == null:
+		var mg := MeshInstance3D.new()
+		mg.name = pname
+		mg.mesh = got[1]
+		mi.add_child(mg)
+		_restyle(mg)
+
+var _dress_cache := {}       # a gun mesh without its factory part, made once
+func _redress(mi: MeshInstance3D, mesh: Mesh) -> void:
+	mi.mesh = mesh
+	for i in mi.get_surface_override_material_count():
+		mi.set_surface_override_material(i, null)
+	_restyle(mi)
+
 
 ## Personal money: the host in a campaign pays from the base treasury, everyone else from his own purse.
 func purse() -> int:
@@ -113,8 +467,8 @@ func mod_price(mod: String) -> int:
 ## Buy an item for yourself (own money): it goes into your own locker - only you take it on missions.
 func buy_for_me(item: String) -> bool:
 	var p := Campaign.price(item)
-	if not Campaign.unlocked(item) or Campaign.SHOP_MK.has(item):
-		return false      # alien tech (Moskovium) belongs to the base, not to one man
+	if not Campaign.unlocked(item) or Campaign.workshop_item(item):
+		return false      # what the workshop makes belongs to the base, not to one man
 	if not spend(p):
 		return false
 	var lk: Dictionary = merc.get("locker", {})
@@ -125,15 +479,16 @@ func buy_for_me(item: String) -> bool:
 	return true
 
 func buy_mod(weapon: String, mod: String) -> bool:
-	if has_mod(weapon, mod) or not mod in MOD_FITS.get(weapon, []) or not spend(mod_price(mod)):
+	if owns_mod(weapon, mod) or not mod in MOD_FITS.get(weapon, []) or not spend(mod_price(mod)):
 		return false
 	var mods: Dictionary = merc.get("mods", {})
 	var l: Array = mods.get(weapon, [])
 	l.append(mod)
 	mods[weapon] = l
 	merc["mods"] = mods
-	save_merc()
-	Net.update_merc()
+	var fit := fitted(weapon).duplicate()
+	fit[mod_slot(mod)] = mod      # a new part goes straight on the gun
+	_set_fit(weapon, fit)
 	return true
 
 ## Texts say "Kondor"; before its research the team flies the old helicopter Čáp.
@@ -146,7 +501,13 @@ func two_handed(id: String) -> bool:
 	return ITEMS.get(id, {}).get("two", false)
 
 ## Seconds to take an item out of a slot: belt is quick, backpack is a dig.
-func fetch_time(id: String, from_slot: String) -> float:
+## (0.57) A soldier's parts on a gun make it slower to get out (m = that soldier).
+func fetch_time(id: String, from_slot: String, m: Dictionary = {}) -> float:
+	if not m.is_empty() and MOD_FITS.has(id):
+		return _fetch_time(id, from_slot) * part_mult(id, "draw", m)
+	return _fetch_time(id, from_slot)
+
+func _fetch_time(id: String, from_slot: String) -> float:
 	var w := float(ITEMS[id]["weight"])
 	if from_slot.begins_with("p"):
 		return 1.2 + w * 0.18
@@ -240,7 +601,7 @@ func _setup_input() -> void:
 		"pause": [KEY_ESCAPE], "prone": [KEY_Z, KEY_Y], "melee": [KEY_V], "smoke": [KEY_H], "mine": [KEY_B],
 		"primary": [KEY_1], "secondary": [KEY_2],
 		"belt1": [KEY_3], "belt2": [KEY_4], "belt3": [KEY_5], "belt4": [KEY_6],
-		"talk": [KEY_TAB], "radio_talk": [KEY_T, KEY_K], "mic_toggle": [KEY_M], "nvg": [KEY_N], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
+		"talk": [KEY_TAB], "radio_talk": [KEY_T, KEY_K], "mic_toggle": [KEY_M], "nvg": [KEY_N], "firemode": [KEY_L], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
 	}
 	for action in keys:
 		if not InputMap.has_action(action):
@@ -289,7 +650,7 @@ const STAT_RANGE := {"accuracy": [40, 75], "reactions": [30, 65], "strength": [2
 const STAT_HELP := {
 	"accuracy": "Jak daleko od středu zaměřovače letí kulky. Vyšší = menší rozptyl všech zbraní.",
 	"reactions": "Jak rychle se zbraň po pohybu a výstřelu ustálí a jak moc se třese ve strachu.",
-	"strength": "Kolik kilogramů uneseš bez zpomalení. Těžké zbraně (autokanón, minigun) a plný batoh chtějí sílu.",
+	"strength": "Kolik kilogramů uneseš bez zpomalení. Těžké zbraně (kanón, minigun) a plný batoh chtějí sílu.",
 	"bravery": "Jak snášíš tmu, vetřelce a zranění. Nízká odvaha = rychlejší strach, panika, slabší odpor proti psionice.",
 	"health": "Kolik zásahů vydržíš, než padneš. Každý bod se počítá - plazma bere 8-14 (Veterán 18-30).",
 	"stamina": "Jak dlouho vydržíš sprintovat a jak rychle se po běhu uklidní dech (a s ním mířidla).",
@@ -323,7 +684,54 @@ const EYE_COLORS := [["Hnědé", Color(0.3, 0.17, 0.07)], ["Tmavé", Color(0.1, 
 	["Zelené", Color(0.18, 0.45, 0.2)], ["Modré", Color(0.2, 0.4, 0.75)], ["Šedé", Color(0.5, 0.55, 0.6)]]
 const SKIN_TONES := [["Světlá", Color(0.78, 0.6, 0.5)], ["Pleť", Color(0.62, 0.47, 0.38)], ["Snědá", Color(0.5, 0.35, 0.24)],
 	["Tmavší", Color(0.36, 0.24, 0.16)], ["Tmavá", Color(0.22, 0.14, 0.1)]]
-const HEADGEAR := [["helmet", "Helma se svítilnou"], ["cap", "Polní čepice"], ["none", "Nic (vlasy na odiv)"]]
+const HEADGEAR := [["helmet", "Helma se svítilnou"], ["cap", "Polní čepice"], ["none", "Nic (vlasy na odiv)"],
+	["beret", "Baret"], ["boonie", "Klobouk do buše"], ["bandana", "Šátek na hlavě"], ["headset", "Jen sluchátka"]]
+# ---- 0.57 facelift: clothes and trinkets chosen when the soldier is made ----
+# (all of it is only looks: new Look_*/Gear_* pieces of merc.glb on the same bones - the movements,
+#  the weapon grips and the Workshop anchors do not change. A missing key = the old look.)
+## Indices into these lists are kept in merc["look"], so new entries go only at the END.
+const BERET_COLORS := [["Zelená", Color(0.16, 0.25, 0.12)], ["Vínová", Color(0.42, 0.07, 0.1)], ["Černá", Color(0.05, 0.05, 0.05)],
+	["Modrá", Color(0.14, 0.33, 0.6)], ["Písková", Color(0.6, 0.5, 0.33)], ["Šedá", Color(0.35, 0.36, 0.36)]]
+const TOPS := [["jacket", "Bunda"], ["rolled", "Ohrnuté rukávy"], ["tee", "Tričko"], ["bare", "Bez trička"]]
+const PANTS := [["pads", "Maskáče s chrániči"], ["cargo", "Maskáče"], ["plain", "Rovné kalhoty"], ["plain_pads", "Rovné s chrániči"]]
+const VESTS := [["harness", "Popruhy"], ["carrier", "Nosič plátů"], ["rig", "Hrudní nosič"], ["none", "Jen opasek"]]
+const PAINTS := [["none", "Bez barvy"], ["eyes", "Pod očima"], ["stripes", "Pruhy na lících"], ["band", "Pás přes oči"], ["full", "Celý obličej"]]
+const TATTOOS := [["none", "Bez tetování"], ["skull", "Lebka"], ["anchor", "Kotva"], ["x", "Znak X"], ["tribal", "Pásy"], ["sleeve", "Rukáv"]]
+const GLASSES := [["none", "Bez brýlí"], ["shades", "Sluneční brýle"], ["ballistic", "Střelecké brýle"]]
+const NECKS := [["none", "Nic"], ["shemagh", "Šátek kolem krku"], ["mask", "Šátek přes obličej"], ["tags", "Psí známky"]]
+const MOUTHS := [["none", "Nic"], ["cigar", "Doutník"], ["match", "Sirka"]]
+const _FW := Color(0.92, 0.92, 0.9)
+const _FR := Color(0.78, 0.08, 0.1)
+const _FB := Color(0.08, 0.22, 0.55)
+const _FN := Color(0.02, 0.13, 0.38)
+const _FK := Color(0.05, 0.05, 0.05)
+const _FY := Color(0.98, 0.8, 0.1)
+const _FG := Color(0.05, 0.5, 0.25)
+## Flag on the right shoulder: [code, name, layout (Look_Flag_<layout> in merc.glb), colours Flag1..3].
+## Only the code is kept in the look (and goes over the network). Drawn from shapes, no pictures.
+const FLAGS := [["", "Bez vlajky", "", []],
+	["cz", "Česko", "cz", [_FW, _FR, _FB]], ["sk", "Slovensko", "h3", [_FW, _FB, _FR]], ["pl", "Polsko", "h2", [_FW, _FR]],
+	["de", "Německo", "h3", [_FK, Color(0.85, 0.05, 0.05), _FY]], ["at", "Rakousko", "h3", [_FR, _FW, _FR]],
+	["hu", "Maďarsko", "h3", [_FR, _FW, _FG]], ["fr", "Francie", "v3", [_FB, _FW, _FR]], ["it", "Itálie", "v3", [_FG, _FW, _FR]],
+	["ie", "Irsko", "v3", [_FG, _FW, Color(1.0, 0.5, 0.15)]], ["be", "Belgie", "v3", [_FK, _FY, _FR]],
+	["nl", "Nizozemsko", "h3", [_FR, _FW, _FB]], ["ro", "Rumunsko", "v3", [_FN, _FY, _FR]], ["bg", "Bulharsko", "h3", [_FW, _FG, _FR]],
+	["hr", "Chorvatsko", "h3", [_FR, _FW, _FB]], ["es", "Španělsko", "h3", [_FR, _FY, _FR]],
+	["ua", "Ukrajina", "h2", [Color(0.0, 0.36, 0.73), Color(1.0, 0.84, 0.0)]], ["lt", "Litva", "h3", [_FY, _FG, _FR]],
+	["lv", "Lotyšsko", "h3", [Color(0.55, 0.12, 0.18), _FW, Color(0.55, 0.12, 0.18)]], ["ee", "Estonsko", "h3", [Color(0.0, 0.45, 0.8), _FK, _FW]],
+	["se", "Švédsko", "nordic", [Color(0.0, 0.42, 0.66), _FY]], ["dk", "Dánsko", "nordic", [_FR, _FW]],
+	["fi", "Finsko", "nordic", [_FW, _FN]], ["no", "Norsko", "nordic3", [_FR, _FW, _FN]], ["is", "Island", "nordic3", [Color(0.0, 0.3, 0.6), _FW, _FR]],
+	["ch", "Švýcarsko", "swiss", [_FR, _FW]], ["en", "Anglie", "cross", [_FW, _FR]], ["gb", "Velká Británie", "uk", [_FW, _FR, _FN]],
+	["us", "USA", "us", [_FR, _FW, _FN]], ["jp", "Japonsko", "jp", [_FW, _FR]]]
+
+func flag_index(code: String) -> int:
+	for i in FLAGS.size():
+		if FLAGS[i][0] == code:
+			return i
+	return 0
+
+## The list index of a look key, kept in range (old looks without it: 0 = what they always wore).
+func look_i(look: Dictionary, key: String, list: Array) -> int:
+	return clampi(int(look.get(key, 0)), 0, list.size() - 1)
 const FIRST_M := ["Jan", "Petr", "Mirek", "Karel", "Ivo", "Lukáš", "Ota", "René", "Vlad", "Erik", "Tomáš", "Radek", "Bořek", "Zdeněk"]
 const FIRST_F := ["Dana", "Ema", "Sára", "Iva", "Klára", "Petra", "Zuzana", "Lenka", "Vendula", "Hana", "Jitka", "Bára"]
 const LAST_M := ["Novák", "Král", "Dvořák", "Holub", "Černý", "Marek", "Vlk", "Hrubý", "Sokol", "Kopecký", "Bárta", "Krejčí"]
@@ -342,7 +750,16 @@ func random_look(female: bool, r: RandomNumberGenerator) -> Dictionary:
 		"beard": 0 if female else r.randi() % BEARDS.size(),
 		"eye_color": r.randi() % EYE_COLORS.size(),
 		"skin": r.randi() % SKIN_TONES.size(),
-		"headgear": 0 if r.randf() < 0.65 else 1,
+		"headgear": 0 if r.randf() < 0.65 else (1 if r.randf() < 0.4 else r.randi_range(3, HEADGEAR.size() - 1)),
+		"beret_color": r.randi() % BERET_COLORS.size(),
+		"top": 0 if r.randf() < 0.5 else r.randi() % TOPS.size(),
+		"pants": r.randi() % PANTS.size(),
+		"vest": 0 if r.randf() < 0.5 else r.randi() % VESTS.size(),
+		"paint": 0 if r.randf() < 0.6 else r.randi() % PAINTS.size(),
+		"tattoo": 0 if r.randf() < 0.6 else r.randi() % TATTOOS.size(),
+		"glasses": 0 if r.randf() < 0.75 else r.randi() % GLASSES.size(),
+		"neck": 0 if r.randf() < 0.6 else r.randi() % NECKS.size(),
+		"mouth": 0 if r.randf() < 0.85 else r.randi() % MOUTHS.size(),
 	}
 
 ## Shows the chosen looks on a merc model (players in the mission, the menu preview).
@@ -354,12 +771,51 @@ func apply_look(model: Node, look: Dictionary) -> void:
 	var hc: Color = HAIR_COLORS[clampi(int(look.get("hair_color", 1)), 0, HAIR_COLORS.size() - 1)][1]
 	var ec: Color = EYE_COLORS[clampi(int(look.get("eye_color", 0)), 0, EYE_COLORS.size() - 1)][1]
 	var sc: Color = SKIN_TONES[clampi(int(look.get("skin", 1)), 0, SKIN_TONES.size() - 1)][1]
+	var top: String = TOPS[look_i(look, "top", TOPS)][0]
+	var pants: String = PANTS[look_i(look, "pants", PANTS)][0]
+	var vest: String = VESTS[look_i(look, "vest", VESTS)][0]
+	var paint: String = PAINTS[look_i(look, "paint", PAINTS)][0]
+	var tattoo: String = TATTOOS[look_i(look, "tattoo", TATTOOS)][0]
+	var glasses: String = GLASSES[look_i(look, "glasses", GLASSES)][0]
+	var neck: String = NECKS[look_i(look, "neck", NECKS)][0]
+	var mouth: String = MOUTHS[look_i(look, "mouth", MOUTHS)][0]
+	var bc: Color = BERET_COLORS[look_i(look, "beret_color", BERET_COLORS)][1]
+	var flag: Array = FLAGS[flag_index(str(look.get("flag", "")))]
+	var bare := top == "bare"
+	if neck == "mask":
+		beard = "none"            # (the scarf covers the chin)
+		mouth = "none"
+	# which piece shows what (a piece missing from an older merc.glb is simply not there)
+	var on := {
+		"Look_TopJacket": top == "jacket", "Look_TopRolled": top == "rolled", "Look_TopTee": top == "tee", "Look_TopTank": bare and female,
+		"Look_PatchL": not bare, "Look_PatchR": not bare and flag[0] == "", "Look_ArmbandL": bare, "Look_ArmbandR": bare,
+		"Look_PantsCargo": pants in ["pads", "cargo"], "Look_KneePads": pants in ["pads", "plain_pads"],
+		"Look_VestHarness": vest == "harness", "Look_VestCarrier": vest == "carrier", "Look_VestRig": vest == "rig",
+		"Look_PaintEyes": paint == "eyes", "Look_PaintStripes": paint == "stripes", "Look_PaintBand": paint == "band", "Look_PaintFull": paint == "full",
+		"Look_TatSkull": tattoo == "skull", "Look_TatAnchor": tattoo == "anchor", "Look_TatX": tattoo == "x",
+		"Look_TatTribal": tattoo == "tribal", "Look_TatSleeve": tattoo == "sleeve",
+		"Look_GlassShades": glasses == "shades", "Look_GlassBallistic": glasses == "ballistic",
+		"Look_NeckShemagh": neck == "shemagh", "Look_NeckMask": neck == "mask", "Look_NeckTags": neck == "tags",
+		"Look_MouthCigar": mouth == "cigar", "Look_MouthMatch": mouth == "match",
+		"Gear_Beret": gear == "beret", "Gear_Boonie": gear == "boonie", "Gear_Bandana": gear == "bandana", "Gear_Headset": gear == "headset",
+	}
+	if top == "jacket":
+		for k in on:
+			if k.begins_with("Look_Tat"):
+				on[k] = false       # (under the sleeve anyway)
+	# face paint in the mission's camouflage colours (at the base: woodland)
+	var pc: Array = CAMO_COLORS.get(camo, CAMO_COLORS["woodland"])
 	var hair_nodes := {"buzz": "Look_HairBuzz", "short": "Look_HairShort", "long": "Look_HairLong", "pony": "Look_HairPony", "mohawk": "Look_HairMohawk", "bun": "Look_HairBun"}
 	var beard_nodes := {"stubble": "Look_Stubble", "moustache": "Look_Moustache", "goatee": "Look_Goatee", "full": "Look_BeardFull"}
 	for mi in model.find_children("*", "MeshInstance3D", true, false):
 		var nm := String(mi.name)
 		if nm.begins_with("Look_Hair"):
-			mi.visible = hair_nodes.get(hair, "") == nm and not (gear != "none" and hair == "mohawk")
+			mi.visible = hair_nodes.get(hair, "") == nm and not (gear not in ["none", "headset"] and hair == "mohawk")
+		elif on.has(nm):
+			mi.visible = on[nm]
+			mi.set_meta("look_on", on[nm])       # (player._apply_gear: armour from the inventory hides a vest)
+		elif nm.begins_with("Look_Flag_"):
+			mi.visible = not bare and nm == "Look_Flag_" + str(flag[2])
 		elif nm in beard_nodes.values():
 			mi.visible = not female and beard_nodes.get(beard, "") == nm
 		elif nm == "Look_Female":
@@ -385,6 +841,37 @@ func apply_look(model: Node, look: Dictionary) -> void:
 					mi.set_surface_override_material(i, color_mat(ec))
 				"Skin":
 					mi.set_surface_override_material(i, color_mat(sc))
+				"Beret", "Bandana":
+					mi.set_surface_override_material(i, color_mat(bc))
+				"FacePaint":
+					mi.set_surface_override_material(i, color_mat(pc[3] if camo != "snow" else pc[2]))
+				"FacePaint2":
+					mi.set_surface_override_material(i, color_mat(pc[1]))
+				"Flag1", "Flag2", "Flag3":
+					var fc: Array = flag[3]
+					var k := int(String(src.resource_name).right(1)) - 1
+					if k < fc.size():
+						mi.set_surface_override_material(i, color_mat(fc[k]))
+
+## First-person hands: with bare arms (rolled sleeves, T-shirt, no shirt) the sleeve is skin.
+## (hands*.glb: materials "Sleeve", "SleeveCuff", "Wrist" - the bones and grips stay as they are)
+func dress_hands(n: Node, look: Dictionary) -> void:
+	var top: String = TOPS[look_i(look, "top", TOPS)][0]
+	var sc: Color = SKIN_TONES[clampi(int(look.get("skin", 1)), 0, SKIN_TONES.size() - 1)][1]
+	for mi in ([n] if n is MeshInstance3D else []) + n.find_children("*", "MeshInstance3D", true, false):
+		for i in mi.mesh.get_surface_count():
+			var src: Material = mi.mesh.surface_get_material(i)
+			if src == null:
+				continue
+			match src.resource_name:
+				"Wrist":
+					mi.set_surface_override_material(i, color_mat(sc))
+				"Sleeve":
+					if top != "jacket":
+						mi.set_surface_override_material(i, color_mat(sc))
+				"SleeveCuff":
+					if top == "tee" or top == "bare":
+						mi.set_surface_override_material(i, color_mat(sc))
 
 # ---- ranks, experience and permanent talents -------------------------------------------
 const RANKS := ["Nováček", "Vojín", "Svobodník", "Desátník", "Četař", "Rotný", "Rotmistr", "Poručík", "Kapitán"]
@@ -447,7 +934,7 @@ func add_xp(amount: int) -> Array:
 			merc[st] = int(merc[st]) + inc
 			grown.append("%s +%d" % [STAT_NAMES[st], inc])
 		merc["talent_points"] = int(merc.get("talent_points", 0)) + 1
-		out.append("POVÝŠEN na %s! %s. Nový talent k výběru (Můj žoldák)." % [RANKS[lvl], ", ".join(grown)])
+		out.append("POVÝŠEN na %s! %s. Nový talent k výběru (Můj voják)." % [RANKS[lvl], ", ".join(grown)])
 	save_merc()
 	return out
 
@@ -478,11 +965,22 @@ func pick_talent(id: String) -> void:
 	merc["offer"] = []
 	save_merc()
 
+## (0.57) The campaign merc out on a mission right now (his name, kept in merc.cfg until the
+## mission ends). Still set when the game starts = it went down mid-mission (Alt+F4, a crash):
+## no way out of a bad mission - nobody came for him, he is missing.
+var on_mission := ""
+## What the main menu says once after such a start.
+var crash_note := ""
+func mission_out(going: bool) -> void:
+	on_mission = String(merc.get("name", "")) if going else ""
+	save_merc()
+
 func load_merc() -> void:
 	var cf := ConfigFile.new()
 	if cf.load("user://merc.cfg") == OK:
 		mercs = cf.get_value("merc", "roster", [])
 		active = int(cf.get_value("merc", "active", 0))
+		on_mission = String(cf.get_value("merc", "on_mission", ""))
 		if mercs.is_empty():
 			var one: Dictionary = cf.get_value("merc", "data", {})
 			if not one.is_empty():
@@ -490,6 +988,16 @@ func load_merc() -> void:
 	if mercs.is_empty():
 		mercs = [new_merc()]
 	active = clampi(active, 0, mercs.size() - 1)
+	if on_mission != "":
+		for i in mercs.size():
+			var lost: Dictionary = mercs[i]
+			if String(lost.get("name", "")) == on_mission:
+				var fresh := new_merc()
+				fresh["money"] = maxi(0, int(lost.get("money", 0)) - 250)
+				mercs[i] = fresh
+				crash_note = "Hra skončila uprostřed mise. %s zůstal na místě - NEZVĚSTNÝ (odškodné rodině -250 kr; úspory převzal nový voják %s)." % [on_mission, String(fresh["name"])]
+				break
+		on_mission = ""
 	merc = mercs[active]
 	# wounds from before 0.26 healed in real time - let them be healed
 	for m in mercs:
@@ -503,7 +1011,7 @@ func load_merc() -> void:
 ## wounds and death are thrown away afterwards. Only the campaign shapes a mercenary.
 var skirmish := false
 var _real_merc := {}
-const SKIRMISH_KINDS := {"copy": "Kopie mého žoldáka", "rookie": "Nováček", "veteran": "Ostřílený veterán", "elite": "Elitní žoldák"}
+const SKIRMISH_KINDS := {"copy": "Kopie mého vojáka", "rookie": "Nováček", "veteran": "Ostřílený veterán", "elite": "Elitní voják"}
 func begin_skirmish(kind := "copy") -> void:
 	if skirmish:
 		end_skirmish()
@@ -549,6 +1057,7 @@ func save_merc() -> void:
 	cf.set_value("merc", "data", merc)
 	cf.set_value("merc", "roster", mercs)
 	cf.set_value("merc", "active", active)
+	cf.set_value("merc", "on_mission", on_mission)
 	cf.save("user://merc.cfg")
 
 ## Another mercenary from the roster goes on the next mission (the purse goes with the player).
@@ -682,7 +1191,7 @@ func tick_injury(m: Dictionary) -> void:
 	var cid := str(Campaign.data.get("cid", ""))
 	var d := float(Campaign.data["day"])
 	if str(m.get("heal_cid", "")) == cid:
-		m["heal_days"] = float(m["heal_days"]) - maxf(0.0, d - float(m.get("heal_seen", d)))
+		m["heal_days"] = float(m["heal_days"]) - maxf(0.0, d - float(m.get("heal_seen", d))) * (2.0 if Campaign.active and Campaign.count("osetrovna") > 0 else 1.0)
 	m["heal_cid"] = cid
 	m["heal_seen"] = d
 	if float(m["heal_days"]) <= 0.0:
@@ -709,11 +1218,11 @@ func sick_text(m: Dictionary) -> String:
 
 # ---- loadout: chosen in the menu from what the base can spare ------------------------
 const STASH := {"sniper": 1, "sniper_clip": 3, "rifle": 1, "pistol": 1, "shotgun": 1, "magnum": 1, "autocannon": 1, "minigun": 1, "rocket_launcher": 1,
-	"stun_baton": 1, "knife": 1, "rifle_clip": 4, "pistol_clip": 3, "shells": 3, "magnum_rounds": 3, "ac_clip": 3,
-	"minigun_belt": 2, "rocket": 3, "grenade": 3, "smoke_grenade": 2, "mine": 2, "flare": 4, "medkit": 1, "scanner": 1, "radio": 4,
+	"stun_baton": 1, "knife": 1, "rifle_clip": 4, "pistol_clip": 3, "shells": 3, "slugs": 2, "beanbag": 2, "magnum_rounds": 3, "ac_clip": 3,
+	"minigun_belt": 2, "rocket": 3, "rocket_ap": 1, "rocket_inc": 1, "grenade": 3, "smoke_grenade": 2, "mine": 2, "flare": 4, "medkit": 1, "scanner": 1, "radio": 4,
 	"vesta": 1, "stit": 1, "pancir": 1, "nvg": 1}
 const STASH_VETERAN := {"sniper": 1, "sniper_clip": 2, "rifle": 1, "pistol": 1, "shotgun": 1, "magnum": 1, "autocannon": 1, "minigun": 1, "rocket_launcher": 1,
-	"stun_baton": 1, "knife": 1, "rifle_clip": 2, "pistol_clip": 2, "shells": 2, "magnum_rounds": 2, "ac_clip": 1,
+	"stun_baton": 1, "knife": 1, "rifle_clip": 2, "pistol_clip": 2, "shells": 2, "slugs": 1, "beanbag": 1, "magnum_rounds": 2, "ac_clip": 1,
 	"minigun_belt": 1, "rocket": 1, "grenade": 1, "smoke_grenade": 1, "mine": 1, "flare": 2, "medkit": 1, "scanner": 1, "radio": 4,
 	"vesta": 1, "stit": 1, "pancir": 1}
 const DEFAULT_LOADOUT := {"rh": "rifle", "back": "", "b0": "scanner", "b1": "rifle_clip", "b2": "rifle_clip", "b3": "radio",
@@ -750,7 +1259,7 @@ func stash_for(vet: bool) -> Dictionary:
 func has_research(id: String) -> bool:
 	if not Net.mission_params.is_empty():
 		return id in Net.mission_params.get("research", [])
-	return Campaign.researched(id)
+	return Campaign.built(id)
 
 ## The chosen loadout trimmed to what the stash allows on this difficulty.
 func valid_loadout(vet: bool) -> Dictionary:
@@ -1084,8 +1593,12 @@ func loop_stream(sname: String) -> AudioStream:
 	return st
 
 ## Sounds with several takes (name_0..name_N-1): a random one each time.
+## Names that play another sound at a different pitch (a pistol is the rifle's smaller sister).
+const PITCHED := {"plasma_p": ["plasma", 1.18], "laser_p": ["laser", 1.15]}
 const VARIANTS := {"plasma_heavy": 10, "casing": 4, "step_heavy": 3, "gear": 4, "sting": 4, "type": 4, "breath": 2}
 func sound(sname: String) -> AudioStream:
+	if PITCHED.has(sname):
+		sname = PITCHED[sname][0]
 	if VARIANTS.has(sname):
 		sname = "%s_%d" % [sname, randi() % int(VARIANTS[sname])]
 	if not _sounds.has(sname):
@@ -1160,12 +1673,13 @@ func blood_splat(world: Node, pos: Vector3, col: Color, size := 0.3, glow := fal
 		if is_instance_valid(old):
 			old.queue_free()
 
-func play_at(world: Node, sname: String, pos: Vector3, volume_db := 0.0) -> void:
+func play_at(world: Node, sname: String, pos: Vector3, volume_db := 0.0, pitch := 1.0) -> void:
 	if world == null or not world.is_inside_tree():
 		return
 	var p := AudioStreamPlayer3D.new()
 	p.stream = sound(sname)
 	p.volume_db = volume_db
+	p.pitch_scale = pitch * (float(PITCHED[sname][1]) if PITCHED.has(sname) else 1.0)
 	if sname in ALIEN_SOUNDS and world.has_method("alien_db"):
 		p.volume_db += world.alien_db()      # rain covers them
 	p.unit_size = 6.0
@@ -1176,10 +1690,34 @@ func play_at(world: Node, sname: String, pos: Vector3, volume_db := 0.0) -> void
 	p.play()
 	p.finished.connect(p.queue_free)
 
+## Only a piece of a longer sound: from @a offset, faded out after @a secs (a yelp cut out of a roar).
+func play_cut(world: Node, sname: String, pos: Vector3, volume_db: float, pitch: float, secs: float, offset := 0.0) -> void:
+	if world == null or not world.is_inside_tree():
+		return
+	var p := AudioStreamPlayer3D.new()
+	p.stream = sound(sname)
+	p.volume_db = volume_db
+	p.pitch_scale = pitch
+	if sname in ALIEN_SOUNDS and world.has_method("alien_db"):
+		p.volume_db += world.alien_db()
+	p.unit_size = 6.0
+	p.max_distance = 80.0
+	p.bus = "SFX"
+	world.add_child(p)
+	p.global_position = pos
+	p.play(offset)
+	p.finished.connect(p.queue_free)
+	var tw := p.create_tween()
+	tw.tween_interval(maxf(0.05, secs - 0.15))
+	tw.tween_property(p, "volume_db", -60.0, 0.15)
+	tw.tween_callback(p.queue_free)
+
 func play_ui(world: Node, sname: String, volume_db := 0.0) -> void:
 	var p := AudioStreamPlayer.new()
 	p.stream = sound(sname)
 	p.volume_db = volume_db
+	if PITCHED.has(sname):
+		p.pitch_scale = float(PITCHED[sname][1])
 	p.bus = "SFX"
 	world.add_child(p)
 	p.play()
@@ -1536,6 +2074,75 @@ func apply_item_tweak(n: Node3D, key: String) -> void:
 	var s := float(t.get("scale", 1.0))
 	n.transform = Transform3D(Basis.from_euler(r).scaled(Vector3.ONE * s), _v3(t.get("pos", null))) * n.transform
 
+## (0.57) Ari's fine-tuning of the left hand on a gun in the eyes' view ("fpl/<gun>": pos, rot):
+## the hands model's "HandL" moved and turned round the hand itself. The hand's place without it is
+## kept in the meta "rest", with it in "tuned" (the shotgun's pump goes on top of that).
+func apply_left_hand(hands: Node, weapon: String) -> void:
+	var hl := hands.find_child("HandL", true, false) as MeshInstance3D
+	if hl == null:
+		return
+	if not hl.has_meta("rest"):
+		hl.set_meta("rest", hl.transform)
+		# the pivot: the hand (the frontmost part of the piece; the sleeve runs back from it)
+		var zmin := INF
+		var vs := PackedVector3Array()
+		for si in hl.mesh.get_surface_count():
+			vs.append_array(hl.mesh.surface_get_arrays(si)[Mesh.ARRAY_VERTEX])
+		for v in vs:
+			zmin = minf(zmin, v.z)
+		var sum := Vector3.ZERO
+		var n := 0
+		for v in vs:
+			if v.z < zmin + 0.07:
+				sum += v
+				n += 1
+		hl.set_meta("pivot", sum / maxi(n, 1))
+	var rest: Transform3D = hl.get_meta("rest")
+	var t: Dictionary = tweaks.get("fpl/" + weapon, {})
+	var tuned := rest
+	if not t.is_empty():
+		var piv: Vector3 = rest * (hl.get_meta("pivot") as Vector3)
+		var r := Basis.from_euler(_v3(t.get("rot", null)) * (PI / 180.0))
+		tuned = Transform3D(Basis(), piv + _v3(t.get("pos", null))) * Transform3D(r, Vector3.ZERO) * Transform3D(Basis(), -piv) * rest
+	hl.set_meta("tuned", tuned)
+	hl.transform = tuned
+
+## Points a weapon model may carry (empties from Blender): "Grip" where the right hand holds it,
+## "Grip_L" where the left one does, "Muzzle" where the shot leaves. In the model's own space;
+## null when the model has none (then the game goes by its outline, as before).
+var _points := {}
+func model_point(id: String, pname: String) -> Variant:
+	var key := id + "/" + pname
+	if not _points.has(key):
+		var path := "res://assets/models/%s.glb" % id
+		var at: Variant = null
+		if ResourceLoader.exists(path):
+			var n: Node = (load(path) as PackedScene).instantiate()
+			var p := n.find_child(pname, true, false) as Node3D
+			if p:
+				var t := Transform3D()
+				var c: Node = p
+				while c != n and c is Node3D:
+					t = (c as Node3D).transform * t
+					c = c.get_parent()
+				at = t.origin
+			n.free()
+		_points[key] = at
+	return _points[key]
+
+## The shift that puts a weapon's "Grip" point into the hand (identity when it has none).
+func grip_shift(id: String) -> Transform3D:
+	var g: Variant = model_point(id, "Grip")
+	return Transform3D(Basis(), -(g as Vector3)) if g != null else Transform3D()
+
+## A workshop tweak as a transform (identity when there is none).
+func tweak_xform(key: String) -> Transform3D:
+	var t: Dictionary = tweaks.get(key, {})
+	if t.is_empty():
+		return Transform3D()
+	var r := _v3(t.get("rot", null)) * (PI / 180.0)
+	return Transform3D(Basis.from_euler(r).scaled(Vector3.ONE * float(t.get("scale", 1.0))), _v3(t.get("pos", null)))
+
 ## A pose with the workshop corrections added (degrees, per bone).
 func tweak_pose(key: String, want: Dictionary) -> Dictionary:
 	var t: Dictionary = tweaks.get(key, {})
@@ -1553,7 +2160,7 @@ func held_model(id: String, third := false) -> Node3D:
 	if ITEMS.get(id, {}).get("blunt", false):
 		m.rotation.x = deg_to_rad(78.0)
 		m.position = Vector3(0, 0.01, 0.01)
-	elif id == "knife":
+	elif id in ["knife", "energo_nuz"]:
 		m.rotation.x = deg_to_rad(80.0 if third else 58.0)
 	elif id in ["radio", "flare", "scanner"]:
 		m.rotation.x = deg_to_rad(80.0 if id == "radio" else 35.0)

@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.56
+# Operace X - Enemy Beyond — prototyp 0.60
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,18 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.60
+- Vojáci se konečně hýbou podle pohybů, které jsem sám natočil v afk.ai: běžné, s pistolí i s těžkými zbraněmi, střelba za chůze i běhu, kulhání raněného, tasení zbraně a kolo emocí na J.
+- Přebíjení, obvazování, hrabání v batohu a hody z pohledu z očí jsem natočil ve VR na Questu 3 – ruce dělají přesně to, co jsem dělal já. Zásobník je samostatný díl a opravdu vypadne a zacvakne se.
+- Úpravy zbraní: do slotů se montují koupené díly – kolimátor, optika 2x s opravdovým zvětšením, tlumič, bajonet, rukojeť, svítilna, laser, dvojnožka a k laserům a plazmě vlastní díly. Každý díl něco dá a něco vezme.
+- Všichni vetřelci mají nové pohyby a smrti z afk.ai: Šedivák, Bijec, Líhavec, Ještěřan s ocasem, Levit s chapadly, Ohař, Nakažený, Diskoll, Kolos, Mysloděj, Nádor a Ohnivec.
+- Vetřelci jsou chytřejší i v co-opu: kryjí se proti všem hráčům najednou, vybírají si toho nejnebezpečnějšího, slyší, odkud se střílí, utíkají před granátem, mrtvý druh jim nahání strach a místo točení na místě prohledávají úkryty.
+- Vzhled vojáka si vybereš při jeho tvoření: oblečení, baret, tetování, barvy na obličej a vlajka.
+- Raněného kamaráda jde odtáhnout do bezpečí.
+- Kdo opustí misi přes menu nebo když hra spadne, ten misi prohrál – vojáci, kteří v ní zůstali, jsou nezvěstní a do mise se už nedá vrátit.
+- Opravené dílky map: obchod má zadní dveře do skladu, v parku jsou lavičky podél cest a z prašné cesty zmizelo auto uprostřed.
+- Encyklopedie ukáže, co zbraň dělá proti rase, až po pitvě. Základna je vidět shora a přibyla psionická ochrana.
 
 ## Novinky 0.56
 - Obří lodě (bitevní a zásobovací) mají na zemi skutečný trup a dvě patra: z haly pod kupolí vede rampa na galerii a chodby do sálů na palubě. Od třetího měsíce války obři i létají a ve vzduchu vypadají stejně jako na zemi.

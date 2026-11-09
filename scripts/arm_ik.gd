@@ -15,9 +15,11 @@ static func grips(id: String, model: Node3D) -> Dictionary:
 	var cy := box.position.y + box.size.y * 0.55
 	var back := box.end.z
 	var front := box.position.z
-	if Game.two_handed(id) or id in ["pistol", "magnum", "laser_pistol", "a_pistol"]:
+	if Game.two_handed(id) or id in ["pistol", "magnum", "laser_pistol", "plasma_pistol", "a_pistol"]:
 		var two := Game.two_handed(id)
-		out["l"] = Game._v3(t.get("l", null), Vector3(box.get_center().x, cy - 0.01, lerpf(back, front, 0.5 if two else 0.32)))
+		var gl: Variant = Game.model_point(id, "Grip_L")      # (the model's own point, when it has one)
+		var def: Vector3 = (gl as Vector3) if gl != null else Vector3(box.get_center().x, cy - 0.01, lerpf(back, front, 0.5 if two else 0.32))
+		out["l"] = Game._v3(t.get("l", null), def)
 	return out
 
 static var _boxes := {}
@@ -37,6 +39,8 @@ static func _aabb(n: Node3D) -> AABB:
 	var first := true
 	for c in n.find_children("*", "MeshInstance3D", true, false):
 		var mi: MeshInstance3D = c
+		if String(mi.get_parent().name).begins_with("Part_") or String(mi.name).begins_with("Part_"):
+			continue      # (0.57) a part on the gun (bayonet, scope) does not move the hands
 		var b := (inv * mi.global_transform) * mi.get_aabb()
 		box = b if first else box.merge(b)
 		first = false

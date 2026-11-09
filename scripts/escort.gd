@@ -41,10 +41,15 @@ func _ready() -> void:
 	tr_node = Game.model(tr_kind if tr_kind == "heli" else "dropship")
 	add_child(tr_node)
 	tr_node.position = Vector3(0, 880, 0)
-	for rn in ["RotorF", "RotorR"]:
+	for rn in ["RotorF", "RotorR", "PropL", "PropR"]:
 		var r := tr_node.find_child(rn, true, false)
 		if r:
 			_rotors.append(r)
+	# the Kondor in cruise: nacelles swung forward, the proprotors pull like propellers
+	for tn in ["TiltL", "TiltR"]:
+		var tl0 := tr_node.find_child(tn, true, false) as Node3D
+		if tl0:
+			tl0.rotation.x = -PI / 2
 	# in the air the rear ramp is shut (it only drops on the ground)
 	var ramp := MeshInstance3D.new()
 	var rbm := BoxMesh.new()
@@ -131,7 +136,7 @@ func _ready() -> void:
 	elif not down:
 		_say("PŘEPADENÍ! Malá UFO jdou po transportu. Sestřel je, než ho rozstřílejí.", 6.0)
 	else:
-		_say("PŘEPADENÍ! Sedíš v transportu a díváš se, jak ho Sokoly brání.", 6.0)
+		_say("PŘEPADENÍ! Sedíš v transportu a díváš se, jak ho stíhačky brání.", 6.0)
 
 func _alive() -> Array:
 	return swarm.filter(func(s): return s["alive"])
@@ -140,8 +145,7 @@ func _alive() -> Array:
 func _physics_process(delta: float) -> void:
 	t += delta
 	msg_t -= delta
-	(get_node("Clouds").material_override as ShaderMaterial).set_shader_parameter("time_s", t)
-	get_node("Stars").position = cam.global_position
+	_sky_follow()
 	for r in _rotors:
 		(r as Node3D).rotate_y(delta * 18.0)
 	if outcome != "":
@@ -340,7 +344,7 @@ func _projectiles(delta: float) -> void:
 		bo["life"] -= delta
 		if _seg_hits(n.global_position, nxt, tr_node.global_position, 9.0):
 			if host:
-				tr_hp -= 4.0
+				tr_hp -= 4.0 * armor_k()
 				if tr_hp < 50.0 and randf() < 0.5:
 					_puff(tr_node.global_position)
 			if flying_transport:
@@ -349,7 +353,7 @@ func _projectiles(delta: float) -> void:
 			Game.play_ui(self, "hit", -2)
 			bo["life"] = 0
 		elif me_pilot and not down and not flying_transport and _seg_hits(n.global_position, nxt, jet.global_position, 4.0):
-			jet_hp -= 9.0
+			jet_hp -= 9.0 * armor_k()
 			if jet_hp <= 0:
 				down = true
 				jet.visible = false
@@ -521,10 +525,12 @@ func _draw_hud() -> void:
 	if not flying_transport and not down:
 		super._draw_hud()
 	else:
-		txt.call(Vector2(10, sz.y - 34), "RYCHLOST %d km/h   VÝŠKA %d m" % [int(speed * 3.6), int(jet.global_position.y)])
-		txt.call(Vector2(sz.x - 230, 44), "Myš řídí, A/D úhyb, W/S plyn, Shift forsáž", Color(0.7, 0.8, 0.9), 7)
+		_hplate(c, Rect2(4, sz.y - 30, 200, 26))
+		txt.call(Vector2(12, sz.y - 13), "RYCHLOST %d km/h   VÝŠKA %d m" % [int(speed * 3.6), int(jet.global_position.y)], Color(0.84, 0.89, 0.92), 9)
+		_hplate(c, Rect2(sz.x - 218, 4, 214, 24))
+		txt.call(Vector2(sz.x - 210, 19), "Myš řídí, A/D úhyb, W/S plyn, Shift forsáž", Color(0.45, 0.78, 0.86), 7)
 		if msg_t > 0:
-			txt.call(Vector2(sz.x / 2 - 220, 70), msg, Color(1, 0.85, 0.4), 10)
+			_msg_plate(c, Vector2(sz.x / 2, 66), msg, Color(1.0, 0.74, 0.32))
 	# every attacker: a small red box, or an arrow at the edge
 	for s in _alive():
 		var p: Vector3 = (s["node"] as Node3D).global_position
@@ -537,10 +543,10 @@ func _draw_hud() -> void:
 		var tp := cam.unproject_position(tr_node.global_position)
 		c.draw_arc(tp, 9, 0, TAU, 14, tcol, 1.5)
 		txt.call(tp + Vector2(11, 3), "TRANSPORT", tcol, 7)
-	txt.call(Vector2(10, 18), "TRANSPORT %d %%" % int(maxf(tr_hp, 0)), tcol if tr_hp > 40 else Color(1, 0.4, 0.3), 10)
-	c.draw_rect(Rect2(10, 22, 160, 6), Color(0, 0, 0, 0.5))
-	c.draw_rect(Rect2(10, 22, 160 * clampf(tr_hp / 100.0, 0, 1), 6), tcol)
-	txt.call(Vector2(10, 42), "UFO: %d   vydržet ještě %d s" % [_alive().size(), int(maxf(0, limit - t))], Color(1, 0.8, 0.3), 9)
+	_hplate(c, Rect2(4, 4, 178, 46))
+	txt.call(Vector2(12, 18), "TRANSPORT %d %%" % int(maxf(tr_hp, 0)), tcol if tr_hp > 40 else Color(1, 0.4, 0.3), 9)
+	_hbar(c, Rect2(12, 23, 160, 7), tr_hp / 100.0, tcol if tr_hp > 40 else Color(1, 0.4, 0.3))
+	txt.call(Vector2(12, 43), "UFO: %d   vydržet ještě %d s" % [_alive().size(), int(maxf(0, limit - t))], Color(1.0, 0.74, 0.32), 9)
 
 # ---- test ------------------------------------------------------------------------------------------
 var _ramp_shot := false

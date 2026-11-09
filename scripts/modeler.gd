@@ -17,11 +17,12 @@ const PALETTE := [[0.08, 0.08, 0.08], [0.22, 0.22, 0.23], [0.45, 0.46, 0.48], [0
 	[0.30, 0.17, 0.08], [0.55, 0.36, 0.18], [0.24, 0.27, 0.16], [0.42, 0.45, 0.28], [0.62, 0.52, 0.34],
 	[0.55, 0.09, 0.07], [0.85, 0.55, 0.10], [0.95, 0.85, 0.30], [0.16, 0.28, 0.55], [0.35, 0.86, 0.96],
 	[0.85, 0.25, 1.0], [0.20, 0.17, 0.22], [0.62, 0.47, 0.20]]
-const NAMES := {"merc": "Žoldák", "heli": "Vrtulník Čáp", "dropship": "Kondor", "sokol": "Stíhačka Sokol", "cow": "Kráva",
+const NAMES := {"merc": "Voják", "heli": "Vrtulník Čáp", "dropship": "Kondor", "sokol": "Stíhačka Sokol", "cow": "Kráva",
 	"civ_a": "Civilista A", "civ_b": "Civilista B", "mozek": "Velký mozek", "ufo_g_scout": "UFO průzkumník (přistálé)",
 	"ufo_g_raider": "UFO nájezdník (přistálé)", "ufo_g_harvester": "UFO sklízeč (přistálé)", "ufo_scout": "UFO průzkumník (let)",
 	"ufo_raider": "UFO nájezdník (let)", "ufo_harvester": "UFO sklízeč (let)",
-	"ufo_supply": "UFO zásobovací loď (let)", "ufo_battleship": "UFO bitevní loď (let)"}
+	"ufo_supply": "UFO zásobovací loď (let)", "ufo_battleship": "UFO bitevní loď (let)",
+	"jestrab": "Stíhačka Jestřáb", "pelikan": "Transportér Pelikán"}
 const TOOLS := {"posun": "Posun (G)", "otaceni": "Otáčení (R)", "velikost": "Velikost (S)"}
 const DOT := 3
 
@@ -297,7 +298,7 @@ func _model_list() -> Array:
 		if ResourceLoader.exists("res://assets/models/%s.glb" % id):
 			out.append([id, "Věc: " + String(Game.ITEMS[id]["name"])])
 			seen[id] = true
-	out.append(["merc", "Žoldák"])
+	out.append(["merc", "Voják"])
 	seen["merc"] = true
 	for r in AlienScript.RACES:
 		var m := String(AlienScript.RACES[r].get("model", ""))

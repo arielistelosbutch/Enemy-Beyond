@@ -62,6 +62,17 @@ def seam(a, b, group, w=0.012):
     return smooth(A.limb(glow, a, b, w, w, verts=6, group=group))
 
 B = A.humanoid_bones(hip=1.08, chest=1.7, neck=1.82, head=2.12, sx=0.4, hx=0.17, knee=0.6, ankle=0.08, elbow=1.36, wrist=1.06)
+# the commander's cape hangs on two chains of bones (left and right half): the game swings them with
+# a SpringBoneSimulator3D, so the cloth falls with gravity, trails behind and slides off the legs
+CAPE_TOP, CAPE_SEG, CAPE_N = 1.64, 0.235, 4
+def cape_y(x, z):
+    return -0.3 + 1.1 * x * x - (1.68 - z) * 0.14
+if VEL:
+    for side, cx in (("L", 0.2), ("R", -0.2)):
+        for k in range(CAPE_N):
+            z0, z1 = CAPE_TOP - k * CAPE_SEG, CAPE_TOP - (k + 1) * CAPE_SEG
+            B["cape.%s.%d" % (side, k)] = ((cx, cape_y(cx, z0) - 0.02, z0), (cx, cape_y(cx, z1) - 0.02, z1),
+                                            "spine" if k == 0 else "cape.%s.%d" % (side, k - 1))
 rig = A.make_rig("Kol", B)
 p = []
 # ---- head: purple face, huge fanged mouth, yellow eyes, the blocky crest of the helmet --------------------------------------
@@ -169,7 +180,7 @@ if VEL:
         p.append(box(glow, (0.585, 0.06, 1.3 - k * 0.07), (0.01, 0.12, 0.03), group=F))
     # the cape: torn, hanging from the shoulders down the back
     bpy.ops.mesh.primitive_grid_add(x_subdivisions=14, y_subdivisions=12, size=1.0)
-    cp = _finish(bpy.context.active_object, cape_m, (0, -0.3, 1.12), (math.pi / 2, 0, 0), (0.85, 1.12, 1.0), T)
+    cp = _finish(bpy.context.active_object, cape_m, (0, -0.3, 1.12), (math.pi / 2, 0, 0), (0.85, 1.12, 1.0))
     import random
     random.seed(7)
     for v in cp.data.vertices:
@@ -184,6 +195,28 @@ if VEL:
     cp.select_set(True)
     bpy.context.view_layer.objects.active = cp
     bpy.ops.object.modifier_apply(modifier="Solid")
+    # weights: the top stays on the back, lower down the two chains take over, blended across the middle
+    vgs = {"spine": cp.vertex_groups.new(name="spine")}
+    for side in ("L", "R"):
+        for k in range(CAPE_N):
+            n = "cape.%s.%d" % (side, k)
+            vgs[n] = cp.vertex_groups.new(name=n)
+    for v in cp.data.vertices:
+        x, z = v.co.x, v.co.z
+        u = max(0.0, (CAPE_TOP - z) / CAPE_SEG)
+        sp = max(0.0, min(1.0, 1.0 - u * 1.6))                 # the shoulders: on the spine
+        wl = max(0.0, min(1.0, 0.5 + x / 0.4))                  # how much the left chain has it
+        i = min(int(u), CAPE_N - 1)
+        f = min(1.0, u - i) if i < CAPE_N - 1 else 0.0
+        if sp > 0.0:
+            vgs["spine"].add([v.index], sp, 'REPLACE')
+        for side, ws in (("L", wl), ("R", 1.0 - wl)):
+            w = ws * (1.0 - sp)
+            if w <= 0.001:
+                continue
+            vgs["cape.%s.%d" % (side, i)].add([v.index], w * (1.0 - f), 'REPLACE')
+            if f > 0.0:
+                vgs["cape.%s.%d" % (side, i + 1)].add([v.index], w * f, 'REPLACE')
     p.append(cp)
     # the heavy weapon: bigger, a red core
     G = "hand.R"

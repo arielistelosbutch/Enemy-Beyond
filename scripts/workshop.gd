@@ -7,15 +7,34 @@ const PlayerScript := preload("res://scripts/player.gd")
 const AlienScript := preload("res://scripts/alien.gd")
 
 const MODES := [["fp", "Předmět v ruce - z očí"], ["tp", "Předmět v ruce - zvenku (+ ruce)"], ["back", "Zbraň na zádech"],
-	["emote", "Pózy žoldáka (pozdrav, pohov, v bok)"], ["alien", "Vetřelci - práce a postoje"],
+	["emote", "Pózy vojáka (pozdrav, pohov, v bok)"], ["alien", "Vetřelci - práce a postoje"],
+	["agun", "Zbraň vetřelce (kotva v ruce)"],
 	["anim", "ANIMACE → editor Animace (všechny pohyby)"]]
-const EMOTES := [["salute", "Pozdrav (J)"], ["atease", "Pohov (U)"], ["hips", "Ruce v bok (stání)"]]
+const EMOTES := [["hips", "Ruce v bok (stání)"]]      # (0.57: salute, at ease and the wheel are afk movements)
 const ALIENS := ["grey", "grey_velitel", "jestetan", "bijec", "lihnoun", "zombie", "ohar"]
 const ALIEN_ACTS := {"grey": ["work", "work_high", "talk", "stare"], "grey_velitel": ["work", "work_high", "talk", "stare"],
 	"jestetan": ["guard", "stare"], "bijec": ["guard", "stare"], "lihnoun": ["eat"], "zombie": ["sway"], "ohar": ["sniff"]}
 const ACT_NAMES := {"work": "práce u krávy (klečí)", "work_high": "oprava UFO (ruce nahoru)", "talk": "šeptání ve dvou", "stare": "zírání",
 	"guard": "hlídka", "eat": "hodování", "sway": "kymácení", "sniff": "čmuchání"}
-const HOLD_ACTS := [["", "drží"], ["1", "nabíjí"], ["2", "úder (chladná zbraň)"], ["3", "hrabe v batohu"], ["4", "ošetřuje"]]
+## 0.57: what the soldier does while you place the item - the game's own movements (afk), the
+## handgun ones when it is one. Body movements (tp_body_*) or the hands' actions over standing.
+const HOLD_ACTS := [["tp_body_idle", "stojí"], ["tp_body_idle_2", "stojí 2 (rozhlíží se)"], ["tp_body_idle_3", "stojí 3"],
+	["tp_body_idle_4", "stojí 4"], ["tp_body_idle_5", "stojí 5"], ["tp_body_idle_hurt", "stojí zraněný"], ["tp_body_walk_hurt", "kulhá"], ["tp_body_idle_aim", "míří"], ["tp_body_walk", "chůze"], ["tp_body_walk_back", "chůze dozadu"],
+	["tp_body_walk_left", "úkrok vlevo"], ["tp_body_walk_right", "úkrok vpravo"], ["tp_body_run", "běh"], ["tp_body_sprint", "sprint"],
+	["tp_body_crouch", "klek"], ["tp_body_crouch_aim", "klek - míří"], ["tp_body_crouch_fire", "klek - střílí"], ["tp_body_crouch_fire_walk", "plížení - střílí"], ["tp_body_crouch_walk", "plížení"], ["tp_body_prone", "leh"],
+	["tp_body_jump", "skok"], ["tp_body_turn_left", "otočka"], ["tp_body_fire", "střílí"], ["tp_body_fire_walk", "střílí v chůzi"],
+	["tp_body_fire_run", "střílí v běhu"], ["reload", "přebíjí"], ["strike", "úder"], ["throw", "hod granátu"],
+	["draw", "bere zbraň"], ["use", "použití"], ["heal", "ošetřuje"]]
+
+## 0.57 Zbraň vetřelce: the gun in an alien's hand (alien.gd _attach_gun, anchors "agun/<model>/<weapon>").
+## The models come from the game (assets/models) and, while they are being made, from Ari's folder
+## of new models (animace/Maximo/postavy, *_v2[_rig].glb, read straight from the file).
+const AG_DIR := "res://animace/Maximo/postavy"
+const AG_WEAPONS := ["a_rifle", "a_heavy", "a_pistol"]
+const AG_CLIPS := [["idle", "stojí"], ["walk", "chůze"], ["run", "běh"], ["lurk", "číhá"], ["lurk_walk", "plíží se"], ["aim", "míří"], ["fire", "střílí"], ["attack", "útok"], ["roar", "řev"]]
+var _ag_race := ""
+var _ag_w := ""
+var _ag_w_opt: OptionButton
 
 var mode := "fp"
 var subject := ""            # item id / emote / alien race
@@ -178,19 +197,16 @@ func _ready() -> void:
 	pause.add_theme_font_size_override("font_size", 8)
 	pause.toggled.connect(func(on): _paused = on)
 	row3.add_child(pause)
-	var grip := CheckBox.new()
-	grip.text = "Levá drží zbraň"
-	grip.button_pressed = true
-	grip.add_theme_font_size_override("font_size", 8)
-	grip.toggled.connect(func(on): _grip_on = on)
-	row3.add_child(grip)
+	_btn(row3, "Kontrola modelů", func():
+		var rep := model_check()
+		status.text = "Kontrola modelů: %d problémů, %d poznámek. Celé v %s" % [rep[0], rep[1], rep[2]]
+		Game.play_ui(self, "ui_confirm" if rep[0] == 0 else "ui_deny", -6))
 	var row4 := HBoxContainer.new()
 	panel_box.add_child(row4)
 	for v in [["Zepředu", PI, 0.0], ["Z boku", PI * 0.5, 0.0], ["Shora", PI, -1.2], ["Zezadu", 0.0, -0.1]]:
 		var vy: float = v[1]
 		var vp: float = v[2]
 		_btn(row4, v[0], func(): yaw = vy; pitch = vp)
-	_lbl(panel_box, "Při ladění polohy zbraně vypni „Levá drží zbraň“, ať se ti nehýbe ruka; pak ji zase zapni.", UiSkin.DIM)
 	_giz = MeshInstance3D.new()
 	var gm := StandardMaterial3D.new()
 	gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -211,6 +227,12 @@ func _ready() -> void:
 		_animtest.call_deferred()
 	if Game.autotest() == "animshots":
 		_animshots.call_deferred()
+	if Game.autotest() == "agun":
+		_aguntest.call_deferred()
+	if Game.autotest() == "modelcheck":
+		var rep := model_check()
+		print("RESULT modelcheck %d problems %d notes" % [rep[0], rep[1]])
+		get_tree().quit.call_deferred()
 
 ## Real clicks through the window: a joint (left forearm), then a drag on its red ring, then the gun.
 func _mouse(win: Vector2, pressed: Variant, rel := Vector2.ZERO) -> void:
@@ -231,7 +253,7 @@ func _win_of(w: Vector3) -> Vector2:
 
 func _clicktest() -> void:
 	var keep := Game.tweaks.duplicate(true)
-	mode = "tp"
+	mode = "emote"          # (0.57: the joints are turned in the poses; "tp" plays the game's movements)
 	_rebuild_panel()
 	for f in 15: await get_tree().process_frame
 	var bi := sk.find_bone("head")
@@ -258,6 +280,9 @@ func _clicktest() -> void:
 	print("[WSC] ring drag: changed %s" % (x1 != x0))
 	if DisplayServer.get_name() != "headless":
 		get_viewport().get_texture().get_image().save_png("user://ws_rings.png")
+	mode = "tp"
+	_rebuild_panel()
+	for f in 15: await get_tree().process_frame
 	var ib: AABB = (item_node.find_children("*", "MeshInstance3D", true, false)[0] as MeshInstance3D).global_transform * (item_node.find_children("*", "MeshInstance3D", true, false)[0] as MeshInstance3D).get_aabb()
 	var far: Vector3 = ib.get_center()
 	for ci in 8:
@@ -305,6 +330,132 @@ func _selftest() -> void:
 		get_viewport().get_texture().get_image().save_png("user://ws_%s_%s.png" % [mode, subject])
 	Game.tweaks = keep
 	get_tree().quit()
+
+## Zbraň vetřelce in every model that has a hand: the gun is there and follows the slider.
+func _aguntest() -> void:
+	var keep := Game.tweaks.duplicate(true)
+	mode = "agun"
+	_rebuild_panel()
+	var n := 0
+	var ok := 0
+	for i in subj_opt.item_count:
+		subj_opt.select(i)
+		subj_opt.item_selected.emit(i)
+		for f in 5:
+			await get_tree().process_frame
+		if holder == null:
+			print("[AGUN] %s: bez ruky" % subject)
+			continue
+		n += 1
+		var p0 := item_node.global_position
+		item_sliders["pos.y"].value = item_sliders["pos.y"].value + 0.1
+		for f in 3:
+			await get_tree().process_frame
+		var moved := item_node.global_position.distance_to(p0) > 0.05
+		ok += 1 if moved else 0
+		print("[AGUN] %s %s moved %s" % [subject, _ag_w, moved])
+		get_viewport().get_texture().get_image().save_png("user://agun_%s.png" % subject)
+	Game.tweaks = keep
+	print("RESULT agun %d of %d" % [ok, n])
+	get_tree().quit()
+
+## Kontrola modelů: what each model needs so that the game and the Dílna can use it - the bones
+## by the game's names, the movements, the hands model for the eyes view, an anchor. Written to
+## kontrola_modelu.txt next to upravy.json. Returns [problems, notes, path].
+const NEED_BONES := ["root", "hips", "spine", "neck", "head", "upperarm.L", "forearm.L", "upperarm.R", "forearm.R", "thigh.L", "shin.L", "thigh.R", "shin.R"]
+const NEED_CLIPS := ["idle", "walk", "run", "lurk", "aim"]
+static func model_check() -> Array:
+	var lines := []
+	var bad := 0
+	var notes := 0
+	lines.append("KONTROLA MODELŮ  (! = problém, - = poznámka)")
+	lines.append("")
+	lines.append("ZBRANĚ A VĚCI DO RUKY")
+	for id in Game.ITEMS:
+		if not ResourceLoader.exists("res://assets/models/%s.glb" % id) or id.begins_with("a_pack"):
+			continue
+		var it: Dictionary = Game.ITEMS[id]
+		if it.get("type", "") != "weapon":
+			continue
+		var msg := []
+		var b2 := 0
+		if Game.two_handed(id):
+			if not ResourceLoader.exists("res://assets/models/hands_%s.glb" % id) and not id in ["a_rifle", "a_heavy"]:
+				msg.append("! chybí ruce pro pohled z očí (hands_%s.glb)" % id); b2 += 1
+			if not PlayerScript.VM_R.has(id):
+				msg.append("- z očí bez vlastní polohy (player.VM_R)")
+			if not Game.tweaks.has("tpa/" + id):
+				msg.append("- zvenku bez vlastní kotvy (tpa/%s), drží se podle obrysu" % id)
+		elif not Game.tweaks.has("tp/" + id):
+			msg.append("- zvenku bez vlastní kotvy (tp/%s)" % id)
+		bad += b2
+		notes += msg.size() - b2
+		lines.append("%s %s%s" % ["!" if b2 > 0 else " ", id, (": " + ", ".join(msg)) if not msg.is_empty() else ": v pořádku"])
+	lines.append("")
+	lines.append("VETŘELCI (modely ze hry a nové *_v2)")
+	var keys := []
+	for r in AlienScript.RACES:
+		var m := String(AlienScript.RACES[r]["model"])
+		for k in [m, m + "_v2"]:
+			if keys.any(func(e): return e[0] == k):
+				continue
+			if ResourceLoader.exists("res://assets/models/%s.glb" % k) or ag_file(k) != "":
+				keys.append([k, r])
+	for e in keys:
+		var k: String = e[0]
+		var r: String = e[1]
+		var n := ag_model(k)
+		var sk: Skeleton3D = n.find_child("Skeleton3D", true, false)
+		var ap: AnimationPlayer = n.find_child("AnimationPlayer", true, false)
+		var msg := []
+		var b2 := 0
+		var src := "hra" if ResourceLoader.exists("res://assets/models/%s.glb" % k) else ag_file(k).get_file()
+		if sk == null:
+			if not k.trim_suffix("_v2") in ["diskoll", "levit", "levit_velitel", "myslodej", "nador", "ohnivec", "kolos", "mozek", "pylon"]:
+				msg.append("! bez kostry"); b2 += 1
+			else:
+				msg.append("- bez kostry (hýbe se kódem)")
+		else:
+			var miss := []
+			for bn in NEED_BONES:
+				if sk.find_bone(bn) < 0:
+					miss.append(bn)
+			if not miss.is_empty():
+				msg.append("! chybí kosti " + ", ".join(miss)); b2 += 1
+			var tail := 0
+			for i in sk.get_bone_count():
+				if sk.get_bone_name(i).begins_with("tail."):
+					tail += 1
+			if tail > 0:
+				msg.append("- ocas %d kostí" % tail)
+			var cm := []
+			for c in NEED_CLIPS:
+				if ap == null or not ap.has_animation(c):
+					cm.append(c)
+			if not cm.is_empty():
+				if k.ends_with("_v2"):
+					msg.append("- zatím bez pohybů " + ", ".join(cm))
+				else:
+					msg.append("! chybí pohyby " + ", ".join(cm)); b2 += 1
+		var w := AlienScript.gun_item(r, "rifle")
+		if w != "" and not k in AlienScript.BAKED_GUN:
+			if sk != null and sk.find_bone("hand.R") < 0 and not r in AlienScript.FLOAT_GUN:
+				msg.append("! nosí zbraň, ale nemá kost hand.R"); b2 += 1
+			elif not Game.tweaks.has("agun/%s/%s" % [AlienScript.anchor_model(k, w), w]):
+				msg.append("- zbraň %s bez kotvy (Dílna: Zbraň vetřelce)" % w)
+		n.free()
+		bad += b2
+		notes += msg.size() - b2
+		lines.append("%s %s [%s, %s]%s" % ["!" if b2 > 0 else " ", k, r, src, (": " + ", ".join(msg)) if not msg.is_empty() else ": v pořádku"])
+	lines.append("")
+	lines.append("Celkem: %d problémů, %d poznámek." % [bad, notes])
+	var path := Game.tweak_path().get_base_dir().path_join("kontrola_modelu.txt")
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f:
+		f.store_string("\n".join(lines) + "\n")
+	for l in lines:
+		print("[MODEL] " + l)
+	return [bad, notes, path]
 
 # ---- small UI helpers ----------------------------------------------------------------------------
 func _opt(parent: Node) -> OptionButton:
@@ -393,23 +544,59 @@ func _rebuild_panel() -> void:
 		"alien":
 			for r in ALIENS:
 				subjects.append([r, String(AlienScript.RACES[r]["name"])])
+		"agun":
+			subjects = ag_models()
 	for s in subjects:
 		subj_opt.add_item(s[1])
 		subj_opt.set_item_metadata(subj_opt.item_count - 1, s[0])
 	subject = subjects[0][0]
+	_ag_race = String(subjects[0][2]) if mode == "agun" else ""
 	subj_opt.item_selected.connect(func(i):
 		subject = subj_opt.get_item_metadata(i)
+		if mode == "agun":
+			_ag_race = String(subjects[i][2])
+			_ag_fill_weapons()
 		_fill_sub2()
 		_build_scene())
+	_ag_w_opt = null
+	if mode == "agun":
+		_ag_w_opt = _opt(dyn)
+		_ag_w_opt.item_selected.connect(func(i): _ag_w = String(_ag_w_opt.get_item_metadata(i)); _mark_sub2(); _build_scene())
+		_ag_fill_weapons()
 	sub2_opt = _opt(dyn)
-	sub2_opt.item_selected.connect(func(i): sub2 = String(sub2_opt.get_item_metadata(i)); _sync_sliders(); _build_scene())
-	if mode in ["fp", "tp", "back"]:
+	sub2_opt.item_selected.connect(func(i):
+		sub2 = String(sub2_opt.get_item_metadata(i))
+		_sync_sliders()
+		if mode == "agun":
+			_ag_play()        # (the same model: just its other movement)
+		else:
+			_build_scene())
+	if mode in ["fp", "tp", "back", "agun"]:
 		_lbl(dyn, "POSUN A NATOČENÍ PŘEDMĚTU")
+		if mode == "fp":
+			# (0.57, Ari) the left hand on its own: the gun stays where it aims
+			var lc := CheckBox.new()
+			lc.text = "Posouvám levou ruku (ne zbraň)"
+			lc.button_pressed = _fp_left
+			lc.tooltip_text = "Zapnuto: posuvníky hýbou jen levou rukou na dlouhé zbrani (úprava fpl/<zbraň>), zbraň a míření zůstávají.\nVypnuto: posouváš zbraň (fp/<zbraň>)."
+			lc.toggled.connect(func(on): _fp_left = on; _sync_sliders())
+			dyn.add_child(lc)
+		if mode in ["tp", "agun"]:
+			var pc := CheckBox.new()
+			pc.text = "Jen pro tento pohyb (zbraně)"
+			pc.button_pressed = _per_clip
+			pc.tooltip_text = "Zapnuto: posun a natočení platí jen v pohybu vybraném nahoře, navíc k obecnému nastavení.\nVypnuto: obecné nastavení zbraně pro všechny pohyby."
+			pc.toggled.connect(func(on): _per_clip = on; _sync_sliders())
+			dyn.add_child(pc)
 		for k in [["pos.x", "doprava", -0.3, 0.3, 0.002], ["pos.y", "nahoru", -0.3, 0.3, 0.002], ["pos.z", "dozadu", -0.3, 0.3, 0.002],
 				["rot.x", "kývnutí", -180, 180, 1], ["rot.y", "otočení", -180, 180, 1], ["rot.z", "náklon", -180, 180, 1], ["scale", "velikost", 0.5, 2.0, 0.01]]:
 			var key: String = k[0]
 			item_sliders[key] = _slider(dyn, k[1], k[2], k[3], k[4], func(): _item_changed())
-	if mode in ["tp", "emote", "alien"]:
+	if mode == "agun":
+		_lbl(dyn, "Vetřelec hraje svůj pohyb ze hry, zbraň drží v pravé ruce. Kotva platí pro tento model a tuto zbraň (velitel bez vlastní převezme kotvu obyčejného). Tečka • = pohyb má vlastní úpravu. Nový model se jmenuje jako soubor (např. bijec_v2) – stejné jméno mu dej i ve hře.", UiSkin.DIM)
+	if mode == "tp":
+		_lbl(dyn, "Voják hraje pohyby ze hry (afk) - vyber nahoře, co dělá. Mezerník pauza. Dlouhá zbraň: posun a natočení jsou vůči úchopu (x doprava, y nahoru, z podél hlavně), hlaveň míří k levé ruce sama. Platí hned i ve hře.", UiSkin.DIM)
+	if mode in ["emote", "alien"]:
 		_lbl(dyn, "KOST (natočení navíc ke stávající póze)")
 		bone_opt = _opt(dyn)
 		bone_opt.item_selected.connect(func(i): bone = String(bone_opt.get_item_metadata(i)); _sync_sliders())
@@ -417,21 +604,27 @@ func _rebuild_panel() -> void:
 			var a: String = ax[0]
 			bone_sliders[a] = _slider(dyn, ax[1], -180, 180, 1, func(): _bone_changed())
 		_lbl(dyn, "Klikni na kloub v obrázku a táhni: nahoru/dolů ho ohýbá, do stran otáčí, se Shiftem naklání do strany. Pravé tlačítko otáčí pohled.", UiSkin.DIM)
-	if mode == "tp":
+	if false:
 		_lbl(dyn, "LEVÁ RUKA NA ZBRANI (oranžová tečka)")
 		for ax in [["x", "do strany"], ["y", "nahoru"], ["z", "dopředu/zpět"]]:
 			var a2: String = ax[0]
 			grip_sliders[a2] = _slider(dyn, ax[1], -0.8, 0.8, 0.002, func(): _grip_changed())
 		_lbl(dyn, "Levá ruka se sama chytí zbraně - posuneš zbraň nebo pravou ruku a levá jde s ní.", UiSkin.DIM)
-	_lbl(dyn, "Myš: tažení mimo kloub (nebo pravým tlačítkem) otáčí pohled, kolečko přibližuje." if mode != "fp" else "Pohled je přesně z očí žoldáka.", UiSkin.DIM)
+	_lbl(dyn, "Myš: tažení mimo kloub (nebo pravým tlačítkem) otáčí pohled, kolečko přibližuje." if mode != "fp" else "Pohled je přesně z očí vojáka.", UiSkin.DIM)
 	_fill_sub2()
 	_build_scene()
 
 func _fill_sub2() -> void:
 	sub2_opt.clear()
-	sub2_opt.visible = mode in ["tp", "alien"]
+	sub2_opt.visible = mode in ["tp", "alien", "agun"]
 	if mode == "tp":
 		for a in HOLD_ACTS:
+			if _tp_clip(String(a[0])).is_empty():
+				continue
+			sub2_opt.add_item(a[1])
+			sub2_opt.set_item_metadata(sub2_opt.item_count - 1, a[0])
+	elif mode == "agun":
+		for a in AG_CLIPS:
 			sub2_opt.add_item(a[1])
 			sub2_opt.set_item_metadata(sub2_opt.item_count - 1, a[0])
 	elif mode == "alien":
@@ -439,10 +632,39 @@ func _fill_sub2() -> void:
 			sub2_opt.add_item(ACT_NAMES.get(a, a))
 			sub2_opt.set_item_metadata(sub2_opt.item_count - 1, a)
 	sub2 = String(sub2_opt.get_item_metadata(0)) if sub2_opt.item_count > 0 else ""
+	_mark_sub2()
+
+## The movements that have their own correction for this thing: a dot after the name.
+func _mark_sub2() -> void:
+	if sub2_opt == null or not mode in ["tp", "agun"]:
+		return
+	for i in sub2_opt.item_count:
+		var a := String(sub2_opt.get_item_metadata(i))
+		var own := false
+		if mode == "agun":
+			own = Game.tweaks.has("agun/%s/%s@%s" % [AlienScript.anchor_model(subject, _ag_w), _ag_w, a])
+		else:
+			own = Game.tweaks.has("tpa/%s@%s" % [subject, a])
+		var nm := sub2_opt.get_item_text(i).trim_suffix(" •")
+		sub2_opt.set_item_text(i, nm + (" •" if own else ""))
 
 ## The tweak key edited right now.
 func _item_key() -> String:
+	if mode == "agun":
+		if _per_clip and sub2 != "":
+			return "agun/%s/%s@%s" % [AlienScript.anchor_model(subject, _ag_w), _ag_w, sub2]
+		return "agun/%s/%s" % [subject, _ag_w]       # (its own; until then the sliders show what it takes over)
+	if mode == "tp" and _per_clip and sub2.begins_with("tp_body_") and Game.ITEMS.get(subject, {}).get("type", "") == "weapon":
+		return "tpa/%s@%s" % [subject, sub2]      # only in this movement (over the general one)
+	if mode == "tp" and _long_gun():
+		return "tpa/" + subject       # 0.57: the long gun in the afk hands (player.afk_gun_xform)
+	if mode == "fp" and _fp_left:
+		return "fpl/" + subject       # 0.57: the left hand alone (Game.apply_left_hand)
 	return {"fp": "fp/", "tp": "tp/", "back": "back/"}.get(mode, "") + subject
+
+## A two-handed gun: the game puts it from the right hand towards the left (player.afk_gun_xform).
+func _long_gun() -> bool:
+	return Game.ITEMS.get(subject, {}).get("type", "") == "weapon" and Game.two_handed(subject)
 
 func _pose_key() -> String:
 	match mode:
@@ -564,10 +786,19 @@ func _item_changed() -> void:
 		_an_play = false
 		return
 	_push_undo()
+	if mode == "agun":
+		# a commander that took the plain model's anchor gets its own copy before anything changes
+		var own := "agun/%s/%s" % [subject, _ag_w]
+		var inh := "agun/%s/%s" % [AlienScript.anchor_model(subject, _ag_w), _ag_w]
+		if not Game.tweaks.has(own) and Game.tweaks.has(inh) and inh != own:
+			Game.tweaks[own] = (Game.tweaks[inh] as Dictionary).duplicate(true)
 	var t2 := {"pos": [item_sliders["pos.x"].value, item_sliders["pos.y"].value, item_sliders["pos.z"].value],
 		"rot": [item_sliders["rot.x"].value, item_sliders["rot.y"].value, item_sliders["rot.z"].value], "scale": item_sliders["scale"].value}
 	Game.tweaks[_item_key()] = t2
 	_place_item()
+	_mark_sub2()
+	if mode == "fp" and holder and holder.get_node_or_null("GripTwo"):
+		Game.apply_left_hand(holder.get_node("GripTwo"), subject)
 
 func _bone_changed() -> void:
 	if bone == "":
@@ -598,6 +829,8 @@ func _sync_sliders() -> void:
 	_syncing = true
 	if not item_sliders.is_empty():
 		var t2: Dictionary = Game.tweaks.get(_item_key(), {})
+		if mode == "agun" and t2.is_empty() and not _per_clip:
+			t2 = Game.tweaks.get("agun/%s/%s" % [AlienScript.anchor_model(subject, _ag_w), _ag_w], {})
 		var p: Array = t2.get("pos", [0, 0, 0])
 		var r: Array = t2.get("rot", [0, 0, 0])
 		item_sliders["pos.x"].value = p[0]; item_sliders["pos.y"].value = p[1]; item_sliders["pos.z"].value = p[2]
@@ -613,8 +846,9 @@ func _sync_sliders() -> void:
 	_syncing = false
 
 func _reset_current() -> void:
-	if mode in ["fp", "tp", "back"]:
+	if mode in ["fp", "tp", "back", "agun"]:
 		Game.tweaks.erase(_item_key())
+		_mark_sub2()
 	if mode in ["tp", "emote", "alien"]:
 		Game.tweaks.erase(_pose_key())
 	if mode == "tp":
@@ -649,6 +883,7 @@ func _build_scene() -> void:
 				var hb := Game.model("hands_" + subject)
 				hb.name = "GripTwo"
 				holder.add_child(hb)
+				Game.apply_left_hand(hb, subject)
 				if mode == "afp":
 					var h1 := Game.model("hand_r")
 					h1.name = "GripOne"
@@ -679,6 +914,7 @@ func _build_scene() -> void:
 				var rest := sk.get_bone_global_rest(sk.find_bone("spine"))
 				if mode in ["tp", "atp"]:
 					holder.transform = rest.affine_inverse() * Transform3D(Basis(), Vector3(-0.1, 1.2, -0.3))
+					_holder_base = holder.transform
 				else:
 					holder.transform = rest.affine_inverse() * Transform3D(Basis.from_euler(Vector3(-PI / 2 + 0.3, 0, 0.6)), Vector3(0.0, 1.2, 0.2))
 			target = Vector3(0, 1.25 if mode != "back" else 1.2, 0)
@@ -691,10 +927,141 @@ func _build_scene() -> void:
 			target = Vector3(0, float(AlienScript.RACES[subject]["h"]) * 0.55, 0)
 			dist = float(AlienScript.RACES[subject]["h"]) * 1.7 + 0.8
 			yaw = PI + 0.7
+		"agun":
+			_ag_native = ag_afk(subject, _ag_race)
+			model = AlienScript.afk_scene(_ag_race) if _ag_native else null
+			if model == null:
+				_ag_native = false
+				model = ag_model(subject)
+			world.add_child(model)
+			if AlienScript.RACES[_ag_race].has("scale"):
+				model.scale *= float(AlienScript.RACES[_ag_race]["scale"])
+			_setup_rig()
+			var h := float(AlienScript.RACES[_ag_race]["h"])
+			if _ag_native:
+				h = maxf(h, _ag_height(model))       # (the Levit's afk body hangs far below its old hover height)
+			target = Vector3(0, h * 0.6, 0)
+			dist = h * 1.3 + 0.6
+			yaw = PI + 0.9
+			var hn := "hand_r" if _ag_native else "hand.R"
+			var hb := sk.find_bone(hn) if sk else -1
+			if hb >= 0:
+				var att := BoneAttachment3D.new()
+				att.bone_name = hn
+				sk.add_child(att)
+				holder = Node3D.new()
+				att.add_child(holder)
+				holder.transform = AlienScript.GUN_DEFAULT
+				target = (sk.global_transform * sk.get_bone_global_rest(hb)).origin.lerp(target, 0.5)
+			_ag_play()
+			if sk == null or hb < 0:
+				status.text = "Tenhle model nemá kostru s kostí hand.R – zbraň nemá kam dát. Model potřebuje kosti pojmenované jako ve hře (soubor *_rig.glb)."
+			elif anim == null:
+				status.text = "Model nemá pohyby (stojí v T-pozici). Kotvu jde naladit i tak; pohyby přibudou s afk."
+			else:
+				status.text = ""
 	_place_item()
 	_fill_bones()
 	_an_fill_objects()
 	_sync_sliders()
+
+## Zbraň vetřelce: every model that carries a gun - the game's and the new ones from Ari's folder.
+## [key (the model's name), label, race].
+static func ag_models() -> Array:
+	var out := []
+	var seen := {}
+	for r in Campaign.RACE_WEAPON:
+		if not AlienScript.RACES.has(r):
+			continue
+		var m := String(AlienScript.RACES[r]["model"])
+		var nm := String(AlienScript.RACES[r]["name"])
+		if not seen.has(m) and ag_afk(m, r):
+			out.append([m, nm + " (afk)", r])      # the game shows Ari's afk model: the anchor is for it
+			seen[m] = true
+		elif not seen.has(m) and ResourceLoader.exists("res://assets/models/%s.glb" % m):
+			out.append([m, nm + (" (zbraň v modelu)" if m in AlienScript.BAKED_GUN else ""), r])
+			seen[m] = true
+		var v := m + "_v2"
+		if not seen.has(v) and (ResourceLoader.exists("res://assets/models/%s.glb" % v) or ag_file(v) != ""):
+			out.append([v, nm + " – nový model", r])
+			seen[v] = true
+	return out
+
+## The race's own model is Ari's afk one in the game (alien._afk_model): show that one.
+static func ag_afk(key: String, race_id: String) -> bool:
+	return AlienScript.RACES.has(race_id) and String(AlienScript.RACES[race_id]["model"]) == key \
+		and AlienScript.AFK_MODELS.has(race_id) and ResourceLoader.exists("res://animace/afk_%s.glb" % race_id)
+
+## The new model's file in Ari's folder (the rigged one first), "" when there is none.
+static func ag_file(key: String) -> String:
+	if not OS.has_feature("editor"):
+		return ""
+	var dir := ProjectSettings.globalize_path(AG_DIR)
+	for f in [key + "_rig.glb", key + ".glb"]:
+		if FileAccess.file_exists(dir.path_join(f)):
+			return dir.path_join(f)
+	return ""
+
+static var _ag_cache := {}
+## The model: from the game when it is there, else read from the .glb file (no import needed:
+## the folder is hidden from Godot), with the game's own materials.
+static func ag_model(key: String) -> Node3D:
+	if ResourceLoader.exists("res://assets/models/%s.glb" % key):
+		return Game.model(key)
+	var path := ag_file(key)
+	if path != "":
+		if not _ag_cache.has(path):
+			var doc := GLTFDocument.new()
+			var st := GLTFState.new()
+			var ps: PackedScene = null
+			if doc.append_from_file(path, st) == OK:
+				var n := doc.generate_scene(st)
+				if n:
+					for c in n.find_children("*", "", true, false):
+						c.owner = n
+					ps = PackedScene.new()
+					ps.pack(n)
+					n.free()
+			_ag_cache[path] = ps
+		if _ag_cache[path] != null:
+			var inst: Node3D = (_ag_cache[path] as PackedScene).instantiate()
+			Game._restyle(inst)
+			return inst
+	return Game.model(key)      # (a grey box: nothing to read)
+
+## The model's height from its meshes (rest pose).
+static func _ag_height(m: Node3D) -> float:
+	var top := 0.0
+	for mi in m.find_children("*", "MeshInstance3D", true, false):
+		var bb: AABB = (mi as MeshInstance3D).global_transform * (mi as MeshInstance3D).get_aabb()
+		top = maxf(top, bb.end.y)
+	return top
+
+var _ag_native := false       # the afk model: the holder follows the hands (alien.afk_hold_xform)
+
+func _ag_fill_weapons() -> void:
+	if _ag_w_opt == null:
+		return
+	_ag_w_opt.clear()
+	var own := String(Campaign.RACE_WEAPON.get(_ag_race, ""))
+	var ws: Array = [own] if own != "" else []
+	for w in AG_WEAPONS:
+		if not w in ws:
+			ws.append(w)
+	for w in ws:
+		if Game.ITEMS.has(w) and ResourceLoader.exists("res://assets/models/%s.glb" % w):
+			_ag_w_opt.add_item(String(Game.ITEMS[w]["name"]) + (" (jeho)" if w == own else ""))
+			_ag_w_opt.set_item_metadata(_ag_w_opt.item_count - 1, w)
+	_ag_w = String(_ag_w_opt.get_item_metadata(0)) if _ag_w_opt.item_count > 0 else ""
+
+## The chosen movement on the alien (what alien._animate plays under that name).
+func _ag_play() -> void:
+	if anim == null:
+		return
+	var c := sub2 if anim.has_animation(sub2) else "idle"
+	if anim.has_animation(c):
+		anim.get_animation(c).loop_mode = Animation.LOOP_LINEAR
+		anim.play(c)
 
 func _setup_rig() -> void:
 	sk = model.find_child("Skeleton3D", true, false)
@@ -713,6 +1080,11 @@ func _place_item() -> void:
 	if mode == "back":
 		item_node = Game.model(subject)
 		Game.apply_item_tweak(item_node, "back/" + subject)
+	elif mode == "agun":
+		if _ag_w == "":
+			return
+		item_node = Game.model(_ag_w)
+		item_node.transform = AlienScript.gun_anchor(subject, _ag_w, sub2)
 	else:
 		if not Game.ITEMS.has(subject):
 			return
@@ -743,6 +1115,8 @@ static func _bone_cz(n: String) -> String:
 	if n.ends_with(".L"): side = " L"
 	elif n.ends_with(".R"): side = " P"
 	var base := n.trim_suffix(".L").trim_suffix(".R")
+	if base.begins_with("tail."):
+		return "ocas " + base.substr(5)
 	return {"hips": "boky", "spine": "páteř", "neck": "krk", "head": "hlava", "upperarm": "rameno", "forearm": "předloktí",
 		"hand": "ruka", "thigh": "stehno", "shin": "lýtko", "jaw": "čelist", "tail": "ocas"}.get(base, base) + side
 
@@ -760,13 +1134,17 @@ func _process(delta: float) -> void:
 				want = _an_base_pose()
 				want.merge(AnimClips.pose(_ac, _an_t), true)
 			"tp":
-				var a := int(sub2) if sub2 != "" else 0
-				want = Game.tweak_pose("hold/" + subject, PlayerScript.hold_want(subject, "", a, fmod(t, 1.2)))
+				_tp_tick()
 			"back":
 				want = PlayerScript.hold_want("", "", 0, 0.0)
 			"emote":
 				var base: Dictionary = {"salute": PlayerScript.POSE_SALUTE, "atease": PlayerScript.POSE_ATEASE, "hips": PlayerScript.POSE_HIPS}[subject]
 				want = Game.tweak_pose("emote/" + subject, base)
+			"agun":
+				if item_node and is_instance_valid(item_node):
+					item_node.transform = AlienScript.gun_anchor(subject, _ag_w, sub2)     # (as alien._gun_tick)
+				if _ag_native and holder and is_instance_valid(holder):
+					holder.global_transform = AlienScript.afk_hold_xform(sk, _ag_race, model.global_transform.basis, model.global_transform.basis.get_scale())
 			"alien":
 				var pose: Array = AlienScript.pose_for(sub2, t, float(AlienScript.RACES[subject]["h"]))
 				want = Game.tweak_pose("act/" + sub2, pose[0])
@@ -779,7 +1157,9 @@ func _process(delta: float) -> void:
 		var ri := sk.find_bone("root")
 		if ri >= 0 and drop != 0.0:
 			sk.set_bone_pose_position(ri, sk.get_bone_rest(ri).origin + Vector3(0, drop, 0))
-		if mode in ["tp", "atp"] and holder and item_node:
+		if mode == "tp":
+			_grip_marker(Vector3.INF)
+		elif mode in ["tp", "atp"] and holder and item_node:
 			# exactly as in the game: the gun sits in the right hand, the left hand takes hold of it
 			var hi := sk.find_bone("hand.R")
 			if hi >= 0:
@@ -811,6 +1191,95 @@ func _process(delta: float) -> void:
 		cam.position = target + dir * dist
 		cam.look_at(target, Vector3.UP)
 		cam.fov = 50.0
+
+## The game's movement for the chosen act: a body one, or the hands' one (stand under it).
+func _tp_clip(a: String) -> Dictionary:
+	if a.begins_with("tp_body_"):
+		if subject in PlayerScript.HEAVY and not AnimClips.get_clip(a + "_heavy").is_empty():
+			return AnimClips.get_clip(a + "_heavy")
+		if not _long_gun() and not AnimClips.get_clip(a + "_pistol").is_empty():
+			return AnimClips.get_clip(a + "_pistol")
+		return AnimClips.get_clip(a)
+	if a == "draw" and not _long_gun():
+		return AnimClips.find("tp", "drawp", subject)
+	return AnimClips.find("tp", a, subject)
+
+func _apply_clip(c: Dictionary, at: float) -> void:
+	if c.is_empty():
+		return
+	var tt := AnimClips.clip_time(c, at)
+	var p := AnimClips.pose(c, tt)
+	for bn in p:
+		var i := sk.find_bone(bn)
+		if i >= 0:
+			sk.set_bone_pose_rotation(i, sk.get_bone_rest(i).basis.get_rotation_quaternion() * Quaternion.from_euler(p[bn]))
+	var ri := sk.find_bone("root")
+	if ri >= 0:
+		var v := AnimClips.sample(c, "root@pos", tt) if AnimClips.has_track(c, "root@pos") else [0, 0, 0]
+		sk.set_bone_pose_position(ri, sk.get_bone_rest(ri).origin + Vector3(float(v[0]), float(v[1]), float(v[2])))
+
+var _holder_base := Transform3D()
+var _fp_left := false      # (fp) the sliders move the left hand, not the gun
+var _per_clip := false        # tp, long gun: the sliders set it for the chosen movement only
+var _ws_cal := Basis()
+var _ws_grip_basis := Basis()
+var _ws_has_cal := false
+## The soldier as the game shows him (Předmět v ruce - zvenku): the afk movement, the gun put in the
+## hands exactly as player.gd does it (a long gun from the right hand to the left; during an action
+## it stays as it sat in the hand while standing).
+func _tp_tick() -> void:
+	var a := sub2 if sub2 != "" else "tp_body_idle"
+	var body := a.begins_with("tp_body_")
+	var idle := _tp_clip("tp_body_idle")
+	var hi := sk.find_bone("hand.R")
+	var li := sk.find_bone("hand.L")
+	if holder == null or item_node == null or hi < 0:
+		_apply_clip(_tp_clip(a) if body else idle, t)
+		return
+	if not _long_gun():
+		_apply_clip(idle if not body else _tp_clip(a), t)
+		if not body:
+			_apply_clip(_tp_clip(a), t)
+		var hand := sk.global_transform * sk.get_bone_global_pose(hi)
+		holder.transform = _holder_base
+		holder.global_position = hand.origin + hand.basis.y.normalized() * -0.05
+		if body:
+			# a handgun: its correction for this movement, in the gun's frame (as player._mixamo_gun)
+			var adj := Game.tweak_xform("tpa/%s@%s" % [subject, a])
+			if adj != Transform3D():
+				holder.transform = holder.transform * adj
+		return
+	# the long gun: calm standing first (its roll in the wrist, and how it sits in the hand)
+	_apply_clip(idle, 0.0)
+	var g0 := _ws_gun(true, "tp_body_idle")
+	var h0 := sk.global_transform * sk.get_bone_global_pose(hi)
+	var rel := h0.affine_inverse() * g0
+	if body:
+		_apply_clip(_tp_clip(a), t)
+		holder.global_transform = _ws_gun(a.begins_with("tp_body_idle") or a == "tp_body_crouch", a)
+	else:
+		_apply_clip(idle, t)
+		_apply_clip(_tp_clip(a), t)
+		holder.global_transform = sk.global_transform * sk.get_bone_global_pose(hi) * rel
+
+## The gun's holder (world) for the pose the skeleton has now - player._mixamo_gun.
+func _ws_gun(calm: bool, clip: String) -> Transform3D:
+	var hand := sk.global_transform * sk.get_bone_global_pose(sk.find_bone("hand.R"))
+	var origin := hand.origin + hand.basis.y.normalized() * -0.05
+	var lh := (sk.global_transform * sk.get_bone_global_pose(sk.find_bone("hand.L"))).origin
+	var dir := (lh - origin).normalized()
+	var hb := hand.basis.orthonormalized()
+	var up := Vector3.UP
+	if not calm and _ws_has_cal:
+		up = (hb * _ws_cal).y.normalized()
+	if absf(dir.dot(up)) > 0.97:
+		up = Vector3.UP if absf(dir.y) < 0.9 else Vector3.BACK
+	var B := Basis.looking_at(dir, up)
+	_ws_grip_basis = B
+	if calm:
+		_ws_cal = hb.inverse() * B
+		_ws_has_cal = true
+	return PlayerScript.afk_gun_xform(B, origin, item_node, Vector3.ONE, subject, clip)
 
 var _gm: MeshInstance3D
 var _ik_err := -1.0
@@ -958,6 +1427,8 @@ func _handles() -> Array:
 		return [sn.global_position, [fb.x.normalized(), fb.y.normalized(), fb.z.normalized()], "arrows" if _item_tool == "posun" else "rings", signf(fb.determinant()), [fb.x, fb.y, fb.z]]
 	if focus == "item" and item_node != null and is_instance_valid(item_node) and not item_sliders.is_empty():
 		var hb := holder.global_transform.basis
+		if mode == "tp" and _long_gun() and not (_per_clip and false):
+			hb = _ws_grip_basis          # "tpa/": the sliders move it in the grip's frame
 		var ax := [hb.x, hb.y, hb.z]
 		var axn := [hb.x.normalized(), hb.y.normalized(), hb.z.normalized()]
 		return [item_node.global_position, axn, "arrows" if _item_tool == "posun" else "rings", signf(hb.determinant()), ax]

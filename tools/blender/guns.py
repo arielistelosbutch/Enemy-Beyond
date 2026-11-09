@@ -191,7 +191,7 @@ def rifle():
         p.append(screw(m["steel"], (x, 0.12, 0.012)))
     p += trigger(m["dark"], 0.045, 0.0)
     # handguard (eight-sided) with M-LOK slots, barrel, gas block, flash hider
-    hg = cyl(m["black"], (0, 0.37, 0.042), 0.03, 0.32, verts=8, rot=(PI2, 0, math.pi / 8))
+    hg = cyl(m["black"], (0, 0.37, 0.042), 0.03, 0.32, verts=8, rot=(PI2, math.pi / 8, 0))   # octagon turned about its own axis (was yawed sideways)
     p.append(bev(hg, 0.002))
     for i in range(5):
         y = 0.25 + i * 0.055
@@ -736,10 +736,217 @@ def handheld():
           bx(m["black"], (0, 0.04, -0.053), (0.06, 0.03, 0.006), 0.002),
           bx(m["black"], (0.062, 0.04, 0.02), (0.004, 0.02, 0.012), 0.001)], "Medkit")
 
+def energo_nuz():
+    """X-WEP-002 energy knife: the combat knife's shape, a grey laser-family grip with a small red cell
+    window, a dark alloy blade with a glowing edge strip and an emitter at the guard."""
+    reset(); L = laser_mats(); m = M(); p = []
+    h = cyl(L["trim"], (0, 0.0, 0), 0.017, 0.115, verts=10, rot=(PI2, 0, 0))
+    for v in h.data.vertices:
+        v.co.x *= 0.75
+    p.append(smooth(h))
+    for i in range(4):
+        p.append(ring(L["body2"], -0.04 + i * 0.022, 0, 0.0175, 0.005, verts=10))
+    p.append(bx(L["cell"], (0.0125, 0.0, 0), (0.002, 0.05, 0.012), 0.0005))               # cell window
+    p.append(bx(L["body"], (0, -0.062, 0), (0.024, 0.012, 0.03), 0.003))                  # pommel (cell cap)
+    p.append(bx(L["body"], (0, 0.066, 0), (0.052, 0.014, 0.036), 0.003, seg=2))            # guard / emitter
+    p.append(bx(L["lens"], (0, 0.074, -0.012), (0.012, 0.004, 0.006), 0.001))
+    blade = box(L["trim"], (0, 0.155, 0.004), (0.005, 0.17, 0.03))
+    for v in blade.data.vertices:            # the same clip point as the knife
+        if v.co.y > 0.2:
+            v.co.z = 0.013 if v.co.z > 0.003 else -0.002
+    p.append(blade)
+    edge = box(L["lens"], (0, 0.152, -0.012), (0.0025, 0.16, 0.004))                       # the hot edge
+    for v in edge.data.vertices:
+        if v.co.y > 0.2:
+            v.co.z += 0.006
+    p.append(edge)
+    p.append(bx(L["coil"], (0, 0.12, 0.017), (0.006, 0.08, 0.004), 0.001))                # spine conductor
+    save(p, "Energo_nuz")
+
+def laser_minigun():
+    """X-WEP-006 / LM-01: the minigun's frame (same grips, origin and muzzle height) with a power core where
+    the ammo box was, a cable instead of the belt, and six emitter tubes in finned clamps - a separate mesh
+    "MinigunBarrels" the game spins like the minigun's barrels (the rotor)."""
+    reset(); L = laser_mats(); m = M(); p = []
+    hs = cyl(L["body"], (0, 0.05, 0.05), 0.07, 0.22, verts=18, rot=(PI2, 0, 0))
+    p.append(smooth(bev(hs, 0.006)))
+    for i in range(6):
+        p.append(ring(L["coil"], -0.04 + i * 0.035, 0.05, 0.074, 0.008, verts=18))
+    p.append(bx(L["body2"], (0, -0.12, 0.03), (0.12, 0.16, 0.12), 0.01, seg=2))           # rear body
+    p.append(bx(L["trim"], (0, -0.2, 0.03), (0.1, 0.012, 0.1), 0.004))
+    p.append(bx(L["lens"], (0.061, -0.15, 0.08), (0.004, 0.01, 0.006), 0.001))           # reserve light
+    p.append(bx(L["trim"], (0, -0.0, 0.16), (0.03, 0.3, 0.03), 0.006, seg=2))             # top handle
+    p.append(bx(L["trim"], (0, -0.12, 0.12), (0.03, 0.03, 0.08), 0.004))
+    p.append(bx(L["trim"], (0, 0.12, 0.12), (0.03, 0.03, 0.08), 0.004))
+    p += grip(L["trim"], (0, -0.02, -0.06), (0.04, 0.05, 0.12), -0.3, m["rubber"])
+    p += trigger(L["trim"], 0.02, -0.01)
+    p.append(bx(L["body"], (-0.12, -0.05, -0.04), (0.1, 0.18, 0.16), 0.01, seg=2))        # power core
+    p.append(bx(L["cell"], (-0.171, -0.05, -0.04), (0.002, 0.14, 0.09), 0.0005))
+    for i in range(5):
+        p.append(bx(L["trim"], (-0.12, -0.12 + i * 0.035, 0.043), (0.104, 0.01, 0.012), 0.002))
+    for k in range(6):                                                                    # the cable into the gun
+        t = k / 5
+        c = Vector((-0.09, -0.02, 0.04)).lerp(Vector((-0.03, 0.07, 0.05)), t) + Vector((0, 0, math.sin(t * math.pi) * 0.02))
+        p.append(bx(L["trim"], tuple(c), (0.02, 0.02, 0.02), 0.006))
+    body = join(p, "Laser_minigun")
+    q = []
+    for i in range(6):                                                                    # six emitters on the rotor
+        a = i / 6 * math.tau
+        x, z = math.cos(a) * 0.035, 0.05 + math.sin(a) * 0.035
+        q.append(ty(L["trim"], 0.16, 0.82, z, 0.012, x=x, verts=10))
+        q.append(cyl(L["lens"], (x, 0.822, z), 0.008, 0.003, verts=10, rot=(PI2, 0, 0)))
+    for y, r in ((0.3, 0.056), (0.5, 0.056), (0.7, 0.054)):                               # finned clamps
+        for f in range(3):
+            q.append(ring(L["coil"] if f == 1 else L["body2"], y + f * 0.014, 0.05, r - f * 0.002, 0.008, verts=16))
+    q.append(ty(L["body"], 0.16, 0.8, 0.05, 0.011, verts=10))
+    for o in q:
+        for v in o.data.vertices:
+            v.co.z -= 0.05      # spin axis through the origin of this mesh
+    barrels = join(q, "MinigunBarrels")
+    barrels.location = (0, 0, 0.05)
+    export_glb(os.path.join(OUTDIR, "laser_minigun.glb"), [body, barrels])
+
+def jet_laser_mg():
+    """X-AIR-003 pod under a fighter's wing: 1 m long along +Y, a finned body, a red lens at the front."""
+    reset(); L = laser_mats(); p = []
+    p.append(smooth(ty(L["body2"], -0.5, 0.35, 0.0, 0.07, verts=16)))
+    p.append(smooth(ty(L["body"], 0.35, 0.5, 0.0, 0.05, verts=16, r2=0.035)))
+    for i in range(5):
+        p.append(ring(L["coil"], -0.3 + i * 0.12, 0.0, 0.072, 0.015, verts=16))
+    p.append(cyl(L["lens"], (0, 0.503, 0), 0.028, 0.006, verts=14, rot=(PI2, 0, 0)))
+    p.append(bx(L["trim"], (0, -0.05, 0.08), (0.025, 0.5, 0.04), 0.006))                  # pylon
+    save(p, "Jet_laser_mg")
+
+def jet_laser_cannon():
+    """X-AIR-002 pod: a fatter 1.4 m body with a glowing core window and a long focusing barrel."""
+    reset(); L = laser_mats(); p = []
+    p.append(smooth(ty(L["body"], -0.7, 0.2, 0.0, 0.12, verts=18)))
+    p.append(smooth(ty(L["trim"], 0.2, 0.7, 0.0, 0.055, verts=16, r2=0.045)))
+    for i in range(4):
+        p.append(ring(L["body2"], 0.28 + i * 0.1, 0.0, 0.058, 0.02, verts=16))
+    for i in range(6):
+        p.append(ring(L["coil"], -0.55 + i * 0.12, 0.0, 0.123, 0.02, verts=18))
+    p.append(bx(L["cell"], (0.12, -0.25, 0), (0.004, 0.4, 0.06), 0.001))
+    p.append(bx(L["cell"], (-0.12, -0.25, 0), (0.004, 0.4, 0.06), 0.001))
+    p.append(cyl(L["lens"], (0, 0.703, 0), 0.04, 0.008, verts=16, rot=(PI2, 0, 0)))
+    p.append(bx(L["trim"], (0, -0.2, 0.13), (0.03, 0.6, 0.05), 0.006))                     # pylon
+    save(p, "Jet_laser_cannon")
+
+# ---- 0.57: the plasma family (X-WEP-007): human frames round their plasma tech, one PL-MAG-01 for all -----
+def plasma_mats():
+    m = M()
+    return m, dict(core=mat2("PlasmaCore", (0.35, 1.0, 0.45), emit=4.0), shell=mat2("AlienShell", (0.3, 0.33, 0.3), 0.3, 0.6),
+                   shell2=mat2("AlienShellDark", (0.17, 0.19, 0.18), 0.3, 0.6), mag=mat2("PlasmaMag", (0.22, 0.24, 0.22), 0.35, 0.7))
+
+def plasma_mag(P, c, rot=(0, 0, 0), s=1.0):
+    """PL-MAG-01: a dark alloy block with a green window and two contacts (the same on every gun)."""
+    x, y, z = c
+    return [bx(P["mag"], (x, y, z), (0.03 * s, 0.05 * s, 0.065 * s), 0.004, rot=rot),
+            bx(P["core"], (x + 0.0155 * s, y, z), (0.002, 0.03 * s, 0.04 * s), 0.0005, rot=rot),
+            bx(P["shell2"], (x, y, z - 0.035 * s), (0.032 * s, 0.052 * s, 0.006), 0.001, rot=rot)]
+
+def plasma_pistol():
+    """X-WEP-008: a human pistol frame and grip, an alien emitter tube with green slits, the PL-MAG in the grip."""
+    reset(); m, P = plasma_mats(); p = []
+    # (0.57, Ari: the body ran into the barrel) a shorter frame with a step down to a collar, then
+    # the lighter alien emitter tube on its own in front of it
+    p.append(bx(m["dark"], (0, 0.04, 0.03), (0.034, 0.12, 0.045), 0.004, seg=2))
+    p.append(bx(m["dark"], (0, 0.096, 0.03), (0.03, 0.012, 0.038), 0.003))                # the frame's front step
+    p.append(ring(P["shell2"], 0.106, 0.035, 0.025, 0.01, verts=14))                      # the collar
+    for sx in (1, -1):
+        p.append(bx(P["core"], (sx * 0.0172, 0.04, 0.036), (0.0015, 0.07, 0.006), 0.0005))  # glow lines on the frame
+    sh = cyl(P["shell"], (0, 0.16, 0.035), 0.019, 0.1, verts=14, rot=(PI2, 0, 0), r2=0.014)
+    p.append(smooth(sh))
+    for i in range(2):
+        p.append(ring(P["shell2"], 0.135 + i * 0.045, 0.035, 0.019 - i * 0.002, 0.008, verts=14))
+        p.append(bx(P["core"], (0, 0.157 + i * 0.03, 0.0525 - i * 0.002), (0.006, 0.018, 0.003), 0.001))
+    p.append(sphere(P["core"], (0, 0.213, 0.035), 0.012, seg=10, rings=8))
+    p += grip(m["black"], (0, -0.005, -0.04), (0.032, 0.04, 0.09), -0.25, m["poly"])
+    p += trigger(m["dark"], 0.03, -0.005)
+    p += plasma_mag(P, (0, -0.012, -0.05), rot=(-0.25, 0, 0), s=0.7)
+    save(p, "Plasma_pistol")
+
+def plasma_cannon():
+    """X-WEP-011: a long armoured body over the alien core, a wide emitter mouth, shoulder pad, front grip,
+    the PL-MAG in a well under the body."""
+    reset(); m, P = plasma_mats(); p = []
+    p.append(bx(m["dark"], (0, 0.1, 0.04), (0.1, 0.5, 0.11), 0.012, seg=2))
+    sh = cyl(P["shell"], (0, 0.5, 0.05), 0.05, 0.5, verts=16, rot=(PI2, 0, 0), r2=0.04)
+    p.append(smooth(sh))
+    for i in range(5):
+        p.append(ring(P["shell2"], 0.32 + i * 0.075, 0.05, 0.052 - i * 0.002, 0.022, verts=16))
+    for i in range(4):
+        p.append(bx(P["core"], (0, 0.34 + i * 0.075, 0.104), (0.018, 0.035, 0.006), 0.001))
+    p.append(sphere(P["core"], (0, 0.76, 0.05), 0.035, seg=14, rings=10))
+    for k in range(4):                                                                   # the mouth's prongs
+        a = k / 4 * math.tau + 0.785
+        p.append(tb(P["shell2"], (math.cos(a) * 0.035, 0.72, 0.05 + math.sin(a) * 0.035), (math.cos(a) * 0.05, 0.84, 0.05 + math.sin(a) * 0.05), 0.008, 8, r2=0.004))
+    p += grip(m["black"], (0, 0.0, -0.07), (0.04, 0.05, 0.11), -0.25, m["poly"])
+    p += trigger(m["dark"], 0.045, -0.01)
+    p.append(bx(m["black"], (0, 0.432, -0.05), (0.03, 0.04, 0.08), 0.006, seg=2))          # front grip
+    p.append(ring(m["dark"], 0.432, 0.05, 0.0495, 0.022, verts=16))                      # its clamp round the barrel
+    p.append(bx(m["dark"], (0, 0.432, -0.004), (0.026, 0.03, 0.024), 0.003))              # clamp foot down to the grip
+    p += plasma_mag(P, (0, 0.18, -0.04), s=1.0)
+    p.append(bx(m["black"], (0, -0.22, 0.04), (0.08, 0.16, 0.12), 0.01, seg=2))           # rear block
+    p.append(bx(m["rubber"], (0, -0.31, 0.03), (0.085, 0.02, 0.14), 0.004, seg=2))        # shoulder pad
+    p.append(bx(m["dark"], (0, 0.1, 0.12), (0.025, 0.2, 0.03), 0.006, seg=2))             # carry handle
+    save(p, "Plasma_cannon")
+
+def plasma_minigun():
+    """X-WEP-012: the minigun's frame and grips, two PL-MAGs in a feed block where the ammo box was, and a
+    rotor of six alien emitter tubes - a separate mesh "MinigunBarrels" the game spins."""
+    reset(); m, P = plasma_mats(); p = []
+    hs = cyl(m["dark"], (0, 0.05, 0.05), 0.07, 0.22, verts=18, rot=(PI2, 0, 0))
+    p.append(smooth(bev(hs, 0.006)))
+    for i in range(6):
+        p.append(ring(P["shell2"], -0.04 + i * 0.035, 0.05, 0.074, 0.008, verts=18))
+    p.append(bx(m["olive"], (0, -0.12, 0.03), (0.12, 0.16, 0.12), 0.01, seg=2))
+    p.append(bx(P["core"], (0.061, -0.15, 0.08), (0.004, 0.01, 0.006), 0.001))
+    p.append(bx(m["dark"], (0, -0.0, 0.16), (0.03, 0.3, 0.03), 0.006, seg=2))             # top handle
+    p.append(bx(m["dark"], (0, -0.12, 0.12), (0.03, 0.03, 0.08), 0.004))
+    p.append(bx(m["dark"], (0, 0.12, 0.12), (0.03, 0.03, 0.08), 0.004))
+    p += grip(m["black"], (0, -0.02, -0.06), (0.04, 0.05, 0.12), -0.3, m["poly"])
+    p += trigger(m["dark"], 0.02, -0.01)
+    p.append(bx(P["shell"], (-0.12, -0.05, -0.02), (0.1, 0.16, 0.12), 0.01, seg=2))      # feed block
+    for k in range(2):
+        p += plasma_mag(P, (-0.12, -0.09 + k * 0.08, -0.1), s=0.9)
+    body = join(p, "Plasma_minigun")
+    q = []
+    for i in range(6):
+        a = i / 6 * math.tau
+        x, z = math.cos(a) * 0.036, 0.05 + math.sin(a) * 0.036
+        q.append(ty(P["shell"], 0.16, 0.8, z, 0.013, x=x, verts=10))
+        q.append(sphere(P["core"], (x, 0.805, z), 0.009, seg=8, rings=6))
+    for y, r in ((0.3, 0.058), (0.55, 0.058), (0.75, 0.056)):
+        q.append(ring(P["shell2"], y, 0.05, r, 0.025, verts=16))
+        q.append(ring(P["core"], y + 0.014, 0.05, r + 0.001, 0.003, verts=16))
+    q.append(ty(m["dark"], 0.16, 0.8, 0.05, 0.012, verts=8))
+    for o in q:
+        for v in o.data.vertices:
+            v.co.z -= 0.05
+    barrels = join(q, "MinigunBarrels")
+    barrels.location = (0, 0, 0.05)
+    export_glb(os.path.join(OUTDIR, "plasma_minigun.glb"), [body, barrels])
+
+def plasma_grenade():
+    """X-WEP-010: a PL-MAG-01 cell in a squat alloy casing with a ring of green windows and a pressure cap."""
+    reset(); m, P = plasma_mats(); p = []
+    p.append(smooth(cyl(P["mag"], (0, 0, 0.0), 0.032, 0.075, verts=16)))
+    for k in range(6):
+        a = k / 6 * math.tau
+        p.append(bx(P["core"], (math.cos(a) * 0.031, math.sin(a) * 0.031, 0.0), (0.006, 0.006, 0.04), 0.001, rot=(0, 0, a)))
+    p.append(smooth(cyl(P["shell2"], (0, 0, 0.042), 0.026, 0.012, verts=16)))
+    p.append(smooth(cyl(m["dark"], (0, 0, 0.052), 0.01, 0.012, verts=10)))
+    p.append(smooth(cyl(P["shell2"], (0, 0, -0.042), 0.03, 0.01, verts=16)))
+    p.append(bx(m["dark"], (0.03, 0, 0.03), (0.006, 0.012, 0.03), 0.002))                 # the lever
+    save(p, "Plasma_grenade")
+
 ALL = dict(rifle=rifle, pistol=pistol, shotgun=shotgun, magnum=magnum, sniper=sniper, autocannon=autocannon,
            minigun=minigun, rocket=rocket, plasma_rifle=plasma_rifle, laser_pistol=laser_pistol,
            laser_rifle=laser_rifle, laser_cannon=laser_cannon, baton=baton, knife=knife, smoke=smoke,
-           mine=mine, handheld=handheld)
+           mine=mine, handheld=handheld, energo_nuz=energo_nuz, laser_minigun=laser_minigun,
+           jet_laser_mg=jet_laser_mg, jet_laser_cannon=jet_laser_cannon, plasma_pistol=plasma_pistol,
+           plasma_cannon=plasma_cannon, plasma_minigun=plasma_minigun, plasma_grenade=plasma_grenade)
 for k, f in ALL.items():
     if not ONLY or k in ONLY:
         f()
