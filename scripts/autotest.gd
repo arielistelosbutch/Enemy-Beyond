@@ -58,6 +58,8 @@ func _process(delta: float) -> void:
 		"zoo": _zoo(p)
 		"tactics": _tactics(p)
 		"basewalk": _basewalk(p)
+		"basenade": _basenade(p)
+		"basefly": _basefly(p)
 		"coophealhost", "coophealclient": _coopheal(p)
 		"coopwipehost", "coopwipeclient":
 			_skip_brief()
@@ -82,6 +84,7 @@ func _process(delta: float) -> void:
 				get_tree().quit()
 		"basepass": _passcheck(p)
 		"doorshot": _doorshot(p)
+		"blastdoor": _blastdoor(p)
 		"passcheck": _passcheck(p)
 		"camoshot": _camoshot(p)
 		"lookshot": _lookshot(p)
@@ -90,6 +93,7 @@ func _process(delta: float) -> void:
 		"airdeath": _airdeath(p)
 		"vipcheck": _vipcheck(p)
 		"climb": _climb(p)
+		"rocktest": _rocktest(p)
 		"leaveany": _leaveany(p)
 		"skyshot": _skyshot(p)
 		"zfight": _zfight(p)
@@ -128,6 +132,7 @@ func _process(delta: float) -> void:
 		"gunshots": _gunshots(p)
 		"topshot": _topshot(p)
 		"shieldtest": _shieldtest(p)
+		"shieldshot": _shieldshot(p)
 		"locktest": _locktest(p)
 		"mocapgame": _mocapgame(p)
 		"beltthrow": _beltthrow(p)
@@ -1690,6 +1695,77 @@ func _cloakshot(p: Node) -> void:
 	get_tree().quit()
 
 ## Our base: a picture of every room (ghost walk), then the terminals answer.
+## Throwables at the home base (Ari: the grenade there crashed the game): each kind thrown
+## by the player, the game must keep running after the blast.
+func _basenade(p: Node) -> void:
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.inventory_open = false
+	p.hp = 5000.0
+	for kind in ["grenade", "plasma_grenade", "smoke_grenade", "flare", "mine"]:
+		p.inv["rh"] = {"id": kind}
+		p._update_held()
+		await get_tree().process_frame
+		out("throw %s" % kind)
+		p._throw(kind, "rh")
+		await get_tree().create_timer(4.0).timeout
+		out("after %s ok, hp %.0f" % [kind, p.hp])
+	# then a frag grenade dropped in every room, next to the player (he gets hurt too)
+	var cells: Array = Net.mission_params["base"]
+	var gw := int(Net.mission_params["grid_w"])
+	for i in cells.size():
+		if String(cells[i]["type"]) == "":
+			continue
+		var o := Vector3((i % gw) * 12.0, 0, (i / gw) * 12.0)
+		p.hp = 5000.0
+		p.global_position = o + Vector3(6.0, 0.3, 6.0)
+		await get_tree().create_timer(0.3).timeout
+		out("room %s: grenade at the feet" % cells[i]["type"])
+		p._spawn_throwable.rpc("grenade", p.global_position + Vector3(1.5, 0.5, 0), Vector3.ZERO, p.name)
+		await get_tree().create_timer(3.2).timeout
+		out("room %s ok, hp %.0f" % [cells[i]["type"], p.hp])
+	var br: Array = m().map.get("breakables", [])
+	out("breakables %d broken %d" % [br.size(), br.filter(func(b): return not is_instance_valid(b) or b.get_meta("broken", false)).size()])
+	out("RESULT basenade ok")
+## Our base attacked: where the aliens come in (far from the team), and the Levits on their jets
+## never pass through a wall or the ceiling (rooms are H = 3.4 m high, the hangar 7 m).
+func _basefly(p: Node) -> void:
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	p.hp = 50000.0
+	var near := 1e9
+	for a in m().aliens():
+		near = minf(near, a.global_position.distance_to(p.global_position))
+	out("[FLY] start: nearest alien %.1f m from the team" % near)
+	var top := 0.0
+	var inside := 0
+	var flights := 0
+	var was := {}
+	var ss: PhysicsDirectSpaceState3D = p.get_world_3d().direct_space_state
+	for f in 60 * 70:
+		await get_tree().physics_frame
+		p.hp = 50000.0
+		if f % 300 == 0 and m().t > 16.0:
+			for a in m().aliens():
+				if not a.dead:
+					a.hear(p.global_position, 80.0)
+		for a in m().aliens():
+			if a.dead or not String(a.race).begins_with("levit"):
+				continue
+			if a.flying and not was.get(a.name, false):
+				flights += 1
+			was[a.name] = a.flying
+			top = maxf(top, a.global_position.y)
+			var q := PhysicsPointQueryParameters3D.new()
+			q.position = a.global_position + Vector3(0, 1.0, 0)
+			q.collision_mask = Game.WORLD
+			if not ss.intersect_point(q, 1).is_empty():
+				inside += 1
+	out("RESULT basefly top %.2f inside %d flights %d hp %.0f" % [top, inside, flights, p.hp])
+	get_tree().quit()
+
 func _basewalk(p: Node) -> void:
 	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
 		return
@@ -1827,6 +1903,35 @@ func _suittest(p: Node) -> void:
 	get_tree().quit()
 
 ## The shield: low it stops half from the front, up nearly all; acid wears it out until it breaks.
+## Pictures through the raised shield's window: with the flashlight off and on (Ari: the light
+## used to make the window glow, nothing could be seen through it).
+func _shieldshot(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.hp = 9999.0
+	for a in m().aliens():
+		a.set_physics_process(false)
+	p.inv["rh"] = {"id": "pistol", "loaded": 10}
+	p.inv["lh"] = {"id": "stit"}
+	p._update_held()
+	m().hud.inventory_open = false
+	var n := 0
+	for lit in [false, true]:
+		p.light_on = lit
+		for up in [false, true]:
+			if up:
+				Input.action_press("aim")
+			else:
+				Input.action_release("aim")
+			await get_tree().create_timer(1.0).timeout
+			get_viewport().get_texture().get_image().save_png("user://shield_%s_%s.png" % ["light" if lit else "dark", "up" if up else "low"])
+			n += 1
+	Input.action_release("aim")
+	out("RESULT shieldshot %d" % n)
+	get_tree().quit()
+
 func _shieldtest(p: Node) -> void:
 	_skip_brief()
 	if p == null or step > 0 or not m().started():
@@ -2852,6 +2957,10 @@ func _weaktest(p: Node) -> void:
 	# mines: a pressure plate - the floating disc passes over, the Bijec's foot sets it off
 	dk.set_physics_process(false)
 	b.set_physics_process(false)
+	for oa in m().aliens():
+		if oa != dk and oa != b and not oa.dead:
+			oa.global_position += Vector3(0, -300, 0)      # (the others away: one came to look at the bodies and stepped on the disc's mine)
+			oa.set_physics_process(false)
 	m().add_mine(dk.global_position, p.name)
 	m().add_mine(b.global_position, p.name)
 	var n0: int = m().mines.size()
@@ -3805,6 +3914,134 @@ func _climb(p: Node) -> void:
 	out("RESULT climb %s" % ("ok" if absf(results[0] - 2.0) < 0.3 and absf(results[1] - 2.9) < 0.3 and roof_ok else "FAIL"))
 	get_tree().quit()
 
+## 0.60: stones are solid. Every stone with collision must be solid inside (not a hollow box),
+## a merc walking straight at a big one stops at its face (not inside, not through it), and
+## the aliens' paths go round it (no navigation mesh inside the stone).
+func _rocktest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	m().hud.inventory_open = false
+	for a in m().aliens():
+		a.set_physics_process(false)
+	await get_tree().create_timer(2.0).timeout      # (the paths' map takes a few frames to sync)
+	var space: PhysicsDirectSpaceState3D = p.get_world_3d().direct_space_state
+	var nmap: RID = p.get_world_3d().navigation_map
+	var rocks := []
+	for n in m().find_children("*", "Node3D", true, false):
+		var mn := String(n.get_meta("model", ""))
+		if (mn.begins_with("v_rock_") or mn.begins_with("mars_rock")) and not n.find_children("*", "StaticBody3D", true, false).is_empty():
+			var bb := AABB()
+			var first := true
+			for mi in n.find_children("*", "MeshInstance3D", true, false):
+				var b: AABB = (mi as MeshInstance3D).global_transform * (mi as MeshInstance3D).get_aabb()
+				bb = b if first else bb.merge(b)
+				first = false
+			rocks.append([n, bb])
+	var hollow := 0
+	var nav_in := 0
+	var big := []
+	var pt := SphereShape3D.new()
+	pt.radius = 0.05
+	for r in rocks:
+		var n: Node3D = r[0]
+		var bb: AABB = r[1]
+		var c := n.global_position
+		var gy := c.y
+		var hgt := bb.end.y - gy
+		var q := PhysicsShapeQueryParameters3D.new()
+		q.shape = pt
+		q.collision_mask = 1
+		q.transform = Transform3D(Basis.IDENTITY, Vector3(c.x, gy + minf(0.25, hgt * 0.5), c.z))
+		if space.intersect_shape(q, 4).filter(func(h): return (h["collider"] as Node).is_ancestor_of(n) or n.is_ancestor_of(h["collider"])).is_empty():
+			hollow += 1
+		var half := minf(bb.size.x, bb.size.z) / 2.0
+		if half > 0.75:
+			var np := NavigationServer3D.map_get_closest_point(nmap, Vector3(c.x, gy, c.z))
+			if Vector2(np.x - c.x, np.z - c.z).length() < half * 0.35 and absf(np.y - gy) < 0.5:
+				nav_in += 1
+				out("nav inside %s at %s (h %.1f, half %.1f): path point %s" % [n.get_meta("model", ""), c.snapped(Vector3.ONE * 0.1), hgt, half, np.snapped(Vector3.ONE * 0.01)])
+		if hgt > 0.7 and half > 0.45:
+			big.append(r)
+	big.sort_custom(func(a, b): return a[1].size.x * a[1].size.z > b[1].size.x * b[1].size.z)
+	var walked := 0
+	var bad := 0
+	for r in big.slice(0, 12):
+		var n: Node3D = r[0]
+		var bb: AABB = r[1]
+		var c := Vector3(n.global_position.x, n.global_position.y, n.global_position.z)
+		var reach := maxf(bb.size.x, bb.size.z) / 2.0 + 1.2
+		var start := Vector3.ZERO
+		var found := false
+		for k in 8:
+			var a := TAU * k / 8.0
+			var s0 := c + Vector3(sin(a), 0, cos(a)) * reach
+			var q2 := PhysicsShapeQueryParameters3D.new()
+			var cap := CapsuleShape3D.new()
+			cap.radius = 0.4
+			cap.height = 1.8
+			q2.shape = cap
+			q2.collision_mask = 1 | 64 | 128
+			q2.transform = Transform3D(Basis.IDENTITY, s0 + Vector3(0, 1.0, 0))
+			if space.intersect_shape(q2, 1).is_empty():
+				start = s0
+				found = true
+				break
+		if not found:
+			continue
+		var d := (c - start)
+		d.y = 0
+		d = d.normalized()
+		p.global_position = start + Vector3(0, 0.1, 0)
+		p.rotation.y = atan2(-d.x, -d.z)
+		p.velocity = Vector3.ZERO
+		for f in 10: await get_tree().physics_frame
+		Input.action_press("move_forward")
+		# the stone's visible surface: its vertices from the knee to the head
+		var vs := PackedVector3Array()
+		for mi in n.find_children("*", "MeshInstance3D", true, false):
+			var gx: Transform3D = (mi as MeshInstance3D).global_transform
+			for v in (mi as MeshInstance3D).mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
+				var w: Vector3 = gx * v
+				if w.y > c.y + 0.2 and w.y < c.y + 1.6:
+					vs.append(w)
+		var overlap := 0     # frames the merc's body (a bit slimmer than his own) was in the stone
+		var deep := 0.0      # how far the merc's body went into the stone he can see
+		for f in 150:
+			await get_tree().physics_frame
+			var pc: Vector3 = p.global_position
+			var to := Vector2(pc.x - c.x, pc.z - c.z)
+			if to.length() < 0.01 or vs.is_empty():
+				deep = 9.0
+				continue
+			var dir2 := to.normalized()
+			var ext := 0.0
+			for w in vs:
+				ext = maxf(ext, Vector2(w.x - c.x, w.z - c.z).dot(dir2))
+			deep = maxf(deep, ext + 0.35 - to.length())
+			var qc := PhysicsShapeQueryParameters3D.new()
+			var cap2 := CapsuleShape3D.new()
+			cap2.radius = 0.3
+			cap2.height = 1.6
+			qc.shape = cap2
+			qc.collision_mask = 1
+			qc.transform = Transform3D(Basis.IDENTITY, pc + Vector3(0, 0.9, 0))
+			for h in space.intersect_shape(qc, 6):
+				if n.is_ancestor_of(h["collider"]):
+					overlap += 1
+		Input.action_release("move_forward")
+		for f in 5: await get_tree().physics_frame
+		walked += 1
+		if overlap > 0:
+			bad += 1
+		out("rock %s at %s: overlap %d frames, visual depth %.2f m" % [n.get_meta("model", ""), c.snapped(Vector3.ONE * 0.1), overlap, deep])
+		if walked == 1 and DisplayServer.get_name() != "headless":
+			await get_tree().create_timer(0.3).timeout
+			get_viewport().get_texture().get_image().save_png("user://rock_wall.png")
+	out("RESULT rocktest %d stones, %d hollow, %d nav inside, walked %d, %d bad" % [rocks.size(), hollow, nav_in, walked, bad])
+	get_tree().quit()
+
 ## Rescue spots: a person standing there must fit - nothing solid in the body, no roof through the head.
 func _vipcheck(p: Node) -> void:
 	_skip_brief()
@@ -4170,6 +4407,74 @@ func _passcheck(p: Node) -> void:
 				var dd: Dictionary = m().doors[di]
 				out("   door: base %.2f now %.2f pivot %s spec %s" % [float(dd["base"]), (dd["pivot"] as Node3D).rotation.y, str(snapped((dd["pivot"] as Node3D).global_position, Vector3(0.1, 0.1, 0.1))), str(m().map["doors"][di])])
 	out("RESULT passcheck %d ways, %d blocked" % [ways.size(), bad])
+	get_tree().quit()
+
+## 0.60 blast doors of the base: E shuts one (it blocks a ray through the doorway), a grey at it
+## pries it open in about BLAST_PRY s, a Bijec twice as fast; E by a dropped item still shuts it.
+func _blastdoor(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().go:
+		return
+	step = 1
+	p.set_meta("ghost", true)
+	p.hp = 5000.0
+	for a in m().aliens():
+		a.queue_free()
+	var bl: Array = m().doors.filter(func(d): return d.has("slide"))
+	out("blast doors %d (of %d), open at start %d" % [bl.size(), m().doors.size(), bl.filter(func(d): return d["open"]).size()])
+	if bl.is_empty():
+		out("RESULT blastdoor FAIL no doors"); get_tree().quit(); return
+	var d: Dictionary = bl[0]
+	var i: int = m().doors.find(d)
+	var c: Vector3 = d["c"]
+	var nrm := Vector3(0, 0, 1).rotated(Vector3.UP, float(d["base"]))
+	# a dropped item between the player and the door: E still shuts it (the door is nearer)
+	p.global_position = c + nrm * 0.9 + Vector3(0, 0.1, 0)
+	m().drop_item({"id": "medkit"}, c + nrm * 2.4)
+	await get_tree().create_timer(0.5).timeout
+	var first: bool = p._door_first()
+	m().use_door(i, p.global_position)
+	await get_tree().create_timer(1.2).timeout
+	var ray := PhysicsRayQueryParameters3D.create(c + nrm * 1.5 + Vector3(0, 1.2, 0), c - nrm * 1.5 + Vector3(0, 1.2, 0), 64)
+	var hit: Dictionary = p.get_world_3d().direct_space_state.intersect_ray(ray)
+	var blocks: bool = not hit.is_empty() and hit["collider"] == d["body"]
+	out("shut %s blocks %s door_first %s" % [not d["open"], blocks, first])
+	if DisplayServer.get_name() != "headless":
+		p.global_position = c + nrm * 3.0 + Vector3(0, 0.3, 0)
+		p.light_on = true
+		_aim_at(p, c + Vector3(0, 1.2, 0))
+		for f in 20: await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png("user://blast_0.png")
+		m().use_door(i, p.global_position)
+		await get_tree().create_timer(0.45).timeout
+		get_viewport().get_texture().get_image().save_png("user://blast_1.png")
+		await get_tree().create_timer(0.8).timeout
+		get_viewport().get_texture().get_image().save_png("user://blast_2.png")
+		m().use_door(i, p.global_position)
+		await get_tree().create_timer(1.2).timeout
+	p.global_position = c + nrm * 6.0 + Vector3(0, 0.3, 0)
+	var times := []
+	for race in ["grey", "bijec"]:
+		if d["open"]:
+			m().use_door(i, p.global_position)
+			await get_tree().create_timer(1.0).timeout
+		m().spawn_alien(race, c - nrm * 0.75 + Vector3(0, 0.3, 0))
+		await get_tree().create_timer(0.2).timeout
+		var al = m().aliens().filter(func(a): return a.race == race and not a.dead)
+		if al.is_empty():
+			out("RESULT blastdoor FAIL no %s" % race); get_tree().quit(); return
+		al[0].set_physics_process(false)
+		al[0].global_position = c - nrm * 0.75 + Vector3(0, 0.3, 0)
+		var waited := 0      # in game time (a slow machine renders fewer frames, the timers stay true)
+		while not d["open"] and waited < 120:
+			await get_tree().create_timer(0.1).timeout
+			waited += 1
+		times.append(waited / 10.0)
+		out("%s pried it open %s after %.1f s" % [race, d["open"], times[-1]])
+		al[0].queue_free()
+		await get_tree().create_timer(0.3).timeout
+	var ok: bool = first and blocks and times.size() == 2 and times[0] > 2.0 and times[0] < 5.0 and times[1] < times[0] and d["open"]
+	out("RESULT blastdoor %s" % ("OK" if ok else "FAIL"))
 	get_tree().quit()
 
 ## Doors and glass: a closed door, the same door opened by E, a window before and after a shot.

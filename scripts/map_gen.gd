@@ -85,6 +85,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	if mtype == "mars":
 		_mars()
 		_borders()
+		_stone_obstacles()
 		nav.bake_navigation_mesh(false)
 		return info
 	# layout: UFO 2x2 somewhere in the middle, the Kondor at an edge block
@@ -250,6 +251,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	_untangle()
 	if Game.autotest() != "zfight":
 		_merge_static()
+	_stone_obstacles()
 	nav.bake_navigation_mesh(false)
 	if Game.autotest() != "": print("[MAP] nav done %d ms" % (Time.get_ticks_msec() - _t0))
 	return info
@@ -634,6 +636,8 @@ func _prop(name: String, p: Vector3, yaw := 0.0, cover := true) -> Node3D:
 	root.add_child(n)
 	n.position = p
 	n.rotation.y = yaw
+	if name.begins_with("rock_"):
+		_solid_stone(n)
 	if name.begins_with("car"):
 		_cars.append(n)
 	if not name in ["house_roof", "window"]:
@@ -801,12 +805,102 @@ func _rock(p: Vector3, size := 1.0, solid := true) -> Node3D:
 	var base := {"rock_a": 1.0, "rock_b": 0.75, "rock_c": 1.5, "rock_d": 0.45}
 	var n := _prop(nm, p, rng.randf() * TAU, false)
 	n.scale = Vector3.ONE * clampf(size / float(base[nm]), 0.3, 3.0)
-	if not solid:
+	# 0.60: only real pebbles (under a shin high) stay walk-through - nobody wades through a stone
+	if not solid and ROCK_TOP[nm] * n.scale.y < 0.3:
 		for sb in n.find_children("*", "StaticBody3D", true, false):
 			sb.free()
 		n.set_meta("nocol", true)
 	_nature_skin(n)
 	return n
+
+## How high the stones' models reach above the ground (m, before scaling).
+const ROCK_TOP := {"rock_a": 1.15, "rock_b": 1.01, "rock_c": 1.96, "rock_d": 0.64}
+
+## 0.60: a stone is solid in its real shape. The models came with a box as a hollow trimesh,
+## smaller than the stone: mercs and aliens walked into it (and once inside, through it).
+## Now one convex hull of the stone's own mesh (cached per model); the paths are baked from
+## it too (static colliders). Called for every stone: generated, from a saved piece, on Mars.
+var _hulls := {}
+func _solid_stone(n: Node3D) -> void:
+	var key := String(n.get_meta("model", n.name))
+	n.set_meta("stone", true)
+	if not _hulls.has(key):
+		var pts := PackedVector3Array()
+		for mi in n.find_children("*", "MeshInstance3D", true, false):
+			var xf: Transform3D = _rel_xform(mi, n)
+			var mesh: Mesh = (mi as MeshInstance3D).mesh
+			for sf in mesh.get_surface_count():
+				for v in mesh.surface_get_arrays(sf)[Mesh.ARRAY_VERTEX]:
+					pts.append(xf * v)
+		var hull := ConvexPolygonShape3D.new()
+		hull.points = pts      # (the physics takes the hull of the points itself)
+		_hulls[key] = hull
+	var bodies := n.find_children("*", "StaticBody3D", true, false)
+	if bodies.is_empty():
+		var nb := StaticBody3D.new()
+		n.add_child(nb)
+		bodies = [nb]
+	for i in bodies.size():
+		var sb: StaticBody3D = bodies[i]
+		for c in sb.get_children():
+			if c is CollisionShape3D:
+				sb.remove_child(c)
+				c.free()
+		if i > 0:
+			continue
+		var cs := CollisionShape3D.new()
+		cs.shape = _hulls[key]
+		cs.transform = _rel_xform(sb, n).affine_inverse()
+		sb.add_child(cs)
+
+## The paths are baked from surfaces only: under a big stone (its bottom is below the ground)
+## the ground stayed "walkable", an island inside the stone, and its flat top too. An outline
+## of each stone (from the knee up, where you cannot step over it) cuts both out of the paths.
+## Called just before the paths are baked, when the stones stand where they stay.
+func _stone_obstacles() -> void:
+	var n_ob := 0
+	for n in root.find_children("*", "Node3D", true, false):
+		if not n.has_meta("stone") or n.has_meta("nocol") or n.find_children("*", "StaticBody3D", true, false).is_empty():
+			continue
+		var base: Vector3 = (n as Node3D).global_position
+		var pts := PackedVector2Array()
+		var top := base.y
+		for mi in n.find_children("*", "MeshInstance3D", true, false):
+			var gx: Transform3D = (mi as MeshInstance3D).global_transform
+			var mesh: Mesh = (mi as MeshInstance3D).mesh
+			for sf in mesh.get_surface_count():
+				for v in mesh.surface_get_arrays(sf)[Mesh.ARRAY_VERTEX]:
+					var w: Vector3 = gx * v
+					top = maxf(top, w.y)
+					if w.y > base.y + 0.3:
+						pts.append(Vector2(w.x - base.x, w.z - base.z))
+		if top - base.y < 0.4 or pts.size() < 3:
+			continue        # (a stone you step over: the paths go across it)
+		var hull := Geometry2D.convex_hull(pts)
+		if hull.size() < 4:
+			continue
+		var ob := NavigationObstacle3D.new()
+		ob.name = "StoneOut"
+		ob.avoidance_enabled = false
+		ob.affect_navigation_mesh = true
+		ob.height = top - base.y + 0.2
+		var v3 := PackedVector3Array()
+		for q in hull:
+			v3.append(Vector3(q.x, 0, q.y))
+		ob.vertices = v3
+		root.add_child(ob)
+		ob.global_position = base
+		n_ob += 1
+	if Game.autotest() != "": print("[MAP] stones cut out of the paths: %d" % n_ob)
+
+func _rel_xform(a: Node3D, top: Node3D) -> Transform3D:
+	var xf := Transform3D.IDENTITY
+	var x: Node = a
+	while x != null and x != top:
+		if x is Node3D:
+			xf = (x as Node3D).transform * xf
+		x = x.get_parent()
+	return xf
 
 ## A model whose collision can be shot to pieces (a railing, a fence panel): the model goes with it.
 func _breakable_model(n: Node3D, kind: String) -> void:
@@ -3136,6 +3230,8 @@ func _prop_m(model: String, p: Vector3, yaw: float, sc: float) -> void:
 	n.position = p
 	n.rotation.y = yaw
 	n.scale = Vector3.ONE * sc
+	if model.begins_with("mars_rock"):
+		_solid_stone(n)
 
 ## A dark drag trail: from the farmhouse door towards the crash site. Ends
 ## halfway, in the middle of nowhere.

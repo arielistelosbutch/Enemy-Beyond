@@ -35,6 +35,7 @@ run pass_farm_$sd 200 h "passcheck .* 0 blocked"           --autotest=passcheck 
 done
 run menu_ui     300 x "\[UI\] ready: 0"                    --autotest=ui
 run mods_ui     200 x "\[MODS\] bought true"              --autotest=modsui
+run presets     200 x "\[PRESET\] first false list true merc true levels true dice_nolevels true gear true" --autotest=presets
 run sights      700 x "scope mode=scope on=true"          --autotest=sightshot --day=1
 run menu_flick  200 x "RESULT menuflicker 0"               --autotest=menuflicker
 run geo_ui      300 x "\[UI\] geo_ency_grey: 0"            --autotest=uigeo
@@ -45,9 +46,11 @@ run drone       420 x "first fall: downed false" --autotest=dronetest
 run voice       200 h "RESULT voice: snippets \[1\]"       --autotest=voice
 run basewalk    400 x "RESULT basewalk 16"                 --autotest=basewalk
 run base_attack 400 x "RESULT basewalk 16"                 --autotest=basewalk --attack=1
+run base_fly    300 h "RESULT basefly top [0-2]\.[0-9]+ inside 0 " --autotest=basefly --attack=1 --crew=levit,levit,levit_velitel,grey
 run alienbase   400 x "RESULT abase"                       --autotest=abase --mtype=alienbase
 run fire        450 x "RESULT fireshot"                    --autotest=fireshot
 run doors       300 x "RESULT doorshot"                    --autotest=doorshot --biome=farm
+run blastdoor   300 h "RESULT blastdoor OK"                --autotest=blastdoor
 # co-op: two games at once (host and client on this machine)
 pair() {   # name, host mode, client mode, expected in host log, expected in client log, port
   local name=$1
@@ -69,9 +72,11 @@ pair coop_base    lbhost lbclient       "start_mission"            "RESULT lb lb
 pair coop_wipe    coopwipehost coopwipeclient "globe ready"     "END\\] leave"                  7904
 pair geo_live geolivehost geoliveclient "globe ready \(viewer false\)" "RESULT geolive day \+0\.0[1-9][0-9]* craft moved [1-9]" 7912
 pair ai_coop    aimphost aimpclient "RESULT aimp old 0 hide [1-9]" "AIMP aimpclient" 7913
+pair lobby_kick kickhost kickclient "RESULT kick summary rows 2 ping [0-9]+ mic open after 1 rejoined false" "RESULT kick client .*vyhodil.*za 5 min" 7914
 run airdeath    150 h "RESULT airdeath ok"                 --autotest=airdeath --group=levite
 run vipcheck    200 h "RESULT vipcheck [0-9]+ spots, 0 bad" --autotest=vipcheck --mtype=rescue
 run climb       200 x "RESULT climb ok"                    --autotest=climb --mtype=terror --biome=farm
+run rocks       250 x "RESULT rocktest [0-9]+ stones, 0 hollow, 0 nav inside, walked 12, 0 bad" --autotest=rocktest --mtype=crash --biome=mountain --seed=7 --day=1
 run ws_click    100 x "RESULT wsclick bone true ring true item true" --autotest=wsclick
 run agun        150 x "RESULT agun ([0-9]+) of \1"        --autotest=agun
 run modelcheck  120 h "RESULT modelcheck [0-9]+ problems"  --autotest=modelcheck

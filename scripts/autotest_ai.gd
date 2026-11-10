@@ -79,6 +79,8 @@ static func _aimp(at: Node, p: Node) -> void:
 	at.out("AIMP %s at %s" % [at.mode, p.global_position])
 	if not host:
 		await at.get_tree().create_timer(95.0).timeout
+		if not is_instance_valid(at):
+			return      # the host finished first and left: the client went back to the menu
 		at.out("RESULT aimp client hp %.0f" % (p.hp if is_instance_valid(p) else -1.0))
 		at.get_tree().quit()
 		return

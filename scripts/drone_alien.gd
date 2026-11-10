@@ -157,6 +157,7 @@ func _climb_up(at: Vector3) -> bool:
 		_wall_top = up
 		_wall_n = n
 		_jet = [base, up, top]
+		_jet_free = _jet.size()     # climbing up the wall: hugs it, no air check
 		_jet_perch = true
 		flying = true
 		airborne = true
@@ -173,6 +174,7 @@ func _climb_down() -> void:
 	var off := (Vector3(_wall_base.x, 0, _wall_base.z) - Vector3(_wall_top.x, 0, _wall_top.z))
 	var dest: Vector3 = mission.free_spot(_wall_base + Vector3(rng.randf_range(-3, 3), 0.2, rng.randf_range(-3, 3)) + off * 2.0)
 	_jet = [_wall_top, _wall_base, dest]
+	_jet_free = _jet.size()
 	_jet_perch = false
 	flying = true
 	airborne = true

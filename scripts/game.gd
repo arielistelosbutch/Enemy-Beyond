@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.60 prototyp"
-const VERSION_NUM := "0.60"
+const VERSION := "0.61 prototyp"
+const VERSION_NUM := "0.61"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -1238,6 +1238,69 @@ const KITS := {
 	"Štítař": {"rh": "pistol", "lh": "stit", "armor": "vesta", "b0": "pistol_clip", "b1": "pistol_clip", "b2": "grenade", "b3": "radio", "p0": "pistol_clip", "p1": "medkit", "p2": "smoke_grenade", "p3": "flare", "p4": "knife"},
 }
 var loadout := {}    # slot -> item id
+
+# ---- 0.60: the player's own templates (soldiers die often - no need to make each one again) ----
+## Kept on this computer only (user://presety.cfg), not with the merc, so they outlive him.
+## "merc" = the looks, the name and (only when made with the points, never a lucky dice roll)
+## the levels; "gear" = a full loadout (trimmed to the stores only when it is put on).
+## Co-op: each player keeps his own; what they make goes the usual way (save_merc + Net).
+var preset_file := "user://presety.cfg"
+const PRESET_MAX := 6
+
+func presets(kind: String) -> Array:
+	var cf := ConfigFile.new()
+	if cf.load(preset_file) != OK:
+		return []
+	var out: Array = []
+	for p in cf.get_value("presets", kind, []):
+		if p is Dictionary:
+			out.append(p)
+	return out
+
+func _save_presets(kind: String, list: Array) -> void:
+	var cf := ConfigFile.new()
+	cf.load(preset_file)
+	cf.set_value("presets", kind, list)
+	cf.save(preset_file)
+
+## Saves (or overwrites the one with the same label); false when the list is full.
+func save_preset(kind: String, label: String, data: Dictionary) -> bool:
+	var list := presets(kind)
+	var d := data.duplicate(true)
+	d["label"] = label
+	for i in list.size():
+		if String(list[i].get("label", "")) == label:
+			list[i] = d
+			_save_presets(kind, list)
+			return true
+	if list.size() >= PRESET_MAX:
+		return false
+	list.append(d)
+	_save_presets(kind, list)
+	return true
+
+func delete_preset(kind: String, i: int) -> void:
+	var list := presets(kind)
+	if i >= 0 and i < list.size():
+		list.remove_at(i)
+		_save_presets(kind, list)
+
+## The soldier template from a merc being made (levels only from the points - dice stay dice).
+func merc_preset(m: Dictionary, points: bool) -> Dictionary:
+	var d := {"look": (m.get("look", {}) as Dictionary).duplicate(true), "name": String(m.get("name", ""))}
+	if points:
+		d["levels"] = (m.get("levels", {}) as Dictionary).duplicate()
+	return d
+
+## A free label "<base>", "<base> 2", ...
+func preset_label(kind: String, base: String) -> String:
+	var used := presets(kind).map(func(p): return String(p.get("label", "")))
+	if not base in used:
+		return base
+	for n in range(2, 99):
+		if not ("%s %d" % [base, n]) in used:
+			return "%s %d" % [base, n]
+	return base
 
 func stash_for(vet: bool) -> Dictionary:
 	if not Net.mission_params.is_empty() and Net.mission_params.has("stash"):

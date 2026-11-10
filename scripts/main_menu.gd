@@ -37,6 +37,11 @@ func _ready() -> void:
 		elif scr == "merc": _show_merc()
 		elif scr == "money": _show_money()
 		elif scr == "mods": _show_mods()
+	elif Net.drop_reason != "":
+		# the line to the host ended outside the menu (kicked on his globe, he quit)
+		var why := Net.drop_reason
+		Net.drop_reason = ""
+		_show_main(why)
 	elif Net.is_online() and not multiplayer.is_server():
 		_show_lobby()
 	elif Game.autotest() == "" and Game.seen_version != Game.VERSION_NUM and Game.changelog().has(Game.VERSION_NUM):
@@ -799,12 +804,17 @@ var _cr_model: Node3D
 var _cr_rot := PI + 0.4
 var _cr_face := false
 var _cr_tab := 0          # 0.57: looks tab (face / clothes / trinkets)
+var _cr_presets := false  # 0.60: the right column shows the saved soldier templates
+var _cr_note := ""
 var _cr_lock := false
 var _cr_cam: Camera3D
 var _cr_ui: PanelContainer
 
 func _show_create(full: bool) -> void:
 	_cr_full = full
+	_cr_note = ""
+	# 0.60: a new soldier (after a death, most often) starts on the saved templates, if there are any
+	_cr_presets = full and not Game.presets("merc").is_empty()
 	if full:
 		_cr = Game.new_merc()
 		_cr_mode = "points"
@@ -921,6 +931,119 @@ func _build_create() -> void:
 		_cr_auto_name = true
 		_build_create())
 	rn.custom_minimum_size = Vector2(90, 0)
+	if _cr_presets:
+		_build_merc_presets(right)
+	else:
+		_build_stats(right)
+	var brow := HBoxContainer.new()
+	brow.add_theme_constant_override("separation", 6)
+	right.add_child(brow)
+	var ok := _small_btn(brow, "NAVERBOVAT" if _cr_full else "ULOŽIT VZHLED", func():
+		_cr["created"] = true
+		if _cr_full:
+			_cr["made"] = _cr_mode      # 0.60: a template keeps the levels only of a points-made soldier
+			_cr["money"] = int(Game.merc.get("money", 0))
+			Game.merc = _cr
+		else:
+			Game.merc["look"] = _cr["look"]
+			Game.merc["name"] = _cr["name"]
+		Game.save_merc()
+		Net.reregister()
+		_show_merc())
+	ok.custom_minimum_size = Vector2(150, 18)
+	if _cr_full:
+		var used3 := 0
+		for st in Game.STAT_ORDER:
+			used3 += int(_cr["levels"][st])
+		ok.disabled = _cr_mode == "points" and used3 < Game.LEVEL_POOL
+		if ok.disabled:
+			ok.tooltip_text = "Nejdřív rozděl všechny body."
+	var pb := _small_btn(brow, ("● " if _cr_presets else "") + "Šablony (%d)" % Game.presets("merc").size(), func(): _cr_presets = not _cr_presets; _cr_note = ""; _build_create())
+	pb.custom_minimum_size = Vector2(90, 18)
+	_small_btn(brow, "Zpět", _create_back).custom_minimum_size = Vector2(80, 18)
+
+## Back from the creation screen: to the roster, or - for the only, not yet made soldier (the roster
+## would open this screen again) - where the player came from: the globe, the co-op lobby, the menu.
+func _create_back() -> void:
+	if Game.merc.get("created", true) or Game.mercs.size() > 1:
+		_show_merc()
+	elif _back_target != "" or Net.is_online():
+		_back()
+	else:
+		_show_main()
+
+## 0.60: the saved soldier templates - put one on (looks, name, the points) or save this one.
+func _build_merc_presets(right: VBoxContainer) -> void:
+	_rlabel(right, "ŠABLONY VOJÁKŮ", ACCENT, 10)
+	_rlabel(right, "Uložený vzhled a jméno; u vojáka z rozdělených bodů i jeho body. Hod kostkami se neukládá - kostky se házejí vždy znovu.", FRAME, 7)
+	var list := Game.presets("merc")
+	if list.is_empty():
+		_rlabel(right, "Zatím žádná šablona.", TEXT, 8)
+	for i in list.size():
+		var k := i
+		var pr: Dictionary = list[i]
+		var prow := HBoxContainer.new()
+		prow.add_theme_constant_override("separation", 3)
+		right.add_child(prow)
+		var what := "body" if pr.has("levels") else "jen vzhled"
+		var lb := _small_btn(prow, "%s  -  %s (%s)" % [String(pr.get("label", "?")), String(pr.get("name", "")), what], func(): _apply_merc_preset(pr))
+		lb.custom_minimum_size = Vector2(330, 16)
+		lb.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		var db := _small_btn(prow, "×", func(): Game.delete_preset("merc", k); _cr_note = ""; _build_create())
+		db.custom_minimum_size = Vector2(22, 16)
+		db.tooltip_text = "Smazat šablonu"
+	var srow := HBoxContainer.new()
+	srow.add_theme_constant_override("separation", 3)
+	right.add_child(srow)
+	var le := LineEdit.new()
+	le.text = Game.preset_label("merc", String(_cr.get("name", "Voják")))
+	le.custom_minimum_size = Vector2(200, 0)
+	le.add_theme_font_size_override("font_size", 9)
+	srow.add_child(le)
+	var points := _cr_mode == "points" if _cr_full else String(_cr.get("made", "")) == "points"
+	var sb := _small_btn(srow, "Uložit tohoto vojáka", func():
+		var lbl := le.text.strip_edges()
+		if lbl == "":
+			lbl = Game.preset_label("merc", String(_cr.get("name", "Voják")))
+		if Game.save_preset("merc", lbl, Game.merc_preset(_cr, points)):
+			_cr_note = "Uloženo: " + lbl + ("" if points else " (bez bodů)")
+		else:
+			_cr_note = "Plno (%d šablon) - nejdřív nějakou smaž." % Game.PRESET_MAX
+		_build_create())
+	sb.custom_minimum_size = Vector2(130, 16)
+	if _cr_note != "":
+		_rlabel(right, _cr_note, Color(0.6, 1.0, 0.6), 8)
+
+func _apply_merc_preset(pr: Dictionary) -> void:
+	var lk: Dictionary = pr.get("look", {})
+	if not lk.is_empty():
+		_cr["look"] = lk.duplicate(true)
+	if _cr_full:
+		var nm := String(pr.get("name", "")).strip_edges()
+		if nm != "":
+			# two soldiers of the same name in the roster would mix up (the missing one is found by name)
+			var taken := false
+			for i in Game.mercs.size():
+				if i != Game.active and String(Game.mercs[i].get("name", "")) == nm:
+					taken = true
+			_cr["name"] = nm + " ml." if taken else nm
+			_cr_auto_name = false
+		var lv: Dictionary = pr.get("levels", {})
+		var sum := 0
+		var good := not lv.is_empty()
+		for st in Game.STAT_ORDER:
+			var l := int(lv.get(st, -1))
+			good = good and l >= 0 and l <= Game.LEVEL_MAX
+			sum += l
+		if good and sum <= Game.LEVEL_POOL:
+			_cr_mode = "points"
+			Game.set_levels(_cr, lv)
+	_cr_note = ""
+	_cr_presets = false
+	_build_create()
+
+## The points / dice and the six stats (right column of the creation screen).
+func _build_stats(right: VBoxContainer) -> void:
 	if _cr_full:
 		var mrow := HBoxContainer.new()
 		right.add_child(mrow)
@@ -982,29 +1105,6 @@ func _build_create() -> void:
 		val.add_theme_color_override("font_color", Color(1, 1, 1))
 		srow.add_child(val)
 		_rlabel(right, Game.STAT_HELP[key], FRAME, 7)
-	var brow := HBoxContainer.new()
-	brow.add_theme_constant_override("separation", 6)
-	right.add_child(brow)
-	var ok := _small_btn(brow, "NAVERBOVAT" if _cr_full else "ULOŽIT VZHLED", func():
-		_cr["created"] = true
-		if _cr_full:
-			_cr["money"] = int(Game.merc.get("money", 0))
-			Game.merc = _cr
-		else:
-			Game.merc["look"] = _cr["look"]
-			Game.merc["name"] = _cr["name"]
-		Game.save_merc()
-		Net.reregister()
-		_show_merc())
-	ok.custom_minimum_size = Vector2(150, 18)
-	if _cr_full:
-		var used3 := 0
-		for st in Game.STAT_ORDER:
-			used3 += int(_cr["levels"][st])
-		ok.disabled = _cr_mode == "points" and used3 < Game.LEVEL_POOL
-		if ok.disabled:
-			ok.tooltip_text = "Nejdřív rozděl všechny body."
-	_small_btn(brow, "Zpět", func(): _show_main() if not Game.merc.get("created", true) else _show_merc()).custom_minimum_size = Vector2(80, 18)
 
 func _bump(st: String, d: int) -> void:
 	var lv: Dictionary = _cr["levels"].duplicate()
@@ -1189,6 +1289,7 @@ func _process(delta: float) -> void:
 			_cr_rot += delta * (0.12 if _cr_face else 0.25)
 
 # ---- loadout: UFO-style equip screen --------------------------------------------------------
+var _gear_note := ""
 func _show_loadout() -> void:
 	_panel("VÝSTROJ NA MISI")
 	var vet := Game.difficulty == "veteran"
@@ -1213,6 +1314,57 @@ func _show_loadout() -> void:
 	for k in Game.KITS:
 		var kit: String = k
 		_small_btn(kits, kit, func(): Game.loadout = Game.KITS[kit].duplicate(); Game.save_settings(); _show_loadout())
+	# 0.60: the player's own saved sets (kept on this computer, outlive the soldier)
+	var mine := HFlowContainer.new()
+	mine.add_theme_constant_override("h_separation", 2)
+	_box.add_child(mine)
+	var ml := Label.new()
+	ml.text = "Moje sady:"
+	ml.add_theme_font_size_override("font_size", 8)
+	ml.add_theme_color_override("font_color", FRAME)
+	mine.add_child(ml)
+	var sets := Game.presets("gear")
+	for i in sets.size():
+		var k := i
+		var pr: Dictionary = sets[i]
+		var sb := _small_btn(mine, String(pr.get("label", "?")), func():
+			var want: Dictionary = pr.get("loadout", {})
+			Game.loadout = want.duplicate()
+			Game.save_settings()
+			var got := Game.valid_loadout(vet)
+			var miss: Array = []
+			for slot in want:
+				if String(want[slot]) != "" and Game.ITEMS.has(want[slot]) and not got.values().has(want[slot]):
+					var nm: String = Game.ITEMS[want[slot]]["short"]
+					if not nm in miss:
+						miss.append(nm)
+			_gear_note = "Sada %s nasazena." % String(pr.get("label", "")) + ("" if miss.is_empty() else " Ve skladu chybí: " + ", ".join(miss))
+			_show_loadout())
+		sb.tooltip_text = "Nasadit uloženou sadu (co ve skladu chybí, zůstane prázdné)"
+		var db := _small_btn(mine, "×", func(): Game.delete_preset("gear", k); _gear_note = ""; _show_loadout())
+		db.tooltip_text = "Smazat sadu"
+	var gle := LineEdit.new()
+	var base: String = Game.ITEMS[cur["rh"]]["short"] if cur.has("rh") and Game.ITEMS.has(cur["rh"]) else "Sada"
+	gle.text = Game.preset_label("gear", base)
+	gle.custom_minimum_size = Vector2(80, 0)
+	gle.add_theme_font_size_override("font_size", 8)
+	mine.add_child(gle)
+	_small_btn(mine, "Uložit sadu", func():
+		var lbl := gle.text.strip_edges()
+		if lbl == "":
+			lbl = Game.preset_label("gear", base)
+		if Game.save_preset("gear", lbl, {"loadout": cur.duplicate()}):
+			_gear_note = "Uloženo: " + lbl
+		else:
+			_gear_note = "Plno (%d sad) - nejdřív nějakou smaž." % Game.PRESET_MAX
+		_show_loadout())
+	if _gear_note != "":
+		var gn := Label.new()
+		gn.text = _gear_note
+		gn.add_theme_font_size_override("font_size", 8)
+		gn.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
+		_box.add_child(gn)
+		_gear_note = ""
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
 	_box.add_child(row)
@@ -1365,6 +1517,12 @@ func _connecting(ip: String) -> void:
 func _show_lobby() -> void:
 	_panel("TÝM")
 	_status = _label("")
+	# (0.61) one row per player: name, ping, microphone, and for the host a button to send him away
+	_lobby_rows = VBoxContainer.new()
+	_lobby_rows.add_theme_constant_override("separation", 1)
+	_box.add_child(_lobby_rows)
+	_lobby_sig = ""
+	_lobby_mic = _label("")
 	if multiplayer.is_server():
 		_label("Kamarádi se připojí na tvou IP adresu, port %d (TCP/UDP). Po internetu přes Radmin VPN / ZeroTier." % Net.PORT, FRAME, 9)
 		_label("Obtížnost: " + Game.DIFF_NAMES.get(Campaign.difficulty() if Campaign.active else Game.difficulty, "normální") + (" (daná kampaní)" if Campaign.active else " (mění se v Rychlé misi)"), ACCENT, 9)
@@ -1391,24 +1549,94 @@ func _show_lobby() -> void:
 	_button("Odejít", func(): Net.close(); _show_main())
 	_refresh_lobby()
 
+var _lobby_rows: VBoxContainer
+var _lobby_mic: Label
+var _lobby_sig := ""
+var _lobby_row := {}      # peer -> {"name": Label, "info": Label, "kick": Button or null}
+var _kick_arm := {}       # peer -> msec: the first press only asks, the second sends him away
+const MIC_TEXT := {"off": "mikrofon vypnutý", "ptt": "mikrofon na Tab", "open": "mikrofon otevřený", "dead": "MIKROFON NEJDE"}
+
 func _refresh_lobby() -> void:
 	if _status == null or not is_instance_valid(_status):
 		return
-	var lines := []
-	for id in Net.roster:
+	if _lobby_rows == null or not is_instance_valid(_lobby_rows) or not is_inside_tree():
+		return
+	var host := multiplayer.is_server()
+	var sig := str(host) + str(Net.roster.keys())
+	if sig != _lobby_sig:
+		_lobby_sig = sig
+		_lobby_row.clear()
+		for c in _lobby_rows.get_children():
+			c.queue_free()
+		for id in Net.roster:
+			var pid: int = id
+			var row := HBoxContainer.new()
+			_lobby_rows.add_child(row)
+			var nm := Label.new()
+			nm.add_theme_font_size_override("font_size", 10)
+			nm.add_theme_color_override("font_color", TEXT)
+			nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			nm.clip_text = true
+			nm.custom_minimum_size.x = 120
+			row.add_child(nm)
+			var inf := Label.new()
+			inf.add_theme_font_size_override("font_size", 8)
+			row.add_child(inf)
+			var kb: Button = null
+			if host and pid != 1:
+				kb = _small_btn(row, "Vyhodit", func():
+					if Time.get_ticks_msec() - int(_kick_arm.get(pid, -100000)) < 3000:
+						_kick_arm.erase(pid)
+						Net.kick(pid)
+					else:
+						_kick_arm[pid] = Time.get_ticks_msec()
+						_refresh_lobby())
+				kb.custom_minimum_size.x = 58
+			elif host:
+				var gap := Control.new()      # the host's own row: keep the columns in line
+				gap.custom_minimum_size.x = 58
+				row.add_child(gap)
+			_lobby_row[pid] = {"name": nm, "info": inf, "kick": kb}
+	var lv: Node = Net.get_node_or_null("LobbyVoice")
+	for id in _lobby_row:
+		if not Net.roster.has(id):
+			continue
+		var r: Dictionary = _lobby_row[id]
 		var money := ""
 		if Net.wallets.has(id):
 			money = "  -  %d kr" % int(Net.wallets[id])
-		var lv: Node = Net.get_node_or_null("LobbyVoice")
 		var talk := "   <<< MLUVÍ" if lv and lv.speaking(id) else ""
 		var sick_m: Dictionary = Game.merc if id == Net.my_id() else Net.roster[id].get("merc", {})
 		if float(sick_m.get("sick", 0.0)) > 0.0:
 			talk += "  [NA MARODCE]"
-		lines.append("%s %s%s%s" % ["*" if id == 1 else "-", Net.roster[id]["name"], money, talk])
+		(r["name"] as Label).text = "%s %s%s%s" % ["*" if id == 1 else "-", Net.roster[id]["name"], money, talk]
+		var ping := Net.ping_of(id)
+		var mic_s := Net.mic_of(id)
+		var bits := []
+		if id == 1:
+			bits.append("hostitel")
+		elif ping >= 0:
+			bits.append("ping %d ms" % ping)
+		if MIC_TEXT.has(mic_s):
+			bits.append(MIC_TEXT[mic_s])
+		var col := FRAME
+		if id != 1 and ping >= 0:
+			col = Color(0.55, 0.9, 0.5) if ping < 80 else (Color(1, 0.85, 0.4) if ping < 160 else Color(1, 0.45, 0.35))
+		if mic_s == "dead":
+			col = Color(1, 0.6, 0.35)
+		(r["info"] as Label).text = "   ".join(bits)
+		(r["info"] as Label).add_theme_color_override("font_color", col)
+		var kb: Button = r["kick"]
+		if kb and is_instance_valid(kb):
+			var armed := Time.get_ticks_msec() - int(_kick_arm.get(id, -100000)) < 3000
+			kb.text = "Opravdu?" if armed else "Vyhodit"
+			kb.add_theme_color_override("font_color", Color(1, 0.45, 0.35) if armed else TEXT)
 	var bars := int(clampf(Game.mic_level * 60.0, 0.0, 12.0))
 	var mic := "Mikrofon vypnutý (Nastavení)" if Game.voice_mode == "off" else "Tvůj mikrofon: [%s%s] %s" % ["|".repeat(bars), " ".repeat(12 - bars),
 		"VYSÍLÁŠ" if Net.get_node("LobbyVoice").talking else ("drž Tab" if Game.voice_mode == "ptt" else "ticho")]
-	_status.text = "Hráči (%d/%d):\n%s\n%s" % [Net.roster.size(), Net.MAX_PLAYERS, "\n".join(lines), mic] + ("\n" + _last_note if _last_note != "" else "")
+	_status.text = "Hráči (%d/%d):" % [Net.roster.size(), Net.MAX_PLAYERS]
+	if _lobby_mic and is_instance_valid(_lobby_mic):
+		_lobby_mic.text = mic + ("\n" + _last_note if _last_note != "" else "")
 
 ## Money between teammates (host included): agree who buys what and help each other out.
 var _gift_to := 0
@@ -1563,6 +1791,52 @@ func _autotest() -> void:
 			Game.unmount_slot("rifle", "hlaven")
 			print("[MODS] bought %s fit %s owns optika %s money %d kg %.2f" % [ok1, Game.fitted("rifle"), Game.owns_mod("rifle", "optika"), Game.purse(), Game.part_weight("rifle")])
 			get_tree().quit()
+		"presets":
+			# 0.60: soldier templates and saved loadouts (own test file - the player's presets stay)
+			Game.preset_file = "user://presety_test.cfg"
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(Game.preset_file))
+			Game.skirmish = true      # nothing gets saved, free stores
+			var keep_lo: Dictionary = Game.loadout.duplicate()
+			_show_create(true)
+			var first_view := _cr_presets
+			var lv := {"accuracy": 9, "reactions": 7, "strength": 2, "bravery": 4, "health": 5, "stamina": 3}
+			Game.set_levels(_cr, lv)
+			_cr["name"] = "Test Vzor"
+			_cr["look"]["tattoo"] = 2
+			Game.save_preset("merc", "Vzor", Game.merc_preset(_cr, true))
+			Game.save_preset("merc", "Kostky", Game.merc_preset(_cr, false))
+			_show_create(true)
+			await get_tree().create_timer(1.0).timeout
+			Game.ui_audit(self, "create_presets")
+			if DisplayServer.get_name() != "headless":
+				get_viewport().get_texture().get_image().save_png("user://presets_1.png")
+			var on_list := _cr_presets
+			_apply_merc_preset(Game.presets("merc")[0])
+			var merc_ok: bool = _cr["name"] == "Test Vzor" and int(_cr["look"].get("tattoo", 0)) == 2 and not _cr_presets
+			var lv_ok: bool = int(_cr["levels"]["accuracy"]) == 9 and int(_cr["accuracy"]) == Game.stat_value("accuracy", 9)
+			var dice_ok: bool = not Game.presets("merc")[1].has("levels")
+			Game.loadout = Game.KITS["Odstřelovač"].duplicate()
+			_show_loadout()
+			Game.save_preset("gear", "Snajpr", {"loadout": Game.valid_loadout(false)})
+			Game.loadout = {}
+			_show_loadout()
+			Game.loadout = (Game.presets("gear")[0]["loadout"] as Dictionary).duplicate()
+			_gear_note = "Sada Snajpr nasazena."
+			_show_loadout()
+			await get_tree().create_timer(1.0).timeout
+			Game.ui_audit(self, "loadout_presets")
+			if DisplayServer.get_name() != "headless":
+				get_viewport().get_texture().get_image().save_png("user://presets_2.png")
+			var gear_ok: bool = Game.valid_loadout(false).get("rh", "") == "sniper"
+			# Back from making a new (only) soldier goes where the player came from, not to the menu
+			Game.merc["created"] = false
+			_back_target = "campaign"
+			_create_back()
+			print("[PRESET] back campaign %s" % (_back_target == "" and Game.mercs.size() <= 1))
+			Game.loadout = keep_lo
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(Game.preset_file))
+			print("[PRESET] first %s list %s merc %s levels %s dice_nolevels %s gear %s" % [first_view, on_list, merc_ok, lv_ok, dice_ok, gear_ok])
+			get_tree().quit()
 		"create":
 			_show_create(true)
 			await get_tree().create_timer(1.0).timeout
@@ -1592,13 +1866,13 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "lookshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "tpwalk", "blendtest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "latetest", "gunshots", "topshot", "shieldtest", "locktest", "mocapgame", "beltthrow", "fireshot", "abase":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "lookshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "rocktest", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "tpwalk", "blendtest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "latetest", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
 				"hour": float(Game.cmd_arg("hour", "14.0" if Game.cmd_arg("day", "0") == "1" else "23.0")), "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "testroom": Game.autotest() == "testroom", "terrain": Game.cmd_arg("terrain", "temperate"), "size": Game.cmd_arg("size", "medium"), "ufo": Game.cmd_arg("ufo", ""), "group": Game.cmd_arg("group", ""), "research": Array(Game.cmd_arg("research", "").split(",", false)),
 				"habits": {String(Game.merc.get("name", "")): Game.cmd_arg("habits", "").split(",", false)} if Game.cmd_arg("habits", "") != "" else {}})
-		"basewalk", "basepass":
+		"basewalk", "basepass", "basenade", "basefly", "blastdoor":
 			Net.play_solo()
 			var b := []
 			for i in 24:
@@ -1607,7 +1881,7 @@ func _autotest() -> void:
 				4: "silo", 10: "laser_vez", 15: "plazma_vez", 16: "maskovani", 11: "psi_gen"}
 			for k in lay:
 				b[k] = {"type": lay[k], "days": 4.0 if k == 14 else 0.0}
-			var atk := Game.cmd_arg("attack", "") == "1"
+			var atk := Game.cmd_arg("attack", "") == "1" or Game.autotest() == "blastdoor"
 			Net.start_mission({"type": "base" if atk else "home", "type_name": "Útok na základnu" if atk else "Základna", "base": b, "grid_w": 6, "grid_h": 4, "transport": "heli",
 				"live": ["grey", "levit"], "night": false, "attack": atk, "blips": [[50.0, 15.0], [40.0, -3.0], [10.0, 30.0]], "group": "sedaci"})
 		"solo", "shot", "ai", "panic", "arsenal", "evac":
@@ -1636,6 +1910,52 @@ func _autotest() -> void:
 			Game.merc["name"] = "Wingman"
 			await get_tree().create_timer(1.0).timeout
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+		"kickhost":
+			# (0.61) the lobby: the host sees the client's ping and microphone, sends him away,
+			# and the same client cannot come straight back
+			Game.merc["name"] = "Host"
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			_show_lobby()
+			while Net.roster.size() < 2:
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(2.5).timeout
+			var cid: int = Net.roster.keys().filter(func(k): return k != 1)[0]
+			var rows := _lobby_rows.get_child_count() if _lobby_rows and is_instance_valid(_lobby_rows) else 0
+			var ping0 := Net.ping_of(cid)
+			var mic0 := Net.mic_of(cid)
+			print("RESULT kick lobby rows %d ping %d mic %s info '%s'" % [rows, Net.ping_of(cid), Net.mic_of(cid), (_lobby_row[cid]["info"] as Label).text if _lobby_row.has(cid) else "-"])
+			if DisplayServer.get_name() != "headless":
+				_kick_arm[cid] = Time.get_ticks_msec()
+				_refresh_lobby()
+				await get_tree().create_timer(0.3).timeout
+				get_viewport().get_texture().get_image().save_png("user://lobby_kick.png")
+			Net.kick(cid)
+			var after := Net.roster.size()
+			var t0 := Time.get_ticks_msec()
+			var back := false
+			while Time.get_ticks_msec() - t0 < 8000:
+				await get_tree().create_timer(0.2).timeout
+				if Net.roster.size() > 1:
+					back = true
+			print("RESULT kick summary rows %d ping %d mic %s after %d rejoined %s" % [rows, ping0, mic0, after, back])
+			get_tree().quit()
+		"kickclient":
+			Game.merc["name"] = "Klient"
+			Game.voice_mode = "open"
+			await get_tree().create_timer(1.5).timeout
+			var msgs := []
+			Net.connection_failed.connect(func(r): msgs.append(r))
+			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+			var t1 := Time.get_ticks_msec()
+			while msgs.is_empty() and Time.get_ticks_msec() - t1 < 15000:
+				await get_tree().create_timer(0.2).timeout
+			print("KICK client 1: %s (my ping %d)" % [msgs, Net.ping_of(Net.my_id())])
+			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+			t1 = Time.get_ticks_msec()
+			while msgs.size() < 2 and Time.get_ticks_msec() - t1 < 6000:
+				await get_tree().create_timer(0.2).timeout
+			print("RESULT kick client %s" % [msgs])
+			get_tree().quit()
 		"michost", "micclient":
 			Game.voice_mode = "open"
 			Game.merc["name"] = "Host" if Game.autotest() == "michost" else "Klient"

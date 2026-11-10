@@ -1,4 +1,15 @@
 {
+ "0.61": [
+  "Obtížnost po prvním hraní: strach vojáka roste pomaleji a hned ho neochromí, ruce se třesou méně a panika přijde vzácněji.",
+  "Kampaň začíná jen se Šediváky. Další druhy přicházejí postupně: Levité od druhého měsíce, Ještěřani od třetího, Bijci a Myslodějové od čtvrtého.",
+  "Ocelové posuvné dveře v chodbách základny: E je zavře i otevře, vetřelci je musí chvíli páčit (Bijec rychleji) a plazma nebo výbuch je prorazí. E u dveří funguje i s věcí na zemi.",
+  "Levité už při útoku na základnu nelétají stropem a zdmi a neobjeví se týmu za zády. Kde nemůžou letět, jdou pěšky.",
+  "Kameny jsou pevné – už se nedá vejít dovnitř ani projít skrz, vetřelci je obcházejí.",
+  "Štít: vlastní lampa už v něm z očí nedělá bílou skvrnu a zvednutý štít opravdu zastaví většinu kulek a střepin.",
+  "Šablony vojáků a sady výstroje: vzhled, jméno a body nového vojáka i oblíbenou výstroj si uložím a příště je jen vyberu.",
+  "V lobby vidím u každého hráče ping a jestli mu jde mikrofon, a jako hostitel můžu hráče vyhodit.",
+  "Zpět z tvorby vojáka mě vrátí tam, odkud jsem přišel (glóbus, co-op lobby), ne do hlavního menu."
+ ],
  "0.60": [
   "Vojáci se konečně hýbou podle pohybů, které jsem sám natočil v afk.ai: běžné, s pistolí i s těžkými zbraněmi, střelba za chůze i běhu, kulhání raněného, tasení zbraně a kolo emocí na J.",
   "Přebíjení, obvazování, hrabání v batohu a hody z pohledu z očí jsem natočil ve VR na Questu 3 – ruce dělají přesně to, co jsem dělal já. Zásobník je samostatný díl a opravdu vypadne a zacvakne se.",
