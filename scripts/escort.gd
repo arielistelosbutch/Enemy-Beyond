@@ -511,7 +511,7 @@ func _finish() -> void:
 		get_tree().change_scene_to_file("res://scenes/Main.tscn")
 		return
 	Net.last_result = Campaign.escort_done(int(params.get("craft", -1)), outcome, tr_hp, lost_jets)
-	get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+	Game.load_scene("res://scenes/Geoscape.tscn")
 
 # ---- HUD ----------------------------------------------------------------------------------------
 func _draw_hud() -> void:

@@ -72,6 +72,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	info["evac"] = Vector3.ZERO
 	info["ufo"] = Vector3.ZERO
 	info["waypoints"] = info["cover"].duplicate()
+	_zfix()
 	if not params.get("no_nav", false):        # (the base screen's top-down picture needs no paths)
 		nav.bake_navigation_mesh(false)
 	if Game.autotest() != "": print("[BASE] built %d ms" % (Time.get_ticks_msec() - _t0))
@@ -150,6 +151,8 @@ func _room(gx: int, gz: int, kind: String, building: bool, params: Dictionary) -
 		_workers(a, w)
 		info["sounds"].append({"name": "base_repair", "pos": a + Vector3(w / 2, 1.5, w / 2), "db": -8.0})
 		return
+	if kind == "velin":
+		_memorial(a, w, params.get("fallen", []))
 	match kind:
 		"velin": _velin(a, w, h)
 		"hangar": _hangar_hall(a, w, h, String(params.get("transport", "heli")))
@@ -291,6 +294,25 @@ func _big_hangar(gx: int, params: Dictionary) -> void:
 	_cabinet(a + Vector3(0.4, 0, dd - 4.0), PI / 2, Color(0.55, 0.45, 0.15))
 	info["entries"].append(a + Vector3(2.0, 0.3, 2.0))
 	_cover(a + Vector3(1.5, 0, 4.5)); _cover(a + Vector3(w - 1.5, 0, dd - 4.5)); _cover(a + Vector3(1.5, 0, dd - 6.0))
+	# the ground crew: at the transport (kneeling at the gear, checking the hull), the loader, the cabinets
+	var c := m.position
+	var crew := "hangar%d" % gx
+	var half_x := bb.size.x * fit * 0.3 + 0.7
+	_post(crew, "tech", c + Vector3(-half_x, 0, 1.5), Vector3(1, 0, 0), "fix")
+	_post(crew, "tech", c + Vector3(half_x, 0, -1.5), Vector3(-1, 0, 0), "interact")
+	_post(crew, "tech", c + Vector3(0.8, 0, bb.size.z * fit * 0.42 + 0.9), Vector3(0, 0, -1), "fix")
+	_post(crew, "tech", a + Vector3(w - 1.0, 0, 4.3), Vector3(0, 0, -1), "interact")
+	_post(crew, "tech", a + Vector3(1.25, 0, dd - 3.5), Vector3(-1, 0, 0), "write")
+	_post(crew, "tech", a + Vector3(w * 0.5 + 2.6, 0, dd - 2.5), Vector3(-0.5, 0, -1), "talk")
+
+## 0.66 Facelift I: a place where one of the base's people works (scripts/base_npc.gd): where he stands
+## (or sits), which way he faces (a direction to look along), what he does there. Grouped by room
+## ("crew"): each person keeps to his own room. Not while the base is attacked.
+func _post(crew: String, role: String, p: Vector3, look: Vector3, act: String) -> void:
+	if attack:
+		return
+	var posts: Dictionary = info.get_or_add("npc_posts", {})
+	posts.get_or_add(crew, {"role": role, "posts": []})["posts"].append({"pos": p, "yaw": atan2(-look.x, -look.z), "act": act})
 
 # ---- furniture ----------------------------------------------------------------------------------
 func _col(c: Color) -> Material:
@@ -466,6 +488,15 @@ func _lab(a: Vector3, w: float) -> void:
 		_cabinet(a + Vector3(w - 0.4, 0, 1.0 + k * 1.0), -PI / 2, Color(0.3, 0.5, 0.85) if k != 1 else Color(0.2, 0.22, 0.25))
 	_desk(a + Vector3(2.2, 0, w - 1.0), PI)
 	_desk(a + Vector3(1.0, 0, w - 3.0), PI / 2, Color(1.0, 0.8, 0.3))
+	# the scientists: at the desks (typing), round the autopsy table, at the cabinets and the big screen
+	var crew := "lab%d" % int(a.x * 100 + a.z)
+	_post(crew, "sci", a + Vector3(2.2, 0, w - 1.75), Vector3(0, 0, 1), "typing")
+	_post(crew, "sci", a + Vector3(1.75, 0, w - 3.0), Vector3(-1, 0, 0), "typing")
+	_post(crew, "sci", a + Vector3(w * 0.6, 0, w * 0.55 + 0.95), Vector3(0, 0, -1), "interact")
+	_post(crew, "sci", a + Vector3(w * 0.6 - 0.6, 0, w * 0.55 - 0.95), Vector3(0.3, 0, 1), "confused")
+	_post(crew, "sci", a + Vector3(w - 1.25, 0, 2.0), Vector3(1, 0, 0), "write")
+	_post(crew, "sci", a + Vector3(w * 0.76, 0, 1.6), Vector3(0, 0, -1), "write")
+	_post(crew, "sci", a + Vector3(w * 0.4, 0, w * 0.3), Vector3(0.5, 0, 1), "talk")
 	# the autopsy table: steel, a lamp over it, something under a sheet
 	var t := a + Vector3(w * 0.6, 0, w * 0.55)
 	box(t + Vector3(0, 0.85, 0), Vector3(2.2, 0.08, 1.0), _col(Color(0.75, 0.78, 0.82))).visible = false
@@ -496,6 +527,14 @@ func _workshop(a: Vector3, w: float) -> void:
 	for k in 3:
 		_crate(a + Vector3(1.0 + k * 1.1, 0, w - 0.9), 0.9)
 	_cabinet(a + Vector3(w - 0.4, 0, w - 1.5), -PI / 2, Color(0.2, 0.22, 0.25))
+	# the technicians: at the benches, the crates (kneeling), the gun rack
+	var crew := "dil%d" % int(a.x * 100 + a.z)
+	_post(crew, "tech", a + Vector3(3.2, 0, w * 0.55 - 0.85), Vector3(0, 0, 1), "interact")
+	_post(crew, "tech", a + Vector3(6.8, 0, w * 0.55 + 0.85), Vector3(0, 0, -1), "interact")
+	_post(crew, "tech", a + Vector3(2.1, 0, w - 1.75), Vector3(0, 0, 1), "fix")
+	_post(crew, "tech", a + Vector3(2.1, 0, 1.15), Vector3(0, 0, -1), "write")
+	_post(crew, "tech", a + Vector3(w - 1.2, 0, w - 1.5), Vector3(1, 0, 0), "interact")
+	_post(crew, "tech", a + Vector3(w * 0.5, 0, w * 0.3), Vector3(-0.4, 0, 1), "talk")
 
 func _infirmary(a: Vector3, w: float) -> void:
 	for bx in [1.2, 2.8, w - 2.8, w - 1.2]:
@@ -988,3 +1027,91 @@ func _aabb3(n: Node3D) -> AABB:
 		box_ = b if first else box_.merge(b)
 		first = false
 	return box_
+
+## (0.70) The wall of the fallen: a dark stone slab on the velín's south wall (west of the doorway), the
+## names in gold - newest first, a small flag of his country, the day and the mission, "NEZVĚSTNÝ" for
+## the missing. Lit by two small lamps. (Campaign.data["fallen"], written by the host at a mission's end.)
+const WALL_ROWS := 11
+func _memorial(a: Vector3, w: float, fallen: Array) -> void:
+	var z := a.z + w - 0.09
+	var x0 := a.x + 0.45
+	var width := 3.4
+	var cx := x0 + width / 2.0
+	var stone := _col(Color(0.07, 0.075, 0.08))
+	box(Vector3(cx, 1.5, z - 0.04), Vector3(width, 2.3, 0.08), stone, false)
+	box(Vector3(cx, 0.32, z - 0.09), Vector3(width + 0.2, 0.08, 0.18), _col(Color(0.18, 0.18, 0.19)), false)    # the ledge
+	box(Vector3(cx, 2.68, z - 0.05), Vector3(width + 0.1, 0.06, 0.1), Game.color_mat(Color(0.55, 0.45, 0.2)), false)
+	var gold := Color(0.86, 0.72, 0.36)
+	var title := _engrave("PADLÍ ZA PROJEKT X", 46, gold)
+	title.position = Vector3(cx, 2.47, z - 0.085)
+	var list: Array = fallen.duplicate()
+	list.reverse()
+	info["fallen_shown"] = mini(list.size(), WALL_ROWS * 2)
+	if list.is_empty():
+		var none := _engrave("Jejich jména tu zůstanou.", 26, gold.darkened(0.35))
+		none.position = Vector3(cx, 1.5, z - 0.085)
+	for i in mini(list.size(), WALL_ROWS * 2):
+		var f: Dictionary = list[i]
+		var col := i / WALL_ROWS
+		var row := i % WALL_ROWS
+		# (seen from the room, its left is +x: the columns start at the east end and the text runs to -x)
+		var px := x0 + width - 0.18 - col * (width / 2.0)
+		var py := 2.22 - row * 0.165
+		_mini_flag(Vector3(px - 0.06, py, z - 0.085), String(f.get("f", "")))
+		var name := _engrave(String(f.get("n", "?")).to_upper() + ("   NEZVĚSTNÝ" if f.get("mia", false) else ""), 22, gold, HORIZONTAL_ALIGNMENT_LEFT)
+		name.position = Vector3(px - 0.13, py + 0.025, z - 0.085)
+		var sub := _engrave("%s  -  %s" % [String(f.get("d", "")), String(f.get("m", ""))], 14, gold.darkened(0.3), HORIZONTAL_ALIGNMENT_LEFT)
+		sub.position = Vector3(px - 0.13, py - 0.035, z - 0.085)
+	if list.size() > WALL_ROWS * 2:
+		var more := _engrave("... a dalších %d" % (list.size() - WALL_ROWS * 2), 16, gold.darkened(0.3))
+		more.position = Vector3(cx, 0.48, z - 0.085)
+	for sx in [-1.0, 1.0]:
+		var l := SpotLight3D.new()
+		l.light_color = Color(1.0, 0.86, 0.62)
+		l.light_energy = 1.6 if not attack else 0.4
+		l.spot_range = 3.5
+		l.spot_angle = 40.0
+		root.add_child(l)
+		l.position = Vector3(cx + sx * 1.0, 2.95, z - 0.6)
+		l.look_at(Vector3(cx + sx * 0.6, 1.4, z), Vector3.UP)
+		box(l.position + Vector3(0, 0.05, 0), Vector3(0.14, 0.06, 0.14), _col(Color(0.2, 0.2, 0.2)), false)
+
+func _engrave(text: String, size: int, col: Color, align := HORIZONTAL_ALIGNMENT_CENTER) -> Label3D:
+	var lb := Label3D.new()
+	lb.text = text
+	lb.font_size = size
+	lb.pixel_size = 0.0022
+	lb.modulate = col
+	lb.outline_size = 0
+	lb.horizontal_alignment = align
+	lb.shaded = true
+	lb.double_sided = false
+	lb.rotation.y = PI          # faces the room (-z)
+	root.add_child(lb)
+	return lb
+
+## A flag 9 x 6 cm in the slab (stripes after Game.FLAGS; the more complex ones in their two main colours).
+func _mini_flag(c: Vector3, code: String) -> void:
+	var f: Array = Game.FLAGS[Game.flag_index(code)]
+	var cols: Array = f[3]
+	if cols.is_empty():
+		return
+	var lay := String(f[2])
+	var n := cols.size()
+	if lay == "cz":
+		# white over red, the blue wedge at the hoist (the viewer's left = +x)
+		box(c + Vector3(0, 0.015, 0), Vector3(0.09, 0.03, 0.006), Game.color_mat(cols[0]), false)
+		box(c + Vector3(0, -0.015, 0), Vector3(0.09, 0.03, 0.006), Game.color_mat(cols[1]), false)
+		for k in 3:
+			var hh := 0.06 - k * 0.02
+			box(c + Vector3(0.045 - 0.0075 - k * 0.015, 0, -0.001), Vector3(0.015, hh, 0.006), Game.color_mat(cols[2]), false)
+		return
+	if lay == "h2" or lay == "h3":
+		for k in n:
+			box(c + Vector3(0, 0.03 - (k + 0.5) * 0.06 / n, 0), Vector3(0.09, 0.06 / n, 0.006), Game.color_mat(cols[k]), false)
+	elif lay == "v3":
+		for k in n:
+			box(c + Vector3(0.045 - (k + 0.5) * 0.09 / n, 0, 0), Vector3(0.09 / n, 0.06, 0.006), Game.color_mat(cols[k]), false)
+	else:
+		box(c, Vector3(0.09, 0.06, 0.006), Game.color_mat(cols[0]), false)
+		box(c + Vector3(0, 0, -0.002), Vector3(0.09, 0.016, 0.006), Game.color_mat(cols[1 % n]), false)

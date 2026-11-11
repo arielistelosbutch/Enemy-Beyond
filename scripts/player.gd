@@ -35,6 +35,7 @@ var breath := 0.0         # 0..1 how out of breath (aim wanders)
 var spin := 0.0           # minigun spin-up
 var busy_total := 0.0
 var busy_stand := false   # digging in the backpack: no moving
+const SELF_HEAL_SLOW := 0.45   # (Ari 2026-11-11) bandaging yourself: a slow walk (talent Polní ošetření: normal walk)
 var kick_mult := 1.0
 var _swing_left := false
 var _swing_kind := 0       # 0 stab/slash (knife), 1 overhead, 2 right-to-left diagonal, 3 left-to-right
@@ -133,7 +134,7 @@ func setup(data: Dictionary) -> void:
 	var cfg := SceneReplicationConfig.new()
 	for prop in [":position", ":rotation", ":pitch", ":crouching", ":light_on", ":hp", ":downed", ":dead", ":wounded",
 			":bleed_left", ":carried_by", ":wants_evac", ":kills", ":held", ":panic", ":gear",
-			":held_l", ":held_back", ":prone", ":sprinting", ":captures", ":infected", ":ir_on", ":act", ":emote", ":bleeding", ":aiming"]:
+			":held_l", ":held_back", ":prone", ":sprinting", ":captures", ":infected", ":ir_on", ":act", ":emote", ":bleeding", ":aiming", ":shield_up"]:
 		cfg.add_property(NodePath("." + prop))
 		cfg.property_set_replication_mode(NodePath("." + prop), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	sync.replication_config = cfg
@@ -161,6 +162,7 @@ func _ready() -> void:
 			if inv.has(hs):
 				inv[hs]["home"] = hs
 		armor = String(Game.valid_loadout(Game.veteran()).get("armor", ""))
+		_solo_strip()
 		if mission.has_method("home") and mission.home() and inv.has("rh") and not inv.has("back"):
 			# at home: the rifle hangs on the back, hands free (1 / Q takes it down - the range)
 			inv["back"] = inv["rh"]
@@ -266,12 +268,18 @@ func _build_body(data: Dictionary) -> void:
 		body.add_child(body_l)
 		body.add_child(body_back)
 	_apply_gear()
+	# (0.70) mud and blood on the clothes - every machine for itself
+	add_child(preload("res://scripts/uniform_dirt.gd").new())
 
 ## First-person hands: sway with steps, kick on shots, swing when sprinting,
 ## a proper reload motion, and the slow settling of breath after a run.
 var _vm_t := 0.0
 var _vm_kick := 0.0
 var _swing := 0.0            # melee swing timer
+var _fp_strike_vr := false   # (0.62) the swing is Ari's VR blow (fp_strike_<item>)
+var _strike_seg := Vector3.ZERO   # (0.62) the part of the VR clip this blow plays: start, end, hit (s)
+var _strike_last := -1            # (which of the recorded blows went last - never twice in a row)
+var _quick_id := ""               # (0.62) the blade from the belt in the hand for one quick cut (V)
 const VM_R := {"rifle": Vector3(0.17, -0.18, -0.4), "sniper": Vector3(0.17, -0.19, -0.42), "plasma_rifle": Vector3(0.17, -0.18, -0.4), "shotgun": Vector3(0.17, -0.19, -0.42), "autocannon": Vector3(0.2, -0.24, -0.48),
 	"minigun": Vector3(0.21, -0.3, -0.42), "laser_minigun": Vector3(0.21, -0.3, -0.42), "plasma_minigun": Vector3(0.21, -0.3, -0.42), "rocket_launcher": Vector3(0.21, -0.1, -0.3)}
 const VM_ONE_R := Vector3(0.2, -0.2, -0.36)
@@ -282,6 +290,9 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 	_vm_t += delta * speed * (2.6 if sprinting else 2.2)
 	_vm_kick = max(0.0, _vm_kick - delta * 7.0)
 	_swing = max(0.0, _swing - delta * _swing_speed)
+	if _swing <= 0 and _quick_id != "":
+		_quick_id = ""
+		_update_held()          # (the quick cut is over: the gun is back in the hand)
 	if _swing <= 0 and _swing_holder and is_instance_valid(_swing_holder):
 		_swing_holder.position -= _swing_off
 		_swing_off = Vector3.ZERO
@@ -373,7 +384,7 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 			lt += Vector3(0.0, -0.38, 0.06).lerp(Vector3(0.2, -0.06, 0.02), _shield_k)
 		gun_l.position = gun_l.position.lerp(lt, k)
 	# melee swing
-	if _swing > 0:
+	if _swing > 0 and not _fp_strike_vr:
 		var holder: Node3D = gun_l if _swing_left else gun
 		var side := -1.0 if _swing_left else 1.0
 		var ph := 1.0 - _swing
@@ -531,7 +542,7 @@ func _animate_body(delta: float) -> void:
 	elif downed and carried_by > 0 and has.call("dragged"):
 		want = "dragged"          # (Ari's afk) sitting, pulled along by the shoulders
 	elif downed:
-		# wounded: on hands and knees, crawling when moving (or being dragged)
+		# wounded: on hands and knees, crawling when moving
 		want = "crawl_hurt" if _body_speed > 0.15 else "crawl_idle"
 	elif _dragging() and has.call("drag"):
 		want = "drag"             # (Ari's afk) facing the one he drags, going backwards
@@ -591,14 +602,13 @@ func _animate_body(delta: float) -> void:
 		rx = 0.0
 		lay = false
 	merc_model.rotation.x = lerp_angle(merc_model.rotation.x, rx, delta * 6.0)
-	# dragging: the one who drags turns round to the body, the one dragged sits with his back to him
+	# dragging (Ari): the one who drags looks where his camera looks - over the helmet of the one he
+	# holds by the jacket in front of him, and goes backwards; the one dragged sits with his back to him
 	var ry := 0.0
-	if _body_want == "drag":
-		ry = PI
-	elif _body_want == "dragged":
+	if _body_want == "dragged":
 		var c: Node3D = mission.actors.get_node_or_null("P%d" % carried_by)
 		if c:
-			ry = wrapf(c.global_rotation.y + PI - body.global_rotation.y, -PI, PI)
+			ry = wrapf(c.global_rotation.y - body.global_rotation.y, -PI, PI)
 	merc_model.rotation.y = lerp_angle(merc_model.rotation.y, ry, delta * 8.0)
 	merc_model.position.y = lerp(merc_model.position.y, 0.18 if lay else 0.0, delta * 6.0)
 	merc_model.position.z = lerp(merc_model.position.z, (-0.9 if dead else 0.9) if lay else 0.0, delta * 6.0)
@@ -608,6 +618,12 @@ func _animate_body(delta: float) -> void:
 	elif prone and not (dead or downed) and act == 5:
 		_prone_throw(delta)
 	_pose_fade(delta)
+	if _body_want == "drag":
+		_drag_hand()
+	elif is_instance_valid(_drag_ex):
+		remove_collision_exception_with(_drag_ex)
+		_drag_ex.remove_collision_exception_with(self)
+		_drag_ex = null
 	_hit_overlay(delta)
 	# the long gun sits in the right hand (follows the arms in every pose), not on the belly
 	if _sk and _hand_r >= 0 and body_gun:
@@ -1113,6 +1129,7 @@ const EMOTES := [
 const EMOTE_SIT := 20
 const EMOTE_SIT_OUT := 21
 const _WHEEL := preload("res://scripts/emote_wheel.gd")
+const StepUp := preload("res://scripts/step_up.gd")
 var _wheel: Control
 var _wheel_hold := -1.0
 var _wheel_ids := []
@@ -1271,7 +1288,7 @@ func _act_tick() -> void:
 		a = 8
 	var dt := get_physics_process_delta_time()
 	_use_t = maxf(0.0, _use_t - dt)
-	_air_t = (_air_t + dt) if not is_on_floor() and _mantle_t < 0.0 else 0.0
+	_air_t = (_air_t + dt) if not is_on_floor() and _mantle_t < 0.0 and _wedge_t <= WEDGE_T else 0.0
 	if a != act:
 		act = a
 		_act_t = 0.0
@@ -1397,11 +1414,27 @@ func weapon() -> Dictionary:
 	return w if not w.is_empty() else gun_in("lh")
 
 func has_scanner() -> bool:
+	if drone_radar():
+		return true
 	for s in ["rh", "lh"]:
 		var it := item_in(s)
 		if not it.is_empty() and it["id"] == "scanner":
 			return true
 	return false
+
+## 0.66 (Ari): alone on a mission the helper drone (Strážce) lends its motion radar - always on in the
+## corner of the HUD, as if in hand. The lone mercenary needs no detector nor radio in the kit (co-op unchanged).
+func drone_radar() -> bool:
+	return mission != null and mission.has_method("solo") and mission.solo() and not mission.home() and not mission.local() and not bool(mission.get("finished"))
+
+## 0.66: alone on a mission the detector and the radio stay in the armoury (the drone does both).
+const SOLO_SPARE := ["scanner", "radio"]
+func _solo_strip() -> void:
+	if not drone_radar():
+		return
+	for s in inv.keys():
+		if String(inv[s].get("id", "")) in SOLO_SPARE:
+			inv.erase(s)
 
 func carried_weight() -> int:
 	var w := int(Game.ITEMS[armor]["weight"]) if armor != "" else 0
@@ -1679,6 +1712,46 @@ func _unhandled_input(event: InputEvent) -> void:
 		# screen pixels, not the low-res viewport: same feel at any window size
 		_mouse += event.screen_relative
 
+## 0.62 (Ari: "vydrží běžet sotva 4 sekundy, dal bych to alespoň na 8 v základu"): seconds of a full
+## sprint from a full breath - 8 s with the lowest Výdrž (50), about 13 s with the highest (85);
+## the Sprinter talent lasts 1.67x as long (it used to be 2.6-3.3 s, Sprinter 4.3-5.5 s).
+func sprint_time() -> float:
+	var secs := 1.0 + float(merc.get("stamina", 60)) * 0.14
+	return secs / (0.6 if Game.has_talent(merc, "sprinter") else 1.0)
+
+## 0.62 talent Zadržet dech: aiming, Shift held = the breath is held, the gun almost still for up to
+## HOLD_BREATH s; let go (or out of breath) and the hands shake more for a while, then it is ready again.
+const HOLD_BREATH := 4.0
+var _breath_left := HOLD_BREATH
+var _breath_after := 0.0
+var breath_held := false
+func _hold_breath(delta: float) -> float:
+	breath_held = false
+	if not Game.has_talent(merc, "zadrzet_dech"):
+		return 1.0
+	if _breath_after > 0.0:
+		_breath_after -= delta
+		if _breath_after <= 0.0:
+			_breath_left = HOLD_BREATH
+		return 1.6
+	if aiming and Input.is_action_pressed("sprint") and _breath_left > 0.0 and not downed:
+		_breath_left -= delta
+		breath_held = true
+		if _breath_left <= 0.0:
+			_breath_after = 2.5
+		return 0.12
+	if _breath_left < HOLD_BREATH:
+		# let go early: a shorter gasp, as long as the breath was held
+		_breath_after = 0.5 + 2.0 * (HOLD_BREATH - _breath_left) / HOLD_BREATH
+	return 1.0
+
+## 0.62 talent Opora týmu: a teammate with it within 10 m - the fear grows a quarter slower.
+func _backed() -> float:
+	for p in mission.players():
+		if p != self and not p.dead and not p.downed and Game.has_talent(p.merc, "opora_tymu") and p.global_position.distance_to(global_position) < 10.0:
+			return 0.75
+	return 1.0
+
 func _physics_process(delta: float) -> void:
 	_blood_watch(delta)
 	_mg_tick()
@@ -1705,10 +1778,12 @@ func _physics_process(delta: float) -> void:
 	if aiming and Game.has_mod(wid, "optika", merc): shake *= 0.6      # the scope steadies the picture
 	shake *= Game.part_mult(wid, "sway", merc)      # (0.57) a bayonet or a suppressor make the front heavy
 	if Game.has_mod(wid, "rukojet", merc) or Game.has_mod(wid, "pazba", merc) or Game.has_mod(wid, "tlumeni", merc) or Game.has_mod(wid, "brzda", merc) or Game.has_mod(wid, "ergo", merc) or Game.has_mod(wid, "kompenzator", merc): shake *= 0.8
+	var held := _hold_breath(delta)      # (0.62) talent Zadržet dech
+	shake *= held
 	_sway = _sway.lerp(Vector2(randf_range(-1, 1), randf_range(-1, 1)) * shake * 0.02, delta * 2.0)
 	# breathing after a run: the sights rise and fall, slower as it calms down
 	_breath_ph += delta * lerp(1.2, 3.2, breath)
-	var bsw := Vector2(sin(_breath_ph * 0.5) * 0.4, sin(_breath_ph)) * breath * 0.035 * (0.6 if aiming else 1.0)
+	var bsw := Vector2(sin(_breath_ph * 0.5) * 0.4, sin(_breath_ph)) * breath * 0.035 * (0.6 if aiming else 1.0) * (0.15 if held < 1.0 else 1.0)
 	head.rotation.x = pitch + _sway.y + bsw.y
 	head.rotation.y = _sway.x + bsw.x
 	if _mantle_t >= 0.0:
@@ -1782,7 +1857,7 @@ func _physics_process(delta: float) -> void:
 		_winded = true
 	if _winded and stamina > 25.0 and not Input.is_action_pressed("sprint"):
 		_winded = false
-	var sprint := Input.is_action_pressed("sprint") and not _winded and not crouching and not prone and not aiming and not shield_up and dir.length() > 0.1 and not busy_stand
+	var sprint := Input.is_action_pressed("sprint") and not _winded and not crouching and not prone and not aiming and not shield_up and dir.length() > 0.1 and not busy_stand and not _self_healing() and not _heal_still()
 	if _winded and Input.is_action_just_pressed("sprint"):
 		mission.hud.message("Nemáš dech.", 1.0)
 	sprinting = sprint
@@ -1793,7 +1868,9 @@ func _physics_process(delta: float) -> void:
 		speed *= 0.3              # behind the shield: a step at a time
 	if bracing:
 		speed *= 0.55
-	if busy_stand:
+	if _self_healing() and not Game.has_talent(merc, "polni_osetreni"):
+		speed *= SELF_HEAL_SLOW
+	if busy_stand or _heal_still():
 		speed = 0.0
 	# heavy weapons slow you down
 	var heavy: float = Game.ITEMS[rh["id"]].get("heavy", 1.0) if not rh.is_empty() else 1.0
@@ -1806,7 +1883,7 @@ func _physics_process(delta: float) -> void:
 		speed *= max(0.45, strength / float(w))
 	if Game.veteran() and hp < max_hp * 0.6:
 		speed *= 0.6 + 0.4 * hp / (max_hp * 0.6)   # limping
-	var drain := 2600.0 / float(merc.get("stamina", 60)) * (0.6 if Game.has_talent(merc, "sprinter") else 1.0)
+	var drain := 100.0 / sprint_time()
 	if sprint:
 		stamina = max(0.0, stamina - delta * drain)
 		breath = min(1.0, breath + delta * 0.22)
@@ -1822,15 +1899,28 @@ func _physics_process(delta: float) -> void:
 		_breath_snd -= delta
 		if _breath_snd <= 0:
 			_breath_snd = lerp(2.6, 1.1, breath)
-			Game.play_ui(self, "breath_scared" if stress > 60.0 else "breath", -22 + breath * 12.0)
+			# (0.61) a woman breathes with her own recording (breath_female...), a man with the common one
+			var bs := Game.voice_of("breath_scared" if stress > 60.0 else "breath", merc.get("look", {}).get("female", false))
+			if bs != "":
+				Game.play_ui(self, bs, -22 + breath * 12.0)
 	velocity.x = dir.x * speed
 	velocity.z = dir.z * speed
+	# 0.62: wedged between two slopes too steep to stand on (a torn plate against a wall, stones in a
+	# V): not on the floor, yet not falling either - Space still jumps out (Ari got stuck for good)
+	var footing := is_on_floor() or _wedge_t > WEDGE_T
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
-	elif Input.is_action_just_pressed("jump") and not crouching and not prone and not inv_open and not busy_stand:
-		if not _mantle_try(MANTLE_STAND):
+	if footing and Input.is_action_just_pressed("jump") and not crouching and not prone and not inv_open and not busy_stand and not _self_healing() and not _heal_still():
+		if not _mantle_try(MANTLE_STAND) and not _unstuck_try():
 			velocity.y = 4.2
+			_wedge_t = 0.0
+	StepUp.climb(self, delta, StepUp.MAN)     # (0.62: up a kerb without a jump)
+	var y_before := global_position.y
 	move_and_slide()
+	if not is_on_floor() and get_slide_collision_count() > 0 and global_position.y - y_before > -0.004 and velocity.y <= 0.5:
+		_wedge_t += delta
+	else:
+		_wedge_t = 0.0
 	# footsteps: what you sound like is what the aliens hear
 	if is_on_floor() and dir.length() > 0.1:
 		step_t -= delta * speed
@@ -2139,6 +2229,19 @@ var _click_lock := false
 ## The shield: carried low (out of the way), or held up to the face on the right button -
 ## then you look through its window, move very slowly and can still fire a pistol.
 var shield_up := false
+
+## The shield held up between us and @from (every machine: a plasma bolt bursts on its face).
+func shield_covers(from: Vector3) -> bool:
+	if held_l != "stit" or not shield_up or dead or downed:
+		return false
+	var to: Vector3 = from - global_position
+	to.y = 0
+	return to.length() > 1.5 and (-global_transform.basis.z).dot(to.normalized()) > 0.35
+
+## Where the raised shield's face is (out in front, at the chest).
+func shield_face(_from: Vector3) -> Vector3:
+	var fw: Vector3 = -global_transform.basis.z
+	return global_position + Vector3(0, 1.3 if not crouching else 0.9, 0) + fw * 0.55
 var _shield_k := 0.0
 var _shield_knock := 0.0     # knocked aside by a blow: it cannot come back up for a moment
 const SHIELD_HP := 420.0
@@ -2596,9 +2699,12 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 ## (a living alien is worth more).
 func _melee(slot: String, rule: Dictionary) -> void:
 	fire_cd = rule["rate"] * (0.8 if rule.get("blunt", false) and Game.has_mod("stun_baton", "lehky", merc) else 1.0)
+	if Game.has_talent(merc, "rvac"): fire_cd /= 1.5      # (0.62) talent Rváč: a quicker blow
 	_swing = 1.0
 	_sw_last = -1.0
 	_swing_left = slot == "lh"
+	if not _swing_left and not rule.get("bayonet", false) and _vr_strike(rule):
+		return
 	var blunt: bool = rule.get("blunt", false)
 	if blunt:
 		# overhead, right-to-left, left-to-right - never the same twice in a row
@@ -2630,6 +2736,160 @@ func _melee(slot: String, rule: Dictionary) -> void:
 	else:
 		get_tree().create_timer(0.16).timeout.connect(func(): if is_instance_valid(self) and not dead: _melee_hit(rule))
 
+## 0.62 (Ari): a blow recorded in the VR recorder (fp_strike_<item>). A gun's clip is one butt
+## stroke; a blade's or a baton's holds several blows one after another (each a swing of its own,
+## never the same twice in a row). The blow takes about Ari's own time, within the weapon's pace,
+## and lands where the clip reaches out the furthest.
+func _vr_strike(rule: Dictionary) -> bool:
+	var rid: String = _strike_item()
+	var clip := _strike_clip(rid)
+	if clip.get("zdroj", "") != "vr":
+		return false
+	var melee: bool = Game.ITEMS.get(rid, {}).get("type", "") == "melee"
+	var info := _strike_info(clip, melee)
+	var segs: Array = info["segs"]
+	if segs.is_empty():
+		return false
+	var i := randi() % segs.size()
+	if segs.size() > 1 and i == _strike_last:
+		i = (i + 1) % segs.size()
+	_strike_last = i
+	_strike_seg = segs[i]
+	var span: float = _strike_seg.y - _strike_seg.x
+	if melee:
+		span *= 0.8        # (a blade's or a baton's blow is a quick one)
+	var pace: float = maxf(float(rule.get("rate", 0.9)), 0.45)
+	var dur: float = clampf(span / STRIKE_FASTER, 0.3, pace * (1.15 if melee else 1.0))
+	_swing_kind = 7
+	_swing_speed = 1.0 / dur
+	Game.play_at(self, "swish", global_position + Vector3.UP, -10)
+	var at: float = clampf((_strike_seg.z - _strike_seg.x) / maxf(span, 0.01), 0.25, 0.75) * dur
+	get_tree().create_timer(at).timeout.connect(func(): if is_instance_valid(self) and not dead: _melee_hit(rule))
+	return true
+
+## What the right hand strikes with: the gun in it, or the blade just drawn from the belt.
+func _strike_item() -> String:
+	return _quick_id if _quick_id != "" else String(item_in("rh").get("id", ""))
+
+## (Ari) both knives cut the same way: the energy knife takes the knife's blow.
+const STRIKE_LIKE := {"energo_nuz": "knife"}
+func _strike_clip(rid: String) -> Dictionary:
+	var c := _fp_find("strike", String(STRIKE_LIKE.get(rid, rid)))
+	if c.get("zdroj", "") != "vr":
+		c = _fp_find("strike", rid)
+	return c
+
+const STRIKE_FASTER := 1.25     # (Ari's moves played a little faster than in the headset)
+const STRIKE_PUSH := Vector3(0.0, 0.04, -0.24)   # (a butt stroke reaches out from the body this much more)
+const STRIKE_NEAR := 0.35       # (how much of a draw back towards the eye stays)
+static var _strike_cache := {}
+## Where the blows are in a VR strike clip: segments [start, end, hit] in seconds (x, y, z), and
+## how far the clip reaches out (for the push of the butt strokes). The "reach" of a moment is how
+## far the gun is from its rest (metres, plus a little for the turn).
+static func _strike_info(clip: Dictionary, many := false) -> Dictionary:
+	var key := "%s|%s|%d|%s" % [clip.get("nazev", ""), clip.get("delka", 0.0), AnimClips.track(clip, "zbran").size(), many]
+	if _strike_cache.has(key):
+		return _strike_cache[key]
+	var dl: float = float(clip.get("delka", 1.0))
+	var n := maxi(2, int(dl * 60.0))
+	var d := PackedFloat32Array()
+	var sp := PackedFloat32Array()     # how fast the gun moves (the blow lands where it is fastest)
+	var prev := Transform3D()
+	for k in n + 1:
+		var g := AnimClips.xform(clip, "zbran", dl * k / n)
+		d.append(_strike_reach(g))
+		sp.append(0.0 if k == 0 else (g.origin.distance_to(prev.origin) + 0.3 * (prev.basis.get_rotation_quaternion().angle_to(g.basis.get_rotation_quaternion()))) * n / dl)
+		prev = g
+	var peak := 0.001
+	for v in d:
+		peak = maxf(peak, v)
+	# the still start and end (before the hand moves, after it is back) are cut off
+	var a := 0
+	while a < n and d[a] < peak * 0.08:
+		a += 1
+	var b := n
+	while b > a and d[b] < peak * 0.08:
+		b -= 1
+	a = maxi(0, a - 3)
+	b = mini(n, b + 3)
+	var cuts: Array = [a]
+	# blades and batons: a new blow starts where the hand comes back closest to rest between two
+	# reaches (a clear dip, at least 0.3 s from the last cut)
+	if many:
+		var w := 6
+		for k in range(a + w, b - w):
+			var lo := true
+			for j in range(k - w, k + w + 1):
+				if d[j] < d[k]:
+					lo = false
+					break
+			if not lo:
+				continue
+			var left := 0.0
+			var right := 0.0
+			for j in range(cuts[-1], k):
+				left = maxf(left, d[j])
+			for j in range(k, b):
+				right = maxf(right, d[j])
+			if d[k] < 0.7 * minf(left, right) and (k - int(cuts[-1])) > int(0.3 * n / dl) and (b - k) > int(0.3 * n / dl):
+				cuts.append(k)
+	cuts.append(b)
+	if many:
+		# (Ari) of the blows swung one after another only one: the hardest one from above down
+		var ov := _strike_overhead(clip, a, b, n, dl)
+		var info1 := {"segs": [ov], "peak": peak}
+		_strike_cache[key] = info1
+		return info1
+	var segs := []
+	for c in range(cuts.size() - 1):
+		var s0: int = cuts[c]
+		var s1: int = cuts[c + 1]
+		var hi := s0 + (s1 - s0) / 4
+		for j in range(s0 + (s1 - s0) / 4, s0 + (s1 - s0) * 3 / 4 + 1):
+			if sp[j] > sp[hi]:
+				hi = j
+		segs.append(Vector3(dl * s0 / n, dl * s1 / n, dl * hi / n))
+	var info := {"segs": segs, "peak": peak}
+	_strike_cache[key] = info
+	return info
+
+## The overhead blow in a blade's clip: the biggest fall of the hand within half a second (a little
+## less where it also swings far to the side), with the raise before it and a moment after.
+static func _strike_overhead(clip: Dictionary, a: int, b: int, n: int, dl: float) -> Vector3:
+	var ys := PackedFloat32Array()
+	var xs := PackedFloat32Array()
+	for k in n + 1:
+		var o := AnimClips.xform(clip, "zbran", dl * k / n).origin
+		ys.append(o.y)
+		xs.append(o.x)
+	var win := int(0.5 * n / dl)
+	var best := -1.0
+	var top := a
+	var low := b
+	for i in range(a, b):
+		for j in range(i + 1, mini(b, i + win) + 1):
+			var sc := ys[i] - ys[j] - 0.5 * absf(xs[i] - xs[j])
+			if sc > best:
+				best = sc
+				top = i
+				low = j
+	# the raise before the top (back while the hand still went up), at most 0.45 s
+	var s0 := top
+	while s0 > a and ys[s0 - 1] < ys[s0] and (top - s0) < int(0.45 * n / dl):
+		s0 -= 1
+	var s1 := mini(b, low + int(0.25 * n / dl))
+	# the blow lands where the hand falls fastest
+	var hit := top
+	var fall := 0.0
+	for k in range(top, low):
+		if ys[k] - ys[k + 1] > fall:
+			fall = ys[k] - ys[k + 1]
+			hit = k
+	return Vector3(dl * s0 / n, dl * s1 / n, dl * hit / n)
+
+static func _strike_reach(g: Transform3D) -> float:
+	return g.origin.length() + g.basis.get_rotation_quaternion().get_angle() * 0.12
+
 func _melee_hit(rule: Dictionary) -> void:
 	Game.play_at(self, rule.get("sound", "swish"), global_position + Vector3.UP, -6)
 	var from := cam.global_position
@@ -2640,6 +2900,9 @@ func _melee_hit(rule: Dictionary) -> void:
 		rule = rule.duplicate()
 		rule["reach"] = float(rule["reach"]) + 0.25
 		rule["damage"] = float(rule["damage"]) * 1.15
+	if Game.has_talent(merc, "rvac"):
+		rule = rule.duplicate()
+		rule["damage"] = float(rule["damage"]) * 1.5      # (0.62) talent Rváč: a harder blow
 	var q := PhysicsRayQueryParameters3D.create(from, from + dir * float(rule["reach"]), Game.WORLD | Game.GLASS | 4)
 	q.exclude = [get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
@@ -2757,18 +3020,19 @@ func _quick_melee() -> void:
 	if not rg.is_empty() and Game.has_mod(rg["id"], "bajonet", merc):
 		_melee("rh", BAYONET)
 		return
-	# (0.57, Ari) V: the knife, wherever he carries it - out and a quick cut; only without one the butt
+	# (0.62, Ari) V: a knife (or a baton) on the belt comes out and cuts at once - no "Tasím";
+	# the gun stays in the hand meanwhile and is back once the cut is done. Without one on the
+	# belt the gun in the hand strikes at once.
 	var b := find_item(func(it): return it["id"] in ["knife", "energo_nuz"])
-	if b == "" or not (b.begins_with("b") or b.begins_with("p")):
+	if not b.begins_with("b"):
 		b = find_item(func(it): return Game.ITEMS[it["id"]]["type"] == "melee")
 		if not b.begins_with("b"):
 			b = ""
 	if b != "":
-		var rule: Dictionary = Game.ITEMS[inv[b]["id"]]
-		var t := 0.12 if Game.has_mod(inv[b]["id"], "pouzdro", merc) or Game.has_mod(inv[b]["id"], "lehky", merc) else 0.25
-		if b.begins_with("p"):
-			t += 0.5          # from the pack it takes a moment longer
-		_start_busy(t, "Tasím", func(): _melee("rh", rule))
+		_quick_id = String(inv[b]["id"])
+		held = _quick_id
+		_show_items(_quick_id, held_l, held_back)
+		_melee("rh", Game.ITEMS[_quick_id])
 	else:
 		# rifle butt
 		_melee("rh", {"damage": 12, "reach": 1.6, "rate": 0.9, "sound": "swish"})
@@ -2780,6 +3044,8 @@ var _mantle_t := -1.0
 var _mantle_from := Vector3.ZERO
 var _mantle_to := Vector3.ZERO
 var _mantle_cd := 0.0
+var _wedge_t := 0.0          # (0.62) how long stuck in a V without floor
+const WEDGE_T := 0.2
 const MANTLE_TIME := 0.85
 
 ## The top of a ledge in front within @a reach (feet to top), with room to stand on it; or INF.
@@ -2800,8 +3066,16 @@ func mantle_spot(reach: float) -> Vector3:
 			break
 	if wall_d < 0.0:
 		return Vector3.INF
-	# its top: straight down from above, a little past the face
-	var over := feet + fwd * (wall_d + 0.4)
+	# its top: straight down from above, a little past the face (0.62: and further on, for a face
+	# that leans back - a slab or a rock too steep to stand on, whose flat top lies beyond)
+	for past in [0.4, 0.9, 1.4]:
+		var spot := _mantle_top(space, feet, fwd, wall_d + past, reach)
+		if spot != Vector3.INF:
+			return spot
+	return Vector3.INF
+
+func _mantle_top(space: PhysicsDirectSpaceState3D, feet: Vector3, fwd: Vector3, dist: float, reach: float) -> Vector3:
+	var over := feet + fwd * dist
 	var q2 := PhysicsRayQueryParameters3D.create(over + Vector3(0, reach + 0.6, 0), over + Vector3(0, 0.5, 0), Game.WORLD)
 	q2.exclude = [get_rid()]
 	var top := space.intersect_ray(q2)
@@ -2827,6 +3101,65 @@ func mantle_spot(reach: float) -> Vector3:
 	if not space.intersect_ray(q4).is_empty():
 		return Vector3.INF
 	return top.position
+
+## 0.62: the third jump on the same spot (a V of a wall and a steep slab, stones): climb out to the
+## nearest place you can stand on, facing side first - the way out is never a dead end.
+var _stuck_at := Vector3.INF
+var _stuck_n := 0
+func _unstuck_try() -> bool:
+	if _stuck_at.distance_to(global_position) < 0.4:
+		_stuck_n += 1
+	else:
+		_stuck_at = global_position
+		_stuck_n = 1
+	if _stuck_n < 3 or busy_stand or prone or downed or carried_by != 0:
+		return false
+	var space := get_world_3d().direct_space_state
+	var feet := global_position
+	var fwd := -global_transform.basis.z
+	var a0 := atan2(fwd.x, fwd.z)
+	var cap := CapsuleShape3D.new()
+	cap.radius = 0.3
+	cap.height = 1.1
+	var q3 := PhysicsShapeQueryParameters3D.new()
+	q3.shape = cap
+	q3.collision_mask = Game.WORLD
+	q3.exclude = [get_rid()]
+	for r in [0.9, 1.3, 1.7, 2.2]:
+		for k in 12:
+			var a: float = a0 + (TAU * ((k + 1) / 2) / 12.0) * (1.0 if k % 2 == 0 else -1.0)
+			var at: Vector3 = feet + Vector3(sin(a), 0, cos(a)) * r
+			var q := PhysicsRayQueryParameters3D.create(at + Vector3(0, 2.6, 0), at + Vector3(0, -1.0, 0), Game.WORLD)
+			q.exclude = [get_rid()]
+			var h := space.intersect_ray(q)
+			if h.is_empty() or (h.normal as Vector3).y < 0.75 or (h.position as Vector3).y - feet.y > MANTLE_JUMP:
+				continue
+			q3.transform = Transform3D(Basis(), (h.position as Vector3) + Vector3(0, 0.6, 0))
+			if not space.intersect_shape(q3, 1).is_empty():
+				continue
+			# over the top, not through a wall: up, across, down must all be clear
+			var to: Vector3 = h.position
+			var hy := maxf(feet.y, to.y) + 1.6
+			var path := [feet + Vector3(0, 0.9, 0), Vector3(feet.x, hy, feet.z), Vector3(to.x, hy, to.z), to + Vector3(0, 0.9, 0)]
+			var clear := true
+			for j in 3:
+				var qq := PhysicsRayQueryParameters3D.create(path[j], path[j + 1], Game.WORLD)
+				qq.exclude = [get_rid()]
+				if not space.intersect_ray(qq).is_empty():
+					clear = false
+					break
+			if not clear:
+				continue
+			_stuck_n = 0
+			_mantle_from = global_position
+			_mantle_to = (h.position as Vector3) + Vector3(0, 0.05, 0)
+			_mantle_t = 0.0
+			velocity = Vector3.ZERO
+			crouching = true
+			Game.play_at(mission, "gear", global_position + Vector3.UP, -8)
+			mission.noise(global_position, 6.0)
+			return true
+	return false
 
 func _mantle_try(reach: float) -> bool:
 	if busy_stand or prone or downed or carried_by != 0 or held_l == "stit":
@@ -3076,12 +3409,13 @@ func _lc_hum_tick() -> void:
 		return
 	if _lc_hum == null:
 		_lc_hum = AudioStreamPlayer3D.new()
-		_lc_hum.stream = Game.sound("core_hum")
+		# (0.62) its own rising laser whine - the UFO core's hum it used made it sound like an alien after every shot
+		_lc_hum.stream = Game.sound("laser_charge")
 		_lc_hum.bus = "SFX"
 		_lc_hum.unit_size = 4.0
 		add_child(_lc_hum)
-	_lc_hum.pitch_scale = 0.45 + 0.45 * clampf(float(w.get("charge", 0.0)), 0.0, 1.0)
-	_lc_hum.volume_db = -14.0 + 8.0 * clampf(float(w.get("charge", 0.0)), 0.0, 1.0)
+	_lc_hum.pitch_scale = 0.6 + 0.4 * clampf(float(w.get("charge", 0.0)), 0.0, 1.0)
+	_lc_hum.volume_db = -16.0 + 6.0 * clampf(float(w.get("charge", 0.0)), 0.0, 1.0)
 	if not _lc_hum.playing:
 		_lc_hum.play()
 
@@ -3167,7 +3501,7 @@ func _reload(wp: Dictionary, rule: Dictionary) -> void:
 		get_tree().create_timer(t2 * 0.25).timeout.connect(func(): _drop_mag())
 	if not "zvuk:mag_in" in fev:
 		get_tree().create_timer(t2 * 0.62).timeout.connect(func(): if is_instance_valid(self) and busy > 0: Game.play_at(mission, "mag_in", global_position + Vector3.UP, -4))
-	_start_busy(t2, ("Pojistka: doznívá výstřelový cyklus" if cycle > 0.0 else "Přebíjím") + (" (z batohu)" if dig else ""), func():
+	_start_busy(t2, ("Přebíjím (pojistka: doznívá výstřelový cyklus)" if cycle > 0.0 else "Přebíjím") + (" (z batohu)" if dig else ""), func():
 		busy_stand = false
 		if inv.has(slot):
 			inv.erase(slot)
@@ -3382,6 +3716,46 @@ func _reload_anim(delta: float, rid: String, reloading: bool) -> Array:
 	if not reloading:
 		_rl_pack_frac = 0.0
 		_fp_pack_phase = -1
+	# 0.62: a blow from the eyes recorded in VR (fp_strike_<item>): the whole swing as it was moved,
+	# within the blow's own time (the hand-written swings below stay for what has none)
+	_fp_strike_vr = false
+	if fact == "" and _swing > 0.0 and not _swing_left and _swing_kind == 7:
+		var srid := _strike_item()
+		var sclip := _strike_clip(srid)
+		if sclip.get("zdroj", "") == "vr":
+			_fp_dip = 0.0
+			_fp_vr = true
+			_fp_strike_vr = true
+			if _swing >= 0.999:
+				_fp_last = -1.0
+			# only this blow's part of the clip; a blow from the middle of a blade's clip eases out
+			# of the rest pose and back into it
+			var sph := 1.0 - _swing
+			var st: float = lerpf(_strike_seg.x, _strike_seg.y, sph)
+			var res := _fp_clip_anim(sclip, st / maxf(float(sclip.get("delka", 1.0)), 0.01))
+			var melee: bool = Game.ITEMS.get(srid, {}).get("type", "") == "melee"
+			var info := _strike_info(sclip, melee)
+			var env := 1.0
+			if melee:
+				env = smoothstep(0.0, 0.18, sph) * (1.0 - smoothstep(0.82, 1.0, sph))
+			# (Ari) the left hand stays where it holds the gun (a pistol: both hands on it); with a
+			# blade it stays out of the picture (in the headset it wandered up to the face)
+			_fp_hand_busy = false
+			if _rl_hand:
+				_rl_hand.visible = false
+			res[0] *= env
+			res[1] *= env
+			# (Ari) in the headset the hand drew back close to the face - on the screen that fills
+			# the view: towards the eye the gun comes only a third as far
+			var o: Vector3 = res[0]
+			if o.z > 0.0:
+				o.z *= STRIKE_NEAR
+			res[0] = o
+			# (Ari) a butt stroke goes further out from the body than it felt in the headset (a blade a
+			# little less: its raise came right up to the face)
+			var reach := _strike_reach(AnimClips.xform(sclip, "zbran", st)) / float(info["peak"])
+			res[0] += STRIKE_PUSH * (0.8 if melee else 1.0) * smoothstep(0.0, 1.0, clampf(reach, 0.0, 1.0))
+			return res
 	if fact != "":
 		var vclip := _fp_find(fact, rid)
 		if vclip.get("zdroj", "") == "vr":
@@ -4021,6 +4395,8 @@ func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
 	if downed:
 		bleed_left -= dmg * 0.5
 		return
+	if mission.t < stim_until:
+		dmg *= 0.5          # (0.60) right after being stood up the stimulant dulls the pain
 	if armor != "":
 		# (the Nádor's acid eats through the vest: the armour helps only a third as much)
 		var pr := float(Game.ITEMS[armor].get("protect", 1.0))
@@ -4029,12 +4405,12 @@ func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
 			# a claw finds the gaps; the ceramic plates (research) make it stop more
 			if Game.has_research("vesta"):
 				pr -= 0.1
-			pr = lerpf(pr, 1.0, {"plasma": 0.7, "heat": 0.75, "claw": 0.6, "blow": 0.4, "blast": -0.5}.get(kind, 0.0))
+			pr = lerpf(pr, 1.0, {"plasma": 0.7, "laser": 0.35, "heat": 0.75, "claw": 0.6, "blow": 0.4, "blast": -0.5}.get(kind, 0.0))
 		elif armor == "pancir":
 			# ARM-02: the alloy plates stop far more and take some of the heat - not all of it.
 			# A hard blow still hurts through an unbroken plate; repeated plasma on the same
 			# segments burns their strength away (for the rest of the mission).
-			pr = lerpf(pr, 1.0, {"plasma": 0.45, "heat": 0.35, "claw": 0.25, "blow": 0.35, "blast": -0.3}.get(kind, 0.0))
+			pr = lerpf(pr, 1.0, {"plasma": 0.45, "laser": 0.15, "heat": 0.35, "claw": 0.25, "blow": 0.35, "blast": -0.3}.get(kind, 0.0))
 			pr = lerpf(pr, 1.0, vest_wear)
 			if kind in ["plasma", "heat"]:
 				vest_wear = minf(0.6, vest_wear + 0.07)
@@ -4046,9 +4422,10 @@ func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
 		to.y = 0
 		if to.length() > 0.1 and (-global_transform.basis.z).dot(to.normalized()) > (0.35 if shield_up else 0.55):
 			# BSH-01 is built against bullets and fragments: up it stops nearly everything of that,
-			# low it covers the body, not the head. Plasma and heat go partly through it, a blast
+			# low it covers the body, not the head. Plasma (0.60: they have it from the first day,
+			# so the shield takes most of it) and heat go partly through it, a blast
 			# comes round it, tentacles reach past it.
-			var cover: float = {"plasma": 0.6, "heat": 0.4, "blast": 0.35, "claw": 0.45, "blow": 0.75}.get(kind, 0.9)
+			var cover: float = {"plasma": 0.8, "laser": 0.85, "heat": 0.4, "blast": 0.35, "claw": 0.45, "blow": 0.75}.get(kind, 0.9)
 			var kept := dmg * cover * (1.0 if shield_up else 0.55)
 			var raw := dmg
 			dmg -= kept
@@ -4075,10 +4452,10 @@ func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
 				mission.hud.message("Štít je prožraný - dlouho nevydrží (%d %%)." % int(100.0 * hp_left / SHIELD_HP), 2.5)
 	hp -= dmg
 	wounded = true
-	stress = min(100.0, stress + dmg * (1.4 - float(merc.get("bravery", 40)) / 100.0) * 1.3)
+	stress = min(100.0, stress + dmg * (1.4 - float(merc.get("bravery", 40)) / 100.0) * 1.3 * _backed())
 	if dmg > 6.0:
 		bleeding += 0.25
-	Game.play_ui(self, "hurt_female" if merc.get("look", {}).get("female", false) else "hurt_male", -4)
+	Game.play_ui(self, Game.voice_of("hurt", merc.get("look", {}).get("female", false)), -4)
 	mission.hud.damage_flash(from)
 	if hp <= 0:
 		hp = 0
@@ -4093,7 +4470,7 @@ func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
 				if is_instance_valid(self) and downed and not dead and not ko and not infected:
 					revived("Druhý dech")
 					mission.hud.message("DRUHÝ DECH - zvedl ses sám.", 4.0))
-		Game.play_ui(self, "death_female" if merc.get("look", {}).get("female", false) else "death_male", -6)
+		Game.play_ui(self, Game.voice_of("death", merc.get("look", {}).get("female", false)), -6)
 
 ## How long a downed merc bleeds before he dies (tough mercs and research make it longer).
 var _second_wind_used := false
@@ -4125,7 +4502,7 @@ func _downed(delta: float) -> void:
 	if carried_by > 0:
 		var c: Node = mission.actors.get_node_or_null("P%d" % carried_by)
 		if c and not c.downed:
-			var target: Vector3 = c.global_position + c.global_transform.basis.z * DRAG_GAP
+			var target: Vector3 = c.global_position - c.global_transform.basis.z * DRAG_GAP
 			global_position = global_position.lerp(target, delta * 6.0)
 			return
 		carried_by = 0
@@ -4162,19 +4539,55 @@ func revived(by: String) -> void:
 	hp = max(8.0, max_hp * 0.3)
 	bleeding = 0
 	crouching = true
+	stim_until = mission.t + STIM_TIME
 	mission.hud.message("%s tě ošetřil. Jsi zraněný, ale na nohou." % by, 4.0)
 
-## How far behind the one who drags the dragged one sits (his shoulders in the other's hands).
-const DRAG_GAP := 0.8
+## (0.60) Stood up again (the Strážce, MED-01, a teammate): for a few seconds the stimulant
+## halves what hits him - time to crawl into cover, not a shield to fight from.
+const STIM_TIME := 4.0
+var stim_until := -1.0
+
+## How far in front of the one who drags the dragged one sits (his jacket in the other's hands).
+const DRAG_GAP := 0.5
 ## Is this merc dragging a downed teammate (whose carried_by is his peer)?
 func _dragging() -> bool:
+	return _dragged_mate() != null
+
+## The downed teammate this merc drags (or null).
+func _dragged_mate() -> Node:
 	if downed or dead or mission == null:
-		return false
+		return null
 	var me := get_multiplayer_authority()
 	for p in mission.players():
 		if p != self and p.downed and not p.dead and p.carried_by == me:
-			return true
-	return false
+			return p
+	return null
+
+## (Ari) the left hand really holds him: by the collar of the jacket, just under his neck.
+## The two bodies do not push each other apart meanwhile (he sits right at his feet).
+var _drag_ex: Node = null
+func _drag_hand() -> void:
+	var mate: Node = _dragged_mate()
+	if mate == null or _sk == null or mate._sk == null:
+		return
+	if _drag_ex != mate:
+		if is_instance_valid(_drag_ex):
+			remove_collision_exception_with(_drag_ex)
+			_drag_ex.remove_collision_exception_with(self)
+		add_collision_exception_with(mate)
+		mate.add_collision_exception_with(self)
+		_drag_ex = mate
+	var ni: int = mate._sk.find_bone("neck")
+	if ni < 0:
+		return
+	var neck: Vector3 = mate._sk.global_transform * mate._sk.get_bone_global_pose(ni).origin
+	var back: Vector3 = global_transform.basis.z      # from him towards the one who drags
+	var collar := neck + back * 0.12 + Vector3.DOWN * 0.04
+	var ie := _bone("forearm.L")
+	if ie < 0:
+		return
+	var elbow := _sk.global_transform * _sk.get_bone_global_pose(ie).origin
+	ArmIK.solve(_sk, "L", collar, elbow + Vector3.DOWN * 0.3 - global_transform.basis.x * 0.2)
 
 @rpc("any_peer", "call_local", "reliable")
 func set_carried(by_peer: int) -> void:
@@ -4202,6 +4615,16 @@ func _medkit() -> void:
 		_treat_teammate(slot)
 	else:
 		_heal_self()
+
+## Bandaging yourself ("Ošetřuji se"): you may walk, slowly.
+func _self_healing() -> bool:
+	return busy > 0 and busy_text == "Ošetřuji se"
+
+## Treating a teammate, or a teammate treating you: stand still.
+func _heal_still() -> bool:
+	if healed_t > 0.0:
+		return true
+	return busy > 0 and (busy_text.begins_with("Obvazuji ") or (busy_text.begins_with("Ošetřuji ") and busy_text != "Ošetřuji se"))
 
 func _heal_self() -> void:
 	var slot := find_item(func(it): return it["id"] == "medkit" and int(it.get("uses", 0)) > 0)
@@ -4530,6 +4953,7 @@ func _stress(delta: float) -> void:
 		gain += 0.4
 	gain *= 1.3 - float(merc.get("bravery", 40)) / 100.0
 	if Game.has_talent(merc, "zelezne_nervy"): gain *= 0.6
+	gain *= _backed()
 	stress = clamp(stress + (gain - 3.5) * delta, 0.0, 100.0)
 	if stress > 45:
 		_hb -= delta
@@ -4849,6 +5273,9 @@ func _remote_visuals() -> void:
 	_show_items(held, held_l, held_back)
 	head.rotation.x = pitch
 	flash.visible = light_on and not downed
+	# 0.62 výkon: baterka spoluhráče svítí, ale stín (scéna znovu za každého hráče) jen na vysoké stíny
+	if flash.shadow_enabled != (Game.shadows >= 2):
+		flash.shadow_enabled = Game.shadows >= 2
 	_place_flash()
 	_flicker(get_physics_process_delta_time())
 	_apply_gear()

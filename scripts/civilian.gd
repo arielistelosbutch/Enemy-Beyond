@@ -61,8 +61,10 @@ func setup(data: Dictionary) -> void:
 	body.add_child(m)
 	anim = m.find_child("AnimationPlayer", true, false)
 	if anim:
+		_afk_clips(m)
 		for an in anim.get_animation_list():
-			anim.get_animation(an).loop_mode = Animation.LOOP_LINEAR
+			if not String(an).begins_with("death"):
+				anim.get_animation(an).loop_mode = Animation.LOOP_LINEAR
 		anim.play("idle")
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"
@@ -72,6 +74,47 @@ func setup(data: Dictionary) -> void:
 	sync.replication_config = cfg
 	sync.root_path = NodePath("..")
 	add_child(sync)
+
+## 0.62: frightened people - Ari's afk movements on their bones (animace/al_civ_a|b_<clip>.json,
+## tools/test/afk_install.gd --race=civ_a): looking round nervously, walking, running, and cowering
+## (Terrified). Only in the game package like the other afk movements; without them the old clips stay.
+const AlienScript := preload("res://scripts/alien.gd")
+const StepUp := preload("res://scripts/step_up.gd")
+## Deaths (Ari: they have no guns, but can die like the soldiers): "death_1".."death_9" from the same
+## pack, "death_crouch" for one shot while cowering; without them the old toppling over stays.
+const CIV_CLIPS := ["idle", "walk", "run", "lurk",
+	"death_1", "death_2", "death_3", "death_4", "death_5", "death_6", "death_7", "death_8", "death_9", "death_crouch"]
+static var _civ_cache := {}
+var _deaths: Array = []       # this one's own death movements (empty: he topples over as before)
+var _dying := false           # an afk death is playing
+var _death_done := false
+func _afk_clips(m: Node) -> void:
+	var sk: Skeleton3D = m.find_child("Skeleton3D", true, false)
+	var lib: AnimationLibrary = anim.get_animation_library(&"")
+	if sk == null or lib == null or not lib.has_animation("idle"):
+		return
+	var ref: Animation = lib.get_animation("idle")
+	var sk_path := ""
+	for t in ref.get_track_count():
+		if ref.track_get_path(t).get_subname_count() > 0:
+			sk_path = String(ref.track_get_path(t)).split(":")[0]
+			break
+	if sk_path == "":
+		return
+	for cn in CIV_CLIPS:
+		var id := "al_%s_%s" % [model_name, cn]
+		if not FileAccess.file_exists(AnimClips.path_of(id)):
+			continue
+		if not _civ_cache.has(id):
+			_civ_cache[id] = AlienScript._afk_build(AnimClips.get_clip(id), sk, sk_path, ref)
+		var made: Array = _civ_cache[id]
+		if made.is_empty():
+			continue
+		if lib.has_animation(cn):
+			lib.remove_animation(cn)
+		lib.add_animation(cn, made[0])
+		if cn.begins_with("death_") and cn != "death_crouch":
+			_deaths.append(cn)
 
 func _ready() -> void:
 	mission = get_tree().current_scene
@@ -87,9 +130,11 @@ func _ready() -> void:
 		cowering = true
 
 func _physics_process(delta: float) -> void:
+	if dead and not _death_done:
+		_death_start(cowering, true)     # (dead already when this machine joined: lies as he fell)
 	_animate(delta)
 	if dead or saved:
-		if dead:
+		if dead and not _dying:
 			body.rotation.x = lerp(body.rotation.x, 1.5, delta * 6.0)
 			body.position.y = lerp(body.position.y, 0.15, delta * 6.0)
 		return
@@ -100,9 +145,12 @@ func _physics_process(delta: float) -> void:
 		velocity.y -= GRAVITY * delta
 	else:
 		velocity.y = 0
+	StepUp.climb(self, delta, StepUp.MAN)
 	move_and_slide()
 
 func _animate(delta: float) -> void:
+	if dead and _dying:
+		return         # Ari's death plays out and holds its last pose
 	if anim == null or dead:
 		if anim and anim.is_playing():
 			anim.pause()
@@ -146,12 +194,14 @@ func hear(pos: Vector3, radius: float) -> void:
 			return
 	_flee_from(pos)
 
+const SEE_ALIEN := 24.0      # m: an alien in sight this close and they run (0.64: was 14 m)
+
 func _danger() -> Node:
 	for a in mission.aliens():
-		if a.dead:
+		if a.dead or ("husk" in a and a.husk):
 			continue
 		var d: float = a.global_position.distance_to(global_position)
-		if d < 14.0:
+		if d < SEE_ALIEN:
 			var q := PhysicsRayQueryParameters3D.create(global_position + Vector3(0, 1.5, 0), a.global_position + Vector3(0, 1.0, 0), Game.WORLD)
 			if d < 4.0 or get_world_3d().direct_space_state.intersect_ray(q).is_empty():
 				return a
@@ -160,12 +210,57 @@ func _danger() -> Node:
 func _flee_from(p: Vector3) -> void:
 	st = C.FLEE
 	cowering = false
-	fear_t = rng.randf_range(5.0, 9.0)
+	fear_t = rng.randf_range(7.0, 11.0)
 	var away := global_position - p
 	away.y = 0
 	if away.length() < 0.1:
 		away = Vector3(1, 0, 0)
-	_go(_snap(global_position + away.normalized().rotated(Vector3.UP, rng.randf_range(-0.7, 0.7)) * rng.randf_range(10.0, 16.0)))
+	if Game.cmd_arg("oldai", "") == "1" or Game.cmd_arg("ai063", "") == "1":
+		_go(_snap(global_position + away.normalized().rotated(Vector3.UP, rng.randf_range(-0.7, 0.7)) * rng.randf_range(10.0, 16.0)))
+		return
+	# (0.64, Ari: they run from the aliens) - away from every alien they know of round them, and
+	# towards the soldiers if there are any that way; never past an alien
+	var near := []
+	for a in mission.aliens():
+		if not a.dead and a.global_position.distance_to(global_position) < 30.0:
+			near.append(a.global_position)
+	if near.is_empty():
+		near.append(p)
+	var best := Vector3.INF
+	var bs := -1e9
+	for i in 10:
+		var dir := away.normalized().rotated(Vector3.UP, (i - 4.5) * 0.45 + rng.randf_range(-0.15, 0.15))
+		var c := _snap(global_position + dir * rng.randf_range(12.0, 20.0))
+		if c.distance_to(global_position) < 5.0:
+			continue          # (a wall: the nav mesh gives nothing that way)
+		var sc := 0.0
+		for ap in near:
+			var da: float = (ap as Vector3).distance_to(c)
+			sc += minf(da, 30.0)
+			if da < 6.0:
+				sc -= 40.0       # straight into its arms
+			# the path would run past it
+			var mid: Vector3 = (c + global_position) * 0.5
+			if (ap as Vector3).distance_to(mid) < 5.0:
+				sc -= 25.0
+		var pd := 1e9
+		for pl in mission.players():
+			if not pl.dead and not pl.downed:
+				pd = minf(pd, pl.global_position.distance_to(c))
+		if pd < 40.0:
+			sc += (40.0 - pd) * 0.6        # the soldiers are safety
+		if sc > bs:
+			bs = sc
+			best = c
+	_go(best if best != Vector3.INF else _snap(global_position + away.normalized() * rng.randf_range(10.0, 16.0)))
+	# a scream: the aliens near by hear it (that is how they find them in a terror)
+	if multiplayer.is_server() and mission.t - _cry_t > 4.0:
+		_cry_t = mission.t
+		for a in mission.aliens():
+			if not a.dead and a.global_position.distance_to(global_position) < 28.0 and a.has_method("hear_cry"):
+				a.hear_cry(global_position)
+
+var _cry_t := -99.0
 
 func _think(delta: float) -> void:
 	if mission and not mission.started():
@@ -252,11 +347,28 @@ func _vip_hurt(left: int) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func _die(seeded: bool) -> void:
+	var low := cowering
 	dead = true
 	infected = seeded
 	cowering = false
+	_death_start(low, false)
 	collision_layer = 0
 	Game.play_at(mission, "scream", global_position, 0)
+
+## Ari's death movement (the same one on every machine: picked by the node's name); crouched in
+## fear he dies from the crouch. at_end: already lying (joined later) - straight to the last pose.
+func _death_start(low: bool, at_end: bool) -> void:
+	_death_done = true
+	if anim == null or _deaths.is_empty():
+		return
+	var pick: String = _deaths[absi(hash(String(name))) % _deaths.size()]
+	if low and anim.has_animation("death_crouch"):
+		pick = "death_crouch"
+	anim.speed_scale = 1.0
+	anim.play(pick, 0.0 if at_end else 0.12)
+	if at_end:
+		anim.seek(anim.current_animation_length, true)
+	_dying = true
 
 @rpc("authority", "call_local", "reliable")
 func _rise() -> void:

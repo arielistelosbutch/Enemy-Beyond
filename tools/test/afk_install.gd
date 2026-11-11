@@ -161,6 +161,7 @@ const RACE_LISTS := {
 		"death_5": ["Death_Flying_Back", false, false, "body"],
 		"death_6": ["Rifle_Death", false, false, "body"],
 		"death_crouch": ["Death_Crouching", false, false, "body"],
+		"hit": ["Pistol_Hit", true, false, "body"],      # 0.62: hit reaction
 	},
 	# the officer: his psionic strike (alien._psi_fx plays "attack"; the rest he takes from "grey")
 	"grey_velitel": {
@@ -188,7 +189,60 @@ const RACE_LISTS := {
 		"death_8": ["Death_To_Knees", false, false, "body"],
 		"death_9": ["Rifle_Death", false, false, "body"],
 		"death_crouch": ["Death_Crouching", false, false, "body"],
+		"hit": ["Rifle_Hit", true, false, "body"],       # 0.62: hit reaction, turning on the spot
+		"turn": ["Rifle_Turn", true, true, "body", -1, -1, "noyaw"],
 	},
+	# 0.62: the frightened civilians (same bones as the merc; civilian.gd takes these in place of the
+	# model's own clips) - from the common pack: install with its --src, --race=civ_a and again --race=civ_b
+	"civ_a": CIV_CLIPS,
+	"civ_b": CIV_CLIPS,
+}
+const CIV_CLIPS := {
+	"idle": ["Look_Around_Nervous", true, true, "body"],
+	"walk": ["Walk", true, true, "body"],
+	"run": ["Run", true, true, "body"],
+	"lurk": ["Terrified", true, true, "body"],
+	# (Ari: they have no guns, but they can die like the soldiers) - Ari's deaths from the same pack;
+	# civilian.gd picks one, from the cowering crouch "death_crouch"
+	"death_1": ["Death_A", false, false, "body"],
+	"death_2": ["Death_B", false, false, "body"],
+	"death_3": ["Death_C", false, false, "body"],
+	"death_4": ["Death_D", false, false, "body"],
+	"death_5": ["Death_Backward", false, false, "body"],
+	"death_6": ["Death_Forward", false, false, "body"],
+	"death_7": ["Death_Headshot", false, false, "body"],
+	"death_8": ["Death_Left", false, false, "body"],
+	"death_9": ["Death_Right", false, false, "body"],
+	"death_crouch": ["Death_Crouching", false, false, "body"],
+}
+
+## 0.66 Facelift I: --set=npc --src=<vedci_technici.glb>: the people at the base (scientists, technicians)
+## on the merc's bones - ids tp_npc_<what> (scripts/base_npc.gd). Ari: they walk or do something (type
+## at a computer, write, fix things); no tablets or phones in 1990, so those movements stay out.
+const NPC_LIST := {
+	"tp_npc_walk": ["Walk", true, true, "body"],
+	"tp_npc_walk_f": ["Walk_Female", true, true, "body"],
+	"tp_npc_walk_formal": ["Walk_Formal", true, true, "body"],
+	"tp_npc_walk_carry": ["Walk_Carry", true, true, "body"],
+	"tp_npc_idle": ["Idle_A", true, true, "body"],
+	"tp_npc_idle2": ["Idle_Subtle", true, true, "body"],
+	"tp_npc_listen": ["Idle Listening", true, true, "body"],
+	"tp_npc_talk": ["Idle_Talking", true, true, "body"],
+	"tp_npc_nod": ["Head Nod", true, true, "body"],
+	"tp_npc_shake": ["Head_Shake", true, true, "body"],
+	"tp_npc_confused": ["Confused", true, true, "body"],
+	"tp_npc_yes": ["Yes", true, true, "body"],
+	"tp_npc_fix": ["Fixing_Kneeling", true, true, "body"],
+	"tp_npc_interact": ["Interact", true, true, "body"],
+	"tp_npc_typing": ["Typing", true, true, "body"],
+	"tp_npc_lean": ["Idle_Lean_Wall", true, true, "body"],
+	"tp_npc_impatient": ["Sit_Impatient", true, true, "body"],
+	"tp_npc_salute": ["Salute", true, true, "body"],
+	"tp_npc_water": ["Farm_Watering", true, true, "body"],
+	"tp_npc_sleep": ["Sleeping", true, true, "body"],
+	"tp_npc_lie": ["Lie_Idle", true, true, "body"],
+	"tp_npc_pushup": ["Pushup", true, true, "body"],
+	"tp_npc_jacks": ["Jumping Jacks", true, true, "body"],
 }
 
 ## --set=heavy: the same movements for the heavy guns (cannons, miniguns, the rocket launcher) from
@@ -259,6 +313,8 @@ func _run() -> void:
 		list = {}
 		for c in RACE_LISTS[race]:
 			list["al_%s_%s" % [race, c]] = RACE_LISTS[race][c]
+	if Game.cmd_arg("set", "") == "npc":
+		list = NPC_LIST
 	if Game.cmd_arg("set", "") == "heavy":
 		list = _heavy_list(scenes[0].find_children("*", "AnimationPlayer", true, false)[0])
 	for id in list:

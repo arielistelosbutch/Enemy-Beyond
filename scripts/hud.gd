@@ -27,6 +27,7 @@ var _last_pos := {}           # alien name -> last position (for the scanner)
 var _blips := []              # [{pos, t}]
 var _scan_t := 0.0
 var _scan_sweep := 0.0
+var _f1_down := false
 
 func _ready() -> void:
 	layer = 5
@@ -36,7 +37,7 @@ func _ready() -> void:
 	canvas.draw.connect(_draw_hud)
 	add_child(canvas)
 	msg_label = Label.new()
-	msg_label.position = Vector2(20, 250)
+	msg_label.position = Vector2(20, 62)      # (0.66) messages top centre, under the compass and the objective
 	msg_label.size = Vector2(600, 60)
 	msg_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	msg_label.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -310,6 +311,8 @@ var _brief_fade := -1.0
 func _brief_tick(delta: float) -> void:
 	if _brief_t < 0:
 		return
+	if Game.loading_busy():
+		return          # 0.66: the loading screen still covers it - the typing waits
 	_brief_t += delta
 	var typed := int(_brief_t * 40.0)
 	var hold := float(_brief_len) / 40.0 + 1.0
@@ -392,6 +395,11 @@ func _process(delta: float) -> void:
 	if Input.is_action_just_pressed("inventory") and not paused:
 		if inventory_open: _close_inventory()
 		elif me() and not me().downed and not me().dead: _open_inventory()
+	if Input.is_key_pressed(KEY_F1) != _f1_down:
+		_f1_down = not _f1_down
+		if _f1_down:
+			Game.hud_hidden = not Game.hud_hidden
+			message("HUD skrytý (F1)" if Game.hud_hidden else "HUD zpět (F1)", 1.5)
 	if Input.is_action_just_pressed("pause"):
 		if inventory_open: _close_inventory()
 		elif paused: _resume()
@@ -405,6 +413,7 @@ func _draw_hud() -> void:
 	var p := me()
 	var sz := c.size
 	var mid := sz / 2
+	_prompts.clear()
 	# red vignette when hurt
 	if flash_t > 0:
 		var a := clampf(flash_t, 0, 0.6) * 0.6
@@ -464,10 +473,14 @@ func _draw_hud() -> void:
 			if hit_t > 0:
 				for d in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
 					c.draw_line(mid + d * 4, mid + d * 8, Color(1, 0.3, 0.2), 1.0)
+	if Game.hud_hidden:
+		return          # (0.66) F1: only the crosshair / sight and what happens to you
+	if msg_label.visible and msg_label.text != "":
+		_msg_plate(c)
 	# bars, bottom left (veteran: no numbers - you feel it: blood, breath, limping)
 	# 0.57: on a plate of the menus' metal, with the mercenary's own figure for the stance
 	_plate(c, Rect2(4, sz.y - 44, 218, 40))
-	var base := Vector2(10, sz.y - 34)
+	var base := Vector2(10, sz.y - 41)      # (0.66) the three rows sit inside the plate
 	if Game.veteran():
 		_blood(c, sz, p)
 		_bar(c, base + Vector2(0, 22), "VÝDRŽ", p.stamina / 100.0, Color(0.3, 0.6, 0.9))
@@ -489,13 +502,13 @@ func _draw_hud() -> void:
 				t2 = "nemáš lékárničku"
 			if ht.downed:
 				t2 += "    E - táhnout"
-			_text(c, Vector2(mid.x - 100, mid.y + 56), t2, Color(0.5, 1.0, 0.5) if in_hand else ACCENT, 10)
+			_prompt(t2, Color(0.5, 1.0, 0.5) if in_hand else ACCENT)
 	if p.busy > 0 and p.busy_total > 0 and (p.busy_text.begins_with("Ošetřuji") or p.busy_text.begins_with("Obvazuji") or p.busy_text.begins_with("Vyřezávám")):
 		c.draw_rect(Rect2(mid.x - 60, mid.y + 42, 120, 5), Color(0, 0, 0, 0.6))
 		c.draw_rect(Rect2(mid.x - 60, mid.y + 42, 120 * (1.0 - p.busy / p.busy_total), 5), Color(0.4, 1.0, 0.4))
 	if not p.downed and not mission().nearest_pickup(p.global_position).is_empty():
 		var it: Dictionary = mission().nearest_pickup(p.global_position)["item"]
-		_text(c, Vector2(mid.x - 60, mid.y + 44), "E - sebrat: " + Game.ITEMS[it["id"]]["name"], TEXT, 9)
+		_prompt("E - sebrat: " + Game.ITEMS[it["id"]]["name"], TEXT)
 	if p.bleeding > 0:
 		_text(c, base + Vector2(0, -12), "KRVÁCÍŠ (-%.1f zdraví/s) - X lékárnička (do ruky, pak X)" % p.bleeding, RED, 9)
 	# hands, bottom: left hand on the left, right hand on the right
@@ -506,11 +519,11 @@ func _draw_hud() -> void:
 	if ico:
 		c.draw_texture_rect(ico, Rect2(sz.x - 62, sz.y - 60, 56, 28), false, Color(1, 1, 1, 0.9))
 	if p.item_in("lh").size() > 0:
-		_plate(c, Rect2(sz.x - 338, sz.y - 34, 164, 30))
+		_plate(c, Rect2(sz.x - 168, sz.y - 100, 164, 30))
 	_hand_text(c, p, "rh", right)
 	var rid: String = p.item_in("rh").get("id", "")
 	if p.item_in("lh").size() > 0:
-		_hand_text(c, p, "lh", Vector2(sz.x - 330, sz.y - 30))
+		_hand_text(c, p, "lh", Vector2(sz.x - 160, sz.y - 96))
 	_belt_bar(c, p, sz)
 	var holst := []
 	for hs in [["back", "1"], ["side", "2"]]:
@@ -531,46 +544,40 @@ func _draw_hud() -> void:
 		_text(c, right + Vector2(0, -12), "Svítilna vypnutá (F)", FRAME, 9)
 	# busy (reloading, healing...)
 	if p.busy > 0:
-		_text(c, Vector2(mid.x - 60, mid.y + 30), p.busy_text + "...", ACCENT, 10)
+		_prompt(p.busy_text + "...", ACCENT, true)
 	# evac
 	var ev: Vector3 = mission().map["evac"]
 	if p.global_position.distance_to(ev) < 3.5 and not p.dead and mission().started():
-		_text(c, Vector2(mid.x - 120, 20), ("ENTER - připraven k odletu (musí všichni živí, i ranění)" if not p.wants_evac else "Připraven k odletu - čekáme na ostatní (Enter = ještě ne)"), ACCENT, 10)
-		_text(c, Vector2(mid.x - 120, 32), "Pokud posádka UFO žije, mise nebude splněna.", FRAME, 9)
+		_prompt(("ENTER - připraven k odletu (musí všichni živí, i ranění)" if not p.wants_evac else "Připraven k odletu - čekáme na ostatní (Enter = ještě ne)"), ACCENT)
+		_prompt("Pokud posádka UFO žije, mise nebude splněna.", FRAME)
 	# the objective of this mission, top centre; the beacon's direction for a rescue
-	var ot: String = Game.shipify(mission().objective_text())
-	if ot != "":
-		_text(c, Vector2(mid.x - ot.length() * 2.4, 12), ot, ACCENT, 9)
-	if mission().done_banner:
-		var bt := Game.shipify("MISE SPLNĚNA - Enter kdekoli = odlet (transport vyzvedne všechny)")
-		c.draw_rect(Rect2(mid.x - 160, 16, 320, 16), Color(0, 0, 0, 0.55))
-		_text(c, Vector2(mid.x - bt.length() * 2.6, 28), bt, Color(0.5, 1.0, 0.55), 10)
+	# (0.66) the compass on top; the objective and the end banner under it, on plates
+	var marks := []
+	marks.append([ev, Color(0.5, 1.0, 0.55), "výsadek"])
 	var v: Node = mission().vip()
 	if v and not v.dead and not v.saved and v.st != v.C.FOLLOW:
-		var to: Vector3 = v.global_position - p.global_position
-		var ang: float = atan2(to.x, to.z) - (p.rotation.y + PI)
-		var dist: float = snappedf(to.length(), 5.0)
-		var cpos := Vector2(mid.x, 34)
-		var dv := Vector2(sin(-ang), -cos(-ang))
-		c.draw_line(cpos, cpos + dv * 9.0, ACCENT, 2.0)
-		c.draw_circle(cpos + dv * 9.0, 2.0, ACCENT)
-		_text(c, cpos + Vector2(14, 4), "maják ~%d m" % int(dist), ACCENT, 8)
+		marks.append([v.global_position, ACCENT, "maják ~%d m" % int(snappedf(v.global_position.distance_to(p.global_position), 5.0))])
+	var la: float = (Time.get_ticks_msec() - Game.loud_ms) / 1000.0
+	if la < LOUD_SECS and Game.loud_at.distance_to(p.global_position) > 6.0:
+		marks.append([Game.loud_at, Color(1.0, 0.45, 0.2, 1.0 - la / LOUD_SECS), "hluk"])
+	_compass(c, Rect2(mid.x - 110, 2, 220, 17), p, marks)
+	var ty := 30.0
+	var ot: String = Game.shipify(mission().objective_text())
+	if ot != "":
+		_line_plate(c, Vector2(mid.x, ty), ot, ACCENT, 9)
+		ty += 15.0
+	if mission().done_banner:
+		_line_plate(c, Vector2(mid.x, ty), Game.shipify("MISE SPLNĚNA - Enter kdekoli = odlet (transport vyzvedne všechny)"), Color(0.5, 1.0, 0.55), 10)
 	if p.plant_hold > 0.0:
 		c.draw_rect(Rect2(mid.x - 40, mid.y + 20, 80, 4), Color(0, 0, 0, 0.6))
 		c.draw_rect(Rect2(mid.x - 40, mid.y + 20, 80 * p.plant_hold / 3.0, 4), RED)
 	elif mission().beacon_near(p.global_position) >= 0:
-		_text(c, Vector2(mid.x - 60, mid.y + 44), "Drž E 3 s - položit nálož", ACCENT, 9)
-	# teammates
-	var y := 10.0
-	for o in mission().players():
-		if o == p: continue
-		if Game.veteran() and not (o.downed or o.dead):
-			continue        # hardcore: no roster on screen, only who has fallen
-		var st: String = "MRTEV" if o.dead else ("ODVLEČEN! %d s" % int(o.bleed_left) if o.downed and o.carried_by < 0 else ("PADL! %d s" % int(o.bleed_left) if o.downed else "%d m" % int(p.global_position.distance_to(o.global_position))))
-		_text(c, Vector2(10, y + 8), "%s  %s" % ["Někdo z týmu" if Game.veteran() else o.display_name, st if not Game.veteran() else st.split(" ")[0]], RED if o.downed or o.dead else TEXT, 9)
-		y += 11
+		_prompt("Drž E 3 s - položit nálož", ACCENT)
+	_cards(c, p)
 	if p.has_scanner():
-		_draw_scanner(c, Vector2(sz.x - 52, 52), 40.0, p)
+		_plate(c, Rect2(sz.x - 98, 6, 94, 104))
+		_draw_scanner(c, Vector2(sz.x - 51, 50), 38.0, p)
+	_draw_prompts(c, mid)
 
 ## Veteran health display: the edges of the view fill with blood.
 func _blood(c: Control, sz: Vector2, p: Node) -> void:
@@ -597,25 +604,141 @@ func _breath(delta: float, p: Node) -> void:
 	_breath_t = lerpf(1.6, 3.2, p.hp / (p.max_hp * 0.5))
 	Game.play_ui(mission(), "breath", -10)
 
-## The belt at a glance: what 1-4 call up, and how many throwables are at hand.
+## (0.66) The quick slots at a glance: 1 back, 2 side, 3-6 belt, as icons like in the inventory,
+## and how many throwables / medkits are at hand (G grenade, X smoke... the keys that throw them).
+const QUICK := [["back", "1"], ["side", "2"], ["b0", "3"], ["b1", "4"], ["b2", "5"], ["b3", "6"]]
 func _belt_bar(c: Control, p: Node, sz: Vector2) -> void:
 	if inventory_open or p.downed:
 		return
-	var parts := []
-	for i in 4:
-		var it: Dictionary = p.item_in("b%d" % i)
-		parts.append("%d %s" % [i + 3, "-" if it.is_empty() else Game.ITEMS[it["id"]]["short"]])
+	var o := Vector2(226, sz.y - 30)
+	_plate(c, Rect2(o, Vector2(242, 26)))
+	for i in QUICK.size():
+		var it: Dictionary = p.item_in(QUICK[i][0])
+		var box := Rect2(o + Vector2(4 + i * 31, 3), Vector2(29, 20))
+		c.draw_rect(box, Color(0.02, 0.03, 0.035, 0.7))
+		c.draw_rect(box, Color(FRAME, 0.45), false, 1.0)
+		if not it.is_empty():
+			var ico := UiSkin.icon(it["id"])
+			if ico:
+				c.draw_texture_rect(ico, box.grow(-1.0), false, Color(1, 1, 1, 0.9))
+			else:
+				_text(c, box.position + Vector2(2, 17), String(Game.ITEMS[it["id"]]["short"]).left(5), TEXT, 6)
+		_text(c, box.position + Vector2(2, 7), QUICK[i][1], ACCENT, 7)
 	var n := func(id: String) -> int:
 		var k := 0
 		for s in p.inv:
 			if p.inv[s]["id"] == id:
 				k += 1
 		return k
-	var extra := "   G %d  X %d  7 %d  H %d" % [n.call("grenade"), n.call("smoke_grenade"), n.call("flare"), n.call("medkit")]
-	var line: String = "  ".join(parts) + extra + "   (I = výstroj)"
-	var w := ThemeDB.fallback_font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, 7).x
-	_plate(c, Rect2(226, sz.y - 16, w + 12, 14))
-	_text(c, Vector2(232, sz.y - 6), line, FRAME, 7)
+	_text(c, o + Vector2(194, 11), "G %d  X %d" % [n.call("grenade"), n.call("smoke_grenade")], FRAME, 7)
+	_text(c, o + Vector2(194, 21), "7 %d  H %d" % [n.call("flare"), n.call("medkit")], FRAME, 7)
+	if Game.easy():
+		_text(c, o + Vector2(4, -3), "I = výstroj", FRAME, 7)
+
+## (0.66) The compass: S V J Z and the degrees, the landing site, the beacon of a rescue and where
+## the last loud sound came from (a shot, a blast, a roar - what the soldier's ears heard, nothing more).
+const LOUD_SECS := 8.0
+func _compass(c: Control, r: Rect2, p: Node, marks: Array) -> void:
+	_plate(c, r)
+	var fwd: Vector3 = -p.global_transform.basis.z
+	var head := atan2(fwd.x, -fwd.z)                 # 0 = north (-Z), clockwise
+	var half := deg_to_rad(60.0)                     # the strip shows 120 degrees
+	var cx := r.position.x + r.size.x / 2.0
+	var px := (r.size.x / 2.0 - 6.0) / half
+	var names := {0: "S", 90: "V", 180: "J", 270: "Z"}
+	for d in range(0, 360, 15):
+		var a := wrapf(deg_to_rad(d) - head, -PI, PI)
+		if absf(a) > half:
+			continue
+		var x := cx + a * px
+		if names.has(d):
+			var s: String = names[d]
+			_text(c, Vector2(x - 3, r.position.y + 12), s, ACCENT if d == 0 else TEXT, 9)
+		else:
+			c.draw_line(Vector2(x, r.position.y + (5 if d % 45 == 0 else 8)), Vector2(x, r.position.y + 12), Color(FRAME, 0.7), 1.0)
+	c.draw_line(Vector2(cx, r.position.y + 1), Vector2(cx, r.position.y + 4), ACCENT, 1.0)
+	for m in marks:
+		var to: Vector3 = m[0] - p.global_position
+		var a := wrapf(atan2(to.x, -to.z) - head, -PI, PI)
+		var x := cx + clampf(a, -half, half) * px
+		var col: Color = m[1]
+		var tip := Vector2(x, r.position.y + r.size.y - 1)
+		c.draw_colored_polygon(PackedVector2Array([tip, tip + Vector2(-3, -5), tip + Vector2(3, -5)]), col)
+		if absf(a) < deg_to_rad(8.0):
+			_text(c, Vector2(x - ThemeDB.fallback_font.get_string_size(m[2], HORIZONTAL_ALIGNMENT_LEFT, -1, 7).x / 2.0, r.end.y + 8), m[2], col, 7)
+
+## One centred line of text on a plate (the objective, the end of the mission).
+func _line_plate(c: Control, at: Vector2, s: String, col: Color, size := 9) -> void:
+	var w := ThemeDB.fallback_font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+	w = minf(w, c.size.x - 24.0)
+	_plate(c, Rect2(at.x - w / 2.0 - 6, at.y - size - 2, w + 12, size + 7))
+	var f := ThemeDB.fallback_font
+	c.draw_string_outline(f, Vector2(at.x - w / 2.0, at.y), s, HORIZONTAL_ALIGNMENT_LEFT, w, size, 3, Color(0, 0, 0, 0.8))
+	c.draw_string(f, Vector2(at.x - w / 2.0, at.y), s, HORIZONTAL_ALIGNMENT_LEFT, w, size, col)
+
+## (0.66) "E - ..." and the like: all on the same plate, stacked under the crosshair.
+var _prompts := []
+func _prompt(s: String, col: Color, busy := false) -> void:
+	if busy:
+		_prompts.push_front([s, col])
+	else:
+		_prompts.append([s, col])
+
+func _draw_prompts(c: Control, mid: Vector2) -> void:
+	var y := mid.y + 46.0
+	for pr in _prompts:
+		_line_plate(c, Vector2(mid.x, y), pr[0], pr[1], 9)
+		y += 15.0
+
+## The message (msg_label) gets the same plate under it.
+func _msg_plate(c: Control) -> void:
+	var f := ThemeDB.fallback_font
+	var sz := f.get_multiline_string_size(msg_label.text, HORIZONTAL_ALIGNMENT_CENTER, msg_label.size.x, 10)
+	var w := minf(sz.x, msg_label.size.x)
+	var lines := maxi(1, msg_label.get_line_count())
+	var h := float(lines) * msg_label.get_line_height() + 4.0
+	var cx := msg_label.position.x + msg_label.size.x / 2.0
+	_plate(c, Rect2(cx - w / 2.0 - 8, msg_label.position.y - 2, w + 16, h))
+
+## (0.66) Cards of the teammates top left: name, health, what is wrong. Hardcore: only who has
+## fallen (as before, no health). Solo: the card of Strážce (the drone) - what it is doing.
+func _cards(c: Control, p: Node) -> void:
+	var y := 4.0
+	var gd: Node = mission().guard_drone
+	if gd != null and is_instance_valid(gd):
+		_plate(c, Rect2(4, y, 124, 22))
+		_text(c, Vector2(10, y + 10), "STRÁŽCE", FRAME, 8)
+		var st := "čeká, až se vzdálí" if gd._waiting else ("oživuje!" if gd._rescue_t > 0.0 else "hlídá")
+		_text(c, Vector2(56, y + 10), st, ACCENT if gd._rescue_t > 0.0 else TEXT, 8)
+		_text(c, Vector2(10, y + 19), "stimulant: %s" % ("připraven" if gd.charge > 0 else "spotřebován"), Color(0.5, 1.0, 0.55) if gd.charge > 0 else FRAME, 7)
+		y += 25.0
+	for o in mission().players():
+		if o == p:
+			continue
+		if Game.veteran() and not (o.downed or o.dead):
+			continue
+		var bad: bool = o.downed or o.dead
+		var st: String = "MRTEV" if o.dead else ("ODVLEČEN! %d s" % int(o.bleed_left) if o.downed and o.carried_by < 0 else ("PADL! %d s" % int(o.bleed_left) if o.downed else ("krvácí" if o.bleeding > 0 else "%d m" % int(p.global_position.distance_to(o.global_position)))))
+		if Game.veteran():
+			st = st.split(" ")[0]
+		_plate(c, Rect2(4, y, 124, 22))
+		var nm: String = "Někdo z týmu" if Game.veteran() else String(o.display_name)
+		_text(c, Vector2(10, y + 10), nm.left(16), RED if bad else TEXT, 8)
+		_text(c, Vector2(122 - ThemeDB.fallback_font.get_string_size(st, HORIZONTAL_ALIGNMENT_LEFT, -1, 8).x, y + 10), st, RED if bad or st == "krvácí" else FRAME, 8)
+		if not Game.veteran():
+			var hb := Rect2(10, y + 14, 112, 4)
+			c.draw_rect(hb, Color(0.01, 0.015, 0.02, 0.8))
+			c.draw_rect(Rect2(hb.position, Vector2(hb.size.x * clampf(o.hp / o.max_hp, 0.0, 1.0), hb.size.y)), Color(0.8, 0.15, 0.12))
+		y += 25.0
+		if y > 120.0:
+			break
+
+## (0.66) Minimal HUD: the ammunition only as a guess, the way you feel the weight of the magazine.
+static func ammo_guess(n: int, cap: int) -> String:
+	if n <= 0:
+		return "prázdný"
+	var k := float(n) / maxf(1.0, float(cap))
+	return "plný" if k >= 0.85 else ("víc než půl" if k >= 0.5 else ("pod půl" if k >= 0.2 else "skoro prázdný"))
 
 func _hand_text(c: Control, p: Node, slot: String, at: Vector2) -> void:
 	var it: Dictionary = p.item_in(slot)
@@ -636,7 +759,7 @@ func _hand_text(c: Control, p: Node, slot: String, at: Vector2) -> void:
 			if p.inv[s]["id"] == String(it.get("sel", rule["ammo"])):
 				spare += int(p.inv[s].get("left", Game.ITEMS[p.inv[s]["id"]]["rounds"]))
 		if rule.get("alien", false):
-			_text(c, at + Vector2(0, 12), "%d / %d   články %d" % [int(it.get("loaded", 0)), Game.mag_size(it["id"]), int(it.get("cells", 0))], ACCENT, 10)
+			_text(c, at + Vector2(0, 12), ("zásobník %s" % ammo_guess(int(it.get("loaded", 0)), Game.mag_size(it["id"]))) if Game.hud_min else "%d / %d   články %d" % [int(it.get("loaded", 0)), Game.mag_size(it["id"]), int(it.get("cells", 0))], ACCENT, 10)
 		elif rule.get("laser", false):
 			# the cell's readiness light (X-WEP-001): ready, or charging
 			var cap := Game.mag_size(it["id"])
@@ -648,9 +771,12 @@ func _hand_text(c: Control, p: Node, slot: String, at: Vector2) -> void:
 					c.draw_rect(Rect2(at + Vector2(0, 16), Vector2(90.0, 3)), Color(FRAME, 0.25))
 					c.draw_rect(Rect2(at + Vector2(0, 16), Vector2(90.0 * clampf(float(it.get("charge", 0.0)), 0.0, 1.0), 3)), FRAME)
 			else:
-				_text(c, at + Vector2(0, 12), "%d / %d pulzů%s" % [int(it.get("loaded", 0)), cap, "   nabíjí se doplna" if it.get("drained", false) else ""], ACCENT, 10)
+				_text(c, at + Vector2(0, 12), ("pulzy %s" % ammo_guess(int(it.get("loaded", 0)), cap)) if Game.hud_min else "%d / %d pulzů%s" % [int(it.get("loaded", 0)), cap, "   nabíjí se doplna" if it.get("drained", false) else ""], ACCENT, 10)
 		else:
-			_text(c, at + Vector2(0, 12), "%d / %d   náhradní %d" % [int(it.get("loaded", 0)), Game.mag_size(it["id"]), spare], ACCENT, 10)
+			if Game.hud_min:
+				_text(c, at + Vector2(0, 12), "zásobník %s" % ammo_guess(int(it.get("loaded", 0)), Game.mag_size(it["id"])), ACCENT, 10)
+			else:
+				_text(c, at + Vector2(0, 12), "%d / %d   náhradní %d" % [int(it.get("loaded", 0)), Game.mag_size(it["id"]), spare], ACCENT, 10)
 	elif it.has("uses"):
 		_text(c, at + Vector2(0, 12), "%dx" % int(it["uses"]), ACCENT, 10)
 	elif it["id"] == "energo_nuz":
@@ -693,8 +819,9 @@ func _scanner_update(delta: float) -> void:
 		_ping_t = lerpf(0.22, 1.4, near / SCAN_RANGE)
 		Game.play_ui(mission(), "scanner_close", -16 + (SCAN_RANGE - near) / 2.5)
 		# (0.57, MD-01's entry) the beeping carries a few metres: what hunts by ear may hear it
+		# (0.66: the drone's radar in solo is quiet - it sits in the drone, not in the hand)
 		_beep_noise_cd -= _ping_t
-		if _beep_noise_cd <= 0.0:
+		if _beep_noise_cd <= 0.0 and not p.drone_radar():
 			_beep_noise_cd = 2.0
 			mission().noise(p.global_position, 6.0)
 	if _scan_t > 0:
@@ -749,7 +876,7 @@ func _draw_scanner(c: Control, center: Vector2, r: float, p: Node) -> void:
 		if v.length() > r: continue
 		c.draw_circle(center + v, 2.5, Color(0.5, 1, 0.5, clampf(b["t"], 0, 1)))
 	c.draw_circle(center, 1.5, Color(1, 1, 1))
-	_text(c, center + Vector2(-r, r + 10), "DETEKTOR  " + (("%d m" % int(snappedf(_scan_near, 2.0))) if _scan_near < SCAN_RANGE else "--"), Color(0.3, 0.9, 0.4), 8)
+	_text(c, center + Vector2(-r, r + 10), ("STRÁŽCE  " if p.drone_radar() else "DETEKTOR  ") + (("%d m" % int(snappedf(_scan_near, 2.0))) if _scan_near < SCAN_RANGE else "--"), Color(0.3, 0.9, 0.4), 8)
 
 # ---- drawing helpers ---------------------------------------------------------------------
 func _text(c: Control, pos: Vector2, s: String, col: Color, size := 10) -> void:
@@ -1023,10 +1150,10 @@ func _keys_text(p: Node) -> String:
 		"L    dávky / jednotlivé rány, délka dávky, druh nábojů",
 		"Tab  držet = mluvit (nahlas, kdo je blízko)",
 		"M    mikrofon stále zapnutý / vypnout (%s)" % ("ZAPNUTO" if Game.mic_live else "vypnuto"),
-		"T    držet = vysílačka (%s)" % ("helma" if Game.has_research("vysilacky") else where.call("radio")),
+		"" if p.drone_radar() else "T    držet = vysílačka (%s)" % ("helma" if Game.has_research("vysilacky") else where.call("radio")),
 		"C  kleknout   Y  lehnout   Shift  sprint",
 	]
-	return "\n".join(lines)
+	return "\n".join(lines.filter(func(x): return x != ""))
 
 func _open_inventory() -> void:
 	inventory_open = true
@@ -1285,6 +1412,28 @@ static func settings_ui(box: Control) -> void:
 	gs.custom_minimum_size = Vector2(200, 12)
 	gs.value_changed.connect(func(v): Game.mic_gain = v; gl.text = "Síla mého mikrofonu: x%.1f" % v; Game.save_settings())
 	box.add_child(gs)
+	# (0.62) room noise pulled down between words; how easily "always on" opens
+	var cl := CheckBox.new()
+	cl.text = "Potlačit šum místnosti (větrák, klávesnice) mezi slovy"
+	cl.button_pressed = Game.mic_clean
+	cl.focus_mode = Control.FOCUS_NONE
+	cl.add_theme_font_size_override("font_size", 9)
+	cl.toggled.connect(func(on): Game.mic_clean = on; Game.save_settings())
+	box.add_child(cl)
+	var sl := Label.new()
+	sl.add_theme_font_size_override("font_size", 9)
+	var sens := func(): return clampf((0.09 - Game.mic_gate) / 0.08, 0.0, 1.0)
+	sl.text = "Citlivost hlasové aktivace: %d %%" % int(sens.call() * 100)
+	box.add_child(sl)
+	var ss := HSlider.new()
+	ss.min_value = 0.0
+	ss.max_value = 1.0
+	ss.step = 0.05
+	ss.value = sens.call()
+	ss.focus_mode = Control.FOCUS_NONE
+	ss.custom_minimum_size = Vector2(200, 12)
+	ss.value_changed.connect(func(v): Game.mic_gate = 0.09 - 0.08 * v; sl.text = "Citlivost hlasové aktivace: %d %%" % int(v * 100); Game.save_settings())
+	box.add_child(ss)
 	var meter := ProgressBar.new()
 	meter.show_percentage = false
 	meter.max_value = 1.0
@@ -1324,7 +1473,7 @@ static func settings_ui(box: Control) -> void:
 				if lv.frames_in == 0 and Time.get_ticks_msec() - lv.opened_at > 1500:
 					state = "MIKROFON NEPOSÍLÁ ZVUK - Windows: Nastavení > Soukromí > Mikrofon > povolit desktopovým aplikacím; nebo vyber jiné zařízení výše"
 				else:
-					state = "mikrofon běží (%d vzorků/s)" % lv.frames_in
+					state = "mikrofon běží (%d vzorků/s)%s" % [lv.frames_in, "  -  HLAS ZACHYCEN" if Time.get_ticks_msec() - lv.dsp.voiced_ms < 400 else ""]
 			diag.text = "%s\nOdesláno balíčků: %d, přijato: %d" % [state, lv.sent, lv.received])
 	meter.add_child(tick)
 	var tb := Button.new()
@@ -1366,6 +1515,33 @@ static func settings_ui(box: Control) -> void:
 			rs.select(i)
 	rs.item_selected.connect(func(i): Game.render_scale = scales[i]; Game.apply_video(); Game.save_settings())
 	box.add_child(rs)
+	var shq := OptionButton.new()
+	shq.focus_mode = Control.FOCUS_NONE
+	shq.add_theme_font_size_override("font_size", 9)
+	for i in 3:
+		shq.add_item(["Stíny: nízké (slabý počítač)", "Stíny: střední", "Stíny: vysoké (náročné)"][i])
+	shq.select(clampi(Game.shadows, 0, 2))
+	shq.item_selected.connect(func(i): Game.shadows = i; Game.save_settings())
+	shq.tooltip_text = "Od příští mise."
+	box.add_child(shq)
+	var dtq := OptionButton.new()
+	dtq.focus_mode = Control.FOCUS_NONE
+	dtq.add_theme_font_size_override("font_size", 9)
+	for i in 3:
+		dtq.add_item(["Detaily v dálce: blízko (slabý počítač)", "Detaily v dálce: střední", "Detaily v dálce: daleko"][i])
+	dtq.select(clampi(Game.detail, 0, 2))
+	dtq.item_selected.connect(func(i): Game.detail = i; Game.save_settings())
+	dtq.tooltip_text = "Drobnosti a tráva se kreslí jen do určité vzdálenosti. Od příští mise."
+	box.add_child(dtq)
+	var hq := OptionButton.new()
+	hq.focus_mode = Control.FOCUS_NONE
+	hq.add_theme_font_size_override("font_size", 9)
+	hq.add_item("HUD: plný")
+	hq.add_item("HUD: minimální (munice jen odhadem)")
+	hq.select(1 if Game.hud_min else 0)
+	hq.item_selected.connect(func(i): Game.hud_min = i == 1; Game.save_settings())
+	hq.tooltip_text = "F1 ve hře skryje celý HUD (zůstane jen zaměřovač)."
+	box.add_child(hq)
 
 static func _meter_fill() -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()

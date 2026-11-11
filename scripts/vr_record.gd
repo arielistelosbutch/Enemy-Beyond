@@ -198,7 +198,15 @@ static func make_acts(gl: Array) -> Array:
 	out.append({"act": "dig", "item": "vse", "gun": "rifle", "carry": "medkit", "ruce": true, "name": "Hrabání v batohu (pro všechny zbraně)"})
 	out.append({"act": "heal", "item": "vse", "gun": "rifle", "carry": "medkit", "ruce": true, "name": "Lékárnička / obvazování (pro všechny zbraně)"})
 	out.append({"act": "throw", "item": "vse", "gun": "rifle", "carry": "grenade", "name": "Hod granátem (pro všechny zbraně)"})
+	# 0.62: the blow from the eyes (V): with each gun (the butt, the handguns' grip), then the knife and the baton
+	for g in gl:
+		out.append({"act": "strike", "item": g, "gun": g, "carry": "", "name": "%s – úder (V)" % Game.ITEMS[g]["name"]})
+	for m in STRIKE_MELEE:
+		if Game.ITEMS.has(m) and ResourceLoader.exists("res://assets/models/%s.glb" % m):
+			out.append({"act": "strike", "item": m, "gun": m, "carry": "", "name": "%s – úder" % Game.ITEMS[m]["name"]})
 	return out
+
+const STRIKE_MELEE := ["knife", "energo_nuz", "stun_baton"]
 
 static func clip_id(e: Dictionary) -> String:
 	return "fp_%s_%s" % [e["act"], e["item"]]
@@ -856,8 +864,9 @@ func _run_test() -> void:
 		var lh := Transform3D(l_rest.basis.rotated(Vector3.RIGHT, 0.6 * dip), l_rest.origin + Vector3(0.03, -0.25, 0.2) * dip)
 		fr.append({"t": tt, "gn": _tf(hs.affine_inverse() * hs * gn), "lh": _tf(lh), "grip": tt > 0.45 and tt < 1.2, "trig": i == 140})
 	var c := convert_take(fr, id, e)
-	var ch := convert_take(fr, id, acts[-2])
-	print("[VRTEST] acts=%d heal=%s events=%s" % [acts.size(), clip_id(acts[-2]), ch["udalosti"].map(func(x): return x["typ"])])
+	var he: Dictionary = acts.filter(func(x): return x["act"] == "heal")[0]
+	var ch := convert_take(fr, id, he)
+	print("[VRTEST] acts=%d heal=%s events=%s" % [acts.size(), clip_id(he), ch["udalosti"].map(func(x): return x["typ"])])
 	var g_at0 := AnimClips.xform(c, "zbran", 0.0)
 	var g_mid := AnimClips.xform(c, "zbran", 0.8)
 	print("[VRTEST] delka=%.2f zbran_keys=%d ruka_keys=%d events=%d" % [c["delka"], c["stopy"]["zbran"].size(), c["stopy"].get("ruka", []).size(), c["udalosti"].size()])

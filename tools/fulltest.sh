@@ -35,6 +35,7 @@ run pass_farm_$sd 200 h "passcheck .* 0 blocked"           --autotest=passcheck 
 done
 run menu_ui     300 x "\[UI\] ready: 0"                    --autotest=ui
 run mods_ui     200 x "\[MODS\] bought true"              --autotest=modsui
+run talent_ui   200 x "\[TALENT\] skip true chain true rank true spent true eye true drone true" --autotest=talentui
 run presets     200 x "\[PRESET\] first false list true merc true levels true dice_nolevels true gear true" --autotest=presets
 run sights      700 x "scope mode=scope on=true"          --autotest=sightshot --day=1
 run menu_flick  200 x "RESULT menuflicker 0"               --autotest=menuflicker
@@ -44,13 +45,17 @@ run solo        250 h "RESULT"                             --autotest=solo
 run campaign    300 h "back on globe"                             --autotest=campaign
 run drone       420 x "first fall: downed false" --autotest=dronetest
 run voice       200 h "RESULT voice: snippets \[1\]"       --autotest=voice
+run voicedsp    120 h "RESULT voicedsp ok"                 --autotest=voicedsp
 run basewalk    400 x "RESULT basewalk 16"                 --autotest=basewalk
 run base_attack 400 x "RESULT basewalk 16"                 --autotest=basewalk --attack=1
-run base_fly    300 h "RESULT basefly top [0-2]\.[0-9]+ inside 0 " --autotest=basefly --attack=1 --crew=levit,levit,levit_velitel,grey
+run base_fly    300 h "RESULT basefly top [0-2]\.[0-9]+ inside 0 .* unreachable 0" --autotest=basefly --attack=1 --crew=levit,levit,levit_velitel,grey
 run alienbase   400 x "RESULT abase"                       --autotest=abase --mtype=alienbase
 run fire        450 x "RESULT fireshot"                    --autotest=fireshot
 run doors       300 x "RESULT doorshot"                    --autotest=doorshot --biome=farm
 run blastdoor   300 h "RESULT blastdoor OK"                --autotest=blastdoor
+run navcache    200 h "RESULT navcache same true"         --autotest=navcache --mtype=landed --ufo=battleship --seed=2
+run perf        200 h "RESULT perf frames"                --autotest=perf --mtype=landed --ufo=battleship --seed=2 --dur=25 --kill=1
+run farview     300 x "RESULT farview"                   --autotest=farview --mtype=terror --biome=town --seed=3
 # co-op: two games at once (host and client on this machine)
 pair() {   # name, host mode, client mode, expected in host log, expected in client log, port
   local name=$1
@@ -71,12 +76,44 @@ pair coop_heal    coophealhost coophealclient "RESULT coopheal host ok" "client 
 pair coop_base    lbhost lbclient       "start_mission"            "RESULT lb lbclient players 2" 7903
 pair coop_wipe    coopwipehost coopwipeclient "globe ready"     "END\\] leave"                  7904
 pair geo_live geolivehost geoliveclient "globe ready \(viewer false\)" "RESULT geolive day \+0\.0[1-9][0-9]* craft moved [1-9]" 7912
-pair ai_coop    aimphost aimpclient "RESULT aimp old 0 hide [1-9]" "AIMP aimpclient" 7913
+pair ai_coop    aimphost aimpclient "RESULT aimp old 0 players 2 hide [1-9]" "AIMP aimpclient" 7913
+# co-op with four mercenaries: a host and three clients (0.63: the squads know about all of them)
+quad() {   # name, expected in host log, port
+  local name=$1
+  timeout 150 $G --headless --path . -- --autotest=aimphost --players=4 --port=$3 > $LOG/${name}_host.log 2>&1 &
+  local hp=$!
+  sleep 1
+  for ci in 1 2 3; do
+    timeout 150 $G --headless --path . -- --autotest=aimpclient --players=4 --ci=$ci --port=$3 > $LOG/${name}_c$ci.log 2>&1 &
+  done
+  wait
+  local errs=$(cat $LOG/${name}_*.log | grep -c "SCRIPT ERROR")
+  if [ "$errs" = 0 ] && grep -qE "$2" $LOG/${name}_host.log; then
+    pass=$((pass+1)); report+="OK    $name\n"
+  else
+    fail=$((fail+1)); report+="CHYBA $name (skript. chyb: $errs)\n"
+  fi
+}
+quad ai_coop4 "RESULT aimp old 0 players 4 hide [1-9]" 7915
 pair lobby_kick kickhost kickclient "RESULT kick summary rows 2 ping [0-9]+ mic open after 1 rejoined false" "RESULT kick client .*vyhodil.*za 5 min" 7914
+pair voice_net vnethost vnetclient "RESULT vnet received 43 lost 7 rescued 7" "RESULT vnet client sent 43" 7916
+# (0.61) a client with an other version of the game is not let in, both are told why
+timeout 60 $G --headless --path . -- --autotest=host --port=7915 > $LOG/version_host.log 2>&1 &
+vh=$!; sleep 1
+timeout 30 $G --headless --path . -- --autotest=client --port=7915 --fakever=0.01 > $LOG/version_client.log 2>&1
+kill $vh 2>/dev/null; wait $vh 2>/dev/null
+if grep -q "refused version 0.01" $LOG/version_host.log && grep -q "version refused: Hostitel má jinou verzi" $LOG/version_client.log && ! grep -q "players=2" $LOG/version_host.log; then
+  pass=$((pass+1)); report+="OK    version_check\n"
+else
+  fail=$((fail+1)); report+="CHYBA version_check\n"
+fi
 run airdeath    150 h "RESULT airdeath ok"                 --autotest=airdeath --group=levite
 run vipcheck    200 h "RESULT vipcheck [0-9]+ spots, 0 bad" --autotest=vipcheck --mtype=rescue
 run climb       200 x "RESULT climb ok"                    --autotest=climb --mtype=terror --biome=farm
+run ground     250 h "RESULT groundtest [0-9]+ raised, 0 bare, .*sunk 0 .*kerbs alien [6-8]/8 merc [6-8]/8" --autotest=groundtest --day=1 --nomerge=all --dur=20 --seed=5
 run rocks       250 x "RESULT rocktest [0-9]+ stones, 0 hollow, 0 nav inside, walked 12, 0 bad" --autotest=rocktest --mtype=crash --biome=mountain --seed=7 --day=1
+run hitbox      200 h "RESULT hitbox [0-9]+ props, [0-9]+ rays, phantom [0-4]\.[0-9] %" --autotest=hitbox --mtype=crash --biome=farm --seed=7
+run wedge      150 x "RESULT wedgetest ok"                --autotest=wedgetest --mtype=crash --biome=farm --seed=7 --day=1
 run ws_click    100 x "RESULT wsclick bone true ring true item true" --autotest=wsclick
 run agun        150 x "RESULT agun ([0-9]+) of \1"        --autotest=agun
 run modelcheck  120 h "RESULT modelcheck [0-9]+ problems"  --autotest=modelcheck
@@ -86,6 +123,25 @@ run mod_speed   300 x "RESULT modspeed ok" --autotest=modspeed
 run animator   150 x "RESULT animator click true imported true turned true keyed true moved true follows true fp true" --autotest=animator
 run locktest   120 h "RESULT locktest follows true turned true body true root true fp true" --autotest=locktest
 run blendtest  150 x "RESULT blendtest off [0-9.]+ on [0-9.]+ smoother true" --autotest=blendtest
+run talenttest 250 h "RESULT talenttest .* ok true"     --autotest=talenttest
+# 0.62 animations: hit reactions, turning on the spot, the Ohař's moods (afk models: only in the game package)
+for r in ohar jestetan zombie bijec_velitel; do
+run afk_$r      300 h "RESULT afkalien $r .* hitplay hit[a-z_0-9]* turnplay turn" --autotest=afkalien --race=$r --mtype=landed
+done
+run civanim     150 h "RESULT civanim [0-9]+ civilians afk idle,walk,run,lurk cower lurk" --autotest=civanim --mtype=terror
+run civdeath    150 h "RESULT civdeath 10 deaths bad 0" --autotest=civdeath --mtype=terror
+# 0.66 Facelift I: the drone's radar in solo, the transport after a mission, the people of the base, the loading screen
+run radar       150 h "RESULT radar solo true scanner true kit_scanner false kit_radio false" --autotest=radartest --mtype=crash --biome=farm --day=1
+run transport   150 h "RESULT transport closed true"     --autotest=transport --mtype=crash --biome=farm --day=1
+run uifit       150 x "RESULT uifit bad 0"               --autotest=uifit --mtype=crash --biome=farm --day=1
+run npcbase     150 h "RESULT npc moved [1-9]"           --autotest=npcshot --shots=0 --wait=25
+# 0.70 Facelift II: the echo of the place (a reverb on the sounds the game has), dirt and blood, the wall of the fallen, the intro
+run echo_farm   150 h "RESULT echo kinds room,metal,[a-z]*,room open true bus Room" --autotest=echotest --mtype=landed --biome=farm --day=1
+run echo_base   150 h "RESULT echo kinds metal,metal,metal open false bus Room" --autotest=echobase
+run dirt        200 x "RESULT dirt blood [1-8] copy [1-9][0-9]* same true" --autotest=dirtshot --mtype=crash --biome=farm --day=1
+run wall        150 x "RESULT wall title 1 shown 9"      --autotest=wallshot --fallen=9
+run intro       200 x "RESULT intro sets (space|farm|velin),(space|farm|velin),(space|farm|velin) skipped true gone true" --autotest=introshots
+run vrstrike    150 h "RESULT vrstrike vr true" --autotest=vrstrike
 run beltthrow  120 h "RESULT beltthrow started true belt_used true pack_kept true" --autotest=beltthrow
 run mocapgame  200 h "RESULT mocapgame 19 of 19" --autotest=mocapgame
 run tileround  300 h "RESULT tileround ok 38 bad 0" --autotest=tileround
@@ -111,12 +167,21 @@ run koltest    200 h "RESULT koltest found true up true top [0-9.]+ down true" -
 run lasertest  120 h "RESULT lasertest drained true waiting true ready true mg_dry true mg_full true edge true" --autotest=lasertest --mtype=landed
 run lcshot     150 h "RESULT lcshot hit true shards true hum true ready true" --autotest=lcshot --mtype=landed
 run plasmatest 150 h "RESULT plasmatest pistol 20 hot true interlock true cannon 4 minigun true rifle 10 grenade true seared true mags_left 0" --autotest=plasmatest --mtype=landed
-run shieldtest 100 h "RESULT shieldtest low 10 up 2 broke true after [0-9]+ plasma 8 knock true vest 16/13 worn true" --autotest=shieldtest --mtype=landed
+run shieldtest 100 h "RESULT shieldtest low 10 up 2 broke true after [0-9]+ plasma 4 knock true vest 16/13 worn true" --autotest=shieldtest --mtype=landed
 run gearloss    60 h "RESULT gearloss order_wait true arrived true sold true won_grenades 4->3 clips_kept true lost_grenades 1 vests 1" --autotest=gearloss
 run workshoptest 60 h "RESULT workshoptest ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok$" --autotest=workshoptest
 run nadetest   150 h "RESULT nadetest old 0 away [4-8] of 8" --autotest=nadetest --mtype=crash --biome=farm --seed=3 --hour=13
 run searchtest 150 h "RESULT searchtest old 0 searched true walked ([2-9][0-9]|[1-9][0-9][0-9]) m" --autotest=searchtest --mtype=crash --biome=farm --seed=3 --hour=13
 run feartest   120 h "RESULT feartest old 0 .* fell_back [1-9]" --autotest=feartest --mtype=crash --biome=farm --seed=3 --hour=13
+run squadtest  150 h "RESULT squadtest old 0 shots [1-9][0-9]* sides [3-8]" --autotest=squadtest --mtype=crash --biome=farm --seed=3 --hour=13
+run packtest   150 h "RESULT packtest old 0 race lihnoun strikes [1-9]" --autotest=packtest --mtype=crash --biome=farm --seed=3 --hour=13
+run packohar   150 h "RESULT packtest old 0 race ohar strikes [1-9]" --autotest=packtest --race=ohar --mtype=crash --biome=farm --seed=3 --hour=13
+run heattest   150 h "RESULT heattest old 0 .* near_a [1-9]" --autotest=heattest --mtype=crash --biome=farm --seed=3 --hour=13
+run styletest  100 h "RESULT styletest .*far: advance" --autotest=styletest --mtype=crash --biome=farm --seed=3 --hour=13
+run nemtest    120 h "RESULT nemtest old 0 .* unseen_stalk false .* seen_stalk true goal_to_seen 1[0-9] m" --autotest=nemtest --mtype=crash --biome=farm --seed=3 --hour=13
+run dirtest    330 h "RESULT dirtest old 0 .* in_fight 0" --autotest=dirtest --mtype=crash --biome=farm --seed=3 --hour=13
+run civtest    150 h "RESULT civtest old 0 v063 0 civ [1-9]" --autotest=civtest --mtype=terror --biome=town --seed=2 --hour=13
+run tunetest   160 h "RESULT tunetest diff normal" --autotest=tunetest --mtype=crash --biome=farm --seed=3 --hour=13
 run ai_late    160 h "RESULT aitest jestetan late 1 dmg [1-9][0-9][0-9]" --autotest=aitest --mtype=crash --biome=farm --late=1 --seed=5 --hour=13
 run latetest   120 h "RESULT latetest pack [2-9] nemesis [1-9][0-9]* marked true waves 3 added [3-9]" --autotest=latetest --mtype=crash --biome=farm --late=1 --seed=5 --hour=23
 run maptown   220 x "RESULT topshot untangled" --autotest=topshot --mtype=crash --biome=town --hour=13 --seed=11 --late=1

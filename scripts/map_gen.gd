@@ -4,6 +4,8 @@ extends RefCounted
 ## Kondor (dropship). Same seed = same map on every machine.
 
 const BLOCK := 12.0
+const FitCollision := preload("res://scripts/fit_collision.gd")
+const ZFix := preload("res://scripts/zfix.gd")
 var N := 7                 # blocks per side: see SIZES
 const SIZES := {"small": 8, "medium": 10, "large": 12, "huge": 15, "colossal": 18}
 const SIZE_NAMES := {"small": "malá", "medium": "střední", "large": "velká", "huge": "obrovská", "colossal": "kolosální"}
@@ -86,6 +88,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 		_mars()
 		_borders()
 		_stone_obstacles()
+		_zfix()
 		nav.bake_navigation_mesh(false)
 		return info
 	# layout: UFO 2x2 somewhere in the middle, the Kondor at an edge block
@@ -249,12 +252,22 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	_borders()
 	_clear_doors()
 	_untangle()
-	if Game.autotest() != "zfight":
+	_zfix()
+	if Game.autotest() != "zfight" and Game.cmd_arg("nomerge", "") != "all":
 		_merge_static()
 	_stone_obstacles()
 	nav.bake_navigation_mesh(false)
 	if Game.autotest() != "": print("[MAP] nav done %d ms" % (Time.get_ticks_msec() - _t0))
 	return info
+
+## 0.61: faces of two blocks lying in one plane flicker - the smaller block steps out of it (scripts/zfix.gd).
+## `--nozfix=1` leaves them as they were (for comparing with `--autotest=zfight`).
+func _zfix() -> void:
+	if Game.cmd_arg("nozfix", "0") == "1":
+		return
+	var t0 := Time.get_ticks_msec()
+	var n := ZFix.fix(root)
+	if Game.autotest() != "": print("[MAP] zfix moved %d faces (%d ms)" % [n, Time.get_ticks_msec() - t0])
 
 ## 0.55: the blocks that only decorate (frames, plinths, boards, the small parts of furniture: they
 ## stop nothing and never change) are joined into one mesh per material and per 24 m square - far
@@ -269,18 +282,34 @@ func _merge_static() -> void:
 		keep[r["node"]] = true
 	var groups := {}
 	var before := 0
+	# 0.62 výkon: i pevné kusy (zdi domů, plot, schody, nábytek): tělo s kolizí zůstává, jen jeho
+	# viditelná krabice jde do společné sítě. Co se dá rozbít, na co hra odkazuje (info) nebo co
+	# má značku, zůstává samostatné.
+	var refs := {}
+	_collect_refs(info, refs)
+	var cand := []
 	for n in root.get_children():
-		if not n is MeshInstance3D:
-			continue
-		var mi := n as MeshInstance3D
+		if n is MeshInstance3D:
+			cand.append([n, (n as MeshInstance3D).transform])
+		elif n is StaticBody3D and Game.cmd_arg("nomerge", "") != "1" and not refs.has(n) and n.get_meta_list().is_empty() and n.get_child_count() == 2:
+			var sm: MeshInstance3D = null
+			var ok := true
+			for c in n.get_children():
+				if c is MeshInstance3D and sm == null: sm = c
+				elif not c is CollisionShape3D: ok = false
+			if ok and sm and not refs.has(sm) and sm.get_child_count() == 0:
+				cand.append([sm, (n as Node3D).transform * sm.transform])
+	for cd in cand:
+		var mi := cd[0] as MeshInstance3D
 		if not (mi.mesh is BoxMesh or mi.mesh is SphereMesh or mi.mesh is CylinderMesh) or not mi.visible or keep.has(mi) or not mi.get_meta_list().is_empty() or mi.material_override == null:
 			continue
 		if mi.material_override is BaseMaterial3D and (mi.material_override as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
 			continue
-		var key := "%d|%d|%d" % [int(floor(mi.position.x / 24.0)), int(floor(mi.position.z / 24.0)), mi.material_override.get_instance_id()]
+		var xf: Transform3D = cd[1]
+		var key := "%d|%d|%d" % [int(floor(xf.origin.x / 24.0)), int(floor(xf.origin.z / 24.0)), mi.material_override.get_instance_id()]
 		if not groups.has(key):
 			groups[key] = []
-		groups[key].append(mi)
+		groups[key].append(cd)
 		before += 1
 	var after := 0
 	for key in groups:
@@ -290,19 +319,123 @@ func _merge_static() -> void:
 			continue
 		var st := SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		for mi in lst:
-			st.append_from((mi as MeshInstance3D).mesh, 0, (mi as MeshInstance3D).transform)
+		for cd in lst:
+			st.append_from((cd[0] as MeshInstance3D).mesh, 0, cd[1])
 		var out := MeshInstance3D.new()
 		out.mesh = st.commit()
-		out.material_override = (lst[0] as MeshInstance3D).material_override
+		out.material_override = (lst[0][0] as MeshInstance3D).material_override
 		out.name = "Merged"
 		root.add_child(out)
-		for mi in lst:
-			(mi as Node).free()
+		for cd in lst:
+			# 0.62: the body that stays keeps what it sounds like underfoot (its mesh is gone,
+			# Game.surface_at would not find the material any more - the steps rang like metal)
+			var par: Node = (cd[0] as Node).get_parent()
+			if par is StaticBody3D and not par.has_meta("surf"):
+				var sf: String = Game.TEX_SURFACE.get(String((cd[0] as MeshInstance3D).material_override.get_meta("tex", "")), "")
+				if sf != "":
+					par.set_meta("surf", sf)
+			(cd[0] as Node).free()
 		after += 1
 	if Game.autotest() != "": print("[MAP] merged %d decorations into %d meshes (%d ms)" % [before, after, Time.get_ticks_msec() - t0])
+	if Game.cmd_arg("nomerge", "") != "1":
+		_merge_breakable()
+
+## 0.62 výkon: zdi, které jdou rozbít, a rámy oken na nich jsou ve městě většina všech kousků
+## (přes 1 000 samostatných kreslení). Jejich krabice se kreslí sloučené po čtvercích 24 m a
+## materiálech; samy zůstávají (kolize, rozbití, úlomky) jen neviditelné. Když se kus rozbije,
+## Mission._break přestaví jen jeho sloučenou síť (Mission.merge_dirty) - bez kusu, který zmizel.
+func _merge_breakable() -> void:
+	var t0 := Time.get_ticks_msec()
+	var refs := {}
+	for k in info:
+		if k != "breakables":
+			_collect_refs(info[k], refs)
+	var groups := {}
+	var add := func(mi: MeshInstance3D, xf: Transform3D) -> void:
+		if not (mi.mesh is BoxMesh or mi.mesh is SphereMesh or mi.mesh is CylinderMesh) or not mi.visible or mi.material_override == null or refs.has(mi):
+			return
+		if mi.material_override is BaseMaterial3D and (mi.material_override as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
+			return
+		var key := "%d|%d|%d" % [int(floor(xf.origin.x / 24.0)), int(floor(xf.origin.z / 24.0)), mi.material_override.get_instance_id()]
+		if not groups.has(key):
+			groups[key] = []
+		groups[key].append([mi, xf])
+	for b in info["breakables"]:
+		if not is_instance_valid(b) or not b is StaticBody3D or (b as Node).get_parent() != root or refs.has(b):
+			continue
+		var extra := false
+		for m in (b as Node).get_meta_list():
+			if not m in [&"break", &"break_kind", &"hp", &"deco"]: extra = true
+		if extra:
+			continue
+		var sm: MeshInstance3D = null
+		var ok := true
+		for c in (b as Node).get_children():
+			if c is MeshInstance3D and sm == null: sm = c
+			elif not c is CollisionShape3D: ok = false
+		if ok and sm and sm.get_child_count() == 0 and sm.get_meta_list().is_empty():
+			add.call(sm, (b as Node3D).transform * sm.transform)
+	for n in root.get_children():
+		if n is MeshInstance3D and n.get_child_count() == 0 and n.get_meta_list().size() == 1 and n.has_meta("deco_of"):
+			add.call(n, (n as Node3D).transform)
+	var cnt := 0
+	for key in groups:
+		var lst: Array = groups[key]
+		if lst.size() < 2:
+			continue
+		var out := MeshInstance3D.new()
+		out.name = "MergedB"
+		out.material_override = (lst[0][0] as MeshInstance3D).material_override
+		out.set_meta("parts", lst)
+		root.add_child(out)
+		for cd in lst:
+			(cd[0] as MeshInstance3D).visible = false
+			(cd[0] as Node).set_meta("mg", out)
+			cnt += 1
+		merge_build(out)
+	if Game.autotest() != "": print("[MAP] merged %d breakable parts into %d meshes (%d ms)" % [cnt, groups.size(), Time.get_ticks_msec() - t0])
+
+## Sloučená síť z kusů, které ještě stojí (i za hry po rozbití, volá Mission).
+static func merge_build(out: MeshInstance3D) -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var any := false
+	for cd in out.get_meta("parts", []):
+		var mi = cd[0]
+		if not is_instance_valid(mi) or (mi as Node).is_queued_for_deletion():
+			continue
+		var par: Node = (mi as Node).get_parent()
+		if par and (par.is_queued_for_deletion() or par.get_meta("broken", false)):
+			continue
+		st.append_from((mi as MeshInstance3D).mesh, 0, cd[1])
+		any = true
+	out.mesh = st.commit() if any else null
+
+func _collect_refs(v, out: Dictionary) -> void:
+	if v is Node:
+		out[v] = true
+	elif v is Array:
+		for x in v: _collect_refs(x, out)
+	elif v is Dictionary:
+		for k in v:
+			_collect_refs(k, out)
+			_collect_refs(v[k], out)
 
 # ---- primitives ----------------------------------------------------------------
+## 0.62 (Ari: „vetřelci občas propadnou do země, když je chodník vyšší“): chodníky (16 cm), podlahy
+## obchodu a hospody (10 cm), schůdek u dveří ap. byly jen vidět, bez kolize - vojáci i vetřelci
+## stáli na zemi pod nimi a nohy jim v nich mizely. Nízká plochá deska ležící na zemi, na kterou
+## se dá stoupnout, teď kolizi dostane vždy (i z uložených dílků); přes obrubník pak tělo
+## přenese krok nahoru (scripts/step_up.gd). Tenké nátěry (asfalt, spáleniště, koberce pod 6 cm),
+## obilí, voda a schody (mají vlastní rampu) zůstávají bez kolize.
+var _stairs_on := false
+func _walk_slab(pos: Vector3, size: Vector3) -> bool:
+	var bot := pos.y - size.y / 2.0
+	var top := pos.y + size.y / 2.0
+	if bot > 0.05 or bot < -0.6 or top < 0.06 or top > 0.45 or minf(size.x, size.z) < 0.5:
+		return false
+	return not _stairs_on
+
 func box(pos: Vector3, size: Vector3, material: Material, collide := true, rot_y := 0.0) -> Node3D:
 	if material == Game.mat("roof", 1.0):
 		collide = true       # roofs can be climbed onto
@@ -314,6 +447,8 @@ func box(pos: Vector3, size: Vector3, material: Material, collide := true, rot_y
 			var ax := Vector3(size.x / 2 - 1.2, 0, 0) if size.x > size.z else Vector3(0, 0, size.z / 2 - 1.2)
 			info["roofs"].append(top + ax)
 			info["roofs"].append(top - ax)
+	if not collide and _walk_slab(pos, size):
+		collide = true       # 0.62: a pavement, a raised floor, a step: you walk ON it, not in it
 	if maxf(size.x, size.z) < 3.0 and size.y >= 0.15 and size.y < 3.0 and pos.y + size.y / 2.0 > 0.3:
 		_small.append(Vector3(pos.x, maxf(size.x, size.z) / 2.0, pos.z))   # (x, radius, z): crates, pallets...
 	var mi := MeshInstance3D.new()
@@ -638,6 +773,8 @@ func _prop(name: String, p: Vector3, yaw := 0.0, cover := true) -> Node3D:
 	n.rotation.y = yaw
 	if name.begins_with("rock_"):
 		_solid_stone(n)
+	elif not name in ["house_roof", "window"]:
+		FitCollision.fit(n)      # 0.61: hit what you see (no walls of thin air round the props)
 	if name.begins_with("car"):
 		_cars.append(n)
 	if not name in ["house_roof", "window"]:
@@ -1454,11 +1591,13 @@ func _stairs(a: Vector3, b: Vector3, width: float, mat: Material) -> void:
 	var steps := maxi(4, int(round(d.y / 0.2)))
 	var flat := Vector3(d.x, 0, d.z)
 	var yaw := atan2(flat.x, flat.z)
+	_stairs_on = true      # (the steps are only seen: you walk the ramp)
 	for i in steps:
 		var k := (i + 0.5) / steps
 		var p := a + Vector3(flat.x * k, 0, flat.z * k)
 		var top := d.y * (i + 1) / steps
 		box(p + Vector3(0, top / 2, 0), Vector3(width, top, flat.length() / steps + 0.02), mat, false, yaw)
+	_stairs_on = false
 
 func _house(o: Vector3) -> void:
 	_ground(o, "grass")
@@ -2445,10 +2584,12 @@ func _shop(o: Vector3) -> void:
 	var shelf_m := Game.color_mat(Color(0.7, 0.72, 0.74), false, 0.4, 0.5)
 	for k in 3:
 		var ax := c + Vector3(1.8 + k * 2.4, 0.1, 3.4)
-		box(ax + Vector3(0, 0.8, 0), Vector3(0.36, 1.6, 3.2), Game.mat("metal", 0.5))          # the back panel (solid)
-		box(ax + Vector3(0, 0.06, 0), Vector3(0.72, 0.12, 3.2), Game.color_mat(Color(0.2, 0.2, 0.22)), false)
+		# 0.61: the back panel and the plinth end inside the end boards (they used to end flush with
+		# their outer face and the two surfaces flickered), the end boards are a touch wider than the plinth
+		box(ax + Vector3(0, 0.8, 0), Vector3(0.36, 1.6, 3.1), Game.mat("metal", 0.5))          # the back panel (solid)
+		box(ax + Vector3(0, 0.06, 0), Vector3(0.72, 0.12, 3.1), Game.color_mat(Color(0.2, 0.2, 0.22)), false)
 		for zz in [-1.58, 1.58]:
-			box(ax + Vector3(0, 0.82, zz), Vector3(0.72, 1.64, 0.04), shelf_m, false)        # the ends
+			box(ax + Vector3(0, 0.82, zz), Vector3(0.76, 1.64, 0.04), shelf_m, false)        # the ends
 		for lv in 4:
 			var ly := 0.14 + lv * 0.44
 			box(ax + Vector3(0, ly, 0), Vector3(0.74, 0.025, 3.12), shelf_m, false)
@@ -2459,7 +2600,9 @@ func _shop(o: Vector3) -> void:
 				while zz < 1.45:
 					var gw := rng.randf_range(0.18, 0.4)
 					var gh := rng.randf_range(0.14, 0.3)
-					if rng.randf() < 0.85 and lv < 4:
+					if zz + gw > 1.54:
+						gw = 1.54 - zz          # the last packet stays on the shelf, not through the end board
+					if rng.randf() < 0.85 and lv < 4 and gw > 0.1:
 						box(ax + Vector3(sd * 0.27, ly + 0.012 + gh / 2, zz + gw / 2), Vector3(0.16, gh, gw - 0.02), Game.color_mat(goods[(k + lv + j) % 4].darkened(rng.randf() * 0.3)), false)
 					zz += gw
 					j += 1
@@ -2708,7 +2851,7 @@ func _ufo(center: Vector3) -> void:
 		# plates torn off on the way down, stuck in the furrow
 		for k in 4:
 			var pz := rng.randf_range(10.0, 18.0)
-			box(center + Vector3(rng.randf_range(-2.0, 2.0), 0.3, pz), Vector3(rng.randf_range(0.8, 1.6), 0.08, rng.randf_range(1.0, 2.0)), Game.mat("ufo_hull", 0.5), true, rng.randf() * PI).rotation.x = rng.randf_range(0.4, 0.9)
+			box(center + Vector3(rng.randf_range(-2.0, 2.0), 0.3, pz), Vector3(rng.randf_range(0.8, 1.6), 0.08, rng.randf_range(1.0, 2.0)), Game.mat("ufo_hull", 0.5), true, rng.randf() * PI).rotation.x = rng.randf_range(0.3, 0.55)   # (0.62: not steeper than you can stand on)
 	else:
 		# landed: pressed ground under a violet landing light
 		cyl(center + Vector3(0, 0.02, 0), 6.5, 6.5, 0.04, Game.mat("hay", 0.8), false, 16)
@@ -2839,10 +2982,16 @@ func _big_ufo(center: Vector3) -> void:
 			var a := TAU * (i + rng.randf_range(0.2, 0.8)) / 6.0
 			if absf(wrapf(a - PI, -PI, PI)) < 0.45:
 				a += 0.6                   # not at the ramp (it faces -z)
-			var fp := center + Vector3(sin(a), 0, cos(a)) * rng.randf_range(25.0, 27.5)
+			# (0.62) outside the skirt: the hull is a rounded square, 27 m out on its corners - a fire
+			# and a plate at a fixed 25-27.5 m sat against the hidden wall on the corners, and a steep
+			# plate leant on it was a V a merc could not get out of (Ari stuck); plates lie low now
+			var dir := Vector3(sin(a), 0, cos(a))
+			var hull_r := 23.0 / pow(pow(absf(dir.x), 4.0) + pow(absf(dir.z), 4.0), 0.25) * 1.04
+			var fp := center + dir * (hull_r + rng.randf_range(2.5, 4.5))
 			_crash_fire(fp)
-			box(fp + Vector3(rng.randf_range(-2, 2), 0.35, rng.randf_range(-2, 2)), Vector3(rng.randf_range(1.2, 2.4), 0.1, rng.randf_range(1.0, 2.0)),
-				Game.mat("ufo_hull", 0.5), true, rng.randf() * PI).rotation.x = rng.randf_range(0.3, 0.8)
+			var side := Vector3(dir.z, 0, -dir.x)
+			box(fp + dir * rng.randf_range(0.8, 2.5) + side * rng.randf_range(-2, 2) + Vector3(0, 0.3, 0), Vector3(rng.randf_range(1.2, 2.4), 0.1, rng.randf_range(1.0, 2.0)),
+				Game.mat("ufo_hull", 0.5), true, rng.randf() * PI).rotation.x = rng.randf_range(0.25, 0.5)
 		for l in root.get_children():
 			if l is OmniLight3D and (l as Node3D).position.distance_to(center) < 30.0 and rng.randf() < 0.5:
 				l.set_meta("flicker", true)
@@ -3232,6 +3381,8 @@ func _prop_m(model: String, p: Vector3, yaw: float, sc: float) -> void:
 	n.scale = Vector3.ONE * sc
 	if model.begins_with("mars_rock"):
 		_solid_stone(n)
+	else:
+		FitCollision.fit(n)
 
 ## A dark drag trail: from the farmhouse door towards the crash site. Ends
 ## halfway, in the middle of nowhere.

@@ -251,7 +251,7 @@ func _process(delta: float) -> void:
 	cam.look_at(Vector3.ZERO, Vector3.UP)
 	# sun: the subsolar point (November: about 18 degrees south)
 	var sun_lon := -(Campaign.utc_hours() - 12.0) * 15.0
-	gmat.set_shader_parameter("sun_dir", latlon_to_local(-18.0, sun_lon))
+	gmat.set_shader_parameter("sun_dir", latlon_to_local(Campaign.SUN_LAT, sun_lon))     # (the missions use the same sun: Campaign.sun_at)
 	# time
 	if popup == null and not Campaign.viewer and not Campaign.data.get("lost", false):
 		if Campaign.advance(SPEEDS[speed] * delta):
@@ -338,6 +338,25 @@ func _sync_markers() -> void:
 
 func _gui_input(event: InputEvent) -> void:
 	pass
+
+## 0.66 (Ari): the game menu only through Esc or straight from the globe - Esc closes an open
+## window first (one level up), on the bare globe it opens the game menu.
+func _unhandled_input(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_ESCAPE or event.is_action("pause"))):
+		return
+	get_viewport().set_input_as_handled()
+	if popup != null:
+		_close_popup()
+	else:
+		_game_menu()
+
+func _game_menu() -> void:
+	var box := _overlay("HERNÍ MENU", 260)
+	_btn(box, "Pokračovat", _close_popup, 10)
+	if Campaign.viewer:
+		_btn(box, "Zpět do lobby", func(): get_tree().change_scene_to_file("res://scenes/Main.tscn"), 10)
+	else:
+		_btn(box, "Uložit a odejít do hlavního menu", _quit, 10)
 
 func _input(event: InputEvent) -> void:
 	if popup != null:
@@ -484,12 +503,12 @@ func _update_text() -> void:
 		info_lbl.text = "Radar hlídá oblohu.\n\n" + ("Na glóbu je %d hlášení - klikni na blikající značku." % n if n > 0 else "Pusť čas a čekej na hlášení.") + "\n\nPravé tlačítko: otáčet glóbem\nKolečko: přiblížit"
 		return
 	var left: float = (float(m["expires"]) - float(d["day"])) * 24.0
-	var night := Campaign.is_night(float(m["lon"]))
+	var dph := Campaign.day_phase(float(m["lon"]), float(m.get("lat", Campaign.BASE_LAT)))
 	var lh := Campaign.local_hour(float(m["lon"]))
 	var biome: String = {"farm": "venkov, farma", "forest": "lesy", "town": "městečko", "industrial": "průmyslový areál", "mountain": "hory, horská chata", "polar": "polární pustina", "desert": "poušť", "base": "naše základna", "mars": "Mars"}.get(String(m["biome"]), "krajina")
 	info_lbl.text = "%s\n%s  (%s)\nMístní čas %02d:%02d - %s\nVydrží ještě asi %d h\nOdhad posádky: %s\nOdměna: %d kr\n\n%s" % [
 		Campaign.MTYPES[m["type"]]["name"].to_upper(), m["place"], biome, int(lh), int(fmod(lh, 1.0) * 60),
-		"NOC" if night else "den", int(left), ["malá", "střední", "velká", "obrovská"][clampi(int(m["extra_aliens"]), 0, 3)],
+		{"noc": "NOC", "svitani": "svítání", "den": "den", "soumrak": "soumrak"}.get(dph, "den"), int(left), ["malá", "střední", "velká", "obrovská"][clampi(int(m["extra_aliens"]), 0, 3)],
 		int(m["reward"]), Campaign.MTYPES[m["type"]]["text"]]
 
 func _selected_flight() -> Dictionary:
@@ -668,7 +687,7 @@ func _start_air(c: Dictionary, fl: Dictionary) -> void:
 		Net.start_intercept(ip)
 	else:
 		Net.mission_params = ip
-		get_tree().change_scene_to_file("res://scenes/Intercept.tscn")
+		Game.load_scene("res://scenes/Intercept.tscn")
 
 ## Everyone down into the base: walk round it between missions (back up at the velín terminal).
 func _go_base() -> void:
@@ -682,7 +701,7 @@ func _go_base() -> void:
 			for n in mini(int(Campaign.data["found"][k]), 2):
 				live.append(String(k).substr(5))
 	var params := {"type": "home", "type_name": "Základna", "base": Campaign.data["base"].duplicate(true), "grid_w": Campaign.GRID_W, "grid_h": Campaign.GRID_H,
-		"transport": Campaign.transport(), "live": live, "research": Campaign.active_research(), "night": false, "hour": 12.0,
+		"transport": Campaign.transport(), "live": live, "research": Campaign.active_research(), "night": false, "hour": 12.0, "fallen": (Campaign.data.get("fallen", []) as Array).duplicate(true),
 		"blips": Campaign.data["flights"].map(func(f): return [float(f.get("lat", 0)), float(f.get("lon", 0))]) + Campaign.data["missions"].map(func(m): return [float(m.get("lat", 0)), float(m.get("lon", 0))])}
 	if Campaign.viewer:
 		Net.start_local_base(params)     # the host stays on the globe; this is our own copy
@@ -707,12 +726,12 @@ func _begin_escort(c: Dictionary) -> void:
 	_close_popup()
 	Campaign.save()
 	var ep := {"escort": true, "craft": int(c["id"]), "transport": c["kind"], "jet_armor": Campaign.built("pancir_letadel"), "escort_n": int(c.get("escort", 0)), "pilots": c.get("pilots", []), "driver": int(c.get("driver", 0))}
-	ep["night"] = Campaign.is_night(float(c.get("lon", Campaign.BASE_LON)))      # day or night where they meet
+	ep["night"] = Campaign.is_night(float(c.get("lon", Campaign.BASE_LON)), float(c.get("lat", Campaign.BASE_LAT)))      # day or night where they meet
 	if Net.is_online():
 		Net.start_escort(ep)
 	else:
 		Net.mission_params = ep
-		get_tree().change_scene_to_file("res://scenes/Escort.tscn")
+		Game.load_scene("res://scenes/Escort.tscn")
 
 func _host() -> void:
 	if Net.is_online():
@@ -1102,6 +1121,7 @@ func _autotest() -> void:
 					Campaign.make("pancir"); Campaign.make("laser_rifle"); Campaign.make("mine")
 					_show_workshop()],
 				["geo_archive", _show_archive], ["geo_log", _show_log], ["geo_build", func(): _build_menu(2)], ["geo_hangar", func(): _show_base(1)],
+				["geo_menu", _game_menu], ["geo_menu_viewer", func(): Campaign.viewer = true; _game_menu(); Campaign.viewer = false],
 				["geo_alert", func(): _alert("VELMI DLOUHÉ HLÁŠENÍ\n" + "Tohle je velmi dlouhý text upozornění, který by se měl zalomit. ".repeat(8))]]:
 			e[1].call()
 			if String(e[0]) in ["geo_base", "geo_build", "geo_hangar"]:

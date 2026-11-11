@@ -2,13 +2,13 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.61 prototyp"
-const VERSION_NUM := "0.61"
+const VERSION := "0.68 prototyp"
+const VERSION_NUM := "0.68"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
 	# hands: "two" = needs both hands. kind: gun / melee / throw / tool / ammo
-	"rifle": {"name": "Puška", "short": "Puška", "weight": 7, "type": "weapon", "modes": true, "two": true, "ammo": "rifle_clip", "damage": 32, "spread": 1.4, "rate": 0.16, "auto": true, "sound": "rifle", "noise": 45.0, "muzzle": 0.72, "reload": 1.5},
+	"rifle": {"name": "Puška", "short": "Puška", "weight": 7, "type": "weapon", "modes": true, "two": true, "ammo": "rifle_clip", "damage": 32, "spread": 1.4, "rate": 0.16, "auto": true, "sound": "rifle", "noise": 45.0, "muzzle": 0.72, "reload": 2.4},
 	"pistol": {"name": "Pistole", "short": "Pistole", "weight": 3, "type": "weapon", "ammo": "pistol_clip", "damage": 26, "spread": 2.0, "rate": 0.28, "auto": false, "sound": "pistol", "noise": 35.0, "muzzle": 0.16, "reload": 1.7, "ext_mag": 21},
 	"shotgun": {"name": "Brokovnice", "short": "Brokovnice", "weight": 6, "type": "weapon", "two": true, "ammo": "shells", "ammo_alt": ["slugs", "beanbag"], "damage": 16, "pellets": 8, "choke": 3.2, "spread": 3.0, "rate": 0.85, "auto": false, "sound": "shotgun", "noise": 55.0, "muzzle": 0.72, "single": 0.5, "cap": 7, "kick": 2.0},
 	"magnum": {"name": "Revolver Magnum", "short": "Magnum", "weight": 3, "type": "weapon", "ammo": "magnum_rounds", "damage": 78, "ap": true, "spread": 1.1, "rate": 0.75, "auto": false, "sound": "magnum", "noise": 70.0, "muzzle": 0.27, "single": 0.7, "cap": 6, "kick": 2.5},
@@ -503,9 +503,11 @@ func two_handed(id: String) -> bool:
 ## Seconds to take an item out of a slot: belt is quick, backpack is a dig.
 ## (0.57) A soldier's parts on a gun make it slower to get out (m = that soldier).
 func fetch_time(id: String, from_slot: String, m: Dictionary = {}) -> float:
+	# (0.62) talent Rychlé tasení: a gun comes out (or goes away) in half the time
+	var quick := 0.5 if not m.is_empty() and ITEMS.get(id, {}).get("type", "") == "weapon" and has_talent(m, "rychle_taseni") else 1.0
 	if not m.is_empty() and MOD_FITS.has(id):
-		return _fetch_time(id, from_slot) * part_mult(id, "draw", m)
-	return _fetch_time(id, from_slot)
+		return _fetch_time(id, from_slot) * part_mult(id, "draw", m) * quick
+	return _fetch_time(id, from_slot) * quick
 
 func _fetch_time(id: String, from_slot: String) -> float:
 	var w := float(ITEMS[id]["weight"])
@@ -559,6 +561,33 @@ var seed_override := -1
 var test_phase := 0
 var open_screen := ""      # main menu screen to open (from the globe)
 
+# ---- 0.66: the loading screen (scripts/loading.gd) -----------------------------------------
+const LoadingScreen := preload("res://scripts/loading.gd")
+var _loading: Node = null
+const LOAD_WHAT := {"Mission.tscn": "Příprava mise", "Geoscape.tscn": "Velín", "Intercept.tscn": "Stíhačka startuje",
+	"Escort.tscn": "Doprovod transportu"}
+## Changes the scene behind the loading screen: shows it, lets it be drawn (the building of a mission
+## blocks the screen - what is drawn last stays up), changes, and lets it fade into the new scene.
+func load_scene(path: String) -> void:
+	var tree := get_tree()
+	if not is_instance_valid(_loading):
+		_loading = LoadingScreen.new()
+		_loading.setup(String(LOAD_WHAT.get(path.get_file(), "Načítání")), path.ends_with("Mission.tscn"))
+		add_child(_loading)
+		for i in 3:
+			if DisplayServer.get_name() == "headless":
+				await tree.process_frame      # (no drawing there - frame_post_draw never comes)
+			else:
+				await RenderingServer.frame_post_draw
+	tree.change_scene_to_file(path)
+	await tree.scene_changed
+	if is_instance_valid(_loading):
+		_loading.scene_ready()
+
+## Still covering the screen (the mission's briefing waits with its typing until it is gone).
+func loading_busy() -> bool:
+	return is_instance_valid(_loading) and _loading.busy()
+
 func _ready() -> void:
 	load_tweaks()
 	# the steel look for every control in the game, CanvasLayers included
@@ -569,6 +598,7 @@ func _ready() -> void:
 	_make_buses()
 	load_settings()
 	apply_volumes()
+	_preload_sounds()
 	if cmd_arg("grass", "") != "":
 		grass = cmd_arg("grass", "1") == "1"
 	if cmd_arg("retro", "") != "":
@@ -892,7 +922,61 @@ const TALENTS := {
 	"druhy_dech": ["Druhý dech", "Jednou za misi se po pádu sám zvedneš (za 6 s, s třetinou zdraví)."],
 	"nocni_oko": ["Noční oko", "Ve tmě vidíš víc než ostatní (oči si zvyknou), noktovizor ti nezrní."],
 	"granatnik": ["Granátník", "Granáty, kouř i světlice hodíš o polovinu dál."],
+	# 0.62 (Ari): new talents of the tree
+	"rychle_taseni": ["Rychlé tasení", "Výměna a tasení zbraně o polovinu rychleji."],
+	"zadrzet_dech": ["Zadržet dech", "V mířidle podržíš Shift a zbraň se 4 s skoro nehne (pak se chvíli třese víc)."],
+	"rvac": ["Rváč", "Rychlý úder (nůž, obušek, pažba, pistole) o polovinu silnější a rychlejší."],
+	"polni_osetreni": ["Polní ošetření", "Při obvazování se hýbeš normální chůzí, ne jen pomalu."],
+	"opora_tymu": ["Opora týmu", "Spolubojovníkům do 10 m od tebe roste strach o čtvrtinu pomaleji."],
+	"technik_dronu": ["Technik dronu", "Strážce léčí dvakrát rychleji a až do tří čtvrtin zdraví, za misi tě zvedne dvakrát."],
 }
+## 0.62 (Ari): the talent tree - four branches of five. A talent can be taken once the one before it
+## in the branch is owned and the soldier has the rank of its tier (TREE_RANK). Nothing is taken back.
+## On the easy difficulty (where the eye is always shown) the 4th of Specialista is the drone instead.
+const TALENT_TREE := [
+	["Střelec", ["rychle_prebiti", "pevna_ruka", "strelec", "rychle_taseni", "zadrzet_dech"]],
+	["Útočník", ["sprinter", "kocici_krok", "granatnik", "tichy_zabijak", "rvac"]],
+	["Přežití", ["houzevnaty", "felcar", "zelezne_nervy", "polni_osetreni", "druhy_dech"]],
+	["Specialista", ["mezek", "tezka_vaha", "nocni_oko", "sesty_smysl", "opora_tymu"]],
+]
+const TREE_RANK := [1, 2, 4, 6, 8]      # Vojín, Svobodník, Četař, Rotmistr, Kapitán
+const TREE_SWAP := {"sesty_smysl": "technik_dronu"}   # shown instead on the easy difficulty
+
+## The talent in a place of the tree (the drone on easy). m = the soldier (owned one wins).
+func tree_talent(b: int, tier: int, m: Dictionary = {}) -> String:
+	var id: String = TALENT_TREE[b][1][tier]
+	if TREE_SWAP.has(id):
+		var alt: String = TREE_SWAP[id]
+		if not m.is_empty() and has_talent(m, alt):
+			return alt
+		if not m.is_empty() and has_talent(m, id):
+			return id
+		if difficulty == "easy":
+			return alt
+	return id
+
+func _tier_owned(m: Dictionary, b: int, tier: int) -> bool:
+	var id: String = TALENT_TREE[b][1][tier]
+	return has_talent(m, id) or (TREE_SWAP.has(id) and has_talent(m, TREE_SWAP[id]))
+
+## "owned" / "open" (can be taken now) / "nopoint" (could, but no point) / "rank" (needs a higher rank)
+## / "locked" (the one before it is missing).
+func talent_state(m: Dictionary, b: int, tier: int) -> String:
+	if _tier_owned(m, b, tier):
+		return "owned"
+	if tier > 0 and not _tier_owned(m, b, tier - 1):
+		return "locked"
+	if rank_of(m) < TREE_RANK[tier]:
+		return "rank"
+	return "open" if int(m.get("talent_points", 0)) > 0 else "nopoint"
+
+func _tree_place(id: String) -> Vector2i:
+	for b in TALENT_TREE.size():
+		for t in 5:
+			var tid: String = TALENT_TREE[b][1][t]
+			if tid == id or TREE_SWAP.get(tid, "") == id:
+				return Vector2i(b, t)
+	return Vector2i(-1, -1)
 ## Talents that were replaced by better ones (old saves keep what they had, under the new name).
 const TALENT_NEW := {"rychle_ruce": "rychle_prebiti", "lovec_hlav": "tichy_zabijak"}
 
@@ -934,36 +1018,25 @@ func add_xp(amount: int) -> Array:
 			merc[st] = int(merc[st]) + inc
 			grown.append("%s +%d" % [STAT_NAMES[st], inc])
 		merc["talent_points"] = int(merc.get("talent_points", 0)) + 1
-		out.append("POVÝŠEN na %s! %s. Nový talent k výběru (Můj voják)." % [RANKS[lvl], ", ".join(grown)])
+		out.append("POVÝŠEN na %s! %s. Nový bod do stromu talentů (Vojáci → Talenty)." % [RANKS[lvl], ", ".join(grown)])
 	save_merc()
 	return out
 
 const STAT_NAMES := {"accuracy": "Přesnost", "reactions": "Reakce", "strength": "Síla", "bravery": "Odvaha", "health": "Zdraví", "stamina": "Výdrž"}
 
-## Three talents on offer (stable until one is picked).
-func talent_offer() -> Array:
-	if merc.has("offer"):
-		merc["offer"] = (merc["offer"] as Array).filter(func(o): return TALENTS.has(o) and not has_talent(merc, o))
-	if merc.has("offer") and not merc["offer"].is_empty():
-		return merc["offer"]
-	var pool := []
-	for k in TALENTS:
-		if not has_talent(merc, k):
-			pool.append(k)
-	pool.shuffle()
-	merc["offer"] = pool.slice(0, 3)
-	save_merc()
-	return merc["offer"]
-
 func pick_talent(id: String) -> void:
-	if int(merc.get("talent_points", 0)) <= 0:
+	if int(merc.get("talent_points", 0)) <= 0 or has_talent(merc, id):
+		return
+	var at := _tree_place(id)
+	if at.x < 0 or talent_state(merc, at.x, at.y) != "open":
 		return
 	var t: Array = merc.get("talents", [])
 	t.append(id)
 	merc["talents"] = t
 	merc["talent_points"] = int(merc["talent_points"]) - 1
-	merc["offer"] = []
+	merc.erase("offer")      # (the old random offer of three - gone with the tree)
 	save_merc()
+	Net.update_merc()        # (co-op: the host keeps the soldier, the others see the talent)
 
 ## (0.57) The campaign merc out on a mission right now (his name, kept in merc.cfg until the
 ## mission ends). Still set when the game starts = it went down mid-mission (Alt+F4, a crash):
@@ -1129,12 +1202,17 @@ func load_settings() -> void:
 		volumetric = cf.get_value("video", "volumetric", true)
 		render_scale = cf.get_value("video", "render_scale", 1.0)
 		grass = cf.get_value("video", "grass", true)
+		shadows = clampi(int(cf.get_value("video", "shadows", 1)), 0, 2)
+		detail = clampi(int(cf.get_value("video", "detail", 1)), 0, 2)
+		hud_min = bool(cf.get_value("video", "hud_min", false))
 		fullscreen = cf.get_value("video", "fullscreen", false)
 		seen_version = cf.get_value("game", "seen_version", "")
+		intro_seen = cf.get_value("game", "intro_seen", false)
 		voice_mode = cf.get_value("voice", "mode", "ptt")
 		mic_gate = cf.get_value("voice", "gate", 0.03)
 		mimic_ok = cf.get_value("voice", "mimic", true)
 		mic_gain = cf.get_value("voice", "gain", 1.0)
+		mic_clean = cf.get_value("voice", "clean", true)
 		mic_device = cf.get_value("voice", "device", "")
 		friendly_fire = cf.get_value("game", "friendly_fire", true)
 		music_volume = cf.get_value("game", "music_volume", 0.7)
@@ -1156,12 +1234,17 @@ func save_settings() -> void:
 	cf.set_value("video", "volumetric", volumetric)
 	cf.set_value("video", "render_scale", render_scale)
 	cf.set_value("video", "grass", grass)
+	cf.set_value("video", "shadows", shadows)
+	cf.set_value("video", "detail", detail)
+	cf.set_value("video", "hud_min", hud_min)
 	cf.set_value("video", "fullscreen", fullscreen)
 	cf.set_value("game", "seen_version", seen_version)
+	cf.set_value("game", "intro_seen", intro_seen)
 	cf.set_value("voice", "mode", voice_mode)
 	cf.set_value("voice", "gate", mic_gate)
 	cf.set_value("voice", "mimic", mimic_ok)
 	cf.set_value("voice", "gain", mic_gain)
+	cf.set_value("voice", "clean", mic_clean)
 	cf.set_value("voice", "device", mic_device)
 	cf.set_value("game", "friendly_fire", friendly_fire)
 	cf.set_value("game", "music_volume", music_volume)
@@ -1404,18 +1487,26 @@ var _sounds := {}
 ## Materials that sway in the wind (strength per metre of height above the mesh centre).
 const WINDY := {"leaves": 0.09, "wheat": 0.16}
 const WORLD_SHADER := preload("res://shaders/world.gdshader")
+const RoomEcho := preload("res://scripts/room_echo.gd")
 const METAL_SHADER := preload("res://shaders/world_metal.gdshader")
 var retro := true          # the screen filter: dithering, grain, colour bleed
 var wobble := false        # PS1 vertex jitter (the world "shivers" a little) - its own switch since 0.50
 var volumetric := true     # volumetric fog (Forward+ only)
 var render_scale := 1.0    # 3D resolution (1 = native, sharp; lower = faster)
 var grass := true          # grass blades swaying in the wind
+var hud_min := false       # (0.66) minimal HUD: ammunition only as a guess
+var hud_hidden := false    # (0.66) F1 in the game: the HUD hidden (not saved)
+var loud_at := Vector3.ZERO   # (0.66) where the last loud sound was played (the compass shows it)
+var loud_ms := -100000
+var shadows := 1           # 0.62 výkon: stíny 0 = nízké, 1 = střední, 2 = vysoké (jako do 0.61)
 var fullscreen := false
 var seen_version := ""     # the newest version whose "what's new" the player has seen
+var intro_seen := false    # (0.70) the intro film played once on this machine (then only from the menu)
 var voice_mode := "ptt"    # "off", "ptt" (hold Tab), "open" (voice activation)
 var mic_gate := 0.03       # voice activation threshold (open mic)
 var friendly_fire := true   # host's choice: bullets hit teammates too
 var mic_gain := 1.0        # own microphone loudness (x0.5 .. x4)
+var mic_clean := true      # (0.62) pull the room noise down between words (voice_dsp.gd)
 var mic_device := ""       # input device name ("" = system default)
 var mic_level := 0.0       # live level for the meter (set by whoever reads the mic)
 var voice_volumes := {}    # teammate name -> 0..2 (how loud I hear them)
@@ -1434,6 +1525,60 @@ func apply_video() -> void:
 		var want := DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED
 		if DisplayServer.window_get_mode() != want and not (want == DisplayServer.WINDOW_MODE_WINDOWED and DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_MAXIMIZED):
 			DisplayServer.window_set_mode(want)
+
+## 0.62 výkon: každé světlo se stínem kreslí scénu znovu (bodové 6×), měsíc ve 4 pásmech až do 100 m -
+## dohromady tisíce kreslení navíc za snímek. Lampy a ohně proto vrhají stín jen blízko kamery
+## (dál svítí bez stínu, ve tmě a mlze to oko nepozná), měsíc ve 2 pásmech na kratší vzdálenost.
+## Úroveň v Nastavení: nízké (lampy bez stínů), střední (výchozí), vysoké (stíny jako do 0.61).
+const SHADOW_NEAR := [0.0, 22.0, 45.0]
+func shadow_light(l: Light3D) -> void:
+	if l == null or not l.shadow_enabled:
+		return
+	if shadows <= 0:
+		l.shadow_enabled = false
+		return
+	l.distance_fade_enabled = true
+	l.distance_fade_begin = 60.0
+	l.distance_fade_length = 10.0
+	l.distance_fade_shadow = SHADOW_NEAR[clampi(shadows, 0, 2)]
+
+func shadow_sun(sun: DirectionalLight3D) -> void:
+	if sun == null:
+		return
+	if shadows >= 2:
+		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+		sun.directional_shadow_max_distance = 100.0
+	else:
+		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+		sun.directional_shadow_max_distance = 50.0 if shadows == 1 else 35.0
+
+## 0.62 výkon (Ari: ve městě propady FPS při pohledu do dálky): město má přes 2 000 samostatných
+## kousků (rámy oken, květináče, lahve, cedule...) a 80 polí trávy s desítkami tisíc stébel - při
+## pohledu přes celé město se kreslilo všechno až k obzoru. Drobnosti se teď kreslí jen do
+## vzdálenosti podle velikosti (30 cm do 25 m, 1 m do 45 m, 2 m do 90 m), tráva do 45 m;
+## velké věci (domy, zdi, sloučené díly) beze změny. Hra (střely, výhled vetřelců) to nijak nemění.
+## Nastavení „Detaily v dálce“: blízko (slabý počítač) / střední / daleko.
+var detail := 1
+const DETAIL_K := [0.65, 1.0, 1.7]
+func far_cull(root: Node) -> void:
+	if root == null:
+		return
+	var k: float = DETAIL_K[clampi(detail, 0, 2)]
+	for n in root.find_children("*", "GeometryInstance3D", true, false):
+		var g := n as GeometryInstance3D
+		if g.visibility_range_end > 0.0:
+			continue
+		if g is MultiMeshInstance3D:
+			var a := (g as MultiMeshInstance3D).get_aabb()
+			g.visibility_range_end = 45.0 * k + a.size.length() * 0.5
+			continue
+		if not g is MeshInstance3D or (g as MeshInstance3D).mesh == null or (g as MeshInstance3D).skin != null:
+			continue
+		var sz := (g.global_transform.basis * (g as MeshInstance3D).get_aabb().size).abs()
+		var l := maxf(sz.x, maxf(sz.y, sz.z))
+		if l >= 4.0:
+			continue
+		g.visibility_range_end = maxf(25.0, l * 45.0) * k
 
 func mat(tex_name: String, scale := 0.5, emission := Color.BLACK) -> ShaderMaterial:
 	var key := "%s|%s|%s" % [tex_name, scale, emission]
@@ -1482,6 +1627,8 @@ func surface_at(world: Node3D, pos: Vector3, map: Dictionary) -> String:
 				break
 			if n.has_meta("surf"):
 				return n.get_meta("surf")
+			if n.get_child_count() > 40:
+				break        # (the map itself: its pieces say nothing about this spot - a random one rang like metal)
 			for c in n.get_children():
 				if c is MeshInstance3D and c.material_override and c.material_override.has_meta("tex"):
 					var sf: String = TEX_SURFACE.get(String(c.material_override.get_meta("tex")), "")
@@ -1659,14 +1806,52 @@ func loop_stream(sname: String) -> AudioStream:
 ## Names that play another sound at a different pitch (a pistol is the rifle's smaller sister).
 const PITCHED := {"plasma_p": ["plasma", 1.18], "laser_p": ["laser", 1.15]}
 const VARIANTS := {"plasma_heavy": 10, "casing": 4, "step_heavy": 3, "gear": 4, "sting": 4, "type": 4, "breath": 2}
+## (0.61) The soldier's own voice by sex: "<name>_female" / "<name>_male" when that recording is in
+## assets/sounds (also as takes <name>_female_0, _1...), else the common "<name>" - but a woman never
+## gets the common one when it is a man's recording (VOICE_MALE): she stays quiet until hers is there.
+const VOICE_MALE := ["breath", "breath_scared"]
+var _voice_takes := {}
+func voice_of(sname: String, female: bool) -> String:
+	var own := sname + ("_female" if female else "_male")
+	if not _voice_takes.has(own):
+		var n := 0
+		while ResourceLoader.exists("res://assets/sounds/%s_%d.wav" % [own, n]):
+			n += 1
+		_voice_takes[own] = n if n > 0 else (-1 if ResourceLoader.exists("res://assets/sounds/%s.wav" % own) else 0)
+	var takes: int = _voice_takes[own]
+	if takes > 0:
+		return "%s_%d" % [own, randi() % takes]
+	if takes < 0:
+		return own
+	if female and sname in VOICE_MALE:
+		return ""
+	return sname
+
 func sound(sname: String) -> AudioStream:
 	if PITCHED.has(sname):
 		sname = PITCHED[sname][0]
 	if VARIANTS.has(sname):
 		sname = "%s_%d" % [sname, randi() % int(VARIANTS[sname])]
 	if not _sounds.has(sname):
-		_sounds[sname] = load("res://assets/sounds/%s.wav" % sname)
+		var path := "res://assets/sounds/%s.wav" % sname
+		if _sound_req.has(sname):
+			_sound_req.erase(sname)
+			_sounds[sname] = ResourceLoader.load_threaded_get(path)
+		else:
+			_sounds[sname] = load(path)
 	return _sounds[sname]
+
+## 0.62 výkon: zvuky se načítaly až při prvním přehrání - první výstřel, krok nebo výbuch v misi
+## tak zasekl hru o desítky ms (načtení .wav z disku). Teď se po startu hry všechny začnou načítat
+## na pozadí (vlákna), takže v misi už jsou v paměti (~70 MB).
+var _sound_req := {}
+func _preload_sounds() -> void:
+	for f in ResourceLoader.list_directory("res://assets/sounds/"):
+		if f.get_extension() == "wav":
+			var sname := f.get_basename()
+			if not _sounds.has(sname) and not _sound_req.has(sname):
+				if ResourceLoader.load_threaded_request("res://assets/sounds/" + f) == OK:
+					_sound_req[sname] = true
 
 ## Plays a positional sound once at @a pos (in @a world).
 const ALIEN_SOUNDS := ["skitter", "groan", "growl", "sniff", "alien", "swish", "lunge", "zap", "psi", "burst"]
@@ -1736,6 +1921,8 @@ func blood_splat(world: Node, pos: Vector3, col: Color, size := 0.3, glow := fal
 		if is_instance_valid(old):
 			old.queue_free()
 
+## (0.66) Sounds the compass does not mark as "hluk" (quiet ones, the soldier's own gear).
+const QUIET_SOUNDS := ["click", "clink", "rustle", "pickup", "pistol_slide", "mag_out", "mag_in", "reload", "casings", "breath", "breath_scared", "hum"]
 func play_at(world: Node, sname: String, pos: Vector3, volume_db := 0.0, pitch := 1.0) -> void:
 	if world == null or not world.is_inside_tree():
 		return
@@ -1747,11 +1934,14 @@ func play_at(world: Node, sname: String, pos: Vector3, volume_db := 0.0, pitch :
 		p.volume_db += world.alien_db()      # rain covers them
 	p.unit_size = 6.0
 	p.max_distance = 80.0
-	p.bus = "SFX"
+	p.bus = RoomEcho.bus()       # (0.70: through the echo of the place)
 	world.add_child(p)
 	p.global_position = pos
 	p.play()
 	p.finished.connect(p.queue_free)
+	if volume_db >= -8.0 and not sname.begins_with("step") and not sname in QUIET_SOUNDS:
+		loud_at = pos
+		loud_ms = Time.get_ticks_msec()
 
 ## Only a piece of a longer sound: from @a offset, faded out after @a secs (a yelp cut out of a roar).
 func play_cut(world: Node, sname: String, pos: Vector3, volume_db: float, pitch: float, secs: float, offset := 0.0) -> void:
@@ -1765,7 +1955,7 @@ func play_cut(world: Node, sname: String, pos: Vector3, volume_db: float, pitch:
 		p.volume_db += world.alien_db()
 	p.unit_size = 6.0
 	p.max_distance = 80.0
-	p.bus = "SFX"
+	p.bus = RoomEcho.bus()       # (0.70: through the echo of the place)
 	world.add_child(p)
 	p.global_position = pos
 	p.play(offset)

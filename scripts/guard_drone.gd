@@ -6,6 +6,7 @@ extends Node3D
 
 var mission: Node
 var charge := 1             # one rescue per mission
+var _spent_one := false     # (0.62) Technik dronu: the first of two rescues used
 var _rescue_t := -1.0
 var _warn_cd := {}          # alien name -> seconds until it may warn about it again
 var _bob := 0.0
@@ -94,27 +95,72 @@ func _process(delta: float) -> void:
 	_rescue(p, delta)
 	_warn(p, delta)
 
+## 0.62 talent Technik dronu (the easy difficulty's swap for Šestý smysl): twice the healing, up to
+## three quarters of the health, and two rescues a mission.
+func _tech(p: Node) -> bool:
+	return Game.has_talent(p.merc, "technik_dronu")
+
 func _heal(p: Node, delta: float) -> void:
-	if p.downed or p.hp >= p.max_hp * HEAL_CAP:
+	var cap := HEAL_CAP * (1.5 if _tech(p) else 1.0)
+	if p.downed or p.hp >= p.max_hp * cap:
 		return
-	p.hp = minf(p.max_hp * HEAL_CAP, p.hp + HEAL_RATE * delta)
+	p.hp = minf(p.max_hp * cap, p.hp + HEAL_RATE * (2.0 if _tech(p) else 1.0) * delta)
 	_lamp.light_energy = 0.25 + absf(sin(_bob * 6.0)) * 0.5
 
 func _rescue(p: Node, delta: float) -> void:
 	if not can_rescue(p):
 		_rescue_t = -1.0
 		return
-	if _rescue_t < 0.0:
-		_rescue_t = 3.5
+	# (0.60) it does not stand him up into the claws: while something is right over him (or
+	# drags him off) it waits - he bleeds meanwhile, the gap has to come by itself
+	var near := _threat_near(p)
+	if near:
+		if not _waiting:
+			_waiting = true
+			mission.hud.message("Strážce: nepřítel je moc blízko. Čekám, až se vzdálí...", 3.0)
+		_lamp.light_energy = 0.15
+		return
+	if _rescue_t < 0.0 or _waiting:
+		_waiting = false
+		if _rescue_t < 0.0:
+			_rescue_t = 3.5
 		mission.hud.message("Strážce: zůstaň se mnou! Aplikuji stimulant...", 3.0)
 		Game.play_ui(mission, "radar_ping", -6)
 	_rescue_t -= delta
 	_lamp.light_energy = 1.2 if fmod(_bob, 0.4) < 0.2 else 0.2
 	if _rescue_t <= 0.0:
-		charge = 0
+		if _tech(p) and not _spent_one:
+			_spent_one = true      # (0.62) Technik dronu: a second dose
+		else:
+			charge = 0
 		_rescue_t = -1.0
+		_cover(p)
 		p.revived.rpc_id(p.get_multiplayer_authority(), "Strážce")
-		mission.hud.message("Strážce: stimulant došel. Podruhé už tě nezvednu.", 5.0)
+		mission.hud.message("Strážce: stimulant došel. Podruhé už tě nezvednu." if charge == 0 else "Strážce: mám ještě jednu dávku stimulantu.", 5.0)
+
+const SAFE_R := 8.0         # no alien this close when it stands him up (a grey sees 8 m through smoke)
+var _waiting := false
+
+func _threat_near(p: Node3D) -> bool:
+	for a in mission.aliens():
+		if a.dead or a.get("husk"):
+			continue
+		if a.get("dragging") == p or a.global_position.distance_to(p.global_position) < SAFE_R:
+			return true
+	return false
+
+## The moment he gets up: the drone drops a smoke cloud over him, and whoever was fighting him
+## is caught off guard (the man they left on the ground stands up) - the same surprise as on
+## first sight, no blindness, no forgetting: they still know where he is.
+func _cover(p: Node3D) -> void:
+	mission.add_smoke(p.global_position)
+	Game.play_at(mission, "smoke_pop", p.global_position, -4)
+	for a in mission.aliens():
+		if a.dead or a.global_position.distance_to(p.global_position) > 40.0:
+			continue
+		if a.get("target") == p or a.global_position.distance_to(p.global_position) < 20.0:
+			if "react" in a:
+				a.react = maxf(a.react, randf_range(0.9, 1.6))
 
 func _warn(p: Node3D, delta: float) -> void:
 	for k in _warn_cd.keys():

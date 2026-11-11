@@ -97,6 +97,16 @@ func _go_lurk(move_far: bool) -> void:
 		state = S.SEARCH
 		search_t = 4.0
 		return
+	if race == "lihnoun" and move_far:
+		# 0.63: a dark corner near where the mercenaries have been seen going - and wait there
+		var amb := AS.ambush_spot(self)
+		if amb != Vector3.INF:
+			state = S.LURK
+			phase = ""
+			wait = rng.randf_range(25.0, 50.0)
+			_tlog("ambush")
+			_go(amb)
+			return
 	super._go_lurk(move_far)
 
 # ---- senses ----------------------------------------------------------------------------
@@ -186,6 +196,26 @@ func blast_near(_at: Vector3) -> void:
 func _deaf_fx() -> void:
 	Game.play_at(mission, "ohar_charge", global_position + Vector3.UP, -6)
 
+## 0.62: what Ari's Ohař movements show (alien.mood): deaf / stunned, panting, the nose down while it searches.
+func _mood() -> int:
+	if _deaf_t > 0.0 or (_stagger > 0.0 and _howl_t <= 0.0):
+		return 1
+	if _winded_t > 0.0:
+		return 2
+	if race == "ohar" and alert and state in [S.SEARCH, S.INVESTIGATE]:
+		return 3
+	return 0
+
+## 0.62: the Ohař breaking cover - a short howl on the spot (Ari's Howl), then the dash.
+const HOWL_TIME := 0.9
+var _howl_t := 0.0
+@rpc("authority", "call_local", "reliable")
+func _howl_fx() -> void:
+	if anim and anim.has_animation("roar"):
+		_cry_anim_t = HOWL_TIME
+		_cry_speed = clampf(anim.get_animation("roar").length / HOWL_TIME * 0.5, 1.0, 3.0)
+		anim.play("roar", 0.1)
+
 ## Ran flat out too long: it has to stop and pant.
 func _tire(delta: float, spd: float) -> float:
 	if _winded_t > 0.0:
@@ -203,13 +233,15 @@ func _tire(delta: float, spd: float) -> float:
 		_dash_t = maxf(0.0, _dash_t - delta * 0.5)
 	return spd
 
-func stalk(p: Node) -> void:
+func stalk(p: Node, at := Vector3.INF) -> void:
 	if dead or state == S.COMBAT:
 		return
+	var pos: Vector3 = p.global_position if at == Vector3.INF else at     # (0.64: where they believe he is)
 	state = S.STALK
 	target = p
+	last_seen = pos
 	lurking = false
-	_go(_snap(p.global_position + (global_position - p.global_position).normalized() * (5.0 if race == "lihnoun" else 9.0)))
+	_go(_snap(pos + (global_position - pos).normalized() * (5.0 if race == "lihnoun" else 9.0)))
 
 func lurk_at(pos: Vector3) -> void:
 	if race == "zombie":
@@ -269,6 +301,7 @@ func _retreat(secs: float) -> void:
 
 # ---- brain (host) ---------------------------------------------------------------------------
 func _think(delta: float) -> void:
+	AS.tick(self, delta)       # (0.63: packs - round the prey and in together)
 	strike_cd -= delta
 	repath_t -= delta
 	heard_t -= delta
@@ -498,7 +531,7 @@ func _hunt(delta: float) -> void:
 		return
 	if repath_t <= 0:
 		repath_t = 0.25
-		_go(_snap(pp))
+		_go(_snap(AS.melee_goal(self, pp)))
 	var spd := run_spd
 	if race == "zombie":
 		# dull and slow - and then, close up, a sudden desperate lunge
@@ -514,9 +547,11 @@ func _hunt(delta: float) -> void:
 	var pc: Array = R.get("pounce", [])
 	if not pc.is_empty():
 		# creep in low and quiet - then, close enough, the mad dash
-		if not _charging and d > float(pc[0]):
+		if not _charging and (d > float(pc[0]) or (AS.melee_hold(self) and d > float(pc[0]) * 0.45)):
 			spd = walk_spd * 1.15
 			lurking = true
+			if AS.melee_hold(self) and global_position.distance_to(_slot) > 4.0:
+				spd = run_spd * 0.75      # (going round to its place: quick, low)
 		else:
 			if not _charging:
 				_charging = true
@@ -524,9 +559,18 @@ func _hunt(delta: float) -> void:
 				_charge_fx.rpc()
 				if race == "ohar":
 					_roar_scare()
+					if anim and anim.has_animation("roar"):
+						_howl_t = HOWL_TIME
+						_howl_fx.rpc()
 			spd = run_spd * float(pc[1])
 	if race == "ohar":
 		spd = _tire(delta, spd)
+	if _howl_t > 0.0:
+		# howling: still, head up - then off
+		_howl_t -= delta
+		velocity.x = 0; velocity.z = 0
+		_face(pp, delta)
+		return
 	_walk(spd, delta)
 
 func _strike_tick(delta: float) -> void:

@@ -22,7 +22,10 @@ var kind := "plasma"         # plasma / acid (Nádor) / lava (Ohnivec): the spit
 var vel := Vector3.ZERO
 var mission: Node
 var streak := false
-var red := false             # a laser (the Levits): a red dash instead of the green plasma
+var red := false             # a laser (rank-and-file Greys and Levits): a red dash instead of the green plasma
+## (0.62, Ari) The lasers of the first races hit far softer than plasma (and armour holds them better):
+## plasma comes with their officers and from the Ještěřans up.
+const LASER_DMG := 0.6
 var tint := Color(0, 0, 0, 0)  # an own colour (the Mírotvůrce's violet plasma)
 
 func _ready() -> void:
@@ -87,11 +90,16 @@ func _physics_process(dt: float) -> void:
 			mission.explode(hit.position, 4.2, 85.0 * (1.15 if Game.veteran() else 1.0), "-", true)
 		queue_free()
 		return
+	if hit and kind == "plasma" and hit.collider and hit.collider.has_method("shield_covers") and hit.collider.shield_covers(shooter_pos):
+		# (0.60) the raised shield: the bolt bursts on its face, not inside the man behind it
+		hit.position = hit.collider.shield_face(shooter_pos)
+		_shield_burst(hit.position)
 	if hit:
 		var base := (randf_range(18.0, 30.0) if Game.veteran() else randf_range(8.0, 14.0)) * power
+		if red: base *= LASER_DMG
 		if multiplayer.is_server() and hit.collider and hit.collider.has_method("is_player"):
 			var pl: Node = hit.collider
-			pl.hurt.rpc_id(pl.get_multiplayer_authority(), base, shooter_pos, kind == "acid", "heat" if kind == "lava" else ("plasma" if kind == "plasma" else ""))
+			pl.hurt.rpc_id(pl.get_multiplayer_authority(), base, shooter_pos, kind == "acid", "heat" if kind == "lava" else (("laser" if red else "plasma") if kind == "plasma" else ""))
 		if multiplayer.is_server() and hit.collider and hit.collider.has_meta("break"):
 			mission.hit_breakable(int(hit.collider.get_meta("break")), base, "plasma")
 		if kind == "plasma" and power >= 1.9 and multiplayer.is_server():
@@ -112,3 +120,40 @@ func _physics_process(dt: float) -> void:
 	travelled += vel.length() * dt
 	if travelled > 140.0:
 		queue_free()
+
+## A plasma bolt bursting on a raised shield: a green splash of sparks off its face.
+func _shield_burst(p: Vector3) -> void:
+	var col := Color(1.0, 0.12, 0.08) if red else (tint if tint.a > 0.0 else Color(0.4, 1.0, 0.45))
+	var cp := CPUParticles3D.new()
+	cp.one_shot = true
+	cp.amount = 24
+	cp.lifetime = 0.45
+	cp.explosiveness = 1.0
+	cp.direction = -dir
+	cp.spread = 75.0
+	cp.initial_velocity_min = 2.0
+	cp.initial_velocity_max = 5.0
+	cp.gravity = Vector3(0, -6.0, 0)
+	var qm := QuadMesh.new()
+	qm.size = Vector2(0.04, 0.04)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	m.albedo_color = col
+	qm.material = m
+	cp.mesh = qm
+	mission.add_child(cp)
+	cp.global_position = p
+	cp.emitting = true
+	var l := OmniLight3D.new()
+	l.light_color = col
+	l.light_energy = 3.0
+	l.omni_range = 3.5
+	mission.add_child(l)
+	l.global_position = p - dir * 0.2
+	Game.play_at(mission, "zap", p, -4)
+	mission.set_meta("shield_bursts", int(mission.get_meta("shield_bursts", 0)) + 1)     # (for the autotest)
+	var tw := l.create_tween()
+	tw.tween_property(l, "light_energy", 0.0, 0.35)
+	tw.tween_callback(func(): l.queue_free())
+	mission.get_tree().create_timer(1.0).timeout.connect(cp.queue_free)
