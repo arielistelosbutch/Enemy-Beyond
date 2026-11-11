@@ -4,20 +4,17 @@ extends Node
 ## Also the microphone test: your own voice played back a moment later, and the level.
 
 const Voice := preload("res://scripts/voice.gd")
+const DSP := preload("res://scripts/voice_dsp.gd")
 var mic: AudioStreamPlayer
 var capture: AudioEffectCapture
-var _rs_pos := 0.0
-var _rs_sum := 0.0
-var _rs_n := 0
+var dsp := DSP.new()       # (0.62) filters, noise floor, level, voice activation, pre-roll
 var _acc := PackedFloat32Array()
-var _hold := 0.0
-var _chan := {}            # peer -> {player, pb}
+var _chan := {}            # peer -> {player, rx, last}
 var testing := false       # microphone test: hear yourself
 var _echo: AudioStreamPlayer
 var _echo_pb: AudioStreamGeneratorPlayback
 var talking := false
 var _mission_feed := PackedFloat32Array()   # what the mission's Voice takes each frame
-var _agc := 1.0                              # automatic gain: quiet mics get louder, loud ones calmer
 # diagnostics for the settings screen: is the microphone delivering, is anything going out / coming in
 var frames_in := 0          # raw microphone frames in the last second
 var _frames_acc := 0
@@ -83,23 +80,9 @@ func _process(delta: float) -> void:
 		_frames_acc = 0
 		_stat_t = 0.0
 	if n > 0:
-		var buf := capture.get_buffer(n)
-		var ratio := AudioServer.get_mix_rate() / float(Voice.RATE)
-		for f in buf:
-			_rs_sum += (f.x + f.y) * 0.5 * Game.mic_gain
-			_rs_n += 1
-			_rs_pos += 1.0
-			if _rs_pos >= ratio:
-				_rs_pos -= ratio
-				fresh.append(_rs_sum / _rs_n)
-				_rs_sum = 0.0
-				_rs_n = 0
-	fresh = _level(fresh)
-	var e := 0.0
-	for v in fresh:
-		e += v * v
+		fresh = dsp.process(capture.get_buffer(n), AudioServer.get_mix_rate(), Game.mic_gain, Game.mic_clean, Game.mic_gate)
 	if fresh.size() > 0:
-		Game.mic_level = lerpf(Game.mic_level, sqrt(e / fresh.size()), 0.5)
+		Game.mic_level = lerpf(Game.mic_level, dsp.level, 0.5)
 	if testing:
 		_play_echo(fresh)
 	if _in_mission():
@@ -109,44 +92,23 @@ func _process(delta: float) -> void:
 		return
 	if not Net.is_online() or multiplayer.multiplayer_peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
 		return
-	var send := Input.is_action_pressed("talk")
-	if Game.voice_mode == "open" or Game.mic_live:
-		if Game.mic_level > Game.mic_gate:
-			_hold = 0.45
-		_hold -= delta
-		send = send or _hold > 0.0
-	talking = send
-	if not send:
+	var out := transmit(fresh, Input.is_action_pressed("talk"), Game.voice_mode == "open" or Game.mic_live, delta)
+	if out.is_empty():
 		_acc.clear()
 		return
-	_acc.append_array(fresh)
+	_acc.append_array(out)
 	var chunk := int(Voice.RATE * Voice.CHUNK)
 	while _acc.size() >= chunk:
 		var part := _acc.slice(0, chunk)
 		_acc = _acc.slice(chunk)
-		_lobby_voice.rpc(Voice.encode(part))
+		_lobby_voice.rpc(dsp.packet(part))
 		sent += 1
 
-## Automatic level: speech brought to a steady loudness (target RMS ~0.12), hiss below
-## the gate is not pumped up, a soft limiter keeps shouts from clipping.
-func _level(smp: PackedFloat32Array) -> PackedFloat32Array:
-	if smp.is_empty():
-		return smp
-	var e := 0.0
-	for v in smp:
-		e += v * v
-	var rms := sqrt(e / smp.size())
-	if rms > 0.012:
-		var want := clampf(0.12 / rms, 0.7, 8.0)
-		# fast down (a shout), slow up (a whisper)
-		_agc = lerpf(_agc, want, 0.5 if want < _agc else 0.08)
-	else:
-		_agc = lerpf(_agc, 1.0, 0.05)     # silence / room hiss: do not pump it up
-	var out := PackedFloat32Array()
-	out.resize(smp.size())
-	for i in smp.size():
-		var x := smp[i] * _agc
-		out[i] = x / (1.0 + absf(x) * 0.6)       # soft limiter
+## (0.62) Push-to-talk / voice activation with pre-roll and tail; what to send now.
+## The mission's Voice calls this too (only one of them reads the microphone at a time).
+func transmit(fresh: PackedFloat32Array, ptt: bool, open: bool, delta: float) -> PackedFloat32Array:
+	var out := dsp.transmit(fresh, ptt, open, delta)
+	talking = dsp.talking
 	return out
 
 ## The microphone the player picked in the settings (or the system default).
@@ -168,15 +130,7 @@ func _open() -> void:
 	apply_device()
 	opened_at = Time.get_ticks_msec()
 	_since_open = 0
-	if AudioServer.get_bus_index("Mic") < 0:
-		AudioServer.add_bus()
-		var i := AudioServer.bus_count - 1
-		AudioServer.set_bus_name(i, "Mic")
-		AudioServer.set_bus_volume_db(i, -80.0)   # silent, but the capture still hears it (some systems give a muted bus nothing)
-		var cap := AudioEffectCapture.new()
-		cap.buffer_length = 0.6      # a slow frame (map loading) must not lose speech
-		AudioServer.add_bus_effect(i, cap)
-	capture = AudioServer.get_bus_effect(AudioServer.get_bus_index("Mic"), 0) as AudioEffectCapture
+	capture = DSP.mic_bus()
 	mic = AudioStreamPlayer.new()
 	mic.stream = AudioStreamMicrophone.new()
 	mic.bus = "Mic"
@@ -200,7 +154,7 @@ func _play_echo(fresh: PackedFloat32Array) -> void:
 		_echo_pb.push_buffer(pad)
 	var fr := PackedVector2Array()
 	fr.resize(fresh.size())
-	var d := Voice.decode(Voice.encode(fresh))     # exactly what the others will hear
+	var d := DSP.decode(DSP.encode(fresh))     # exactly what the others will hear
 	for i in d.size():
 		fr[i] = Vector2(d[i], d[i])
 	if _echo_pb.can_push_buffer(fr.size()):
@@ -212,7 +166,7 @@ func stop_test() -> void:
 		_echo.queue_free()
 		_echo = null
 
-@rpc("any_peer", "unreliable_ordered")
+@rpc("any_peer", "unreliable_ordered", "call_remote", 3)
 func _lobby_voice(bytes: PackedByteArray) -> void:
 	if _in_mission():
 		return
@@ -227,27 +181,15 @@ func _lobby_voice(bytes: PackedByteArray) -> void:
 		ap.bus = "Voice"
 		add_child(ap)
 		ap.play()
-		_chan[from] = {"player": ap, "pb": ap.get_stream_playback(), "last": 0.0}
+		var pb0 := ap.get_stream_playback()
+		_chan[from] = {"player": ap, "rx": DSP.Rx.new(pb0, pb0.get_frames_available()), "last": 0}
 	var ch: Dictionary = _chan[from]
 	(ch["player"] as AudioStreamPlayer).volume_db = linear_to_db(maxf(0.001, Game.peer_volume(Net.roster.get(from, {}).get("name", ""))))
-	if Time.get_ticks_msec() - int(ch["last"]) > 250:
-		# a new sentence: a short cushion against late packets
-		var pad := PackedVector2Array()
-		pad.resize(int(Voice.RATE * 0.1))
-		var pb0: AudioStreamGeneratorPlayback = ch["pb"]
-		if pb0.can_push_buffer(pad.size()):
-			pb0.push_buffer(pad)
 	ch["last"] = Time.get_ticks_msec()
-	var smp := Voice.decode(bytes)
+	var smp := DSP.decode(bytes.slice(1))
 	if Game.autotest().begins_with("mic"):
 		dbg_rx.append_array(smp)
-	var fr := PackedVector2Array()
-	fr.resize(smp.size())
-	for i in smp.size():
-		fr[i] = Vector2(smp[i], smp[i])
-	var pb: AudioStreamGeneratorPlayback = ch["pb"]
-	if pb.can_push_buffer(fr.size()):
-		pb.push_buffer(fr)
+	(ch["rx"] as DSP.Rx).push(bytes[0] if bytes.size() > 0 else -1, smp)
 
 ## Who is speaking right now (for the lobby list).
 func speaking(peer: int) -> bool:

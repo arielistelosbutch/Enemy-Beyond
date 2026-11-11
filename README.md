@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.61
+# Operace X - Enemy Beyond — prototyp 0.68
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,23 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.68
+- Strom talentů u vojáků (vedle úprav zbraní): čtyři větve po pěti stupních a vidím dopředu, co mě čeká. Rychlé přebíjení pušky je teď až talent a sprint vydrží aspoň 8 sekund.
+- Vetřelci se domlouvají ve skupinách: mají velitele, role a útočí společně. Mezi misemi si pamatují, jak hrajeme, a na blízko bojují chytřeji. Vždy počítají s jedním až čtyřmi hráči.
+- Posádka UFO odpovídá velikosti lodi, aby byl čas se na větší lodě připravit výzkumem.
+- Všichni vetřelci reagují na zásah vlastním pohybem, Mírotvůrce má konečně pohyby a civilisté umí umírat jako lidé.
+- Údery z očí jsem natočil ve VR pro každou zbraň, nůž, energonůž i obušek. Úder pažbou jde dál od těla a V s nožem v opasku sekne hned, bez tasení.
+- Šediváci a Levité střílí laserem, plazmu mají až Ještěřani a velitelé. Zvednutý štít zastaví víc plazmy.
+- Den a noc na misi sedí s glóbem – kde je na glóbu tma, je tma i na misi.
+- Kulky se už nezastavují o neviditelné hranice kolem stromů, plotů, aut a dalších předmětů. Chodníky a podlahy mají kolizi, takže nikdo nepropadá do země, a kroky zní podle toho, po čem jdu.
+- Konec blikajících ploch u regálů, aut a dalších modelů. Auta mají boční okna podle sloupků.
+- Při obvazování se můžu pomalu hýbat, kdo obvazuje jiného, stojí.
+- Načítací obrazovky s obrázky, transportér po misi, vědci a technici na základně, jednotný HUD, ozvěna podle prostoru a špína na uniformě.
+- V singlu mám radar od Strážce napořád a Strážce mě nezvedne, dokud jsou vetřelci blízko.
+- Lepší hlasový chat (méně brumu a sykotu) a hlas vojáka sedí k pohlaví i po změně.
+- Co-op hlídá verzi hry: s jinou verzí se hráč nepřipojí a dozví se proč. Méně propadů FPS v co-opu i při pohledu do dálky ve městě.
+- Opravy: vetřelci při útoku na základnu nestojí za zdí, UFO sestřelené nad mořem spadne na nejbližší pevninu, nezaseknu se u trosek velké lodi, hra nespadne po misi s kouřem a plazmovky jdou přebít hned po výstřelu.
 
 ## Novinky 0.61
 - Obtížnost po prvním hraní: strach vojáka roste pomaleji a hned ho neochromí, ruce se třesou méně a panika přijde vzácněji.

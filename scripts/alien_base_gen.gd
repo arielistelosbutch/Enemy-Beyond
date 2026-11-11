@@ -101,6 +101,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 		if cells[c] != "entry":
 			info["alien_spawns"].append(o + Vector3(BLOCK / 2 + rng.randf_range(-2, 2), 0.2, BLOCK / 2 + rng.randf_range(-2, 2)))
 			info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
+	_zfix()
 	nav.bake_navigation_mesh(false)
 	if Game.autotest() != "": print("[ABASE] built %d ms, cells %s" % [Time.get_ticks_msec() - _t0, cells.values()])
 	return info

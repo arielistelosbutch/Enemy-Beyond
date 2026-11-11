@@ -1084,7 +1084,7 @@ func _finish() -> void:
 		Net.last_result = Campaign.intercept_done(int(params.get("id", -1)), outcome, kind, jet_hp, lost, 1 if (jet_hp < 60 and not down) else 0)
 	else:
 		Net.last_result = Campaign.intercept_done(int(params.get("id", -1)), outcome, kind, jet_hp)
-	get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+	Game.load_scene("res://scenes/Geoscape.tscn")
 
 # ---- HUD ----------------------------------------------------------------------------------------
 func _draw_hud() -> void:

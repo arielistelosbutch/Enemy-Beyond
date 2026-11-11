@@ -7,6 +7,7 @@ const AlienScript := preload("res://scripts/alien.gd")
 const MeleeScript := preload("res://scripts/melee_alien.gd")
 const DroneScript := preload("res://scripts/drone_alien.gd")
 const BossScript := preload("res://scripts/boss.gd")
+const AD := preload("res://scripts/ai_director.gd")     # (0.64: tension instead of fixed times; the players' styles)
 const CivScript := preload("res://scripts/civilian.gd")
 const MapGen := preload("res://scripts/map_gen.gd")
 const Hud := preload("res://scripts/hud.gd")
@@ -263,6 +264,21 @@ func _ready() -> void:
 		_home_env()
 	_hang_doors()
 	_core_hums()
+	if home():
+		_base_people()
+	if multiplayer.is_server():
+		_nav_prime()
+	# 0.62 výkon: stíny lamp jen blízko kamery, měsíc ve 2 pásmech (Game.shadow_light / shadow_sun)
+	for l in find_children("*", "Light3D", true, false):
+		if l is DirectionalLight3D:
+			Game.shadow_sun(l)
+		else:
+			Game.shadow_light(l)
+	# 0.62 výkon: drobnosti a tráva se kreslí jen do vzdálenosti podle velikosti (Game.far_cull)
+	if Game.cmd_arg("detail", "") != "":
+		Game.detail = int(Game.cmd_arg("detail", "1"))
+	if Game.cmd_arg("lod", "") != "off":
+		Game.far_cull(find_child("Nav", true, false))
 	actors = Node3D.new()
 	actors.name = "Actors"
 	add_child(actors)
@@ -280,6 +296,8 @@ func _ready() -> void:
 	add_child(hud)
 	voice = preload("res://scripts/voice.gd").new()
 	add_child(voice)
+	# 0.70 Facelift II: the echo of the place (a reverb on the sounds the game has, no new sounds)
+	add_child(preload("res://scripts/room_echo.gd").new())
 	# no music: wind, silence and what moves in it
 	music = AudioStreamPlayer.new()
 	music.stream = Game.loop_stream(_wind_name())
@@ -687,19 +705,39 @@ func hour() -> float:
 		return 23.0
 	return float(mp.get("hour", 23.0 if mp.get("night", true) else 14.0))
 
-## Night, dawn, day or dusk - from the hour (the "night" flag only as a fallback).
-## Dawn 5:00-7:30, day until 18:00, dusk until 20:30.
-func phase() -> String:
+## (0.62) How high the sun stands over the mission, in degrees. A campaign mission carries the real
+## sun over its place ("sun", Campaign.sun_at - the same sun that lights the globe); a quick mission
+## or a test only has the hour: dawn 5:00-7:30, day until 18:00, dusk until 20:30 as before.
+func sun_elev() -> float:
 	var mp: Dictionary = Net.mission_params
 	if mp.is_empty():
-		return "noc"
+		return -30.0
+	if mp.has("sun"):
+		return float(mp["sun"])
 	if not mp.has("hour"):
-		return "noc" if mp.get("night", true) else "den"
+		return -30.0 if mp.get("night", true) else 40.0
 	var h := hour()
-	if h >= 5.0 and h < 7.5: return "svitani"
-	if h >= 7.5 and h < 18.0: return "den"
-	if h >= 18.0 and h < 20.5: return "soumrak"
-	return "noc"
+	if h >= 5.0 and h < 7.5: return lerpf(Campaign.SUN_NIGHT, Campaign.SUN_DAY, (h - 5.0) / 2.5)
+	if h >= 7.5 and h < 18.0: return Campaign.SUN_DAY + 52.0 * sin(PI * (h - 7.5) / 10.5)
+	if h >= 18.0 and h < 20.5: return lerpf(Campaign.SUN_DAY, Campaign.SUN_NIGHT, (h - 18.0) / 2.5)
+	return -30.0
+
+## Where the sun stands (degrees, 0 north, 90 east): east in the morning, south at noon, west at dusk.
+func sun_az() -> float:
+	var mp: Dictionary = Net.mission_params
+	if mp.has("sun_az"):
+		return float(mp["sun_az"])
+	return 180.0 + lerpf(-80.0, 80.0, clampf((hour() - 5.0) / 15.5, 0.0, 1.0))
+
+## Night, dawn, day or dusk - from the height of the sun (Campaign.phase_of: the globe agrees).
+func phase() -> String:
+	if Net.mission_params.is_empty():
+		return "noc"
+	return Campaign.phase_of(sun_elev(), hour())
+
+## 0 at the edge of the night .. 1 at full day: how far into the light a dawn or a dusk is.
+func twilight() -> float:
+	return clampf((sun_elev() - Campaign.SUN_NIGHT) / (Campaign.SUN_DAY - Campaign.SUN_NIGHT), 0.0, 1.0)
 
 const PHASE_NAMES := {"noc": "noc", "svitani": "svítání", "den": "den", "soumrak": "soumrak"}
 
@@ -707,13 +745,15 @@ const PHASE_NAMES := {"noc": "noc", "svitani": "svítání", "den": "den", "soum
 ## at dawn and dusk it hangs low and long shadows fall. The moon at night stands still.
 func _sky_light() -> void:
 	var ph := phase()
-	var h := hour()
 	if ph == "noc":
 		moon.rotation_degrees = Vector3(-38, 40, 0)
 		return
-	var k := clampf((h - 5.0) / 15.5, 0.0, 1.0)            # 5:00 east .. 20:30 west
-	var elev := maxf(6.0, 62.0 * sin(PI * k))
-	moon.rotation_degrees = Vector3(-elev, lerpf(-80.0, 80.0, k), 0)
+	# (0.62) the real sun over the place (world: -X east, -Z north, +Y up); a sun just under the
+	# horizon still lights from a few degrees up, otherwise everything would be in shadow
+	var el := deg_to_rad(clampf(sun_elev(), 6.0, 85.0))
+	var az := deg_to_rad(sun_az())
+	var to_sun := Vector3(-sin(az) * cos(el), sin(el), -cos(az) * cos(el))
+	moon.basis = Basis.looking_at(-to_sun, Vector3.UP)
 
 func _environment() -> void:
 	env = Environment.new()
@@ -751,6 +791,9 @@ func _environment() -> void:
 	moon.light_volumetric_fog_energy = 0.12
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 0.85
+	# (0.62) the night values: a dawn or a dusk near the night edge fades back towards them below
+	var nv := [env.background_color, env.ambient_light_color, env.ambient_light_energy, env.fog_light_color,
+		env.fog_density, env.volumetric_fog_density, moon.light_color, moon.light_energy, moon.light_volumetric_fog_energy]
 	match phase():
 		"den":
 			# overcast daylight: grey, flat, still uneasy
@@ -788,6 +831,19 @@ func _environment() -> void:
 			moon.light_volumetric_fog_energy = 0.25
 			env.adjustment_saturation = 1.1
 			env.adjustment_contrast = 1.05
+	if phase() in ["svitani", "soumrak"]:
+		# (0.62, Ari: "noc, ale svítí jako slunce") the sun just over the horizon lights like the dusk,
+		# just under it only a glow is left - continuously, as the globe darkens
+		var w := smoothstep(0.0, 1.0, twilight())
+		env.background_color = (nv[0] as Color).lerp(env.background_color, w)
+		env.ambient_light_color = (nv[1] as Color).lerp(env.ambient_light_color, w)
+		env.ambient_light_energy = lerpf(nv[2], env.ambient_light_energy, w)
+		env.fog_light_color = (nv[3] as Color).lerp(env.fog_light_color, w)
+		env.fog_density = lerpf(nv[4], env.fog_density, w)
+		env.volumetric_fog_density = lerpf(nv[5], env.volumetric_fog_density, w)
+		moon.light_color = (nv[6] as Color).lerp(moon.light_color, w)
+		moon.light_energy = lerpf(nv[7], moon.light_energy, w)
+		moon.light_volumetric_fog_energy = lerpf(nv[8], moon.light_volumetric_fog_energy, w)
 	_sky_light()
 	add_child(moon)
 	_weather_env()
@@ -796,13 +852,15 @@ func _environment() -> void:
 func _weather_env() -> void:
 	var vol := volumetric_on()
 	var day := is_day()
+	# (0.62) how much of the night look the weather still adds: all at night, fading out through a dawn or dusk
+	var nw := 0.0 if phase() == "den" else (1.0 if not day else 1.0 - smoothstep(0.0, 1.0, twilight()))
 	match weather:
 		"clear":
 			# a cold moon: you see further - and so do they
-			if not day:
-				moon.light_energy = 0.35
-				env.ambient_light_energy = 0.3
-				env.background_color = Color(0.03, 0.045, 0.09)
+			if nw > 0.0:
+				moon.light_energy = lerpf(moon.light_energy, 0.35, nw)
+				env.ambient_light_energy = lerpf(env.ambient_light_energy, 0.3, nw)
+				env.background_color = env.background_color.lerp(Color(0.03, 0.045, 0.09), nw)
 			env.fog_density = 0.006 if vol else 0.03
 			env.volumetric_fog_density = 0.008
 			_wind_base = 0.6
@@ -815,10 +873,10 @@ func _weather_env() -> void:
 		"overcast":
 			if day and phase() != "den":
 				moon.light_energy *= 0.5       # the low sun hidden in the clouds
-			if not day:
-				moon.light_energy = 0.05
-				env.ambient_light_energy = 0.14
-				env.background_color = Color(0.008, 0.01, 0.02)
+			if nw > 0.0:
+				moon.light_energy = lerpf(moon.light_energy, 0.05, nw)
+				env.ambient_light_energy = lerpf(env.ambient_light_energy, 0.14, nw)
+				env.background_color = env.background_color.lerp(Color(0.008, 0.01, 0.02), nw)
 			_wind_base = 0.9
 		"rain":
 			_wind_base = 1.1
@@ -873,6 +931,14 @@ func _maybe_spawn() -> void:
 	var count := (1 if roster().size() <= 1 else 2) + Net.roster.size() + (5 if String(map.get("ufo_kind", "")) in ["battleship", "supply"] else 0) + int(Net.mission_params.get("extra_aliens", 0)) + (1 if Game.veteran() else (-1 if Game.easy() else 0)) + int({"large": 1, "huge": 2, "colossal": 4}.get(Net.mission_params.get("size", ""), 0))
 	# co-op: every mercenary beyond the first brings more of them (on top of the one above)
 	count += maxi(0, Net.roster.size() - 1)
+	# 0.63 (Ari): a ship carries the crew it has room for - the players only add a few, never past its size
+	# (campaign crash / landed missions carry "crew_of" = the ship that flew; quick missions and tests as before)
+	var kind := String(Net.mission_params.get("crew_of", ""))
+	_crew_cap = 0
+	if SHIP_CREW.has(kind) and mtype() in ["crash", "landed"]:
+		var sc: Array = SHIP_CREW[kind]
+		count = int(ceil(float(sc[0]) + float(sc[1]) * maxi(0, Net.roster.size() - 1) - 0.001)) + (1 if mtype() == "landed" else 0) + (1 if Game.veteran() else (-1 if Game.easy() else 0))
+		_crew_cap = int(sc[2])
 	var crew := _crew(count, rng)
 	for k in crew.size():
 		var p: Vector3 = spawns[k % spawns.size()] + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
@@ -946,6 +1012,9 @@ const GROUPS := {
 }
 
 var crew_style := ""
+## 0.63: crew by ship (crash / landed) - [alone, each further mercenary, most it carries]
+const SHIP_CREW := {"scout": [2, 0.67, 4], "raider": [3, 1.0, 6], "harvester": [4, 1.34, 9], "supply": [7, 1.67, 13], "battleship": [8, 2.0, 15]}
+var _crew_cap := 0
 ## Who is on board: one group per ship, soldiers, an officer on bigger ships,
 ## their beasts or machines; on terror missions their terror creatures.
 func _crew(count: int, rng: RandomNumberGenerator) -> Array:
@@ -979,6 +1048,8 @@ func _crew(count: int, rng: RandomNumberGenerator) -> Array:
 		# the usual crew, a pack (more beasts than soldiers), a strike team (no beasts),
 		# or guests from another race on board
 		count = maxi(2, count + [-1, 0, 0, 0, 1][rng.randi() % 5])
+		if _crew_cap > 0:
+			count = mini(count, _crew_cap)
 		var r := rng.randf()
 		crew_style = "posádka"
 		if r < 0.22:
@@ -1014,6 +1085,8 @@ func _crew(count: int, rng: RandomNumberGenerator) -> Array:
 		out.append(g["soldier"])
 	if Game.autotest() != "": print("[CREW] %s %s: %s" % [gid, crew_style, out])
 	crew_group = gid
+	if _crew_cap > 0:
+		return out.slice(0, mini(max(count + 1, 1), _crew_cap))
 	return out.slice(0, max(count + 1, 1))
 
 ## Host: brings a new alien into the mission (a Líhavec hatching, a victim rising).
@@ -1236,7 +1309,7 @@ func _risen() -> void:
 			p.set_meta("risen", true)
 			var at: Vector3 = p.global_position
 			get_tree().create_timer(6.0).timeout.connect(func():
-				if not finished:
+				if not finished and is_instance_valid(p):
 					_hide_body.rpc(p.name)
 					burst_fx.rpc(at + Vector3(0, 0.6, 0))
 					spawn_alien("zombie", at))
@@ -1460,6 +1533,8 @@ func _director(delta: float) -> void:
 			ps.append(p)
 	if ps.is_empty():
 		return
+	if not AD.off():
+		AD.tick(self, delta, ps)
 	_story(ps)
 	# the storm: sometimes the flash comes exactly when one of them is close
 	_storm_t -= delta
@@ -1497,7 +1572,18 @@ func _director(delta: float) -> void:
 	_stalk_t -= delta
 	if _stalk_t <= 0 and not calm():
 		_stalk_t = randf_range(35.0, 60.0)
-		if t - combat_t > 20.0:
+		if not AD.off():
+			# (0.64) only in a quiet build-up, and only a man they know is out alone - where they last had him
+			var lk: Array = AD.lone_known(self, ps) if AD.phase(self) == "build" and AD.quiet(self) > 25.0 else []
+			if not lk.is_empty():
+				var hunter2: Node = null
+				for a in aliens():
+					if not a.dead and a.state == a.S.LURK and (hunter2 == null or a.global_position.distance_to(lk[1]) < hunter2.global_position.distance_to(lk[1])):
+						hunter2 = a
+				if hunter2:
+					hunter2._tlog("director hunt %s" % lk[0].name)
+					hunter2.stalk(lk[0], lk[1])
+		elif t - combat_t > 20.0:
 			var prey: Node = null
 			var best := -1.0
 			for p in ps:
@@ -1523,6 +1609,23 @@ const MERC_SHARE := 0.4
 var done_banner := false
 
 func _story(ps: Array) -> void:
+	if not AD.off():
+		# (0.64) the beats wait for a quiet moment: never in a fight, never right after one
+		if t > 60.0 and not _radio_done.has("knock_snd") and AD.beat_ok(self, 40.0, 0.0):
+			_radio_done["knock_snd"] = true
+			_knock.rpc()
+		elif t > 100.0 and map["barn"] != Vector3.ZERO and not _radio_done.has("lure") and _radio_done.has("knock_snd") and AD.beat_ok(self, 30.0):
+			_radio_done["lure"] = true
+			for a in aliens():
+				if not a.dead and a.state == a.S.LURK:
+					a.lurk_at(map["barn"])
+					break
+		elif t > 150.0 and not _radio_done.has("power") and _radio_done.has("knock_snd") and AD.beat_ok(self, 35.0):
+			_radio_done["power"] = true
+			_blackout.rpc()
+		if not done_banner and _objective_met():
+			_show_done.rpc()
+		return
 	if t > 95.0 and not _radio_done.has("knock_snd"):
 		_radio_done["knock_snd"] = true
 		_knock.rpc()
@@ -1632,8 +1735,10 @@ func hit_breakable(i: int, dmg: float, kind: String) -> void:
 func _roofs_check() -> void:
 	var arr: Array = map.get("breakables", [])
 	for r in map.get("wood_roofs", []):
+		if not is_instance_valid(r["node"]):
+			continue      # (a typed var cannot take a freed node - fireshot)
 		var n: Node3D = r["node"]
-		if not is_instance_valid(n) or n.has_meta("falling"):
+		if n.has_meta("falling"):
 			continue
 		var rect: Rect2 = r["rect"]
 		var total := 0
@@ -1755,8 +1860,27 @@ func _break(i: int) -> void:
 	for dn in n.get_meta("deco", []):
 		if is_instance_valid(dn):
 			(dn as Node).queue_free()       # the window frame on a wall piece that is gone
+			if (dn as Node).has_meta("mg"): merge_dirty(dn.get_meta("mg"))
+	for c in n.get_children():
+		if c.has_meta("mg"): merge_dirty(c.get_meta("mg"))
 	n.queue_free()
 	_nav_dirty = 2.0
+
+## 0.62 výkon: rozbitý kus zmizí i ze sloučené sítě své zdi (map_gen._merge_breakable); přestaví se
+## jednou na konci snímku, i když výbuch rozbije víc kusů naráz.
+var _mg_dirty := {}
+func merge_dirty(g) -> void:
+	if not is_instance_valid(g):
+		return
+	if _mg_dirty.is_empty():
+		_merge_flush.call_deferred()
+	_mg_dirty[g] = true
+
+func _merge_flush() -> void:
+	for g in _mg_dirty:
+		if is_instance_valid(g):
+			preload("res://scripts/map_gen.gd").merge_build(g)
+	_mg_dirty.clear()
 
 ## Host: after things broke, the aliens learn the new ways through (rebuilt in the background).
 func _nav_tick(delta: float) -> void:
@@ -1764,11 +1888,21 @@ func _nav_tick(delta: float) -> void:
 		return
 	_nav_dirty -= delta
 	if _nav_dirty <= 0.0 and multiplayer.is_server():
-		var nav := find_child("Nav", true, false) as NavigationRegion3D
-		if nav and not nav.is_baking():
-			nav.bake_navigation_mesh(true)
-		elif nav:
-			_nav_dirty = 1.0
+		# 0.62 výkon: jen změněné čtverce mapy, pečení ve vlákně (dřív zásek ~180 ms, viz nav_cache.gd)
+		if _nav_cache == null:
+			_nav_prime()
+		if _nav_cache:
+			_nav_cache.rebake()
+
+## 0.62 výkon: paměť geometrie cest po čtvercích (hostitel; hned při načtení mise, ne až při prvním rozbití).
+var _nav_cache: RefCounted
+func _nav_prime() -> void:
+	var nav := find_child("Nav", true, false) as NavigationRegion3D
+	if nav and nav.navigation_mesh:
+		_nav_cache = preload("res://scripts/nav_cache.gd").new(nav)
+		var t0 := Time.get_ticks_msec()
+		_nav_cache.prime()
+		if Game.autotest() != "": print("[NAV] cache %d ms" % (Time.get_ticks_msec() - t0))
 
 @rpc("authority", "call_local", "reliable")
 func _boom(p: Vector3, big: bool) -> void:
@@ -1815,7 +1949,7 @@ func add_smoke(p: Vector3) -> void:
 	c.mesh = qm
 	add_child(c)
 	c.global_position = p + Vector3(0, 1.2, 0)
-	get_tree().create_timer(28.0).timeout.connect(func(): c.emitting = false)
+	get_tree().create_timer(28.0).timeout.connect(func(): if is_instance_valid(c): c.emitting = false)
 	get_tree().create_timer(35.0).timeout.connect(c.queue_free)
 
 # ---- fire: it spreads over wood and crates, burns buildings down, hurts, and smokes ------------
@@ -1911,6 +2045,7 @@ func _fire_on(id: int, p: Vector3, size: float, life: float) -> void:
 	l.light_energy = 2.5
 	l.omni_range = 9.0 * size
 	l.shadow_enabled = true
+	Game.shadow_light(l)
 	n.add_child(l)
 	l.position = Vector3(0, 1.0, 0)
 	var snd := AudioStreamPlayer3D.new()
@@ -2238,6 +2373,8 @@ func _end(success: bool, why: String, airlift := false, abandoned := false) -> v
 	var xp_text := ""
 	var q := quality(success)
 	var campaign := Net.mission_params.has("cid")
+	var my_pay := 0
+	var my_xp := 0
 	if me and not campaign:
 		# a quick mission: a try-out, nothing is kept (pay, experience, wounds, death)
 		fate = "rychlá mise - nic se nepočítá, tvůj voják z kampaně zůstal doma beze změny"
@@ -2251,6 +2388,7 @@ func _end(success: bool, why: String, airlift := false, abandoned := false) -> v
 		if success:
 			pay += int(int(Net.mission_params.get("reward", 0)) * MERC_SHARE / maxi(1, players().size()))
 		pay = int(pay * q) + me.salvage
+		my_pay = pay
 		var purse := int(Game.merc.get("money", 0)) + pay
 		if pay > 0:
 			xp_text += "\nTvůj žold: +%d kr (máš %d kr)%s" % [pay, purse, ("  - z toho nálezy %d kr" % me.salvage) if me.salvage > 0 else ""]
@@ -2270,6 +2408,7 @@ func _end(success: bool, why: String, airlift := false, abandoned := false) -> v
 			# experience: only the living learn
 			var xp: int = 40 + (120 if success else 0) + me.kills * 25 + me.captures * 60 + me.revives * 30
 			var gained: Array = Game.add_xp(xp)
+			my_xp = xp
 			xp_text = "\nZkušenosti +%d  (%s)" % [xp, Game.rank_name(Game.merc)]
 			for g in gained:
 				xp_text += "\n" + g
@@ -2334,6 +2473,8 @@ func _end(success: bool, why: String, airlift := false, abandoned := false) -> v
 		if not officer_killers.is_empty():
 			Campaign.mark_nemesis(officer_killers)
 		var gl := gear_lost(success)
+		Campaign.add_fallen(fallen_list())       # (0.70: the wall of the fallen; before mission_done saves)
+		Campaign.learn_styles(AD.style_out(self), lost, players().size())     # (0.64: before mission_done saves)
 		camp = Campaign.mission_done(int(Net.mission_params.get("id", -1)), success, tk, tc, lost, civ_saved, civ_dead, crew_names, _loot(success), lost >= players().size() + _deserters and not _abandoned, kits, q, gl, kits_locker)
 		# what came out of their own lockers: each one crosses it off his own list
 		for peer in gl:
@@ -2344,9 +2485,91 @@ func _end(success: bool, why: String, airlift := false, abandoned := false) -> v
 		Net.last_result = camp
 	if campaign:
 		lines.append("Hodnocení mise: %s (odměny ×%.2f)" % [quality_name(q), q])
+	# 0.66: a mission won and he flies home - the look into the transport with his own numbers
+	if success and me and not left_behind(me) and not home() and not local() and (Game.autotest() == "" or Game.autotest() == "transport"):
+		_show_transport(me, campaign, q, my_pay, my_xp, fate, camp, civ_saved, civ_dead)
+		return
 	hud.show_result(("MISE SPLNĚNA" if success else "MISE NEÚSPĚŠNÁ"), why + "\n\n" + "\n".join(lines) + "\n\nTvůj voják: " + fate + xp_text + ("\n\n" + camp if camp != "" else ""))
 	if Game.autotest() != "": print("[END] result shown, leaving in a moment")
 	get_tree().create_timer(8.0 if Game.autotest() != "campaign" else 2.0).timeout.connect(func(): _leave(""))
+
+## 0.66 Facelift I: the team in the transport on the way home (see transport.gd). Everyone who flies
+## home is there in his own look (a copy of his body); under it only this player's numbers.
+const TransportScene := preload("res://scripts/transport.gd")
+var transport: CanvasLayer
+func _show_transport(me: Node, campaign: bool, q: float, pay: int, xp: int, fate: String, camp: String, civ_saved: int, civ_dead: int) -> void:
+	Game.play_music("debriefing", false)
+	Game.play_ui(hud, "mission_complete", -2)
+	hud.visible = false
+	var team := []
+	var hurt := 0
+	for p in players():
+		if left_behind(p):
+			continue
+		var st := "down" if p.downed else ("hurt" if p.wounded or p.hp < p.max_hp * 0.6 else "ok")
+		if p.downed or p.wounded or p.hp < p.max_hp - 0.5:
+			hurt += 1
+		team.append({"model": _body_copy(p), "state": st, "me": p == me})
+	var loot := _loot(true)
+	var bodies := 0
+	var live := 0
+	var guns := 0
+	for k in loot:
+		if String(k).begins_with("corpse_") or String(k).begins_with("trosky_"):
+			bodies += int(loot[k])
+		elif String(k).begins_with("live_"):
+			live += int(loot[k])
+		elif Campaign.RACE_WEAPON.values().has(k):
+			guns += int(loot[k])
+	var stats := [["Zabití", str(me.kills)], ["Zajatí živí", str(me.captures)],
+		["Oživil jsi", str(me.revives)], ["Zranění v týmu", "%d z %d" % [hurt, players().size()]],
+		["Nálezy", "%d kr" % me.salvage], ["Žold", ("+%d kr" % pay) if campaign else "-"],
+		["Zkušenosti", ("+%d" % xp) if campaign and xp > 0 else "-"], ["Hodnocení", quality_name(q) if campaign else "-"],
+		["Kořist: těla", str(bodies)], ["zajatci", str(live)], ["zbraně", str(guns)], ["moskovium", str(int(loot.get("moskovium", 0)))]]
+	if civs_total > 0:
+		stats.append_array([["Civilisté zachránění", str(civ_saved)], ["mrtví", str(civ_dead)]])
+	var report := "Tvůj voják: " + fate + ("\n\n" + camp if camp != "" else "")
+	var heli := String(Net.mission_params.get("transport", "kondor")) == "heli"
+	transport = TransportScene.new()
+	add_child(transport)
+	transport.setup(team, "CESTA DOMŮ - " + String(Net.mission_params.get("type_name", "mise")).to_upper(), stats, report, heli)
+	transport.closed.connect(func(): _leave(""))
+	if Game.autotest() != "":
+		print("[END] transport shown, %d aboard" % team.size())
+
+## A soldier's body as it is now (look, camouflage, armour), without the gun: built new from the
+## model like player._build_body, then every part shown or hidden as on him.
+func _body_copy(p: Node) -> Node3D:
+	var src: Node3D = p.get("merc_model")
+	var c: Node3D = Game.model("merc")
+	if c == null:
+		return null
+	c.scale = Vector3(-1, 1, 1)
+	var ix: int = abs(int(p.get_multiplayer_authority())) % 4 if int(p.get_multiplayer_authority()) != 1 else 0
+	for mi in c.find_children("*", "MeshInstance3D", true, false):
+		for i in mi.mesh.get_surface_count():
+			var sm: Material = mi.mesh.surface_get_material(i)
+			if sm and sm.resource_name == "Uniform" and Game.camo == "":
+				mi.set_surface_override_material(i, Game.color_mat(p.TEAM_COLORS[ix]))
+			elif sm and sm.resource_name == "Patch":
+				mi.set_surface_override_material(i, Game.color_mat(p.PATCH_COLORS[ix]))
+	Game.apply_look(c, p.merc.get("look", {}) if p.get("merc") is Dictionary else {})
+	if src:
+		var shown := {}
+		for mi in src.find_children("*", "MeshInstance3D", true, false):
+			shown[String(mi.name)] = mi.visible
+		for mi in c.find_children("*", "MeshInstance3D", true, false):
+			if shown.has(String(mi.name)):
+				mi.visible = shown[String(mi.name)]
+	# (0.70) as dirty and bloody as he came out of it
+	var ud: Node = p.get_node_or_null("UniformDirt")
+	if ud:
+		preload("res://scripts/uniform_dirt.gd").copy_onto(c, ud.state())
+	var ap: Node = c.find_child("AnimationPlayer", true, false)
+	if ap:
+		ap.get_parent().remove_child(ap)
+		ap.free()
+	return c
 
 ## How well it went (the same on every machine: it is counted from what everybody sees):
 ## success, civilians saved or lost, mercenaries lost, aliens taken alive. Scales all rewards.
@@ -2374,6 +2597,20 @@ static func quality_name(q: float) -> String:
 
 ## Does this one stay out there? Dead; down and not carried aboard; or (the mission given up from
 ## the menu) simply not standing at the evac point when the transport went.
+## (0.70) Who of the team stays here, for the wall of the fallen: name, flag, mission, kills; mia = left
+## behind alive (missing), not seen dead.
+func fallen_list() -> Array:
+	var out := []
+	var where := String(Net.mission_params.get("place", ""))
+	var what := String(Net.mission_params.get("type_name", ""))
+	for p in players():
+		if not left_behind(p):
+			continue
+		var mm: Dictionary = p.merc if p.get("merc") is Dictionary else {}
+		out.append({"n": String(p.display_name), "f": String(mm.get("look", {}).get("flag", "")), "m": what + (" - " + where if where != "" else ""),
+			"k": int(p.kills), "mia": not p.dead})
+	return out
+
 func left_behind(p: Node) -> bool:
 	if p.dead:
 		return true
@@ -2498,6 +2735,8 @@ func roster() -> Dictionary:
 	return _local_roster
 
 func _exit_tree() -> void:
+	if _nav_cache:
+		_nav_cache.finish()      # (0.62: pečení cest ve vlákně musí doběhnout)
 	if _local:
 		get_tree().set_multiplayer(null, get_path())
 
@@ -2607,6 +2846,26 @@ func _work_loop(wk: Dictionary, sname: String, on: bool, db: float) -> void:
 		ap.play(randf() * 2.0)
 	elif not on and ap.playing:
 		ap.stop()
+
+## 0.66 Facelift I: the scientists and technicians at the base (scenery, see base_npc.gd): two or three
+## per room, never more than there are places to work. Not while the base is attacked (no posts then).
+const BaseNpc := preload("res://scripts/base_npc.gd")
+func _base_people() -> void:
+	if AnimClips.get_clip("tp_npc_walk").is_empty() and Game.autotest() != "npcshot":
+		return       # (Ari's movements are only in the game's .pck: without them nobody walks the base)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = Net.mission_seed + 404
+	var crews: Dictionary = map.get("npc_posts", {})
+	for crew in crews:
+		var c: Dictionary = crews[crew]
+		var posts: Array = c["posts"]
+		var busy := {}
+		var n := mini(posts.size() - 2, 2 + int(rng.randf() < 0.5))
+		for k in maxi(1, n):
+			var npc := Node3D.new()
+			npc.set_script(BaseNpc)
+			add_child(npc)
+			npc.setup(String(c["role"]), posts, busy, rng.randi(), rng.randf() < 0.3)
 
 ## The builders behind the tape: welding flicker and crackle, hammer blows, the jackhammer's rattle.
 var _work_t := {}
@@ -3056,8 +3315,37 @@ func _objectives_tick(delta: float) -> void:
 			var crew := _crew(n, rr2)
 			var from := _edge_point(rr2)
 			for k in crew.size():
-				spawn_alien(crew[k], from + Vector3(rr2.randf_range(-3, 3), 0.3, rr2.randf_range(-3, 3)))
+				spawn_alien(crew[k], _spawn_beside(from, 3.0, rr2))
 			hud_note.rpc(("DALŠÍ VLNA! Lezou dovnitř hangárem nebo šachtou výtahu (%d)." if indoor() else "DALŠÍ VLNA! Útočí od okraje rokle (%d).") % crew.size())
+
+## A place for one of a wave near the way in @e - only where it can really stand: on the floor,
+## on the same side of the walls as the way in (a hatch is in a corner: up to 3 m off it put them
+## behind the wall, out of reach - Ari had to climb over the rooms to get at them).
+func _spawn_beside(e: Vector3, spread: float, rr: RandomNumberGenerator) -> Vector3:
+	var ss := get_world_3d().direct_space_state
+	var nm := get_world_3d().navigation_map
+	for k in 12:
+		var c := e + Vector3(rr.randf_range(-spread, spread), 0.3, rr.randf_range(-spread, spread))
+		var up := Vector3(0, 0.9, 0)
+		var q := PhysicsRayQueryParameters3D.create(e + up, c + up, Game.WORLD | Game.GLASS)
+		if not ss.intersect_ray(q).is_empty():
+			continue          # a wall (or a barrel) between it and the way in
+		var qd := PhysicsRayQueryParameters3D.create(c + up, c + Vector3(0, -1.5, 0), Game.WORLD)
+		if ss.intersect_ray(qd).is_empty():
+			continue          # no floor under it
+		var ball := SphereShape3D.new()
+		ball.radius = 0.55
+		var qp := PhysicsShapeQueryParameters3D.new()
+		qp.shape = ball
+		qp.transform = Transform3D(Basis(), c + up)
+		qp.collision_mask = Game.WORLD | Game.GLASS | 4
+		if not ss.intersect_shape(qp, 1).is_empty():
+			continue          # too close to a wall, a barrel or another of them (pushed apart, one would go through the wall)
+		var on := NavigationServer3D.map_get_closest_point(nm, c)
+		if on != Vector3.ZERO and Vector2(on.x - c.x, on.z - c.z).length() > 0.8:
+			continue          # off the paths: a nook nobody walks to
+		return c
+	return e + Vector3(rr.randf_range(-0.3, 0.3), 0.3, rr.randf_range(-0.3, 0.3))
 
 ## Our base attacked: the ways in (hangar hatch, lift shaft) that are far from the team. Not the
 ## one in the room they woke in, nor one they can see - nobody is shot in the back the moment the

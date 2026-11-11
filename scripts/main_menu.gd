@@ -22,6 +22,17 @@ func _ready() -> void:
 	bg.stretch_mode = TextureRect.STRETCH_SCALE
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
+	# 0.66 (Ari): his title picture behind the menu - bright on the main screen, dimmed under the others;
+	# it covers any window shape (cut at the edges, never stretched)
+	if ResourceLoader.exists(TITLE_PIC):
+		_title = TextureRect.new()
+		_title.name = "TitlePic"
+		_title.texture = load(TITLE_PIC)
+		_title.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_title.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		_title.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_title)
 	_build_logo()
 	Net.roster_changed.connect(_refresh_lobby)
 	Net.wallets_changed.connect(_refresh_lobby)
@@ -37,6 +48,9 @@ func _ready() -> void:
 		elif scr == "merc": _show_merc()
 		elif scr == "money": _show_money()
 		elif scr == "mods": _show_mods()
+		elif scr == "quick":
+			_back_target = ""
+			_show_quick()
 	elif Net.drop_reason != "":
 		# the line to the host ended outside the menu (kicked on his globe, he quit)
 		var why := Net.drop_reason
@@ -49,12 +63,30 @@ func _ready() -> void:
 	else:
 		_show_main()
 	Game.play_music("main_menu")
+	# (0.70) the intro film on the very first start (only here, never on the way back from a game)
+	if INTRO_ON and Game.autotest() == "" and not Game.intro_seen and not Net.is_online() and _back_target == "":
+		_play_intro()
 	if Game.autotest() == "":
 		Game.update_changed.connect(_upd_refresh)
 		Game.check_update()
 	_autotest.call_deferred()
 
+## (0.70) Ari 2026-11-11: the intro stays locked out of the game for now ("bude potřebovat hodně lásky") -
+## no first-start film, no "Úvod" button; the code and its test (--autotest=introshots) stay for later.
+const INTRO_ON := false
+## (0.70) The intro film (scripts/intro.gd) over the menu; when it ends or is skipped, the menu's music.
+func _play_intro() -> void:
+	if get_node_or_null("Intro"):
+		return
+	var it: CanvasLayer = preload("res://scripts/intro.gd").new()
+	it.finished.connect(func():
+		Game.intro_seen = true
+		Game.save_settings()
+		Game.play_music("main_menu"))
+	add_child(it)
+
 var _back_target := ""
+var _mods_from := ""      # 0.66: the weapon parts opened from the soldier / the kit screen - Back goes there
 func _back() -> void:
 	if _back_target == "lobby" or (Net.is_online() and not multiplayer.is_server() and _back_target == ""):
 		_back_target = ""
@@ -62,7 +94,7 @@ func _back() -> void:
 		_show_lobby()
 	elif _back_target == "geo":
 		_back_target = ""
-		get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+		Game.load_scene("res://scenes/Geoscape.tscn")
 	elif _back_target == "quick":
 		_back_target = ""
 		_show_quick()
@@ -116,6 +148,10 @@ func _build_logo() -> void:
 
 
 ## The full-width screens (soldiers, recruiting, upgrades) cover the logo; the small ones show it.
+const TITLE_PIC := "res://assets/ui/titulni_obrazovka.png"
+var _title: TextureRect
+var _title_mode := false        # the main screen: the picture in full, the buttons in a row under the logo
+
 func _logo(on: bool) -> void:
 	var l := get_node_or_null("Logo")
 	if l:
@@ -123,6 +159,9 @@ func _logo(on: bool) -> void:
 
 func _panel(title: String) -> void:
 	_logo(true)
+	_title_mode = false
+	if _title:
+		_title.modulate = Color(0.3, 0.31, 0.35)
 	_free_preview()
 	for c in get_children():
 		if c is PanelContainer:
@@ -205,7 +244,7 @@ static func quick_params(i: int) -> Dictionary:
 		if qh < 0.0:
 			qh = [23.5, 2.0, 6.2, 10.0, 14.0, 17.0, 19.3][randi() % 7]
 		pp["hour"] = qh
-		pp["night"] = qh < 6.5 or qh > 18.0
+		pp["night"] = qh < 5.0 or qh >= 20.5      # (same as mission.phase() for a quick mission: by the hour)
 		quick_night = pp["night"]
 		pp["id"] = -1
 		if quick_size != "":
@@ -276,13 +315,32 @@ func _show_main(msg := "") -> void:
 		Game.crash_note = ""
 	_upd_btn = _button("Restartovat a hrát novou verzi", func(): Game.restart_game())
 	_upd_refresh()
+	# with the title picture: its logo stays free, the buttons go in a row at the bottom
+	var first := _box.get_child_count()
 	_button("KAMPAŇ", _show_campaign)
 	_button("Rychlá mise", _show_quick)
 	_button("Novinky", _show_news)
+	if INTRO_ON:
+		_button("Úvod", _play_intro)
 	_button("Nastavení", _show_settings)
 	if OS.has_feature("editor"):
-		_button("Editor (jen v Godotu)", _show_editor)
+		_button("Editor", _show_editor)
 	_button("Ukončit", func(): get_tree().quit())
+	if _title:
+		_title_mode = true
+		_title.modulate = Color(1, 1, 1)
+		_logo(false)
+		(_box.get_child(0) as Control).visible = false       # (the picture has the name)
+		var row := HBoxContainer.new()
+		row.alignment = BoxContainer.ALIGNMENT_CENTER
+		row.add_theme_constant_override("separation", 4)
+		var btns := _box.get_children().slice(first)
+		_box.add_child(row)
+		_box.move_child(row, first)
+		for bt in btns:
+			_box.remove_child(bt)
+			row.add_child(bt)
+			(bt as Button).custom_minimum_size.x = 84
 	if msg != "":
 		_label(msg, Color(1, 0.5, 0.4), 10)
 
@@ -293,7 +351,7 @@ func _show_campaign(msg := "") -> void:
 	if not save.is_empty():
 		var diff := String(save.get("difficulty", Game.difficulty))
 		_label("Uložená kampaň: den %d, obtížnost %s, rozpočet %d kr." % [int(float(save.get("day", 0.0))), Game.DIFF_NAMES.get(diff, diff), int(save.get("credits", 0))], FRAME, 9)
-		_button("Pokračovat v kampani", func(): Campaign.load_campaign(); get_tree().change_scene_to_file("res://scenes/Geoscape.tscn"))
+		_button("Pokračovat v kampani", func(): Campaign.load_campaign(); Game.load_scene("res://scenes/Geoscape.tscn"))
 	_button("Založit novou kampaň", _show_new_campaign)
 	_button("Připojit se ke hře (kampaň kamaráda)", _show_join)
 	_button("Moji vojáci", func(): _back_target = "campaign"; _show_merc())
@@ -327,7 +385,7 @@ func _show_new_campaign() -> void:
 		_label("Pozor: stará kampaň bude přepsána.", Color(1, 0.5, 0.4), 9)
 	_button("ZAČÍT KAMPAŇ", func():
 		Campaign.new_campaign(_new_diff)
-		get_tree().change_scene_to_file("res://scenes/Geoscape.tscn"))
+		Game.load_scene("res://scenes/Geoscape.tscn"))
 	_button("Zpět", _show_campaign)
 
 func _show_settings() -> void:
@@ -462,19 +520,21 @@ func _show_merc() -> void:
 	for t in m.get("talents", []):
 		tl.append(Game.TALENTS[Game.TALENT_NEW.get(t, t)][0])
 	_rlabel(right, "Talenty: " + (", ".join(tl) if not tl.is_empty() else "zatím žádné"), TEXT, 8)
-	if int(m.get("talent_points", 0)) > 0:
-		_rlabel(right, "Za povýšení si vyber talent:", Color(0.6, 1.0, 0.6), 8)
-		for tid in Game.talent_offer():
-			var id: String = tid
-			var tb := _small_btn(right, "%s - %s" % Game.TALENTS[id], func(): Game.pick_talent(id); _show_merc())
-			tb.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right.add_child(spacer)
+	# (0.62) the soldier's own things together: his talents and the parts on his guns
+	var trow := HBoxContainer.new()
+	trow.add_theme_constant_override("separation", 4)
+	right.add_child(trow)
+	var tb := _small_btn(trow, "Talenty" + (" (volné body: %d)" % int(m.get("talent_points", 0)) if int(m.get("talent_points", 0)) > 0 else ""), _show_talents)
+	tb.custom_minimum_size = Vector2(150, 18)
+	if int(m.get("talent_points", 0)) > 0:
+		tb.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
+	_small_btn(trow, "Úpravy zbraní", func(): _mods_from = "merc"; _show_mods()).custom_minimum_size = Vector2(150, 18)
 	var brow := HBoxContainer.new()
 	brow.add_theme_constant_override("separation", 4)
 	right.add_child(brow)
-	_small_btn(brow, "Úpravy zbraní", _show_mods).custom_minimum_size = Vector2(96, 18)
 	_small_btn(brow, "Upravit vzhled", func(): _show_create(false)).custom_minimum_size = Vector2(96, 18)
 	if Game.mercs.size() > 1:
 		var fb := _small_btn(brow, "Propustit" if not _confirm_fire else "OPRAVDU propustit?", func():
@@ -491,6 +551,97 @@ func _show_merc() -> void:
 	else:
 		_small_btn(brow, "Nahradit novým", func(): _show_create(true)).custom_minimum_size = Vector2(96, 18)
 	_small_btn(brow, "Zpět", _back).custom_minimum_size = Vector2(80, 18)
+
+## 0.62 (Ari): the talent tree, next to the soldiers and their weapon parts. Four branches of five,
+## all of it shown (what is owned, what can be taken now, what waits for a rank); a promotion gives
+## one point, a talent is taken for good (two clicks). Easy difficulty: the drone instead of Šestý smysl.
+var _talent_arm := ""
+var _talent_info: Label
+func _show_talents() -> void:
+	_logo(false)
+	_free_preview()
+	for c in get_children():
+		if c is PanelContainer:
+			c.queue_free()
+	var m: Dictionary = Game.merc
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", UiSkin.panel(8))
+	p.position = Vector2(8, 4)
+	p.custom_minimum_size = Vector2(624, 352)
+	add_child(p)
+	_cr_ui = p
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 4)
+	p.add_child(col)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 10)
+	col.add_child(head)
+	var title := Label.new()
+	title.text = "TALENTY"
+	title.add_theme_color_override("font_color", ACCENT)
+	title.add_theme_font_size_override("font_size", 13)
+	head.add_child(title)
+	var pts := int(m.get("talent_points", 0))
+	var who := Label.new()
+	who.text = "%s  -  %s   ·   volné body: %d" % [str(m.get("name", "?")), Game.RANKS[Game.rank_of(m)], pts]
+	who.add_theme_font_size_override("font_size", 9)
+	who.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6) if pts > 0 else TEXT)
+	head.add_child(who)
+	var grid := HBoxContainer.new()
+	grid.add_theme_constant_override("separation", 6)
+	col.add_child(grid)
+	for b in Game.TALENT_TREE.size():
+		var bi: int = b
+		var branch := VBoxContainer.new()
+		branch.add_theme_constant_override("separation", 3)
+		branch.custom_minimum_size = Vector2(148, 0)
+		grid.add_child(branch)
+		var bn := Label.new()
+		bn.text = String(Game.TALENT_TREE[b][0]).to_upper()
+		bn.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		bn.add_theme_font_size_override("font_size", 10)
+		bn.add_theme_color_override("font_color", FRAME)
+		branch.add_child(bn)
+		for t in 5:
+			var ti: int = t
+			var id := Game.tree_talent(b, t, m)
+			var st := Game.talent_state(m, b, t)
+			var sub: String = {"owned": "MÁŠ", "open": "vzít (klikni)", "nopoint": "chybí bod za povýšení",
+				"rank": "od hodnosti %s" % Game.RANKS[Game.TREE_RANK[t]], "locked": "po talentu nad ním, od: %s" % Game.RANKS[Game.TREE_RANK[t]]}[st]
+			if st == "open" and _talent_arm == id:
+				sub = "OPRAVDU? Klikni znovu"
+			var tb := _small_btn(branch, "%d. %s\n%s" % [t + 1, Game.TALENTS[id][0], sub], func():
+				if Game.talent_state(Game.merc, bi, ti) != "open":
+					_talent_hint(id)
+					return
+				if _talent_arm != id:
+					_talent_arm = id
+					_show_talents()
+					_talent_hint(id)
+					return
+				_talent_arm = ""
+				Game.pick_talent(id)
+				_show_talents())
+			tb.custom_minimum_size = Vector2(148, 44)
+			tb.add_theme_color_override("font_color", {"owned": Color(0.45, 1.0, 0.5), "open": ACCENT,
+				"nopoint": TEXT, "rank": Color(0.55, 0.6, 0.65), "locked": Color(0.4, 0.43, 0.46)}[st])
+			tb.mouse_entered.connect(func(): _talent_hint(id))
+	_talent_info = Label.new()
+	_talent_info.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_talent_info.custom_minimum_size = Vector2(600, 40)
+	_talent_info.add_theme_font_size_override("font_size", 9)
+	_talent_info.add_theme_color_override("font_color", TEXT)
+	_talent_info.text = "Za každé povýšení dostaneš bod. Talent ve větvi jde vzít, když máš ten nad ním a dost vysokou hodnost. Vybraný talent už nejde vrátit."
+	col.add_child(_talent_info)
+	var brow := HBoxContainer.new()
+	brow.add_theme_constant_override("separation", 4)
+	col.add_child(brow)
+	_small_btn(brow, "Úpravy zbraní", func(): _talent_arm = ""; _mods_from = "talents"; _show_mods()).custom_minimum_size = Vector2(96, 18)
+	_small_btn(brow, "Zpět k vojákům", func(): _talent_arm = ""; _show_merc()).custom_minimum_size = Vector2(110, 18)
+
+func _talent_hint(id: String) -> void:
+	if is_instance_valid(_talent_info):
+		_talent_info.text = "%s - %s" % Game.TALENTS[id]
 
 ## 0.57: weapon upgrades - the guns on the left; on the right the chosen gun in 3D as the soldier
 ## has it, what its parts change, and its slots: each slot holds one part (optic, muzzle, under the
@@ -652,7 +803,16 @@ func _show_mods() -> void:
 	right.add_child(info)
 	_mods_info = info
 	var back := _small_btn(right, "Zpět", func():
-		if _back_target != "":
+		# 0.66: one level up - to the screen it was opened from (the soldier, the kit), else where we came from
+		var fr := _mods_from
+		_mods_from = ""
+		if fr == "merc":
+			_show_merc()
+		elif fr == "talents":
+			_show_talents()
+		elif fr == "loadout":
+			_show_loadout()
+		elif _back_target != "":
 			_back()
 		else:
 			_show_merc())
@@ -1274,6 +1434,8 @@ func _process(delta: float) -> void:
 	if _scroll and is_instance_valid(_scroll) and _box and is_instance_valid(_box):
 		var p := _scroll.get_parent() as Control
 		var room := 344.0 - (p.position.y - 8.0) - 22.0
+		if _title_mode:
+			room = 150.0
 		var need := _box.get_combined_minimum_size()
 		# taller than the screen: the scrollbar takes room on the right - count it in, so the text
 		# does not re-wrap when it appears (that flipped the size back and forth every frame)
@@ -1283,6 +1445,8 @@ func _process(delta: float) -> void:
 			_scroll.custom_minimum_size = want
 			p.size = Vector2.ZERO
 		p.position.x = roundf((640.0 - p.size.x) / 2.0)
+		if _title_mode:
+			p.position.y = 354.0 - p.size.y
 	if _cr_model and is_instance_valid(_cr_model) and _cr_vp and is_instance_valid(_cr_vp):
 		_cr_model.rotation.y = lerp_angle(_cr_model.rotation.y, _cr_rot, delta * 5.0)
 		if not _cr_lock:
@@ -1464,7 +1628,7 @@ func _show_loadout() -> void:
 	var bottom := HBoxContainer.new()
 	_box.add_child(bottom)
 	_button("Výchozí výstroj", func(): Game.loadout = {}; Game.save_settings(); _show_loadout()).reparent(bottom)
-	_button("Úpravy zbraní", _show_mods).reparent(bottom)
+	_button("Úpravy zbraní", func(): _mods_from = "loadout"; _show_mods()).reparent(bottom)
 	_button("Zpět", _back).reparent(bottom)
 	for c in bottom.get_children():
 		c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1757,7 +1921,7 @@ func _autotest() -> void:
 				["quick", _show_quick], ["campaign", func(): _show_campaign()], ["newcamp", _show_new_campaign], ["editor", _show_editor], ["merc", func(): Game.merc["created"] = true; _show_merc()],
 				["create", func(): _show_create(true)], ["look", func(): _show_create(false)],
 				["settings", _show_settings],
-				["loadout", _show_loadout], ["join", _show_join], ["connecting", func(): _connecting("192.168.0.99")], ["news", _show_news], ["mods", _show_mods], ["money", _show_money], ["lobby", _show_lobby],
+				["loadout", _show_loadout], ["join", _show_join], ["connecting", func(): _connecting("192.168.0.99")], ["news", _show_news], ["mods", _show_mods], ["talents", _show_talents], ["money", _show_money], ["lobby", _show_lobby],
 				["update", func(): Game.upd_state = "full"; Game.upd_version = "0.14"; _show_main()],
 				["ready", func(): Game.upd_state = "ready"; _show_main()]]
 			for e in shots:
@@ -1767,6 +1931,39 @@ func _autotest() -> void:
 				Game.ui_audit(self, e[0])
 				if DisplayServer.get_name() != "headless":
 					get_viewport().get_texture().get_image().save_png("user://ui_%s.png" % e[0])
+			get_tree().quit()
+		"talentui":
+			# 0.62: the talent tree - order and ranks hold, a point is spent, the easy swap (user://talents_N.png)
+			Game.skirmish = true
+			Game.merc = Game.merc.duplicate(true)
+			Game.merc["xp"] = 1300          # Rotný: tiers 1-3 open
+			Game.merc["talents"] = ["rychle_prebiti"]
+			Game.merc["talent_points"] = 3
+			Game.difficulty = "normal"
+			Game.pick_talent("strelec")                    # the one above it missing
+			var skip := Game.has_talent(Game.merc, "strelec")
+			Game.pick_talent("pevna_ruka")
+			Game.pick_talent("strelec")
+			var chain := Game.has_talent(Game.merc, "pevna_ruka") and Game.has_talent(Game.merc, "strelec")
+			Game.pick_talent("rychle_taseni")              # needs Rotmistr
+			var rank := not Game.has_talent(Game.merc, "rychle_taseni") and Game.talent_state(Game.merc, 0, 3) == "rank"
+			Game.pick_talent("mezek")
+			var spent := int(Game.merc["talent_points"]) == 0 and Game.talent_state(Game.merc, 3, 1) == "nopoint"
+			var normal_eye := Game.tree_talent(3, 3, Game.merc) == "sesty_smysl"
+			Game.difficulty = "easy"
+			var easy_drone := Game.tree_talent(3, 3, Game.merc) == "technik_dronu"
+			_show_talents()
+			await get_tree().create_timer(0.8).timeout
+			Game.ui_audit(self, "talents")
+			if DisplayServer.get_name() != "headless":
+				get_viewport().get_texture().get_image().save_png("user://talents_1.png")
+			Game.merc["talent_points"] = 1
+			Game.difficulty = "normal"
+			_show_talents()
+			await get_tree().create_timer(0.5).timeout
+			if DisplayServer.get_name() != "headless":
+				get_viewport().get_texture().get_image().save_png("user://talents_2.png")
+			print("[TALENT] skip %s chain %s rank %s spent %s eye %s drone %s" % [not skip, chain, rank, spent, normal_eye, easy_drone])
 			get_tree().quit()
 		"modsui":
 			# 0.57: the weapon parts screen - buy, mount, swap (user://modsui_N.png, [UI] audit);
@@ -1791,6 +1988,41 @@ func _autotest() -> void:
 			Game.unmount_slot("rifle", "hlaven")
 			print("[MODS] bought %s fit %s owns optika %s money %d kg %.2f" % [ok1, Game.fitted("rifle"), Game.owns_mod("rifle", "optika"), Game.purse(), Game.part_weight("rifle")])
 			get_tree().quit()
+		"voicedsp":
+			preload("res://scripts/autotest_voice.gd").run()
+			get_tree().quit()
+		"vnethost", "vnetclient":
+			# (0.62) voice over the real network: own channel, sequence numbers, every 7th packet lost
+			Game.merc["name"] = "Host" if Game.autotest() == "vnethost" else "Klient"
+			var lv: Node = Net.get_node("LobbyVoice")
+			if Game.autotest() == "vnethost":
+				Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+				var t0 := Time.get_ticks_msec()
+				while Time.get_ticks_msec() - t0 < 9000:
+					await get_tree().create_timer(0.2).timeout
+				var rx = lv._chan.values()[0]["rx"] if not lv._chan.is_empty() else null
+				print("RESULT vnet received %d lost %d rescued %d" % [lv.received, rx.lost if rx else -1, rx.rescued if rx else -1])
+			else:
+				await get_tree().create_timer(1.5).timeout
+				Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+				await get_tree().create_timer(2.5).timeout
+				var chunk := int(lv.Voice.RATE * lv.Voice.CHUNK)
+				var n := 0
+				for k in 50:
+					var smp := PackedFloat32Array()
+					smp.resize(chunk)
+					for i in chunk:
+						smp[i] = sin(TAU * 200.0 * (k * chunk + i) / lv.Voice.RATE) * 0.2
+					var pkt: PackedByteArray = lv.dsp.packet(smp)
+					if k % 7 != 3:
+						lv._lobby_voice.rpc(pkt)
+						n += 1
+					await get_tree().create_timer(0.06).timeout
+				print("RESULT vnet client sent %d" % n)
+				await get_tree().create_timer(2.0).timeout
+			get_tree().quit()
+		"introshots":
+			preload("res://scripts/autotest_facelift2.gd").intro(self)
 		"presets":
 			# 0.60: soldier templates and saved loadouts (own test file - the player's presets stay)
 			Game.preset_file = "user://presety_test.cfg"
@@ -1866,13 +2098,14 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "lookshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "rocktest", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "tpwalk", "blendtest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "latetest", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "lookshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "wedgetest", "pockettest", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "echotest", "dirtshot":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
-				"hour": float(Game.cmd_arg("hour", "14.0" if Game.cmd_arg("day", "0") == "1" else "23.0")), "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "testroom": Game.autotest() == "testroom", "terrain": Game.cmd_arg("terrain", "temperate"), "size": Game.cmd_arg("size", "medium"), "ufo": Game.cmd_arg("ufo", ""), "group": Game.cmd_arg("group", ""), "research": Array(Game.cmd_arg("research", "").split(",", false)),
-				"habits": {String(Game.merc.get("name", "")): Game.cmd_arg("habits", "").split(",", false)} if Game.cmd_arg("habits", "") != "" else {}})
-		"basewalk", "basepass", "basenade", "basefly", "blastdoor":
+				"hour": float(Game.cmd_arg("hour", "14.0" if Game.cmd_arg("day", "0") == "1" else "23.0")), "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "testroom": Game.autotest() == "testroom", "terrain": Game.cmd_arg("terrain", "temperate"), "size": Game.cmd_arg("size", "medium"), "ufo": Game.cmd_arg("ufo", ""), "crew_of": Game.cmd_arg("crewof", ""), "group": Game.cmd_arg("group", ""), "research": Array(Game.cmd_arg("research", "").split(",", false)),
+				"habits": {String(Game.merc.get("name", "")): Game.cmd_arg("habits", "").split(",", false)} if Game.cmd_arg("habits", "") != "" else {},
+				"styles": {String(Game.merc.get("name", "")): Array(Game.cmd_arg("styles", "").split(",", false))} if Game.cmd_arg("styles", "") != "" else {}})
+		"basewalk", "basepass", "basenade", "basefly", "blastdoor", "npcshot", "echobase", "wallshot":
 			Net.play_solo()
 			var b := []
 			for i in 24:
@@ -1883,8 +2116,9 @@ func _autotest() -> void:
 				b[k] = {"type": lay[k], "days": 4.0 if k == 14 else 0.0}
 			var atk := Game.cmd_arg("attack", "") == "1" or Game.autotest() == "blastdoor"
 			Net.start_mission({"type": "base" if atk else "home", "type_name": "Útok na základnu" if atk else "Základna", "base": b, "grid_w": 6, "grid_h": 4, "transport": "heli",
-				"live": ["grey", "levit"], "night": false, "attack": atk, "blips": [[50.0, 15.0], [40.0, -3.0], [10.0, 30.0]], "group": "sedaci"})
-		"solo", "shot", "ai", "panic", "arsenal", "evac":
+				"live": ["grey", "levit"], "night": false, "attack": atk, "blips": [[50.0, 15.0], [40.0, -3.0], [10.0, 30.0]], "group": "sedaci",
+				"fallen": _test_fallen(int(Game.cmd_arg("fallen", "0")))})
+		"solo", "perf", "navcache", "farview", "mergeshot", "shot", "ai", "panic", "arsenal", "evac":
 			if Game.autotest() == "shot":
 				await get_tree().create_timer(1.5).timeout
 				get_viewport().get_texture().get_image().save_png("user://00_menu.png")
@@ -2149,6 +2383,10 @@ func _autotest() -> void:
 			while Net.roster.size() < 2:
 				await get_tree().create_timer(0.2).timeout
 			await get_tree().create_timer(9.0).timeout
+			if Game.cmd_arg("nade", "") == "1":
+				await get_tree().create_timer(30.0).timeout     # (the client throws grenades in its base meanwhile)
+				get_tree().quit()
+				return
 			print("[LB] host starts the mission")
 			Net.start_mission({"type": "crash", "biome": "farm", "night": false, "hour": 14.0, "place": "Test", "type_name": "Test", "id": -1})
 		"lbclient":
@@ -2164,11 +2402,28 @@ func _autotest() -> void:
 			if Game.autotest() == "aimphost":
 				Game.seed_override = int(Game.cmd_arg("seed", "4242"))     # (the same map for the old and the new AI)
 			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
-			while Net.roster.size() < 2:
+			while Net.roster.size() < int(Game.cmd_arg("players", "2")):
 				await get_tree().create_timer(0.2).timeout
 			await get_tree().create_timer(0.5).timeout
 			Net.start_mission({"type": "crash", "biome": "farm", "night": false, "hour": 14.0, "place": "Test", "type_name": "Test", "id": -1})
 		"coophealclient", "aimpclient":
+			Game.merc["name"] = "Klient" if Game.cmd_arg("ci", "1") == "1" else "Klient" + Game.cmd_arg("ci", "1")
+			await get_tree().create_timer(1.0 + 0.5 * int(Game.cmd_arg("ci", "1"))).timeout
+			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+		"nadehost":
+			# (Ari 2026-11-10) the whole team in the base together, grenades in the velín
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			while Net.roster.size() < 2:
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(0.5).timeout
+			var b := []
+			for i in 24:
+				b.append({"type": "", "days": 0.0})
+			for k in {0: "velin", 1: "hangar", 6: "ubikace", 7: "laborator", 2: "dilna"}:
+				b[k] = {"type": {0: "velin", 1: "hangar", 6: "ubikace", 7: "laborator", 2: "dilna"}[k], "days": 0.0}
+			Net.start_mission({"type": "home", "type_name": "Základna", "base": b, "grid_w": 6, "grid_h": 4, "transport": "heli",
+				"live": [], "research": [], "night": false, "hour": 12.0, "blips": []})
+		"nadeclient":
 			Game.merc["name"] = "Klient"
 			await get_tree().create_timer(1.0).timeout
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
@@ -2183,3 +2438,13 @@ func _autotest() -> void:
 			Game.merc["name"] = "Klient"
 			await get_tree().create_timer(1.0).timeout
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+
+## (0.70) --autotest=wallshot --fallen=N: made-up fallen for the wall in the velín (only the test).
+func _test_fallen(n: int) -> Array:
+	var names := ["Jan Novák", "Petra Dvořáková", "Mike O'Hara", "Lukas Brandt", "Anna Kowalska", "Pierre Lefèvre", "Giulia Rossi", "Sven Lindqvist"]
+	var flags := ["cz", "sk", "ie", "de", "pl", "fr", "it", ""]
+	var out := []
+	for i in n:
+		out.append({"n": names[i % names.size()] + ("" if i < names.size() else " ml."), "f": flags[i % flags.size()], "d": "%d. května 1990" % (3 + i),
+			"m": ["Havárie UFO - Brno", "Teror - Lyon", "Přistání UFO - Kerry"][i % 3], "k": i % 5, "mia": i % 4 == 3})
+	return out

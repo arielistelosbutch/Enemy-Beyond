@@ -14,6 +14,7 @@ const KNOW_SECS := 25.0          # how long a sighting of a mercenary still coun
 const NADE_SEE := 7.5            # a grenade this close is a danger
 const NADE_SAFE := 7.5           # and this far away is safe
 const SEARCH_SPOTS := 4
+const SQUAD := "res://scripts/alien_squad.gd"
 
 static func off() -> bool:
 	return Game.cmd_arg("oldai", "") == "1"
@@ -264,10 +265,14 @@ static func begin_search(a: Node, secs: float) -> bool:
 		if o != a and not o.dead and o.state == a.S.SEARCH:
 			claimed.append_array(o._search_spots)
 	var cand := []
+	var sq = load(SQUAD)          # (0.63: the heat map - where they have been seen before - pulls the search)
 	for c in a.mission.map["cover"]:
 		var cp: Vector3 = c
 		var dl: float = cp.distance_to(a.last_seen)
-		if dl > 16.0 or cp.distance_to(a.global_position) < 2.0:
+		if dl > 30.0 or cp.distance_to(a.global_position) < 2.0:
+			continue
+		var heat: float = minf(12.0, sq.heat_at(a.mission, cp, 8.0))
+		if dl > 16.0 and heat < 3.0:
 			continue
 		var taken := false
 		for s in claimed:
@@ -275,7 +280,7 @@ static func begin_search(a: Node, secs: float) -> bool:
 				taken = true
 				break
 		if not taken:
-			cand.append([dl + a.rng.randf() * 5.0, cp])
+			cand.append([dl + a.rng.randf() * 5.0 - heat * (0.5 if dl <= 16.0 else 1.2), cp])
 	cand.sort_custom(func(x, y): return x[0] < y[0])
 	a._search_spots = []
 	for i in mini(SEARCH_SPOTS, cand.size()):

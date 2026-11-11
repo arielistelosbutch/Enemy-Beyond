@@ -15,7 +15,11 @@ const RUN := 3.4
 const GRAVITY := 18.0
 const SIGHT_ANGLE := 0.5   # cos(60°)
 const BoltScript := preload("res://scripts/bolt.gd")
+const AS := preload("res://scripts/alien_squad.gd")      # (0.63: squads, roles, the common attack, packs, the heat map)
+const StepUp := preload("res://scripts/step_up.gd")
 const AT := preload("res://scripts/alien_tactics.gd")    # (the AI plan: threats, grenades, fear, searching)
+const AM := preload("res://scripts/alien_mind.gd")       # (0.64: weighing the next move, the players' styles, the nemesis hunt)
+const AD := preload("res://scripts/ai_director.gd")      # (0.64: the director, what each man's style is)
 
 ## Race table. hp, speeds, armor (damage taken x), capsule, eye height, bolt power,
 ## shots per burst, accuracy (miss x), rate (time between shots x), glint (eye shine),
@@ -24,7 +28,7 @@ const AT := preload("res://scripts/alien_tactics.gd")    # (the AI plan: threats
 ## Bijci + Nádor + Ohnivec, Myslodějové + Kolos.
 const RACES := {
 	"grey": {"name": "Šedivák", "hp": 70.0, "walk": 2.0, "run": 4.9, "tac": "grey", "armor": 1.0, "model": "grey", "h": 1.3, "r": 0.3, "eye": 1.15,
-		"bolt": 1.0, "shots": [1, 2], "miss": 0.9, "glint": [Vector3(0, 1.22, -0.215), Color(0.3, 1.0, 0.4)], "hide": 1.2},
+		"bolt": 1.0, "shots": [1, 2], "miss": 0.9, "glint": [Vector3(0, 1.22, -0.215), Color(0.3, 1.0, 0.4)], "hide": 1.2, "laser": true},
 	"grey_velitel": {"name": "Šedivák velitel", "hp": 95.0, "walk": 2.0, "run": 4.9, "tac": "grey", "armor": 1.0, "model": "grey_velitel", "h": 1.35, "r": 0.3, "eye": 1.2,
 		"bolt": 1.0, "shots": [1, 2], "miss": 0.9, "glint": [Vector3(0, 1.26, -0.22), Color(0.8, 0.45, 1.0)], "hide": 1.3, "psi": 1, "illusion": true},
 	"diskoll": {"name": "Diskoll", "hp": 110.0, "walk": 2.8, "run": 5.5, "armor": 0.6, "model": "diskoll", "h": 0.5, "r": 0.7, "eye": 1.5,
@@ -178,6 +182,10 @@ var _nades_seen := {}
 var _search_spots := []
 var _srch_look := 0.0
 var _rehide_t := -99.0
+var _squad := ""             # 0.63 (alien_squad.gd): the leader's name of its squad ("" = on its own)
+var _role := ""              # "fix" / "flank" while the squad has a plan
+var _go_done := -1.0
+var _slot := Vector3.INF     # melee pack: its place round the prey before the common spring
 
 func is_alien() -> bool:
 	return true
@@ -278,7 +286,7 @@ func setup(data: Dictionary) -> void:
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "Sync"
 	var cfg := SceneReplicationConfig.new()
-	for prop in [":position", ":rotation", ":dead", ":alert", ":lurking", ":captured", ":striking", ":husk", ":bleeding", ":activity", ":cloak", ":flying"]:
+	for prop in [":position", ":rotation", ":dead", ":alert", ":lurking", ":captured", ":striking", ":husk", ":bleeding", ":activity", ":cloak", ":flying", ":mood"]:
 		cfg.add_property(NodePath("." + prop))
 	sync.replication_config = cfg
 	sync.root_path = NodePath("..")
@@ -353,6 +361,8 @@ func _physics_process(delta: float) -> void:
 		body.position.y = sin(bob_t * 1.7) * 0.1
 		body.rotation.z = sin(bob_t * 1.1) * 0.05
 		_rigid_anim(delta)
+	if multiplayer.is_server():
+		mood = _mood()
 	_animate(delta)
 	if not multiplayer.is_server():
 		return
@@ -382,6 +392,7 @@ func _physics_process(delta: float) -> void:
 		velocity.y -= GRAVITY * delta
 	else:
 		velocity.y = 0
+	StepUp.climb(self, delta, StepUp.ALIEN)     # (0.62: up a kerb, onto a raised floor)
 	move_and_slide()
 
 ## Picks the animation from what the alien is doing (works on every machine:
@@ -396,6 +407,41 @@ func _flinch(from: Vector3) -> void:
 	var d := global_position - from
 	d.y = 0
 	_flinch_dir = (global_transform.basis.inverse() * d.normalized()) if d.length() > 0.1 else Vector3(0, 0, 1)
+	# 0.62: Ari's own hit reaction where the race has one (not in a run: the feet would slide)
+	var hc := _hit_clip()
+	if hc != "" and _speed < 2.4:
+		_hit_anim = hc
+		_hit_anim_t = HIT_TIME
+		_hit_new = true
+
+## 0.62: hit reactions (afk "Hit"...): from the side the shot came from where the race has those,
+## otherwise one of its hits. The whole movement within HIT_TIME.
+const HIT_TIME := 0.6
+var _hit_anim := ""
+var _hit_anim_t := 0.0
+var _hit_new := false
+func _hit_clip() -> String:
+	if anim == null or dead or husk:
+		return ""
+	var d := _flinch_dir
+	var side := "hit_front" if d.z >= absf(d.x) else ("hit_back" if -d.z >= absf(d.x) else ("hit_left" if d.x > 0.0 else "hit_right"))
+	if anim.has_animation(side):
+		return side
+	var pool := []
+	for k in 6:
+		var hn := "hit" if k == 0 else "hit_%d" % (k + 1)
+		if anim.has_animation(hn):
+			pool.append(hn)
+	return "" if pool.is_empty() else String(pool[randi() % pool.size()])
+
+## 0.62: what the body shows (host -> everyone, synced): 0 nothing, 1 stunned / deafened,
+## 2 out of breath, 3 sniffing about (Ohař: Stunned, Idle_Pant, Walk_Sniff / Idle_Sniff_Air).
+var mood := 0
+func _mood() -> int:
+	return 1 if _stagger > 0.0 else 0
+var _yaw_last := 0.0
+var _turn_rate := 0.0
+var _turn_hold := 0.0
 
 ## Blood by race - and not every one of them bleeds the same (some barely at all).
 const BLOOD := {"grey": Color(0.35, 1.0, 0.45), "levit": Color(0.5, 0.45, 1.0), "jestetan": Color(0.75, 0.95, 0.2),
@@ -432,9 +478,12 @@ func _drip(delta: float) -> void:
 		_bleed(randf_range(0.08, 0.16))
 
 func _flinch_tick(delta: float) -> void:
+	_hit_anim_t -= delta
 	if _flinch_t <= 0.0 or body == null:
 		return
 	_flinch_t = maxf(0.0, _flinch_t - delta)
+	if _hit_anim_t > 0.0:
+		return        # (Ari's hit reaction moves the body itself)
 	var k := sin(_flinch_t / 0.35 * PI) * 0.22
 	body.rotation.x = _flinch_dir.z * k
 	body.rotation.z = -_flinch_dir.x * k
@@ -664,7 +713,7 @@ func _mixamo_clips() -> void:
 ## tools/test/afk_install.gd --race=<race>; only in the game package, like the Mixamo ones - without
 ## them the model's own clips stay). An officer takes his ordinary race's ones where he has none of his own.
 ## The deaths ("death_1".."death_9", "death_crouch") replace the toppling over.
-const AFK_CLIPS := ["idle", "walk", "run", "aim", "lurk", "lurk_walk", "fire", "attack", "psi", "roar",
+const AFK_CLIPS := ["idle", "walk", "run", "aim", "lurk", "lurk_walk", "fire", "attack", "psi", "roar", "hit", "turn",
 	"death_1", "death_2", "death_3", "death_4", "death_5", "death_6", "death_7", "death_8", "death_9", "death_crouch"]
 const AFK_FPS := 30.0
 static var _afk_cache := {}      # clip id -> [Animation, speed m/s] (built once for the whole mission)
@@ -725,51 +774,76 @@ func _afk_clips() -> void:
 const AFK_MODELS := {
 	"lihnoun": {"idle": "Idle_ShakeOff", "walk": "Walk", "run": "Run_Anime", "aim": "Crouch_Idle",
 		"lurk": "Crouch_Idle", "lurk_walk": "Crouch_Walk", "attack": ["Zombie_Scratch", "Hook_Lead"], "roar": "Roar",
-		"pounce": "Mutant_Jump_Attack",
+		"pounce": "Mutant_Jump_Attack", "turn": "Quick_Turn_180",
+		"hit_front": "Hit_Small_Front", "hit_back": "Hit_Small_Back", "hit_left": "Hit_Small_Left", "hit_right": "Hit_Small_Right",
 		"death": ["Death_B", "Death_C", "Death_D", "Death_Forward", "Death_Headshot", "Death_Left", "Death_Right", "Death_Flying_Back"],
 		"death_crouch": "Death_Crouching"},
 	# Ještěřan: animated in afk without its tail (it gets the tail of its own, afk_tail); the commander
 	# is his model on the very same afk rig (his armour skinned onto it), so the same movements
 	"jestetan": {"idle": "Rifle_Idle", "walk": "Rifle_Walk", "run": "Rifle_Run", "aim": "Rifle_Aim_Idle",
 		"lurk": "Rifle_Kneel_Idle", "lurk_walk": "Rifle_Crouch_Walk", "attack": ["Rifle_Butt", "Headbutt"], "fire": "Rifle_Fire",
+		"turn": "Rifle_Turn", "hit": ["Hit_Chest", "Hit_Head", "Rifle_Hit"],
+		"hit_front": "Hit_Small_Front", "hit_back": "Hit_Small_Back", "hit_left": "Hit_Small_Left", "hit_right": "Hit_Small_Right",
 		"death": ["Death_A", "Death_B", "Death_C", "Death_Backward", "Death_Forward", "Death_Headshot", "Death_Left", "Death_Right", "Rifle_Death"],
 		"death_crouch": "Death_Crouching"},
 	"jestetan_velitel": {"idle": "Rifle_Idle", "walk": "Rifle_Walk", "run": "Rifle_Run", "aim": "Rifle_Aim_Idle",
 		"lurk": "Rifle_Kneel_Idle", "lurk_walk": "Rifle_Crouch_Walk", "attack": ["Rifle_Butt", "Headbutt"], "fire": "Rifle_Fire",
+		"turn": "Rifle_Turn", "hit": ["Hit_Chest", "Hit_Head", "Rifle_Hit"],
+		"hit_front": "Hit_Small_Front", "hit_back": "Hit_Small_Back", "hit_left": "Hit_Small_Left", "hit_right": "Hit_Small_Right",
 		"death": ["Death_A", "Death_B", "Death_C", "Death_Backward", "Death_Forward", "Death_Headshot", "Death_Left", "Death_Right", "Rifle_Death"],
 		"death_crouch": "Death_Crouching"},
 	"bijec": {"idle": "Rifle_Idle", "walk": "Rifle_Walk", "run": "Rifle_Run", "aim": "Rifle_Aim_Idle",
 		"lurk": "Rifle_Kneel_Idle", "lurk_walk": "Rifle_Crouch_Walk", "attack": "Rifle_Butt", "fire": "Rifle_Fire", "roar": "Roar",
+		"turn": "Rifle_Turn", "hit": "Rifle_Hit",
 		"death": ["Death_B", "Death_D", "Death_Backward", "Death_Flying_Back", "Death_Headshot", "Death_Left", "Death_Right", "Death_To_Knees", "Rifle_Death"],
 		"death_crouch": "Death_Crouching"},
 	# Levit: Ari's own rig (skirt, tentacles - these on spring bones now); its deaths are the Ještěřan's
 	# afk deaths moved onto its upper body (tools/blender/afk_springs.py), the tentacles fall by themselves
-	"levit": {"idle": "Float_Idle", "walk": "Drift", "run": "Chase", "aim": "Float_Idle", "lurk": "Float_Idle",
+	"levit": {"idle": "Float_Idle", "walk": "Drift", "run": "Chase", "aim": "Float_Idle", "lurk": "Float_Idle", "hit": "Hit",
 		"death": ["Death_A", "Death_B", "Death_C", "Death_D", "Death_Flying_Back", "Rifle_Death"]},
 	# Ohař: Ari's own four-legged rig (ohar_v3), 89 movements
 	"ohar": {"idle": "Idle", "walk": "Walk", "run": "Run", "aim": "Combat_Idle", "lurk": "Stalk_Crouch", "lurk_walk": "Sneak",
 		"attack": ["Bite", "Paw_Swipe_Left", "Bite_Lunge", "Paw_Swipe_Right"], "pounce": "Leap_Attack", "roar": "Howl",
+		"hit": "Hit", "hit_left": "Hit_Left", "hit_right": "Hit_Right", "turn_l": "Turn_Left", "turn_r": "Turn_Right",
+		"stunned": "Stunned", "pant": "Idle_Pant", "sniff": "Walk_Sniff", "sniff_idle": "Idle_Sniff_Air",
 		"death": ["Death", "Knockdown"]},
 	# the races Ari animated first (their old models on rigs of his own, the same meshes and places):
 	# Nakažený on afk's humanoid rig (its strikes are the Líhavec's, moved over: tools/blender/afk_zombie.py)
 	"zombie": {"idle": "Idle Hurt", "walk": "Injured_Walk", "run": "Walk", "aim": "Idle Hurt", "lurk": "Idle_Rail", "lurk_walk": "Crouch_Walk",
-		"attack": ["Zombie_Scratch", "Hook_Lead"],
+		"attack": ["Zombie_Scratch", "Hook_Lead"], "turn_l": "Turn_Left_90", "turn_r": "Turn_Right_90",
+		"hit_front": "Hit_Small_Front", "hit_back": "Hit_Small_Back", "hit_left": "Hit_Small_Left", "hit_right": "Hit_Small_Right",
 		"death": ["Death_A", "Death_B", "Death_C", "Death_D", "Death_Backward", "Death_Forward", "Death_Left", "Death_Right", "Death_To_Knees"],
 		"death_crouch": "Death_Crouching"},
-	"diskoll": {"idle": "Look_Around", "walk": "Float", "run": "Spin", "aim": "Float", "lurk": "Float"},
-	"kolos": {"idle": "Idle", "walk": "Walk", "run": "Walk", "aim": "Idle", "lurk": "Groom", "attack": "Bite"},
+	"diskoll": {"idle": "Look_Around", "walk": "Float", "run": "Spin", "aim": "Float", "lurk": "Float", "hit": "Hit"},
+	"kolos": {"idle": "Idle", "walk": "Walk", "run": "Walk", "aim": "Idle", "lurk": "Groom", "attack": "Bite", "hit": "Hit"},
 	"myslodej": {"idle": "Float_Idle", "walk": "Drift", "run": "Drift", "aim": "Sway", "lurk": "Float_Idle", "attack": ["Wail", "Cackle"],
-		"vanish": "Vanish", "materialize": "Materialize"},
-	"nador": {"idle": "Float_Idle", "walk": "Sway", "run": "Chase", "aim": "Float_Idle", "lurk": "Float_Idle", "fire": "Spook"},
+		"vanish": "Vanish", "materialize": "Materialize", "spook": "Spook", "hit": "Hit"},
+	"nador": {"idle": "Float_Idle", "walk": "Sway", "run": "Chase", "aim": "Float_Idle", "lurk": "Float_Idle", "fire": "Spook", "hit": "Hit"},
 	# Ohnivec: the walk and the death Ari added later (tools/blender/afk_merge.py)
-	"ohnivec": {"idle": "Idle", "walk": "Walk", "run": "Walk", "aim": "Idle", "lurk": "Eat", "fire": "Snap", "attack": "Snap",
+	"ohnivec": {"idle": "Idle", "walk": "Walk", "run": "Walk", "aim": "Idle", "lurk": "Eat", "fire": "Snap", "attack": "Snap", "hit": "Hit",
 		"death": ["Death"]},
 }
 ## afk exports that face -Z already (like ours): not turned round.
 const AFK_NO_TURN := ["ohnivec"]
 ## afk models that stand on the ground by themselves (the hover is in their movements): the others
 ## keep the old model's hover (the same mesh, the same place) and fall out of the air when they die.
-const AFK_GROUNDED := ["levit"]
+const AFK_GROUNDED := ["levit", "levit_velitel"]
+## A race with no afk model of its own wears another's, recoloured (Ari: the Mírotvůrce has nothing
+## special, the Levit's model and movements in his colours): race -> whose model.
+const AFK_SKIN := {"levit_velitel": "levit"}
+## Material -> [colour, glows] for such a race (the Mírotvůrce: violet like his old model).
+const AFK_RECOLOR := {"levit_velitel": {
+	"LevSkin": [Color(0.4, 0.27, 0.36), false], "LevSkin2": [Color(0.27, 0.16, 0.24), false],
+	"LevTent": [Color(0.3, 0.12, 0.26), false], "LevVein": [Color(0.22, 0.04, 0.2), false],
+	"LevScar": [Color(0.14, 0.05, 0.12), false],
+	"LevEye": [Color(0.8, 0.3, 1.0), true], "LevGlow": [Color(0.72, 0.22, 1.0), true],
+	"LevOrgan": [Color(0.62, 0.16, 0.95), true]}}
+## The afk model file a race uses ("" = none in the game).
+static func afk_path(race_id: String) -> String:
+	if not (AFK_MODELS.has(race_id) or AFK_SKIN.has(race_id)):
+		return ""
+	var path := "res://animace/afk_%s.glb" % String(AFK_SKIN.get(race_id, race_id))
+	return path if ResourceLoader.exists(path) else ""
 ## Pieces of the old model the afk export lost, hung on a bone of it: race -> {piece: bone}.
 const AFK_GRAFT := {"diskoll": {"Guns": "body"}}
 ## The size of an afk model against the game's old one (Ari's Ohař is a head taller than the hit capsule).
@@ -798,10 +872,8 @@ func _afk_model() -> Node3D:
 
 ## Ari's afk model of the race with the game's clip names (null: none). Shared with the Dílna.
 static func afk_scene(race_id: String) -> Node3D:
-	if not AFK_MODELS.has(race_id):
-		return null
-	var path := "res://animace/afk_%s.glb" % race_id
-	if not ResourceLoader.exists(path):
+	var path := afk_path(race_id)
+	if path == "":
 		return null
 	var ps := load(path) as PackedScene
 	if ps == null:
@@ -815,12 +887,14 @@ static func afk_scene(race_id: String) -> Node3D:
 	holder.add_child(inst)
 	_afk_graft(inst, race_id)
 	Game._restyle(inst)
+	if AFK_RECOLOR.has(race_id):
+		_afk_recolor(inst, AFK_RECOLOR[race_id])
 	var ap: AnimationPlayer = inst.find_child("AnimationPlayer", true, false)
 	var lib: AnimationLibrary = ap.get_animation_library(&"") if ap else null
 	if lib == null:
 		holder.free()
 		return null
-	var map: Dictionary = AFK_MODELS[race_id]
+	var map: Dictionary = AFK_MODELS[race_id] if AFK_MODELS.has(race_id) else AFK_MODELS[AFK_SKIN[race_id]]
 	for cn: String in map:
 		var srcs: Array = map[cn] if map[cn] is Array else [map[cn]]
 		for k in srcs.size():
@@ -831,9 +905,27 @@ static func afk_scene(race_id: String) -> Node3D:
 			if cn == "death":
 				nm = "death_%d" % (k + 1)
 			lib.add_animation(nm, lib.get_animation(an).duplicate())
+			if cn.begins_with("hit") or cn == "spook":
+				lib.get_animation(nm).loop_mode = Animation.LOOP_NONE
 	if lib.has_animation("pounce"):
 		_pin_forward(lib.get_animation("pounce"))
+	var tsk: Skeleton3D = inst.find_child("Skeleton3D", true, false)
+	for tn in ["turn", "turn_l", "turn_r"]:
+		if lib.has_animation(tn) and tsk:
+			_turn_on_spot(lib.get_animation(tn), tsk, inst)
 	return holder
+
+## Another race's afk model in this one's colours (after Game._restyle: its override materials).
+static func _afk_recolor(n: Node, cols: Dictionary) -> void:
+	if n is MeshInstance3D:
+		var mi: MeshInstance3D = n
+		for i in mi.mesh.get_surface_count():
+			var src := mi.mesh.surface_get_material(i)
+			if src and cols.has(String(src.resource_name)):
+				var e: Array = cols[String(src.resource_name)]
+				mi.set_surface_override_material(i, Game.color_mat(e[0], e[1]))
+	for c in n.get_children():
+		_afk_recolor(c, cols)
 
 ## 0.57: Ari animates the Ještěřan in afk without its tail (afk's humanoid rig has none and the
 ## tail spoiled the movements); the tail is a model of its own (assets/models/<race>_ocas.glb, made
@@ -891,6 +983,7 @@ static func _afk_graft(inst: Node3D, race_id: String) -> void:
 			at = (n as Node3D).transform * at
 			n = n.get_parent()
 		piece.get_parent().remove_child(piece)
+		piece.owner = null
 		var att := BoneAttachment3D.new()
 		att.name = "Graft" + pn
 		att.bone_name = sk.get_bone_name(bi)
@@ -918,6 +1011,42 @@ static func _pin_forward(a: Animation) -> void:
 			var v: Vector3 = a.track_get_key_value(t, k)
 			v.y = y0
 			a.track_set_key_value(t, k, v)
+
+## 0.62: a turn on the spot (Ari's Rifle_Turn, Turn_Left...) as the game needs it: the body itself
+## turns with the alien, so the hips keep their heading and place - only the steps stay.
+static func _turn_on_spot(a: Animation, sk: Skeleton3D, top: Node) -> void:
+	# up, in the skeleton's own space (the afk import may sit under a turned Armature)
+	var chain := Transform3D()
+	var n: Node = sk
+	while n != null and n != top:
+		if n is Node3D:
+			chain = (n as Node3D).transform * chain
+		n = n.get_parent()
+	var up_sk := (chain.basis.inverse() * Vector3.UP).normalized()
+	for t in a.get_track_count():
+		var bn := String(a.track_get_path(t).get_concatenated_subnames())
+		if not bn in ["pelvis", "Hips", "hips"] or a.track_get_key_count(t) == 0:
+			continue
+		var bi := sk.find_bone(bn)
+		var par := sk.get_bone_parent(bi)
+		var pg := sk.get_bone_global_rest(par).basis if par >= 0 else Basis()
+		var up := (pg.inverse() * up_sk).normalized()      # up in the hips' parent space
+		if a.track_get_type(t) == Animation.TYPE_ROTATION_3D:
+			var q0: Quaternion = a.track_get_key_value(t, 0)
+			for k in a.track_get_key_count(t):
+				var q: Quaternion = a.track_get_key_value(t, k)
+				var d := q * q0.inverse()
+				var ax := Vector3(d.x, d.y, d.z)
+				var tw := Quaternion(up.x * ax.dot(up), up.y * ax.dot(up), up.z * ax.dot(up), d.w)
+				if tw.length_squared() < 1e-8:
+					continue
+				a.track_set_key_value(t, k, (tw.normalized().inverse() * q).normalized())
+		elif a.track_get_type(t) == Animation.TYPE_POSITION_3D:
+			var p0: Vector3 = a.track_get_key_value(t, 0)
+			for k in a.track_get_key_count(t):
+				var v: Vector3 = a.track_get_key_value(t, k)
+				a.track_set_key_value(t, k, p0 + up * up.dot(v - p0))
+	a.loop_mode = Animation.LOOP_LINEAR
 
 ## A clip (our editor's form: degrees over the rest pose, keyed) as an Animation for the model's
 ## AnimationPlayer: every bone the model's own idle moves gets a track (the ones the clip leaves out held at rest).
@@ -966,6 +1095,7 @@ static func _afk_build(c: Dictionary, sk: Skeleton3D, sk_path: String, ref: Anim
 const ROAR_TIME := 3.4
 var seared := false      # burnt by a plasma grenade (PG-01): nothing left for the lab or the armory
 var _cry_anim_t := 0.0      # the Bijec officer's war cry: the whole body roars for a moment
+var _cry_speed := 1.0       # (the Ohař's howl: played faster, a short one before the dash)
 var _tele_anim_t := 0.0     # Mysloděj after a teleport: Ari's Materialize
 
 func _animate(delta: float) -> void:
@@ -980,6 +1110,10 @@ func _animate(delta: float) -> void:
 	moved.y = 0
 	_last_anim_pos = global_position
 	_speed = lerp(_speed, moved.length() / max(delta, 0.001), 0.2)
+	# turning on the spot (rotation is synced: every machine sees the same)
+	_turn_rate = lerp(_turn_rate, wrapf(rotation.y - _yaw_last, -PI, PI) / maxf(delta, 0.001), 0.25)
+	_yaw_last = rotation.y
+	_turn_hold = 0.3 if absf(_turn_rate) > 1.0 and _speed < 0.4 else _turn_hold - delta
 	var want := "idle"
 	_cry_anim_t -= delta
 	_fire_anim_t -= delta
@@ -988,6 +1122,8 @@ func _animate(delta: float) -> void:
 		want = "materialize"       # Mysloděj takes shape again where it went
 	elif _cry_anim_t > 0.0 and anim.has_animation("roar"):
 		want = "roar"
+	elif mood == 1 and anim.has_animation("stunned"):
+		want = "stunned"           # deafened / shocked: it staggers, shaking its head (Ohař)
 	elif _fire_anim_t > 0.0 and _speed < 0.5 and not lurking and anim.has_animation("fire"):
 		want = "fire"              # the recoil of the shot (Ještěřan)
 	elif leaping and anim.has_animation("pounce"):
@@ -999,6 +1135,17 @@ func _animate(delta: float) -> void:
 			if not _was_striking:
 				_attack_i = (_attack_i + 1) % _attacks.size()
 			want = _attacks[_attack_i]
+	elif _hit_anim_t > 0.0 and anim.has_animation(_hit_anim):
+		want = _hit_anim           # hit: Ari's reaction, from the side the shot came from
+	elif mood == 2 and _speed < 0.5 and anim.has_animation("pant"):
+		want = "pant"              # out of breath after the dash
+	elif mood == 3 and _speed > 0.3 and _speed < 2.4 and anim.has_animation("sniff"):
+		want = "sniff"             # nose to the ground, searching
+	elif _turn_hold > 0.0 and (anim.has_animation("turn") or anim.has_animation("turn_l")):
+		# on the spot, turning: the steps of Ari's turn (its own way round where there are two)
+		want = ("turn_l" if _turn_rate > 0.0 else "turn_r") if anim.has_animation("turn_l") else "turn"
+	elif mood == 3 and _speed <= 0.3 and anim.has_animation("sniff_idle"):
+		want = "sniff_idle"
 	elif lurking and _speed < 0.5:
 		want = "lurk"
 	elif lurking and _speed < walk_spd * 2.0 and anim.has_animation("lurk_walk"):
@@ -1012,12 +1159,16 @@ func _animate(delta: float) -> void:
 	_was_striking = striking
 	if not anim.has_animation(want):
 		want = "idle"
-	if anim.current_animation != want:
+	if want.begins_with("hit") and _hit_new:
+		_hit_new = false
+		anim.play(want, 0.08)
+		anim.seek(0.0, true)
+	elif anim.current_animation != want:
 		anim.play(want, 0.25 if want != "pounce" else 0.1)
 		if want == "pounce":
 			anim.seek(float(AFK_LEAP.get(race, [LEAP_SKIP])[0]), true)    # straight into the crouch before the spring
 	if want == "roar" or want == "materialize":
-		anim.speed_scale = 1.0
+		anim.speed_scale = _cry_speed if want == "roar" else 1.0
 		anim.advance(delta)
 		_activity_pose(delta)
 		return
@@ -1026,6 +1177,10 @@ func _animate(delta: float) -> void:
 		anim.speed_scale = float(AFK_LEAP.get(race, [0.0, LEAP_ANIM_SPEED])[1])
 	elif want == "lurk_walk":
 		anim.speed_scale = clampf(_speed / walk_spd, 0.6, 1.6)
+	elif want.begins_with("hit"):
+		anim.speed_scale = clampf(anim.get_animation(want).length / HIT_TIME, 1.0, 2.5)
+	elif want.begins_with("turn"):
+		anim.speed_scale = clampf(absf(_turn_rate) / 1.6, 0.7, 1.5)
 	elif want.begins_with("attack") and _afk_native:
 		# the whole strike within the blow's own time (wind-up and swing, ~0.7 s)
 		anim.speed_scale = clampf(anim.get_animation(want).length / 0.75, 1.0, 3.0)
@@ -1399,6 +1554,7 @@ func hear(pos: Vector3, radius: float) -> void:
 		return
 	if radius >= 25.0 and multiplayer.is_server() and global_position.distance_to(pos) < 130.0:
 		AT.heard_shot(self, pos)
+		AS.heat_note(self, null, pos)
 		# a gunshot: the muzzle flash shows exactly where he is (a silencer keeps it small)
 		for p in mission.players():
 			if not p.dead and p.global_position.distance_to(pos) < 2.0 and _los(pos + Vector3(0, 1.2, 0)):
@@ -1413,6 +1569,20 @@ func hear(pos: Vector3, radius: float) -> void:
 	# do not walk straight at the sound: stop short and look from cover
 	_go(_snap(pos + (global_position - pos).normalized() * rng.randf_range(4.0, 9.0)))
 
+## A civilian screamed near by (0.64): in a terror it goes to look; otherwise like a noise.
+var _civ_cd := 0.0
+var _civ_t := 0.0
+var _civ_tgt: Node = null
+func hear_cry(pos: Vector3) -> void:
+	if dead or state == S.COMBAT or state == S.DRAG or AM.off():
+		return
+	if state == S.LURK or state == S.SEARCH or (state == S.INVESTIGATE and _arrived()):
+		alert = true
+		last_seen = pos
+		state = S.INVESTIGATE
+		lurking = false
+		_go(_snap(pos + (global_position - pos).normalized() * rng.randf_range(3.0, 7.0)))
+
 ## The director hides this one somewhere particular (the barn after the radio lure).
 func lurk_at(pos: Vector3) -> void:
 	if dead or state == S.COMBAT or state == S.DRAG:
@@ -1423,16 +1593,18 @@ func lurk_at(pos: Vector3) -> void:
 	_go(_snap(pos + Vector3(1.5, 0, 1.0)))
 
 ## The director sends this one to creep up on a mercenary.
-func stalk(p: Node) -> void:
+## (0.64: @a at = where the aliens believe he is; left out = where he really is - the old director)
+func stalk(p: Node, at := Vector3.INF) -> void:
 	if dead or state == S.COMBAT or state == S.DRAG:
 		return
+	var pos: Vector3 = p.global_position if at == Vector3.INF else at
 	target = p
-	last_seen = p.global_position
+	last_seen = pos
 	state = S.STALK
 	lurking = false
-	var away: Vector3 = global_position - p.global_position
+	var away: Vector3 = global_position - pos
 	away.y = 0
-	_go(_snap(p.global_position + away.normalized() * rng.randf_range(12.0, 17.0)))
+	_go(_snap(pos + away.normalized() * rng.randf_range(12.0, 17.0)))
 
 ## Damage after armour and the race's weaknesses (the mission says what kind of hit it is).
 ## The Levit's anti-gravity organ (the soft lower half that holds it up): a hit there tears it.
@@ -1576,6 +1748,8 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 	if race == "myslodej" and got >= 25.0 and hp > 0.0:
 		_psi_break()
 	var shooter_known := by != null and by.has_method("is_player")
+	if shooter_known and multiplayer.is_server():
+		AD.style_hit(mission, by, global_position.distance_to(by.global_position), got)
 	if shooter_known:
 		# it knows where that came from - and so do the others nearby
 		_hurt_by[String(by.name)] = mission.t
@@ -1598,6 +1772,7 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 		_drop_gun()
 		_drop_pack()
 		AT.comrade_down(self, by)
+		AS.leader_down(self)
 		if by and by.has_method("is_player"):
 			_credit.rpc_id(by.get_multiplayer_authority(), by.name)
 			_warn_squad(by, 30.0)     # one of theirs falls: the rest come for the killer
@@ -1919,7 +2094,8 @@ func _find_target() -> Node:
 				continue
 		if seen_now:
 			AT.saw(self, p)
-			var score := global_position.distance_to(p.global_position) + AT.target_bias(self, p)
+			AS.heat_note(self, p, p.global_position)
+			var score := global_position.distance_to(p.global_position) + AT.target_bias(self, p) - (3.0 if AM.style(self, p, "loner") else 0.0)
 			if p == nemesis:
 				score -= 25.0             # him first
 			# a lone mercenary is the preferred prey
@@ -1960,6 +2136,7 @@ func _husk_fx(down: bool) -> void:
 func _think(delta: float) -> void:
 	_think_dt = delta
 	AT.tick(self, delta)
+	AS.tick(self, delta)
 	if R.has("bite"):
 		_bite_tick(delta)
 	if R.has("mend"):
@@ -1999,9 +2176,12 @@ func _think(delta: float) -> void:
 		_nem_t -= delta
 		if _nem_t <= 0.0:
 			_nem_t = 15.0
-			_know(nemesis, 6.0)
-			if state != S.COMBAT and state != S.DRAG:
-				stalk(nemesis)
+			if not AM.off():
+				AM.nemesis_hunt(self)          # (0.64: only where they last had him)
+			else:
+				_know(nemesis, 6.0)
+				if state != S.COMBAT and state != S.DRAG:
+					stalk(nemesis)
 	var seen := _find_target()
 	if seen:
 		_seen_t = mission.t
@@ -2015,7 +2195,7 @@ func _think(delta: float) -> void:
 			phase = "shoot"
 			shots_left = _shots()
 			react = rng.randf_range(0.25, 0.5) * _react_k
-		elif phase == "flank" or phase == "hide":
+		elif (phase == "flank" or phase == "hide") and _role != "flank":
 			# came round the corner and there he is
 			if phase == "hide" and hide_t > 1.0:
 				pass
@@ -2025,6 +2205,8 @@ func _think(delta: float) -> void:
 				react = rng.randf_range(0.35, 0.7)
 	elif (state != S.COMBAT or phase == "hide" or phase == "flank") and _try_drag():
 		return
+	if seen == null and state != S.COMBAT and state != S.DRAG and AM.civ_tick(self, delta):
+		return          # (0.64: a terror - it shoots the people it sees)
 	match state:
 		S.LURK:
 			wait -= delta
@@ -2134,7 +2316,7 @@ func _combat(delta: float, seen: Node) -> void:
 					_after_burst()
 				return
 			var dist := global_position.distance_to(seen.global_position)
-			if tac != "brute" and react < 0.3 and ((dist < 9.0 and (_habit(seen, "shotgun") or _habit(seen, "magnum"))) or (dist < 6.0 and _habit(seen, "stun_baton"))):
+			if tac != "brute" and react < 0.3 and ((dist < 9.0 and (_habit(seen, "shotgun") or _habit(seen, "magnum") or AM.style(self, seen, "close"))) or (dist < 6.0 and _habit(seen, "stun_baton"))):
 				# it knows what he carries up close: no closer
 				_keep_away(seen.global_position)
 				phase = "move"
@@ -2152,7 +2334,7 @@ func _combat(delta: float, seen: Node) -> void:
 						_flank_rear(seen)
 						phase = "flank"
 						return
-				if has_nades and _nade_cd <= 0 and dist > 7.0 and dist < 26.0 and rng.randf() < (0.75 if _habit(seen, "pancir") else 0.4):
+				if has_nades and _nade_cd <= 0 and dist > 7.0 and dist < 26.0 and rng.randf() < (0.75 if _habit(seen, "pancir") or AM.style(self, seen, "dug_in") else 0.4):
 					_throw_nade(seen.global_position)
 				else:
 					_fire(seen)
@@ -2212,7 +2394,9 @@ func _combat(delta: float, seen: Node) -> void:
 		"flank":
 			lurking = false
 			_walk(walk_spd * 1.4 if tac != "grey" else run_spd * 0.85, delta)
-			if _arrived() and AT.rehide(self):
+			if _arrived() and AS.flank_wait(self):
+				pass                      # (round the side: hidden, waiting for the word)
+			elif _arrived() and AT.rehide(self):
 				pass
 			elif _arrived():
 				phase = "hide"
@@ -2398,6 +2582,8 @@ func _set_frenzy(on: bool) -> void:
 func _after_burst() -> void:
 	if AT.maybe_fall_back(self):
 		return
+	if AS.after_burst(self):
+		return
 	if _can_grab() and rng.randf() < 0.5:
 		_tlog("grab start")
 		phase = "grab"
@@ -2424,6 +2610,11 @@ func _after_burst() -> void:
 ## Done hiding: where next.
 func _next_move() -> void:
 	if AT.maybe_fall_back(self):
+		return
+	if AS.next_move(self):
+		return
+	if not AM.off():
+		AM.choose_move(self)        # (0.64: the options weighed, alien_mind.gd; below the old order)
 		return
 	var dist := global_position.distance_to(last_seen)
 	phase = "flank"
@@ -2660,6 +2851,8 @@ func _know(p: Node, secs: float) -> void:
 	known[k] = maxf(float(known.get(k, 0.0)), mission.t + secs)
 	sus[k] = 1.0
 	AT.saw(self, p)
+	if p != nemesis or not AM.off():
+		AS.heat_note(self, p, p.global_position)
 
 func _knows(p: Node) -> bool:
 	return float(known.get(String(p.name), -1.0)) > mission.t
@@ -3338,6 +3531,8 @@ func _go_lurk(move_far: bool) -> void:
 		if move_far and (d < 6.0 or d > 30.0):
 			continue
 		var score := d if not move_far else rng.randf_range(0.0, 10.0)
+		if move_far:
+			score -= minf(AS.heat_at(mission, c, 10.0), 10.0) * 0.6    # (0.63: about where they have been seen)
 		for p in mission.players():
 			if p.global_position.distance_to(c) < 15.0:
 				score += 30.0
@@ -3478,7 +3673,7 @@ func _fire(p: Node) -> void:
 		miss *= 1.8           # the Kolos with its sensor eye shot out
 	if Game.veteran(): miss *= 0.8
 	elif Game.easy(): miss *= 1.4
-	miss *= _aim_k
+	miss *= _aim_k * AM.miss_tune()
 	if _rally_t > 0: miss *= 0.75
 	if p.crouching: miss *= 1.25
 	var pv := Vector3(p.velocity.x, 0, p.velocity.z)
@@ -3525,7 +3720,7 @@ func _plasma(from: Vector3, dir: Vector3, power := 1.0, kind := "plasma", quiet 
 	# the big ones (and the drones) fire the heavy plasma, ten takes so it never repeats
 	if kind == "rocket":
 		Game.play_at(mission, "missile_launch", from, 2)
-	elif not quiet and R.get("laser", false) and kind == "plasma": Game.play_at(mission, "laser", from, -1)    # the Levit's laser rifle
+	elif not quiet and R.get("laser", false) and kind == "plasma": Game.play_at(mission, "laser", from, -1)    # (0.62) the rank-and-file Greys and Levits: lasers, plasma only for their officers
 	elif not quiet: Game.play_at(mission, ("plasma_cannon" if power >= 1.9 else "plasma_heavy" if power >= 1.3 else "plasma") if kind == "plasma" else ("acid_spit" if kind == "acid" else "lunge"), from, -2 + (power - 1.0) * 2.0)
 	var bolt := Node3D.new()
 	bolt.set_script(BoltScript)
@@ -3690,6 +3885,8 @@ func _psi_break() -> void:
 func blast_near(_at: Vector3) -> void:
 	pass
 
+const SPOOK_TIME := 0.45       # s: the Mysloděj's start before it fades out (its Spook, at SPOOK_SPEED)
+const SPOOK_SPEED := 1.8
 ## Mysloděj: hit, it is simply somewhere else - out of sight, a few dozen metres away.
 var _tele_cd := 0.0
 func _teleport_away(from: Vector3) -> bool:
@@ -3728,8 +3925,17 @@ func _teleport_fx(from: Vector3, to: Vector3) -> void:
 			var gap: AnimationPlayer = ghost.find_child("AnimationPlayer", true, false)
 			if gap and gap.has_animation("vanish"):
 				gap.get_animation("vanish").loop_mode = Animation.LOOP_NONE
-				gap.play("vanish")
-				get_tree().create_timer(gap.get_animation("vanish").length).timeout.connect(ghost.queue_free)
+				var lead := 0.0
+				if gap.has_animation("spook"):
+					# 0.62: the jolt of Ari's Spook first (fast), then it fades out (Vanish)
+					lead = minf(gap.get_animation("spook").length, SPOOK_TIME * SPOOK_SPEED)
+					gap.play("spook", 0.0, SPOOK_SPEED)
+					get_tree().create_timer(lead / SPOOK_SPEED).timeout.connect(func():
+						if is_instance_valid(gap):
+							gap.play("vanish", 0.15))
+				else:
+					gap.play("vanish")
+				get_tree().create_timer(lead / SPOOK_SPEED + gap.get_animation("vanish").length).timeout.connect(ghost.queue_free)
 			else:
 				ghost.queue_free()
 	for at in [from, to]:

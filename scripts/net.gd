@@ -21,6 +21,13 @@ func _ready() -> void:
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected)
 	multiplayer.connection_failed.connect(func(): connection_failed.emit("Nepodařilo se připojit."))
+	# (0.61) only the same version of the game plays together: the players say their versions
+	# before anything else goes over the line (see _auth)
+	var sm := multiplayer as SceneMultiplayer
+	sm.auth_callback = _auth
+	sm.auth_timeout = 8.0
+	sm.peer_authenticating.connect(_on_authenticating)
+	sm.peer_authentication_failed.connect(_on_auth_failed)
 	multiplayer.server_disconnected.connect(_on_server_gone)
 	add_child(preload("res://scripts/lobby_voice.gd").new())
 	var tm := Timer.new()
@@ -53,6 +60,64 @@ func _patient(peer: ENetMultiplayerPeer, id: int) -> void:
 	var p := peer.get_peer(id)
 	if p:
 		p.set_timeout(64, 30000, 90000)
+
+## The version check (0.61). Different versions of the game do not understand each other's
+## messages (the calls are numbered by the scripts, the synced values listed by them): with
+## a mismatch the host got thousands of broken packets and games fell. So before a peer counts as
+## connected (no call, no sync yet), both say "EB <version>" and go on only if it is the same.
+## An older host or client that does not know this says nothing: the wait runs out and the
+## connection is closed with a word on why.
+func _ver() -> String:
+	return Game.cmd_arg("fakever", Game.VERSION_NUM) if Game.autotest() != "" else Game.VERSION_NUM     # (the test plays an other version)
+
+func _on_authenticating(id: int) -> void:
+	(multiplayer as SceneMultiplayer).send_auth(id, ("EB " + _ver()).to_utf8_buffer())
+
+func _auth(id: int, data: PackedByteArray) -> void:
+	var sm := multiplayer as SceneMultiplayer
+	var said := data.get_string_from_utf8()
+	var theirs := said.substr(3) if said.begins_with("EB ") else "?"
+	if theirs == _ver():
+		sm.complete_auth(id)
+		return
+	if multiplayer.is_server():
+		_ver_refused[id] = true
+		note.emit("Hráč s jinou verzí hry (%s) se nemohl připojit - ty máš %s." % [theirs, _ver()])
+		if Game.autotest() != "": print("[NET] refused version %s (mine %s)" % [theirs, _ver()])
+		# (a moment for it to read our version and say why itself)
+		get_tree().create_timer(1.5).timeout.connect(func():
+			if sm.get_authenticating_peers().has(id):
+				sm.disconnect_peer(id))
+	else:
+		_version_why = "Hostitel má jinou verzi hry (%s), ty máš %s. Spolu hrát jde jen se stejnou verzí - aktualizujte hru oba na nejnovější." % [theirs, _ver()]
+		_version_fail.call_deferred()
+
+var _version_why := ""
+var _ver_refused := {}       # host: peers already told off for their version (one note is enough)
+func _on_auth_failed(id: int) -> void:
+	if multiplayer.is_server():
+		if _ver_refused.erase(id):
+			return
+		note.emit("Hráč se nepřipojil: nejspíš má starší verzi hry (ty máš %s)." % _ver())
+		if Game.autotest() != "": print("[NET] peer %d gave no version (mine %s)" % [id, _ver()])
+		return
+	if _version_why == "":
+		_version_why = "Hostitel neodpověděl na kontrolu verze - nejspíš má starší verzi hry (ty máš %s). Spolu hrát jde jen se stejnou verzí - aktualizujte hru oba na nejnovější." % _ver()
+	_version_fail.call_deferred()
+
+func _version_fail() -> void:
+	if _version_why == "":
+		return
+	var why := _version_why
+	_version_why = ""
+	if Game.autotest() != "": print("[NET] version refused: %s" % why)
+	close()
+	var sc := get_tree().current_scene
+	if sc == null or sc.name == "Main":
+		connection_failed.emit(why)
+	else:
+		drop_reason = why
+		back_to_menu()
 
 func is_online() -> bool:
 	return not (multiplayer.multiplayer_peer is OfflineMultiplayerPeer)
@@ -201,7 +266,7 @@ func _start(s: int, diff := "normal", params := {}, ff := true) -> void:
 	if real and not Game.skirmish and Game.autotest() == "":
 		Game.mission_out(true)      # (0.57) until the mission's end: a crash on the way counts as missing
 	mission_started.emit()
-	get_tree().change_scene_to_file("res://scenes/Mission.tscn")
+	Game.load_scene("res://scenes/Mission.tscn")
 
 ## Host: everybody into the air fight (pilots fly, the rest watch from the host's wing).
 func start_intercept(params: Dictionary) -> void:
@@ -211,7 +276,7 @@ func start_intercept(params: Dictionary) -> void:
 @rpc("authority", "call_local", "reliable")
 func _start_intercept(params: Dictionary) -> void:
 	mission_params = params
-	get_tree().change_scene_to_file("res://scenes/Intercept.tscn")
+	Game.load_scene("res://scenes/Intercept.tscn")
 
 ## Host: everybody into the escort fight (the transport was jumped on the way).
 func start_escort(params: Dictionary) -> void:
@@ -221,14 +286,14 @@ func start_escort(params: Dictionary) -> void:
 @rpc("authority", "call_local", "reliable")
 func _start_escort(params: Dictionary) -> void:
 	mission_params = params
-	get_tree().change_scene_to_file("res://scenes/Escort.tscn")
+	Game.load_scene("res://scenes/Escort.tscn")
 
 ## A co-op client: down into the base alone (own copy, offline branch) while the host is on the globe.
 func start_local_base(params: Dictionary) -> void:
 	mission_params = params.duplicate()
 	mission_params["local"] = true
 	mission_seed = randi() % 100000
-	get_tree().change_scene_to_file("res://scenes/Mission.tscn")
+	Game.load_scene("res://scenes/Mission.tscn")
 
 func back_to_menu() -> void:
 	get_tree().change_scene_to_file("res://scenes/Main.tscn")
@@ -243,11 +308,13 @@ func after_mission() -> void:
 	if campaign and multiplayer.is_server() and Campaign.active:
 		if not is_online():
 			close()
-		get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+		Game.load_scene("res://scenes/Geoscape.tscn")
 	elif is_online() and not multiplayer.is_server():
 		get_tree().change_scene_to_file("res://scenes/Main.tscn")
 	else:
 		close()
+		if Game.autotest() == "":
+			Game.open_screen = "quick"      # 0.66: back to the quick mission screen, one level up (not the main menu)
 		get_tree().change_scene_to_file("res://scenes/Main.tscn")
 
 # ---- team economy: personal money, gifts, buying for the host's base -----------------------
@@ -448,7 +515,7 @@ func _rtt(id: int) -> int:
 	if not (p is ENetMultiplayerPeer):
 		return -1
 	var pp := (p as ENetMultiplayerPeer).get_peer(id)
-	if pp == null:
+	if pp == null or not pp.is_active():     # (just disconnected)
 		return -1
 	return int(pp.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME))
 

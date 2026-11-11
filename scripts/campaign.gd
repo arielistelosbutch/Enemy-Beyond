@@ -170,7 +170,7 @@ const AUTOPSY_BONUS := {"levit": "pitva_levit", "ohar": "pitva_ohar", "jestetan"
 
 ## The archive: what the mercenaries have learned about each kind (own texts).
 const RACE_INFO := {
-	"grey": ["Šedivák", "VOJENSKÁ DATABÁZE - NEZNÁMÉ ENTITY\nKrycí označení: ŠEDIVÁK. Klasifikace: mimozemská biologická jednotka. Stupeň ohrožení: KRITICKÝ. Status: nepřátelský - předvoj invazních sil.\n\nPOPIS HROZBY: První potvrzené jednotky mimozemského původu na území Země. Skutečné záměry neznámé; zpravodajské analýzy naznačují průzkumný předvoj rozsáhlé invaze, jejímž cílem je podrobení planety a zotročení lidí.\n\nFYZIOLOGIE A VÝBAVA: Mimořádná inteligence a rychlé vyhodnocování situací. Tělo je křehké, svalstvo nedostatečně vyvinuté - nahrazuje je biomechanická kombinéza, která několikanásobně zesiluje svaly i nervové reakce: nepřirozená rychlost, obratnost a reflexy. Hrudník chrání plát z neidentifikované slitiny.\n\nTAKTICKÉ HODNOCENÍ: Silné stránky - extrémní rychlost, inteligence, nadlidské reflexy, pokročilá technologie. Slabiny - křehká anatomie, závislost na kombinéze. Doporučení: vyřadit biomechanickou podporu (těžce zraněnému kombinéza vypoví - zpomalí a hůř míří). Vyhnout se boji na krátkou vzdálenost.\n\nZ BOJE: Plazmová pistole. Do očí se nestřílí: obejde tě a pálí do zad. Diskolly mu hlásí, kde stojíš. Padlé vojáky odtahuje do tmy.\n\n\"Pokud jsou tyto bytosti skutečně jen průzkumníci, nechceme vědět, co přijde po nich.\" - Velitelství pozemních obranných sil, utajovaná zpráva"],
+	"grey": ["Šedivák", "VOJENSKÁ DATABÁZE - NEZNÁMÉ ENTITY\nKrycí označení: ŠEDIVÁK. Klasifikace: mimozemská biologická jednotka. Stupeň ohrožení: KRITICKÝ. Status: nepřátelský - předvoj invazních sil.\n\nPOPIS HROZBY: První potvrzené jednotky mimozemského původu na území Země. Skutečné záměry neznámé; zpravodajské analýzy naznačují průzkumný předvoj rozsáhlé invaze, jejímž cílem je podrobení planety a zotročení lidí.\n\nFYZIOLOGIE A VÝBAVA: Mimořádná inteligence a rychlé vyhodnocování situací. Tělo je křehké, svalstvo nedostatečně vyvinuté - nahrazuje je biomechanická kombinéza, která několikanásobně zesiluje svaly i nervové reakce: nepřirozená rychlost, obratnost a reflexy. Hrudník chrání plát z neidentifikované slitiny.\n\nTAKTICKÉ HODNOCENÍ: Silné stránky - extrémní rychlost, inteligence, nadlidské reflexy, pokročilá technologie. Slabiny - křehká anatomie, závislost na kombinéze. Doporučení: vyřadit biomechanickou podporu (těžce zraněnému kombinéza vypoví - zpomalí a hůř míří). Vyhnout se boji na krátkou vzdálenost.\n\nZ BOJE: Laserová pistole (plazmu nosí jen velitel). Do očí se nestřílí: obejde tě a pálí do zad. Diskolly mu hlásí, kde stojíš. Padlé vojáky odtahuje do tmy.\n\n\"Pokud jsou tyto bytosti skutečně jen průzkumníci, nechceme vědět, co přijde po nich.\" - Velitelství pozemních obranných sil, utajovaná zpráva"],
 	"grey_velitel": ["Šedivák velitel", "VOJENSKÁ DATABÁZE - NEZNÁMÉ ENTITY\nKrycí označení: ŠEDIVÁK VELITEL. Klasifikace: mimozemská velitelská biologická jednotka. Stupeň ohrožení: KRITICKÝ+. Status: nepřátelský - velitelský článek invazních sil.\n\nPOPIS HROZBY: Vyšší vývojový nebo hodnostní stupeň Šediváků - taktický koordinátor, polní velitel a psionický operátor. Řídí pohyb podřízených, určuje cíle útoku a vyhodnocuje slabiny obrany. Pokud se běžní Šediváci jeví jako průzkumníci, Velitelé představují mozek celé operace.\n\nFYZIOLOGIE A VÝBAVA: Vyšší mentální kapacita, chladná inteligence, vypočítavost a schopnost manipulace. Tělo křehké jako u ostatních; velitelská kombinéza je robustnější, rychlejší a napojená i na nervový systém. Červená barva obleku označuje hodnost a vyšší energetickou kapacitu. Hrudník chrání zesílený plát z neidentifikované slitiny. Psionická čelenka zesiluje mentální schopnosti: narušuje vnímání, oslabuje morálku, možná přímo ovlivňuje nervovou soustavu.\n\nTAKTICKÉ HODNOCENÍ: Silné stránky - inteligence, velení, psionické útoky, extrémní rychlost, nadlidské reflexy. Slabiny - křehká anatomie, závislost na kombinéze a čelence, vysoká hodnota cíle: po jeho vyřazení podřízené jednotky ztrácejí koordinaci (hůř míří, nikdo je nežene vpřed). Doporučení: prioritní eliminace. Těžce zraněnému vypoví kombinéza i s čelenkou - zpomalí a psionika utichne. Vyhnout se přímému vizuálnímu kontaktu a boji zblízka bez psychické ochrany.\n\nZ BOJE: Vidí-li tě kterýkoli vetřelec, může ti vnutit paniku - nebo ti vnutí, že tvůj kamarád je jeden z nich. Když se ti obraz zbarví do fialova, nevěř ničemu, co vidíš. Živý zajatec je pro výzkum velká kořist.\n\n\"Běžný Šedivák je lovec. Šedivák Velitel je mysl, která lov řídí. Kde se objeví on, tam invaze nezačíná - tam už běží podle plánu.\" - Velitelství pozemních obranných sil, utajovaná zpráva"],
 	"diskoll": ["Diskoll", "VOJENSKÁ DATABÁZE - NEZNÁMÉ ENTITY\nKrycí označení: DISKOLL. Klasifikace: mimozemská autonomní průzkumná jednotka. Stupeň ohrožení: VYSOKÝ. Status: nepřátelský - robotický zvěd invazních sil.\n\nPOPIS HROZBY: Pokročilá průzkumná jednotka, která doprovází Šediváky. Přes malé rozměry má mimořádně výkonné senzory: identifikuje cíle na velkou vzdálenost a okamžitě předává jejich přesnou polohu. Často ji přímo ovládá Šedivák Velitel, data ale dokáže rozeslat každé jednotce s kompatibilním přijímačem. Zásadní prvek jejich bojové koordinace.\n\nFYZIOLOGIE A VÝBAVA: Plně mechanická jednotka diskovitého tvaru, velikostí srovnatelná s pozemskými drony. Pohon umožňuje vysokou rychlost, prudké změny směru a stabilní vznášení bez viditelných pohyblivých částí. Centrální optický senzor identifikuje a sleduje cíle, komunikační anténa přenáší taktická data. Výzbroj: dvojice předních plazmových blasterů se zelenými projektily. Vnitřní systémy jsou mimořádně citlivé na energetické poškození.\n\nTAKTICKÉ HODNOCENÍ: Silné stránky - rychlost, okamžitá identifikace nepřítele, přesné zaměřování, přenos taktických informací, plazmová výzbroj, manévrovatelnost. Slabiny - nízká odolnost proti energetickým útokům (plazma a výbuchy ho trhají na kusy, kulky odráží), omezené pancéřování, zranitelná komunikace: když padne, Šediváci v okolí na chvíli ztratí obraz o bojišti. Doporučení: prioritně narušit komunikaci a vyřadit senzory; pokud to jde, zajistit nepoškozený exemplář.\n\nZ BOJE: Koho zaměří (zelený paprsek a pípnutí), o tom vědí všichni Šediváci v okolí. Nedá se omráčit.\n\n\"Největším nebezpečím Diskollu nejsou jeho zbraně. Je to skutečnost, že jakmile vás spatří, ví o vás celá nepřátelská armáda. Získání jediného funkčního exempláře by nám mohlo konečně odhalit, jak spolu ty zatracené věci komunikují.\" - Velitelství pozemních obranných sil, utajovaná zpráva"],
 	"levit_velitel": ["Levit Mírotvůrce", "VOJENSKÁ DATABÁZE - NEZNÁMÉ ENTITY\nKrycí označení: LEVIT MÍROTVŮRCE. Klasifikace: Mimozemská biologicky modifikovaná velitelská jednotka. Stupeň ohrožení: EXTRÉMNÍ. Status: Nepřátelský - velitel teroristických jednotek invazních sil.\n\nPOPIS HROZBY: Levit Mírotvůrce představuje výrazně pokročilejší a nebezpečnější variantu standardních Levitů. Tato groteskně modifikovaná bytost zastává funkci velitele mimozemských teroristických jednotek, jejichž hlavním úkolem je šíření strachu, likvidace odporu a systematické zastrašování lidské populace.\nNa rozdíl od běžných Levitů vykazuje Mírotvůrce známky samostatného taktického uvažování, schopnosti vyhodnocovat nebezpečí a omezeného pudu sebezáchovy. Není proto neobvyklé, že se při vážném poškození stáhne z boje, aby se následně vrátil v částečně regenerovaném stavu.\nJeho přítomnost má navíc zásadní vliv na ostatní Levity. Dosud neobjasněným biologickým nebo neurologickým mechanismem dokáže stimulovat jejich agresivitu, potlačovat zbytky sebezáchovných instinktů a přivádět je do stavu nekontrolovatelného vražedného běsnění.\n\nFYZIOLOGIE A VÝBAVA: Tělo Mírotvůrce vykazuje známky rozsáhlých chirurgických zásahů, genetických úprav a implantace pokročilých biomechanických systémů. Obličej je násilně deformován kovovými háky a fixačními implantáty, zatímco vnitřní orgány jsou propojeny soustavou hadic, energetických vodičů a podpůrných zařízení.\nSpodní část těla tvoří mohutný zesílený antigravitační orgán, obklopený množstvím organických chapadel. Na rozdíl od běžných Levitů je tento orgán stabilizován dodatečnými mechanickými systémy a vyzařuje intenzivní fialovou záři.\nNejvýznamnější biologickou odlišností je schopnost částečné regenerace. Poškozené tkáně se dokážou postupně obnovovat, pokud má jednotka dostatek času a není vystavena dalším útokům. Regenerace pravděpodobně využívá energetické rezervy uložené v antigravitačním orgánu.\nJeho tělesná konstrukce je výrazně odolnější než u standardních Levitů a snese značné poškození.\nHlavní výzbroj tvoří těžká plazmová puška, schopná vypouštět vysoce energetické fialové projektily. Zbraň představuje vážné nebezpečí pro pěchotu i lehce obrněné cíle.\n\nTAKTICKÉ HODNOCENÍ:\n- Silné stránky: Vysoká odolnost, částečná regenerace, schopnost letu, taktická inteligence, těžká plazmová výzbroj, zesilování agresivity spojeneckých Levitů, psychologické zastrašování.\n- Slabiny: Regenerace vyžaduje čas, závislost na podpůrných biomechanických systémech, pravděpodobná zranitelnost energetických rozvodů a antigravitačního orgánu.\n- Doporučený postup: Absolutní priorita při střetu se skupinou Levitů. Eliminovat Mírotvůrce před zahájením boje s ostatními jednotkami. Nedovolit mu stáhnout se a regenerovat. Soustředit palbu na podpůrné systémy a antigravitační orgán. Vyhnout se dlouhotrvajícím střetům.\n\nZÁVĚREČNÉ UPOZORNĚNÍ: \"Mysleli jsme, že už jsme viděli všechno. Pak přišla ta větší věc. Fialová, obalená hadicemi, s obličejem roztrhaným železem. Ostatní Leviti začali vydávat příšerné zvuky a vrhli se na nás jako vzteklá zvířata. Ale ten velký jen visel ve vzduchu a díval se. Přísahám, že nás pozoroval. Když jsme ho konečně zasáhli, ustoupil. O deset minut později se vrátil. Rány, které jsme mu způsobili, byly pryč. Bože, co to s nimi udělali?\" - Poslední zaznamenané hlášení velitele 4. obranné čety, utajovaná zpráva Velitelství pozemních obranných sil"],
@@ -283,6 +283,28 @@ func is_land(lat: float, lon: float) -> bool:
 	var x := int((lon + 180.0) / 360.0 * img.get_width()) % img.get_width()
 	var y := clampi(int((90.0 - lat) / 180.0 * img.get_height()), 0, img.get_height() - 1)
 	return img.get_pixel(x, y).r > 0.5
+
+## The nearest land to (lat, lon), searched in rings 0,5° apart; at the same distance the way
+## `heading` points (degrees, 0 = north, as the flights fly) wins. Within the band where the missions
+## are (not the poles). Returns Vector2(lat, lon); the place itself if it is land already.
+func nearest_land(lat: float, lon: float, heading := 0.0) -> Vector2:
+	lat = clampf(lat, -58.0, 72.0)
+	if is_land(lat, lon):
+		return Vector2(lat, lon)
+	for ring in range(1, 160):
+		var r := ring * 0.5
+		var steps := clampi(ring * 6, 12, 180)
+		for k in steps:
+			# 0, +1, -1, +2, -2 … steps away from the heading
+			var j := int((k + 1) / 2.0) * (1 if k % 2 == 1 else -1)
+			var a := deg_to_rad(heading) + TAU * float(j) / float(steps)
+			var la := lat + cos(a) * r
+			if la < -58.0 or la > 72.0:
+				continue
+			var lo := fposmod(lon + sin(a) * r / maxf(0.2, cos(deg_to_rad(la))) + 180.0, 360.0) - 180.0
+			if is_land(la, lo):
+				return Vector2(la, lo)
+	return Vector2(BASE_LAT, BASE_LON)
 
 # ---- save / load ----------------------------------------------------------------------------------
 func has_save() -> bool:
@@ -428,15 +450,60 @@ func date_text() -> String:
 	var h := fmod(float(data["day"]) * 24.0, 24.0)
 	return "%d. %s %d  %02d:%02d UTC" % [dd + 1, months[m % 12], year, int(h), int(fmod(h, 1.0) * 60)]
 
+## (0.70) The wall of the fallen in the velín: who did not come back - name, flag, the day, where, how.
+## The host writes it at the end of a campaign mission (mission._end), the base draws it (base_gen._memorial).
+func add_fallen(list: Array) -> void:
+	if list.is_empty():
+		return
+	var day := date_text().split("  ")[0]
+	var all: Array = data.get_or_add("fallen", [])
+	for f in list:
+		var e: Dictionary = f.duplicate()
+		e["d"] = day
+		all.append(e)
+
 func utc_hours() -> float:
 	return fmod(float(data["day"]) * 24.0, 24.0)
 
 func local_hour(lon: float) -> float:
 	return fposmod(utc_hours() + lon / 15.0, 24.0)
 
-func is_night(lon: float) -> bool:
-	var h := local_hour(lon)
-	return h < 6.5 or h > 18.0
+## (0.62, Ari: "na misi je noc, ale svítí jako slunce, a obráceně") Den a noc podle skutečné výšky
+## slunce nad místem mise - stejně jako stín na glóbu (geoscape: slunce nad SUN_LAT). Dřív se den
+## a noc počítaly jen z hodiny (bez zeměpisné šířky): v listopadu v Evropě byla na glóbu v 17:00 tma
+## a na misi plné slunce, na jižní polokouli v 19:00 na glóbu světlo a na misi noc.
+const SUN_LAT := -18.0       # November: the sun stands over 18 degrees south
+const SUN_NIGHT := -6.0      # below this the mission is night (the globe is dark there too)
+const SUN_DAY := 10.0        # above this full daylight; in between dawn or dusk
+
+## The sun as seen from (lat, lon): Vector2(elevation, azimuth) in degrees (azimuth 0 north, 90 east).
+func sun_at(lat: float, lon: float) -> Vector2:
+	var sl := deg_to_rad(SUN_LAT)
+	var so := deg_to_rad(-(utc_hours() - 12.0) * 15.0)
+	var s := Vector3(cos(sl) * sin(so), sin(sl), cos(sl) * cos(so))
+	var la := deg_to_rad(lat)
+	var lo := deg_to_rad(lon)
+	var up := Vector3(cos(la) * sin(lo), sin(la), cos(la) * cos(lo))
+	var east := Vector3(cos(lo), 0.0, -sin(lo))
+	var north := Vector3(-sin(la) * sin(lo), cos(la), -sin(la) * cos(lo))
+	var el := rad_to_deg(asin(clampf(s.dot(up), -1.0, 1.0)))
+	var az := fposmod(rad_to_deg(atan2(s.dot(east), s.dot(north))), 360.0)
+	return Vector2(el, az)
+
+## "noc", "svitani", "den" or "soumrak" from the sun's height (and the hour: morning or evening).
+static func phase_of(elev: float, hour: float) -> String:
+	if elev < SUN_NIGHT:
+		return "noc"
+	if elev < SUN_DAY:
+		return "svitani" if hour < 12.0 else "soumrak"
+	return "den"
+
+func day_phase(lon: float, lat := BASE_LAT) -> String:
+	return phase_of(sun_at(lat, lon).x, local_hour(lon))
+
+## For the scenes that only know day or night (interception, escort): the sun below the horizon.
+func is_night(lon: float, lat := BASE_LAT) -> bool:
+	return sun_at(lat, lon).x < 0.0
 
 ## Moves time forward (days). Returns true if something happened that should
 ## stop the clock (new mission, research done, monthly report).
@@ -510,12 +577,11 @@ func advance(days: float) -> bool:
 		if float(f["until"]) < float(data["day"]):
 			data["flights"].erase(f)
 			if rng.randf() < 0.5 and is_land(float(f["lat"]), float(f["lon"])):
-				var m := generate_mission()
+				var m := generate_mission(Vector2(float(f["lat"]), float(f["lon"])))
 				m["type"] = "landed"
-				m["lat"] = f["lat"]; m["lon"] = f["lon"]
-				m["place"] = nearest_place(float(f["lat"]), float(f["lon"]))
 				m["reward"] = MTYPES["landed"]["reward"]
 				m["extra_aliens"] = UFO_ALIENS[f["kind"]] + 1
+				m["crew_of"] = f["kind"]           # (0.63: the crew is the ship's - mission.SHIP_CREW)
 				if String(f["kind"]) in ["supply", "battleship", "harvester"]:
 					m["ufo"] = f["kind"]           # it lands as what flew
 					m["size"] = UFO_SIZES[f["kind"]]
@@ -692,6 +758,7 @@ func _strike_tick(days: float) -> bool:
 				m["size"] = UFO_SIZES["battleship"]
 				m["ufo"] = "battleship"
 				m["extra_aliens"] = UFO_ALIENS["battleship"]
+				m["crew_of"] = "battleship"
 				m["reward"] = MTYPES["crash"]["reward"] + 1100
 				m["expires"] = float(data["day"]) + 1.0
 				data["missions"].append(m)
@@ -987,7 +1054,7 @@ func _repair_jet(days: float) -> void:
 
 func intercept_params(f: Dictionary) -> Dictionary:
 	return {"intercept": true, "id": f["id"], "ufo": f["kind"], "lat": f["lat"], "lon": f["lon"],
-		"hawks": hawks(), "gun": jet_gun(), "heavy": jet_heavy(), "night": is_night(float(f["lon"])), "jet_armor": built("pancir_letadel"),
+		"hawks": hawks(), "gun": jet_gun(), "heavy": jet_heavy(), "night": is_night(float(f["lon"]), float(f["lat"])), "jet_armor": built("pancir_letadel"),
 		"plasma_mags": int(data["armory"].get("plasma_cell", 0))}
 
 ## The fighters' plasma guns burn the base's PL-MAG-01 magazines (from the armory).
@@ -1019,25 +1086,24 @@ func intercept_done(id: int, outcome: String, kind: String, jet_hp: float, lost 
 			c["lon"] = lon
 	match outcome:
 		"crashed":
-			# where it fell: the nearest land along its path
-			for i in 40:
-				if is_land(lat, lon):
-					break
-				lat += rng.randf_range(-1.5, 1.5)
-				lon += rng.randf_range(-1.5, 1.5)
-			var m := generate_mission()
+			# where it fell: we have no missions at sea - a ship hit over the water limps on to the
+			# nearest shore (the way it flew first) and comes down there
+			var at := nearest_land(lat, lon, float(f.get("heading", 0.0)))
+			var at_sea := not is_land(lat, lon)
+			lat = at.x; lon = at.y
+			var m := generate_mission(at)
 			m["type"] = "crash"
-			m["lat"] = lat; m["lon"] = lon
-			m["place"] = nearest_place(lat, lon)
-			m["terrain"] = terrain_at(lat, lon)
 			m["size"] = UFO_SIZES[kind]
 			m["ufo"] = kind            # the wreck is the ship you shot down
 			m["extra_aliens"] = UFO_ALIENS[kind]
+			m["crew_of"] = kind
 			m["reward"] = MTYPES["crash"]["reward"] + {"scout": 0, "raider": 200, "harvester": 450, "supply": 800, "battleship": 1100}[kind]
 			m["expires"] = float(data["day"]) + 1.0
 			data["missions"].append(m)
 			data["trust"] = clampi(int(data["trust"]) + 3, 0, 100)
 			txt = "%s sestřelen nad oblastí %s. Trosky s posádkou čekají na pozemní tým." % [UFO_NAMES[kind], m["place"]]
+			if at_sea:
+				txt = "Zasažené UFO (%s) se nad mořem dotáhlo k pevnině a zřítilo se v oblasti %s. Trosky s posádkou čekají na pozemní tým." % [UFO_NAMES[kind], m["place"]]
 		"destroyed":
 			data["credits"] = int(data["credits"]) + 150
 			data["trust"] = clampi(int(data["trust"]) + 2, 0, 100)
@@ -1074,10 +1140,11 @@ func intercept_done(id: int, outcome: String, kind: String, jet_hp: float, lost 
 	return txt
 
 # ---- missions ---------------------------------------------------------------------------------------
-func generate_mission() -> Dictionary:
+## `at` (lat, lon): where it has to be (a crashed or landed UFO); otherwise a random place on land.
+func generate_mission(at := Vector2.INF) -> Dictionary:
 	var lat := 0.0
 	var lon := 0.0
-	for tries in 200:
+	for tries in (0 if at != Vector2.INF else 200):
 		# more often closer to home (the radar network is European)
 		if rng.randf() < 0.55:
 			lat = BASE_LAT + rng.randf_range(-14, 14)
@@ -1087,6 +1154,8 @@ func generate_mission() -> Dictionary:
 			lon = rng.randf_range(-180, 180)
 		if is_land(lat, lon):
 			break
+	if at != Vector2.INF:
+		lat = at.x; lon = at.y
 	var types := ["crash", "crash", "landed", "abduction", "terror", "rescue", "sabotage"]
 	if float(data["day"]) < 4.0:
 		types = ["crash", "crash", "landed", "abduction", "rescue"]
@@ -1173,6 +1242,42 @@ func _learn_habits(kits: Dictionary) -> void:
 				h[who][it] = float(h[who].get(it, 0.0)) + 1.0
 	data["habits"] = h
 
+## (0.64, the AI plan step 5) How each man fights, as the aliens lived it (ai_director.style_out):
+## {merc name: [far | close | dug_in | loner]}. Forgotten slowly; known after about two missions.
+## Never shown to the players (hardcore). Also the losses per mission, per difficulty (for the
+## autotune to aim at: tools/autotune.sh).
+func learn_styles(styles: Dictionary, lost := 0, men := 1) -> void:
+	var h: Dictionary = data.get("styles", {})
+	for who in h:
+		for tg in h[who]:
+			h[who][tg] = float(h[who][tg]) * 0.7
+	for who in styles:
+		if not h.has(who):
+			h[who] = {}
+		for tg in styles[who]:
+			h[who][tg] = float(h[who].get(tg, 0.0)) + 1.0
+	data["styles"] = h
+	var stt: Dictionary = data.get("ai_stats", {})
+	var d := difficulty()
+	var e: Dictionary = stt.get(d, {"missions": 0, "men": 0, "lost": 0})
+	e["missions"] = int(e["missions"]) + 1
+	e["men"] = int(e["men"]) + men
+	e["lost"] = int(e["lost"]) + lost
+	stt[d] = e
+	data["ai_stats"] = stt
+
+func known_styles() -> Dictionary:
+	var out := {}
+	var h: Dictionary = data.get("styles", {})
+	for who in h:
+		var l := []
+		for tg in h[who]:
+			if float(h[who][tg]) >= 1.5:
+				l.append(tg)
+		if not l.is_empty():
+			out[who] = l
+	return out
+
 ## Who carries what so often that the aliens have learned it: {merc name: [items]}.
 func known_habits() -> Dictionary:
 	var out := {}
@@ -1237,8 +1342,12 @@ func nearest_place(lat: float, lon: float) -> String:
 ## Parameters handed to the mission scene (and to every client).
 func mission_params(m: Dictionary) -> Dictionary:
 	var p := m.duplicate()
-	p["night"] = is_night(float(m["lon"]))
+	p["night"] = is_night(float(m["lon"]), float(m.get("lat", BASE_LAT)))
 	p["hour"] = local_hour(float(m["lon"]))
+	# (0.62) the sun over the place itself: the mission's light matches the globe
+	var sun := sun_at(float(m.get("lat", BASE_LAT)), float(m["lon"]))
+	p["sun"] = sun.x
+	p["sun_az"] = sun.y
 	p["type_name"] = MTYPES[m["type"]]["name"]
 	p["stash"] = stash()
 	p["allot"] = allot()
@@ -1251,6 +1360,8 @@ func mission_params(m: Dictionary) -> Dictionary:
 	p["transport"] = transport()
 	p["late"] = int(data.get("month", 0)) >= 3
 	p["habits"] = known_habits()
+	p["styles"] = known_styles()
+	p["fallen"] = (data.get("fallen", []) as Array).duplicate(true)
 	if String(m.get("type", "")) == "base":
 		# the defence happens inside our own base
 		p["base"] = data["base"].duplicate(true)

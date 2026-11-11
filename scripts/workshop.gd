@@ -990,7 +990,7 @@ static func ag_models() -> Array:
 ## The race's own model is Ari's afk one in the game (alien._afk_model): show that one.
 static func ag_afk(key: String, race_id: String) -> bool:
 	return AlienScript.RACES.has(race_id) and String(AlienScript.RACES[race_id]["model"]) == key \
-		and AlienScript.AFK_MODELS.has(race_id) and ResourceLoader.exists("res://animace/afk_%s.glb" % race_id)
+		and AlienScript.afk_path(race_id) != ""
 
 ## The new model's file in Ari's folder (the rigged one first), "" when there is none.
 static func ag_file(key: String) -> String:
