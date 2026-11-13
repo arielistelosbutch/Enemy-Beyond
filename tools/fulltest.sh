@@ -28,6 +28,7 @@ run pass_town   200 h "passcheck .* 0 blocked"             --autotest=passcheck 
 run pass_giant  300 h "passcheck .* 0 blocked"             --autotest=passcheck --mtype=landed --ufo=battleship --size=huge --biome=farm
 run pass_wreck  300 h "passcheck .* 0 blocked"             --autotest=passcheck --mtype=crash --ufo=supply --size=huge --biome=farm
 run air_giant   200 x "AIR-air\] end outcome"            --autotest=air --ufo=battleship
+run airfx       200 x "RESULT airfx lead true hit_a true cracks [1-9] hit_b false .* crash true over true" --autotest=airfx
 for sd in 1 2 3; do
 run pass_ind_$sd  200 h "passcheck .* 0 blocked"           --autotest=passcheck --mtype=sabotage --biome=industrial --seed=$sd
 run pass_town_$sd 200 h "passcheck .* 0 blocked"           --autotest=passcheck --mtype=terror --biome=town --seed=$sd
@@ -40,10 +41,13 @@ run presets     200 x "\[PRESET\] first false list true merc true levels true di
 run sights      700 x "scope mode=scope on=true"          --autotest=sightshot --day=1
 run menu_flick  200 x "RESULT menuflicker 0"               --autotest=menuflicker
 run geo_ui      300 x "\[UI\] geo_ency_grey: 0"            --autotest=uigeo
+run geo_models  120 x "RESULT geomodels ships 5 crafts 3 models 8"   --autotest=geomodels
+run base_pick   120 x "RESULT basepick picking true frozen true bloc na place Texas credits 1200->1500 near [1-9][0-9]/40 running true"   --autotest=basepick
 run mission_ui  250 x "\[UI\] m_result: 0"                 --autotest=uimission
 run solo        250 h "RESULT"                             --autotest=solo
 run campaign    300 h "back on globe"                             --autotest=campaign
 run drone       420 x "first fall: downed false" --autotest=dronetest
+run drone_real  300 h "t16 downed false" --autotest=dronereal --race=grey
 run voice       200 h "RESULT voice: snippets \[1\]"       --autotest=voice
 run voicedsp    120 h "RESULT voicedsp ok"                 --autotest=voicedsp
 run basewalk    400 x "RESULT basewalk 16"                 --autotest=basewalk
@@ -132,6 +136,7 @@ run civanim     150 h "RESULT civanim [0-9]+ civilians afk idle,walk,run,lurk co
 run civdeath    150 h "RESULT civdeath 10 deaths bad 0" --autotest=civdeath --mtype=terror
 # 0.66 Facelift I: the drone's radar in solo, the transport after a mission, the people of the base, the loading screen
 run radar       150 h "RESULT radar solo true scanner true kit_scanner false kit_radio false" --autotest=radartest --mtype=crash --biome=farm --day=1
+run rampcheck   200 h "RESULT rampcheck shut true open true" --autotest=rampcheck --prep=1
 run transport   150 h "RESULT transport closed true"     --autotest=transport --mtype=crash --biome=farm --day=1
 run uifit       150 x "RESULT uifit bad 0"               --autotest=uifit --mtype=crash --biome=farm --day=1
 run npcbase     150 h "RESULT npc moved [1-9]"           --autotest=npcshot --shots=0 --wait=25

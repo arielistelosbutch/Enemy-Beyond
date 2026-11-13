@@ -108,6 +108,33 @@ var others := {}                # peer -> {node, pos, prev, vel, down}
 var _sync_t := 0.0
 var _ufo_goal := Vector3.ZERO
 var _shots := 0
+# ---- (0.7x, Ari) air combat extras: lead mark, decoys, damage, free look, lock cue, orders, crash fly-over
+const DECOYS := 3
+var decoys := DECOYS
+var decoys_live := []           # {node, vel, life, pid} - on every machine (rpc)
+var _decoy_cd := 0.0
+var _lead_node: Node3D = null    # what the lead mark is computed for
+var _lead_prev := Vector3.ZERO
+var _lead_vel := Vector3.ZERO
+var _cracks := []               # canopy cracks: [Vector2 0..1 on screen, seed, size]
+var _hp_seen := -1.0
+var _smoke_cd := 0.0
+var others_hp := {}             # peer -> hull 0..1 (for their smoke)
+var _look_hold := false         # middle mouse held: look round, the jet flies on
+var _look := Vector2.ZERO       # yaw, pitch of the look
+var _threat := 0.0              # 0..1 the quiet "you are in its sights" cue
+var _threat_at := Vector3.ZERO
+var _threat_ping := -99.0
+var _orders := {}               # peer -> {cmd, until}
+var wing_order := {}            # last order to the wingmen: {cmd, pid, tgt, until}
+var _order_cd := 0.0
+const ORDERS := {"attack": "Útoč na můj cíl!", "cover": "Kryj mě!", "form": "Drž formaci!"}
+const ORDER_TAGS := {"attack": "ÚTOČÍ", "cover": "KRYJ HO", "form": "FORMACE"}
+var _crash_v := Vector3.ZERO
+var _crash_at := Vector3.ZERO   # where the hit UFO came down (ZERO = still falling)
+var _crash_t := 0.0
+var _orbit := 0.0
+const CRASH_AFTER := 3.5        # seconds of the fly-over after the impact
 
 
 ## X-AIR-002/003: the laser pods hang under the wings (the machine gun inside, the cannon outside).
@@ -416,6 +443,11 @@ func _sky_follow() -> void:
 func _unhandled_input(e: InputEvent) -> void:
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_mouse += e.screen_relative
+	if e is InputEventMouseButton and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_MIDDLE:
+		_look_hold = e.pressed
+	# the fly-over of a downed UFO can be skipped
+	if outcome == "crashed" and end_t > 1.0 and (e is InputEventKey or e is InputEventMouseButton) and e.pressed:
+		end_t = 99.0
 
 func _say(s: String, secs := 3.0) -> void:
 	msg = s
@@ -435,9 +467,13 @@ func _physics_process(delta: float) -> void:
 	if outcome != "":
 		end_t += delta
 		_debris(delta)
-		_camera(delta)
+		_decoy_tick(delta)
+		if outcome == "crashed":
+			_crash_cam(delta)
+		else:
+			_camera(delta)
 		hud.queue_redraw()
-		if end_t > 4.0 and not Game.autotest() in ["air", "airhost", "airclient"]:
+		if _show_over() and not Game.autotest() in ["air", "airhost", "airclient", "airfx"]:
 			_finish()
 		return
 	if me_pilot and not down:
@@ -450,6 +486,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		ufo.global_position = ufo.global_position.lerp(_ufo_goal, clampf(delta * 10.0, 0, 1))
 	_projectiles(delta)
+	_air_extras(delta)
 	_camera(delta)
 	if multiplayer.is_server() or not net:
 		_judge()
@@ -458,6 +495,13 @@ func _physics_process(delta: float) -> void:
 # ---- the interceptor: mouse moves a virtual stick, the jet follows ------------------------
 func _fly(delta: float) -> void:
 	var sens := 0.0025 * Game.mouse_sens
+	if _look_hold:
+		# look round with the mouse; the stick stays where it was
+		_look += _mouse * sens * 1.2 * Vector2(-1, -1 if not Game.invert_y else 1)
+		_look = Vector2(clampf(_look.x, -PI * 0.95, PI * 0.95), clampf(_look.y, -0.7, 0.9))
+		_mouse = Vector2.ZERO
+	else:
+		_look = _look.lerp(Vector2.ZERO, clampf(delta * 4.0, 0, 1))
 	aim += _mouse * sens * Vector2(1, -1 if not Game.invert_y else 1)
 	_mouse = Vector2.ZERO
 	aim = aim.limit_length(1.0)
@@ -467,6 +511,7 @@ func _fly(delta: float) -> void:
 	var boost := Input.is_action_pressed("sprint")
 	var target_speed := 50.0 + throttle * 60.0 + (40.0 if boost else 0.0) + (25.0 if hawk else 0.0)
 	var agile := 1.35 if hawk else 1.0       # the gravity drive: sharper turns
+	agile *= lerpf(1.0, 0.7, _hurt_k())     # (0.7x) a shot-up jet answers the stick slower
 	speed = minf(lerp(speed, target_speed, delta * 0.8), speed_cap)
 	var roll_in := Input.get_axis("move_left", "move_right")
 	# A/D tap: hard break - throw the jet sideways and snap-roll (cooldown 1 s)
@@ -488,6 +533,11 @@ func _fly(delta: float) -> void:
 	var roll := atan2(bx.x.y, bx.y.y)
 	if absf(snap_roll) < 0.05:
 		jet.rotate_object_local(Vector3.FORWARD, roll * delta * 1.2 * (1.0 - abs(roll_in) * 0.7))
+	# (0.7x) and shakes: torn skin, a rough engine
+	var hk := _hurt_k()
+	if hk > 0.0 and jet != null:
+		jet.rotate_object_local(Vector3.RIGHT, (sin(t * 7.3) + randf_range(-0.6, 0.6)) * 0.22 * hk * delta)
+		jet.rotate_object_local(Vector3.UP, (sin(t * 5.1 + 1.0) + randf_range(-0.6, 0.6)) * 0.16 * hk * delta)
 	jet.global_position += (-jet.global_transform.basis.z * speed + slide) * delta
 	jet.global_position.y = clamp(jet.global_position.y, 620.0, 1800.0)
 
@@ -496,24 +546,36 @@ func _break(side: float) -> void:
 		return
 	break_cd = 1.0
 	slide += jet.global_transform.basis.x * side * 70.0
-	snap_roll = -side * TAU * 0.5
+	snap_roll = -side * TAU          # a full roll: the jet comes back level by itself (the camera does not roll)
 	Game.play_ui(self, "lunge", -8)
 
+## (0.7x, Ari) The camera stays level: rolls, A/D breaks and banking turn only the jet, the view
+## keeps the horizon flat (it used to roll with the jet - too much for the eyes). Behind and a bit
+## above the jet along its heading; going straight up/down it keeps the last good "up".
+var _cam_up := Vector3.UP
 func _camera(delta: float) -> void:
 	if down and net:
 		for pid in others:
 			if not others[pid]["down"]:
 				jet = others[pid]["node"]
 				break
-	var b := jet.global_transform.basis
-	var want := jet.global_position + b.z * 22.0 + b.y * 6.0
+	var fwd := -jet.global_transform.basis.z
+	# "up" for the view: the world up with the part along the heading taken out
+	var up := Vector3.UP - fwd * fwd.dot(Vector3.UP)
+	if up.length() > 0.15:
+		_cam_up = _cam_up.slerp(up.normalized(), clampf(delta * 4.0, 0, 1)).normalized()
+	var back := -fwd * 22.0 + _cam_up * 6.0
+	if _look.length() > 0.002:
+		# (0.7x) free look (middle mouse): the camera swings round the jet
+		var right := fwd.cross(_cam_up).normalized()
+		back = back.rotated(_cam_up, _look.x)
+		back = back.rotated(right.rotated(_cam_up, _look.x), _look.y)
+	var want := jet.global_position + back
 	if outcome == "shot_down":
 		want = jet.global_position + Vector3(30, 20, 30)
 	cam.global_position = cam.global_position.lerp(want, clamp(delta * 6.0, 0, 1))
-	var look := jet.global_position - b.z * 40.0
-	if Input.is_action_pressed("aim") and outcome == "":
-		look = ufo.global_position      # look at the target while holding RMB? no: RMB fires missiles
-	cam.look_at(look, b.y)
+	# (RMB only fires missiles now - it no longer swings the view onto the target)
+	cam.look_at(jet.global_position + fwd * 40.0 * (1.0 - clampf(_look.length() / 0.6, 0.0, 1.0)), _cam_up)
 
 # ---- weapons: cannon (LMB, precise) and missiles (R / middle: lock first) ------------------
 func _weapons(delta: float) -> void:
@@ -861,7 +923,7 @@ func _ufo_ai(delta: float) -> void:
 			ufo_fire_cd = randf_range(1.4, 2.2) / sqrt(float(k["guns"])) * (1.6 if kind == "scout" else 1.0)
 			# precise lead on the jet's real motion - a break with A/D is how you make it miss
 			var jv: Vector3 = tg["vel"]
-			var lead := tpos + jv * (d / 300.0)
+			var lead := _decoy_aim(tpos + jv * (d / 300.0), tpos)
 			var dir := (lead - ufo.global_position).normalized()
 			dir = (dir + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.012).normalized()
 			if net:
@@ -1057,10 +1119,7 @@ func _end(o: String) -> void:
 
 func _debris(delta: float) -> void:
 	if outcome == "crashed":
-		ufo.global_position += Vector3(ufo_dir.x * 30, -40, ufo_dir.z * 30) * delta
-		ufo.rotate_z(delta * 0.8)
-		if randf() < delta * 15:
-			_puff(ufo.global_position)
+		_crash_fall(delta)
 
 var _finished := false
 func _finish() -> void:
@@ -1086,6 +1145,327 @@ func _finish() -> void:
 		Net.last_result = Campaign.intercept_done(int(params.get("id", -1)), outcome, kind, jet_hp)
 	Game.load_scene("res://scenes/Geoscape.tscn")
 
+# ---- (0.7x) air combat extras ---------------------------------------------------------------
+func _hp_max() -> float:
+	return 160.0 if hawk else 100.0
+
+## 0 healthy .. 1 nearly down: from 60 % hull down the jet smokes, from 40 % it handles worse.
+func _hurt_k() -> float:
+	if down or not me_pilot or jet == null:
+		return 0.0
+	return clampf((0.4 - jet_hp / _hp_max()) / 0.4, 0.0, 1.0)
+
+func _air_extras(delta: float) -> void:
+	_decoy_cd -= delta
+	_order_cd -= delta
+	if me_pilot and not down and outcome == "":
+		if Input.is_action_just_pressed("swap"):
+			_drop_decoy()
+		var keys := ["primary", "secondary", "belt1"]
+		for i in 3:
+			if Input.is_action_just_pressed(keys[i]):
+				give_order(["attack", "cover", "form"][i])
+	_decoy_tick(delta)
+	_lead_tick(delta)
+	_damage_fx(delta)
+	_threat_tick(delta)
+	for pid in _orders.keys():
+		if float(_orders[pid]["until"]) < t:
+			_orders.erase(pid)
+
+# -- decoys (Q): a burning flare the UFO gunners take for the jet ---------------------------------
+func _drop_decoy() -> void:
+	if _decoy_cd > 0.0:
+		return
+	if decoys <= 0:
+		_say("Návnady došly.", 1.2)
+		Game.play_ui(self, "empty", -8)
+		return
+	_decoy_cd = 0.6
+	decoys -= 1
+	var b := jet.global_transform.basis
+	var pos := jet.global_position + b.z * 6.0 - b.y * 1.2
+	var vel := -b.z * speed * 0.45 + Vector3(0, -10, 0)
+	if net:
+		_decoy_fx.rpc(pos, vel, Net.my_id())
+	else:
+		_decoy_fx(pos, vel, Net.my_id())
+
+@rpc("any_peer", "call_local", "reliable")
+func _decoy_fx(pos: Vector3, vel: Vector3, pid: int) -> void:
+	for side in [-1.0, 1.0]:
+		var n := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.8
+		sm.height = 1.6
+		sm.radial_segments = 8
+		sm.rings = 4
+		n.mesh = sm
+		n.material_override = Game.color_mat(Color(1.0, 0.92, 0.7), true)
+		var l := OmniLight3D.new()
+		l.light_color = Color(1.0, 0.75, 0.4)
+		l.light_energy = 8.0
+		l.omni_range = 40.0
+		n.add_child(l)
+		add_child(n)
+		var sv: Vector3 = vel + (vel.cross(Vector3.UP).normalized() if vel.length() > 1.0 else Vector3.RIGHT) * side * 14.0
+		n.global_position = pos
+		decoys_live.append({"node": n, "light": l, "vel": sv, "life": 3.2, "pid": pid})
+	Game.play_ui(self, "flare_strike", -6 if pid == Net.my_id() else -14)
+
+func _decoy_tick(delta: float) -> void:
+	for d in decoys_live.duplicate():
+		var n: Node3D = d["node"]
+		d["life"] = float(d["life"]) - delta
+		d["vel"] = (d["vel"] as Vector3) * (1.0 - delta * 0.7) + Vector3(0, -6.0, 0) * delta
+		n.global_position += (d["vel"] as Vector3) * delta
+		(d["light"] as OmniLight3D).light_energy = 8.0 * clampf(float(d["life"]) / 1.5, 0.0, 1.0) * randf_range(0.7, 1.0)
+		if randf() < delta * 12.0:
+			_trail_puff(n.global_position, 0.5, Color(0.75, 0.75, 0.78))
+		if float(d["life"]) <= 0.0:
+			n.queue_free()
+			decoys_live.erase(d)
+	# shots already on their way bend after a burning decoy close by
+	for bo in bolts:
+		var bn: Node3D = bo["node"]
+		var near: Dictionary = {}
+		var bd := 260.0
+		for d in decoys_live:
+			var dd := (d["node"] as Node3D).global_position.distance_to(bn.global_position)
+			if dd < bd and float(d["life"]) > 0.6:
+				bd = dd
+				near = d
+		if not near.is_empty():
+			var v: Vector3 = bo["vel"]
+			var want := ((near["node"] as Node3D).global_position - bn.global_position).normalized() * v.length()
+			bo["vel"] = v.slerp(want, clampf(delta * 2.4, 0, 1))
+
+## Where a UFO gunner aims (p, the lead on the jet at jet_at): a fresh decoy close to that jet wins.
+func _decoy_aim(p: Vector3, jet_at: Vector3) -> Vector3:
+	for d in decoys_live:
+		var dn: Node3D = d["node"]
+		if float(d["life"]) > 1.2 and dn.global_position.distance_to(jet_at) < 220.0:
+			return dn.global_position + (d["vel"] as Vector3) * 0.6
+	return p
+
+# -- the lead mark: where to put the gun cross so the shells meet the target ---------------------
+var _lead_dir := Vector3.ZERO
+func _lead_tick(delta: float) -> void:
+	_lead_dir = Vector3.ZERO
+	if ufo == null or not is_instance_valid(ufo) or not ufo.visible or jet == null or delta <= 0.0:
+		return
+	var p := ufo.global_position
+	if _lead_node != ufo:
+		_lead_node = ufo
+		_lead_prev = p
+		_lead_vel = Vector3.ZERO
+		return
+	_lead_vel = _lead_vel.lerp((p - _lead_prev) / delta, clampf(delta * 6.0, 0, 1))
+	_lead_prev = p
+	var gs := float(GUN_INFO[gun]["speed"])
+	var jv := -jet.global_transform.basis.z * speed + slide
+	var rel := p - jet.global_position
+	var tt := rel.length() / gs
+	for i in 2:
+		tt = (rel + (_lead_vel - jv) * tt).length() / gs
+	_lead_dir = (rel + (_lead_vel - jv) * tt).normalized()
+
+# -- damage: smoke from the engine, a shaking stick, cracks over the canopy ---------------------
+func _damage_fx(delta: float) -> void:
+	if me_pilot and not down and jet != null:
+		if _hp_seen < 0.0:
+			_hp_seen = jet_hp
+		if jet_hp < _hp_seen - 0.5:
+			var frac := jet_hp / _hp_max()
+			if frac < 0.85 and _cracks.size() < 8:
+				var rng := RandomNumberGenerator.new()
+				rng.randomize()
+				# out of the middle (the gun cross stays clear)
+				var a := rng.randf() * TAU
+				var r := rng.randf_range(0.22, 0.46)
+				_cracks.append([Vector2(0.5 + cos(a) * r, 0.5 + sin(a) * r * 0.9), rng.randi(), rng.randf_range(40.0, 90.0) * (1.4 - frac)])
+			if net:
+				_jet_hp_fx.rpc(Net.my_id(), frac)
+		_hp_seen = jet_hp
+		_smoke_from(jet, jet_hp / _hp_max(), delta)
+	for pid in others_hp:
+		if others.has(pid) and not others[pid]["down"]:
+			_smoke_from(others[pid]["node"], float(others_hp[pid]), delta)
+
+@rpc("any_peer", "reliable")
+func _jet_hp_fx(pid: int, frac: float) -> void:
+	others_hp[pid] = frac
+
+var _smoke_cds := {}
+func _smoke_from(n: Node3D, frac: float, delta: float) -> void:
+	if frac >= 0.6 or n == null:
+		return
+	var key := n.get_instance_id()
+	var cd := float(_smoke_cds.get(key, 0.0)) - delta
+	if cd <= 0.0:
+		var sev := clampf((0.6 - frac) / 0.6, 0.0, 1.0)
+		cd = lerpf(0.22, 0.05, sev)
+		var b := n.global_transform.basis
+		_trail_puff(n.global_position + b.z * 4.5 + b.y * 0.3, lerpf(0.3, 0.6, sev), Color(0.45, 0.45, 0.47).lerp(Color(0.12, 0.12, 0.12), sev))
+		if frac < 0.25 and randf() < 0.35:
+			_trail_puff(n.global_position + b.z * 4.2, 0.45, Color(1.0, 0.5, 0.15), true)
+	_smoke_cds[key] = cd
+
+## A small puff left behind in the air (smoke trail, a decoy's smoke, a spark): see-through, it
+## swells and fades.
+func _trail_puff(p: Vector3, r: float, col: Color, glow := false) -> void:
+	var n := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = r
+	sm.height = r * 2.0
+	sm.radial_segments = 8
+	sm.rings = 4
+	n.mesh = sm
+	var m := StandardMaterial3D.new()
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED if glow else BaseMaterial3D.SHADING_MODE_PER_PIXEL
+	m.albedo_color = Color(col, 0.9 if glow else 0.55)
+	m.roughness = 1.0
+	n.material_override = m
+	add_child(n)
+	n.global_position = p
+	var life := 0.35 if glow else 1.3
+	var tw := create_tween()
+	tw.tween_property(n, "scale", Vector3.ONE * (1.5 if glow else 2.6), life)
+	tw.parallel().tween_property(m, "albedo_color:a", 0.0, life)
+	tw.tween_callback(n.queue_free)
+
+# -- the quiet cue: a UFO has you in its sights, or a shot is coming at you ----------------------
+func _threat_src() -> Vector3:
+	if not me_pilot or down or jet == null or outcome != "":
+		return Vector3.ZERO
+	var me := jet.global_position
+	for bo in bolts:
+		var bn: Node3D = bo["node"]
+		var to := me - bn.global_position
+		if to.length() < 450.0 and (bo["vel"] as Vector3).normalized().dot(to.normalized()) > 0.995:
+			return bn.global_position
+	if ufo != null and is_instance_valid(ufo) and ufo.visible and int(UFO_KINDS.get(kind, {}).get("guns", 0)) > 0:
+		var d := ufo.global_position.distance_to(me)
+		if d < 700.0:
+			for pid in others:
+				if not others[pid]["down"] and (others[pid]["node"] as Node3D).global_position.distance_to(ufo.global_position) < d:
+					return Vector3.ZERO
+			return ufo.global_position
+	return Vector3.ZERO
+
+func _threat_tick(delta: float) -> void:
+	var src := _threat_src()
+	if src != Vector3.ZERO:
+		if _threat < 0.05 and t - _threat_ping > 6.0:
+			_threat_ping = t
+			Game.play_ui(self, "radar_ping", -22)
+		_threat_at = src
+	_threat = move_toward(_threat, 1.0 if src != Vector3.ZERO else 0.0, delta * 2.5)
+
+# -- orders to the wing (1 attack my target, 2 cover me, 3 hold formation) ----------------------
+func _wing_count() -> int:
+	var n := 0
+	for pid in others:
+		if not others[pid]["down"]:
+			n += 1
+	return n
+
+func _order_target() -> int:
+	return -1
+
+func give_order(cmd: String) -> void:
+	if _order_cd > 0.0:
+		return
+	if _wing_count() == 0:
+		_say("Nikdo z křídla tě neslyší.", 1.2)
+		return
+	_order_cd = 1.5
+	if net:
+		_order.rpc(cmd, Net.my_id(), _order_target())
+	else:
+		_order(cmd, Net.my_id(), _order_target())
+
+@rpc("any_peer", "call_local", "reliable")
+func _order(cmd: String, pid: int, tgt: int) -> void:
+	_orders[pid] = {"cmd": cmd, "until": t + 6.0}
+	wing_order = {"cmd": cmd, "pid": pid, "tgt": tgt, "until": t + 25.0}
+	if pid == Net.my_id():
+		_say("Rádio: " + String(ORDERS[cmd]), 1.5)
+		Game.play_ui(self, "radio_click", -10)
+	else:
+		var who := String(others[pid]["name"]) if others.has(pid) else "Křídlo"
+		_say("%s: %s" % [who, ORDERS[cmd]], 3.0)
+		Game.play_ui(self, "radio_click", -6)
+
+# -- a downed UFO: it falls, hits the ground, the camera sweeps over the wreck ------------------
+func _show_over() -> bool:
+	if outcome == "crashed":
+		return end_t > 30.0 or (_crash_at != Vector3.ZERO and t - _crash_t > CRASH_AFTER)
+	return end_t > 4.0
+
+func _crash_fall(delta: float) -> void:
+	if _crash_at != Vector3.ZERO:
+		# the wreck smokes where it lies
+		if randf() < delta * 10.0:
+			_column_puff(_crash_at + Vector3(randf_range(-6, 6), 2.0, randf_range(-6, 6)))
+		return
+	if _crash_v == Vector3.ZERO:
+		_crash_v = ufo_vel if ufo_vel.length() > 1.0 else ufo_dir * 60.0
+	_crash_v.y = maxf(_crash_v.y - 55.0 * delta, -220.0)
+	_crash_v.x *= 1.0 - delta * 0.3
+	_crash_v.z *= 1.0 - delta * 0.3
+	ufo.global_position += _crash_v * delta
+	ufo.rotate_z(delta * 0.8)
+	if randf() < delta * 15:
+		_puff(ufo.global_position)
+	if ufo.global_position.y <= 6.0 or end_t > 25.0:
+		_crash_at = Vector3(ufo.global_position.x, 2.0, ufo.global_position.z)
+		_crash_t = t
+		ufo.global_position = _crash_at
+		ufo.rotation = Vector3(0.35, ufo.rotation.y, 0.2)
+		_flash(_crash_at + Vector3(0, 6, 0), _ufo_radius() * 3.0)
+		Game.play_ui(self, "explosion_big", -4)
+		print("[AIR] crash impact t=%.1f at %s" % [t, _crash_at.snapped(Vector3.ONE)])
+
+func _column_puff(p: Vector3) -> void:
+	var n := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 3.0
+	sm.height = 6.0
+	sm.radial_segments = 6
+	sm.rings = 3
+	n.mesh = sm
+	var m := StandardMaterial3D.new()
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_color = Color(0.16, 0.16, 0.17, 0.5)
+	m.roughness = 1.0
+	n.material_override = m
+	add_child(n)
+	n.global_position = p
+	var tw := create_tween()
+	tw.tween_property(n, "global_position", p + Vector3(randf_range(-8, 8), 70.0, randf_range(-8, 8)), 4.0)
+	tw.parallel().tween_property(n, "scale", Vector3.ONE * 4.0, 4.0)
+	tw.parallel().tween_property(m, "albedo_color:a", 0.0, 4.0).set_ease(Tween.EASE_IN)
+	tw.tween_callback(n.queue_free)
+
+## The camera after the kill: chases the falling UFO, then circles low over where it came down.
+func _crash_cam(delta: float) -> void:
+	var want: Vector3
+	var look: Vector3
+	if _crash_at == Vector3.ZERO:
+		var u := ufo.global_position
+		var hv := Vector3(_crash_v.x, 0, _crash_v.z)
+		var behind := -hv.normalized() if hv.length() > 1.0 else Vector3.BACK
+		want = u + behind * 90.0 + Vector3(0, 45, 0)
+		look = u
+	else:
+		_orbit += delta * 0.4
+		want = _crash_at + Vector3(cos(_orbit) * 170.0, 85.0, sin(_orbit) * 170.0)
+		look = _crash_at + Vector3(0, 8, 0)
+	cam.global_position = cam.global_position.lerp(want, clampf(delta * 2.5, 0, 1))
+	cam.look_at(look, Vector3.UP)
+
 # ---- HUD ----------------------------------------------------------------------------------------
 func _draw_hud() -> void:
 	var c := hud
@@ -1093,6 +1473,12 @@ func _draw_hud() -> void:
 	var mid := sz / 2
 	var f := ThemeDB.fallback_font
 	var green := Color(0.4, 1.0, 0.5, 0.9)
+	if outcome == "crashed":
+		# the fly-over over the wreck: only the message and how to skip it
+		if msg_t > 0:
+			_msg_plate(c, Vector2(mid.x, 66), msg, Color(1.0, 0.74, 0.32))
+		_msg_plate(c, Vector2(mid.x, sz.y - 20), "libovolná klávesa = pokračovat", Color(0.45, 0.78, 0.86), 8)
+		return
 	var txt := func(p: Vector2, s: String, col := green, size := 9):
 		c.draw_string_outline(f, p, s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, 3, Color(0, 0, 0, 0.7))
 		c.draw_string(f, p, s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
@@ -1103,6 +1489,7 @@ func _draw_hud() -> void:
 	c.draw_line(nose + Vector2(8, 0), nose + Vector2(12, 0), green)
 	c.draw_circle(mid + aim * 60.0, 2.0, Color(1, 1, 1, 0.6))
 	c.draw_arc(mid, 60, 0, TAU, 24, Color(1, 1, 1, 0.12), 1.0)
+	_draw_air_extras(c, sz, mid, green)
 	# target box
 	if ufo.visible and not cam.is_position_behind(ufo.global_position):
 		var up := cam.unproject_position(ufo.global_position)
@@ -1168,14 +1555,64 @@ func _draw_hud() -> void:
 		c.draw_rect(Rect2(mid.x - 60, mid.y + 40, 120 * charge, 6), Color(0.8, 0.4, 1.0) if heavy == "laser_cannon" else Color(0.4, 1.0, 0.5))
 	# the target and how to fly, top right
 	var k: Dictionary = UFO_KINDS[kind]
-	_hplate(c, Rect2(sz.x - 218, 4, 214, 62))
+	_hplate(c, Rect2(sz.x - 218, 4, 214, 86 if _wing_count() > 0 else 74))      # (no empty line without a wing)
 	txt.call(Vector2(sz.x - 210, 18), k["name"], amber, 9)
 	_hbar(c, Rect2(sz.x - 210, 24, 198, 7), ufo_hp / ufo_max, bad)
 	txt.call(Vector2(sz.x - 210, 44), "Myš řídí, A/D ostrý úhyb, W/S plyn, Shift forsáž", lab, 7)
 	txt.call(Vector2(sz.x - 210, 56), "L: %s   P: %s" % [{"cannon": "kanón", "laser": "laser", "plasma": "plazma"}[gun],
 		"raketa (po zaměření)" if heavy == "missiles" else "držet = nabít a vypálit"], lab, 7)
+	txt.call(Vector2(sz.x - 210, 68), "Q návnada (%d)   prostřední: rozhled" % decoys, lab, 7)
+	txt.call(Vector2(sz.x - 210, 80), "1 útoč na můj cíl  2 kryj mě  3 formace" if _wing_count() > 0 else "", lab, 7)
 	if msg_t > 0:
 		_msg_plate(c, Vector2(mid.x, 66), msg, amber)
+
+## (0.7x) The extras on the HUD: the lead mark, cracks in the canopy, the quiet lock cue, the
+## orders over the wingmen.
+func _draw_air_extras(c: Control, sz: Vector2, mid: Vector2, green: Color) -> void:
+	var f := ThemeDB.fallback_font
+	# lead: a small diamond where the gun cross has to be for the shells to meet the target
+	if _lead_dir != Vector3.ZERO and outcome == "" and not down and ufo != null and is_instance_valid(ufo) \
+			and jet.global_position.distance_to(ufo.global_position) < 1400.0:
+		var lp3 := jet.global_position + _lead_dir * 300.0
+		if not cam.is_position_behind(lp3):
+			var lp := cam.unproject_position(lp3)
+			var lc := Color(green, 0.75)
+			c.draw_polyline(PackedVector2Array([lp + Vector2(0, -5), lp + Vector2(5, 0), lp + Vector2(0, 5), lp + Vector2(-5, 0), lp + Vector2(0, -5)]), lc, 1.0)
+	# the canopy, cracked by hits
+	for cr in _cracks:
+		var cp := Vector2(float(cr[0].x) * sz.x, float(cr[0].y) * sz.y)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = int(cr[1])
+		var size := float(cr[2])
+		for k in rng.randi_range(5, 8):
+			var a := rng.randf() * TAU
+			var p := cp
+			for j in 3:
+				var nxt := p + Vector2(cos(a), sin(a)) * size * rng.randf_range(0.2, 0.45)
+				c.draw_line(p, nxt, Color(0, 0, 0, 0.25), 2.0)
+				c.draw_line(p, nxt, Color(0.92, 0.96, 1.0, 0.4), 1.0)
+				p = nxt
+				a += rng.randf_range(-0.5, 0.5)
+		c.draw_circle(cp, 2.0, Color(0.92, 0.96, 1.0, 0.35))
+	# the quiet cue: a thin amber arc on the side the threat is
+	if _threat > 0.02 and not down and outcome == "":
+		var lp: Vector3 = cam.global_transform.basis.inverse() * (_threat_at - cam.global_position)
+		var d2 := Vector2(lp.x, -lp.y)
+		if d2.length() > 0.001:
+			var ang := d2.angle()
+			var pulse := 0.5 + 0.5 * sin(t * 4.0)
+			var col := Color(1.0, 0.72, 0.3, (0.15 + 0.2 * pulse) * _threat)
+			c.draw_arc(mid, 150.0, ang - 0.2, ang + 0.2, 10, col, 2.0)
+			var tp := mid + Vector2(cos(ang), sin(ang)) * 164.0
+			c.draw_string(f, tp + Vector2(-16, 3), "hledáček", HORIZONTAL_ALIGNMENT_LEFT, -1, 7, col)
+	# orders over the wingmen who gave them
+	for pid in _orders:
+		if pid == Net.my_id() or not others.has(pid):
+			continue
+		var on: Node3D = others[pid]["node"]
+		if not cam.is_position_behind(on.global_position):
+			var op := cam.unproject_position(on.global_position)
+			c.draw_string(f, op + Vector2(7, 14), String(ORDER_TAGS[_orders[pid]["cmd"]]), HORIZONTAL_ALIGNMENT_LEFT, -1, 7, Color(0.5, 0.8, 1.0))
 
 ## A plate of the menus' dark metal behind a group of the HUD.
 func _hplate(c: Control, r: Rect2) -> void:
@@ -1202,6 +1639,9 @@ func _msg_plate(c: Control, centre: Vector2, s: String, col: Color, size := 10) 
 # ---- test ------------------------------------------------------------------------------------------
 var _shot_done := {}
 func _process(_d: float) -> void:
+	if Game.autotest() == "airfx":
+		_airfx_test()
+		return
 	if not Game.autotest() in ["air", "campair", "airhost", "airclient"]:
 		return
 	if down:
@@ -1234,3 +1674,83 @@ func _process(_d: float) -> void:
 	if Game.autotest() in ["air", "airhost", "airclient"] and ((outcome != "" and end_t > 2.0) or t > 100):
 		print("[AIR-%s] end outcome=%s ufo_hp=%.0f me_hp=%.0f others=%s" % [Game.autotest(), outcome, ufo_hp, jet_hp, others.keys()])
 		get_tree().quit()
+
+## (0.7x) --autotest=airfx: the new air combat bits one by one (lead, decoy vs. a shot, cracks and
+## smoke, the lock cue, free look, the crash fly-over).
+var _fx := {}
+func _airfx_test() -> void:
+	if outcome == "":
+		ufo_fire_cd = 999.0
+		aim = Vector2.ZERO
+		_mouse = Vector2.ZERO
+	var st := int(_fx.get("st", 0))
+	_fx["thr"] = maxf(float(_fx.get("thr", 0.0)), _threat)
+	match st:
+		0:
+			if t > 1.5:
+				ufo.global_position = jet.global_position - jet.global_transform.basis.z * 450.0 + jet.global_transform.basis.x * 60.0
+				jet_hp = 80.0
+				_fx["st"] = 1
+				_fx["t"] = t
+		1:
+			# a shot from ahead with a perfect lead, no decoy: it must hit
+			if t > float(_fx["t"]) + 1.0 and not _fx.has("a"):
+				_fx["a"] = jet_hp
+				var from := jet.global_position - jet.global_transform.basis.z * 520.0
+				var jv := -jet.global_transform.basis.z * speed
+				var aimp := jet.global_position + jv * (520.0 / (300.0 + speed))
+				_bolt(from, (aimp - from).normalized())
+			if _fx.has("a") and t > float(_fx["t"]) + 3.5:
+				_fx["hit_a"] = jet_hp < float(_fx["a"])
+				_fx["cracks"] = _cracks.size()
+				_fx["lead"] = _lead_dir != Vector3.ZERO
+				_fx["st"] = 2
+				_fx["t"] = t
+		2:
+			# the same shot after a decoy: the gunner takes the flare
+			if not _fx.has("b"):
+				_fx["b"] = jet_hp
+				_drop_decoy()
+			if t > float(_fx["t"]) + 0.8 and not _fx.has("fired_b"):
+				_fx["fired_b"] = true
+				var from := jet.global_position - jet.global_transform.basis.z * 520.0
+				var jv := -jet.global_transform.basis.z * speed
+				var aimp := _decoy_aim(jet.global_position + jv * (520.0 / (300.0 + speed)), jet.global_position)
+				_bolt(from, (aimp - from).normalized())
+			if t > float(_fx["t"]) + 4.0:
+				_fx["hit_b"] = jet_hp < float(_fx["b"])
+				_fx["decoys"] = decoys
+				_fx["st"] = 3
+				_fx["t"] = t
+				jet_hp = 25.0
+				_look_hold = true
+		3:
+			# hurt: smoke and a shaking stick; free look swings the camera round
+			if t < float(_fx["t"]) + 0.6:
+				_mouse = Vector2(60, 0)
+			if t > float(_fx["t"]) + 1.0 and not _fx.has("look"):
+				var to_jet := (jet.global_position - cam.global_position).normalized()
+				_fx["look"] = rad_to_deg(to_jet.angle_to(-jet.global_transform.basis.z))
+				_fx["hurt"] = _hurt_k()
+				_look_hold = false
+				get_viewport().get_texture().get_image().save_png("user://airfx_look.png")
+			if t > float(_fx["t"]) + 2.5:
+				var to_jet := (jet.global_position - cam.global_position).normalized()
+				_fx["back"] = rad_to_deg(to_jet.angle_to(-jet.global_transform.basis.z))
+				get_viewport().get_texture().get_image().save_png("user://airfx_hurt.png")
+				# down it goes: a crash, not a blast
+				recent.clear()
+				ufo_hp = 0.0
+				_fx["st"] = 4
+		4:
+			if outcome == "crashed" and _crash_at != Vector3.ZERO and not _fx.has("shot"):
+				_fx["shot"] = true
+				_fx["fall"] = t
+			if _fx.has("shot") and t > float(_fx["fall"]) + 1.5 and not _fx.has("pic"):
+				_fx["pic"] = true
+				get_viewport().get_texture().get_image().save_png("user://airfx_crash.png")
+			if outcome != "" and (_show_over() or end_t > 32.0):
+				print("RESULT airfx lead %s hit_a %s cracks %d hit_b %s decoys %d threat %.2f hurt %.2f look %.0f back %.0f crash %s over %s" % [
+					_fx.get("lead"), _fx.get("hit_a"), int(_fx.get("cracks", 0)), _fx.get("hit_b"), int(_fx.get("decoys", -1)), float(_fx["thr"]),
+					float(_fx.get("hurt", 0.0)), float(_fx.get("look", 0.0)), float(_fx.get("back", 0.0)), _crash_at != Vector3.ZERO, _show_over()])
+				get_tree().quit()

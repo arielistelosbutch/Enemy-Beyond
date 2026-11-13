@@ -134,11 +134,17 @@ func _process(delta: float) -> void:
 		"basepass": _passcheck(p)
 		"doorshot": _doorshot(p)
 		"blastdoor": _blastdoor(p)
+		"rampcheck": _rampcheck(p)
 		"passcheck": _passcheck(p)
 		"camoshot": _camoshot(p)
 		"lookshot": _lookshot(p)
 		"soundcheck": _soundcheck(p)
-		"dronetest": _dronetest(p)
+		"dronetest":
+			if Game.cmd_arg("shots", "") == "1":     # (0.70) the new model from close by
+				preload("res://scripts/autotest_drone.gd").run(self, p)
+			else:
+				_dronetest(p)
+		"dronereal": _dronereal(p)
 		"airdeath": _airdeath(p)
 		"vipcheck": _vipcheck(p)
 		"climb": _climb(p)
@@ -4971,6 +4977,28 @@ func _passcheck(p: Node) -> void:
 
 ## 0.60 blast doors of the base: E shuts one (it blocks a ray through the doorway), a grey at it
 ## pries it open in about BLAST_PRY s, a Bijec twice as fast; E by a dropped item still shuts it.
+## (0.7x) The transport's ramp: shut in the prep inside the ship, down once everyone is ready.
+## Run with --prep=1 (otherwise the autotest skips the prep). --tr=heli for the Čáp.
+func _rampcheck(p: Node) -> void:
+	var ship: Node = m()._ship_ramp()
+	if step == 0 and t > 0.5:
+		if ship == null:
+			out("RESULT rampcheck FAIL no ramp"); get_tree().quit(); return
+		var r: Node3D = ship.find_child("Ramp", true, false)
+		set_meta("shut", r.rotation.x)
+		out("ship %s ramp in prep %.2f rams %s" % [ship.get_meta("model", "?"), r.rotation.x, ship.find_child("RampRams", true, false).visible if ship.find_child("RampRams", true, false) else "-"])
+		step = 1
+	if step == 1:
+		_skip_brief()
+		if m().started():
+			step = 2
+			set_meta("t_open", t)
+	if step == 2 and t > float(get_meta("t_open")) + 2.5:
+		var r: Node3D = ship.find_child("Ramp", true, false)
+		var shut: float = get_meta("shut")
+		out("RESULT rampcheck shut %s open %s (%.2f -> %.2f)" % [absf(shut - Game.RAMP_SHUT) < 0.01, absf(r.rotation.x) < 0.01, shut, r.rotation.x])
+		get_tree().quit()
+
 func _blastdoor(p: Node) -> void:
 	_skip_brief()
 	if p == null or step > 0 or not m().go:
@@ -5305,3 +5333,50 @@ func _pockettest(p: Node) -> void:
 	out("RESULT pockettest %s" % ("ok" if not res.has(false) else "FAIL"))
 	get_tree().quit()
 
+
+## (0.68) The Strážce in a real fight: aliens move freely, the merc goes down near them.
+func _dronereal(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	m().hud.inventory_open = false
+	var race := Game.cmd_arg("race", "grey")
+	for a in m().aliens():
+		a.queue_free()
+	await get_tree().create_timer(0.3).timeout
+	var far: Vector3 = p.global_position
+	for wp in m().map.get("waypoints", []):
+		if (wp as Vector3).distance_to(m().map["evac"]) > far.distance_to(m().map["evac"]):
+			far = wp
+	p.global_position = far + Vector3(0, 0.2, 0)
+	await get_tree().create_timer(0.3).timeout
+	var placed := 0
+	for wp in m().map.get("waypoints", []):
+		var dd: float = (wp as Vector3).distance_to(p.global_position)
+		if dd > 10.0 and dd < 22.0 and placed < int(Game.cmd_arg("n", "3")):
+			m().spawn_alien(race, wp)
+			placed += 1
+	await get_tree().create_timer(0.5).timeout
+	for a in m().aliens():
+		a.hear(p.global_position, 80.0)
+	await get_tree().create_timer(5.0).timeout
+	var d: Node = m().guard_drone
+	out("drone %s aliens %d race %s t %.0f" % [d != null, m().aliens().size(), race, m().t])
+	if not p.downed:
+		p.hurt(999.0, p.global_position + Vector3(0, 1, 3))
+	for k in 45:
+		await get_tree().create_timer(2.0).timeout
+		var near := 1e9
+		var who := ""
+		for a in m().aliens():
+			if not a.dead:
+				var dd: float = a.global_position.distance_to(p.global_position)
+				if dd < near:
+					near = dd
+					who = "%s st%s drag%s" % [a.name, a.state, a.get("dragging") == p]
+		out("t%d downed %s dead %s bleed %.0f hp %.0f wait %s rt %.1f charge %d near %.1f %s fin %s" % [k * 2, p.downed, p.dead, p.bleed_left, p.hp, d._waiting, d._rescue_t, d.charge, near, who, m().finished])
+		if p.dead or m().finished:
+			break
+	out("RESULT dronereal")
+	get_tree().quit()

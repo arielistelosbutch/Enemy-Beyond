@@ -255,6 +255,7 @@ func _big_hangar(gx: int, params: Dictionary) -> void:
 	var model := "heli" if transport != "kondor" else "dropship"
 	var m: Node3D = Game.model(model)
 	root.add_child(m)
+	Game.ship_ramp(m, 0.0)          # (0.7x) parked: the rear shut
 	m.position = a + Vector3(w * 0.5, 0.0, dd * 0.47)
 	m.rotation.y = 0.0
 	# parked: the rotor blades folded along the body (as on a real carrier deck)
@@ -446,6 +447,7 @@ func _hangar_hall(a: Vector3, w: float, h: float, transport: String) -> void:
 	var model := "heli" if transport != "kondor" else "dropship"
 	var m: Node3D = Game.model(model)
 	root.add_child(m)
+	Game.ship_ramp(m, 0.0)          # (0.7x) parked: the rear shut
 	m.position = a + Vector3(w * 0.5, 0.0, w * 0.5)
 	m.rotation.y = PI * 0.25
 	var box_ := _aabb3(m)

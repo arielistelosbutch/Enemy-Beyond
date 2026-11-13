@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.68
+# Operace X - Enemy Beyond — prototyp 0.69
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,16 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.69
+- Novou kampaň začínám výběrem místa pro základnu na glóbu: devět bloků světa roku 1990 a každý dává jinou výhodu na začátek (Vysočina zůstává jako dřív).
+- Na glóbu létají malé 3D modely UFO i našich lodí místo obrázků. Velká UFO mají zavřený trup, žádné díly mapy pod nimi.
+- Souboj stíhaček: kamera drží rovinu, úhyb A/D je celý výkrut, kosočtverec ukazuje, kam mířit, Q vypustí návnady, prostřední tlačítko rozhlíží a 1/2/3 dávají rozkazy křídlu. Poškozený letoun hůř zatáčí, kouří a praská mu sklo a nenápadný signál ukáže, že mě má něco v hledáčku.
+- Čáp, Kondor a Pelikán mají rampu, která se za letu, v hangáru a v transportéru po misi zavírá.
+- Strážce má nový model se čtyřmi točícími se vrtulkami a v singlu mě v boji opravdu zvedne, i když jsou vetřelci kousek ode mě.
+- Kamera z očí se při chůzi a běhu pohupuje (v Nastavení se dá zeslabit nebo vypnout). Revolver už se při R s plným bubnem neprotáčí.
+- Stahování aktualizace ukazuje průběh v procentech a megabajtech a hra se při něm nesekne (projeví se od další verze).
+- Opravy v rozhraní: jmenovky lodí na glóbu, přehled lodí ve vzduchu ve Velínu a HUD stíhačky.
 
 ## Novinky 0.68
 - Strom talentů u vojáků (vedle úprav zbraní): čtyři větve po pěti stupních a vidím dopředu, co mě čeká. Rychlé přebíjení pušky je teď až talent a sprint vydrží aspoň 8 sekund.

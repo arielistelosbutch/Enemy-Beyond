@@ -48,6 +48,11 @@ func _ready() -> void:
 	add_child(bg)
 	_build_globe()
 	_build_side()
+	if Campaign.base_picking() and not Campaign.viewer:
+		if Game.autotest() != "" and Game.autotest() != "basepick":
+			Campaign.data["base_pick"] = false        # (the tests keep the base in the Vysočina, no bonus)
+		else:
+			_begin_pick()
 	Game.play_music("game_over" if Campaign.data.get("lost", false) else "geoscape")
 	_toast = Label.new()
 	_toast.position = Vector2(8, 334)
@@ -125,12 +130,19 @@ func _build_globe() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = BG
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR      # (the ships over the globe; the globe is unshaded)
+	env.ambient_light_color = Color(0.55, 0.6, 0.7)
+	env.ambient_light_energy = 0.7
 	var we := WorldEnvironment.new()
 	we.environment = env
 	vp.add_child(we)
 	cam = Camera3D.new()
 	cam.fov = 40
 	vp.add_child(cam)
+	var key := DirectionalLight3D.new()       # light from over the viewer's shoulder, so the ships read on the night side too
+	key.rotation = Vector3(deg_to_rad(-35), deg_to_rad(25), 0)
+	key.light_energy = 1.1
+	cam.add_child(key)
 	globe = MeshInstance3D.new()
 	var sm := SphereMesh.new()
 	sm.radius = 1.0
@@ -165,7 +177,7 @@ func _build_globe() -> void:
 	stars.multimesh = mm
 	vp.add_child(stars)
 	base_marker = _marker(Color(0.3, 0.8, 1.0), 0.03)
-	_place(base_marker, Campaign.BASE_LAT, Campaign.BASE_LON)
+	_place(base_marker, Campaign.base_lat(), Campaign.base_lon())
 
 func _marker(c: Color, size: float) -> Node3D:
 	var n := MeshInstance3D.new()
@@ -178,6 +190,128 @@ func _marker(c: Color, size: float) -> Node3D:
 	n.material_override = m
 	globe.add_child(n)
 	return n
+
+## A small 3D model of the ship flying over the globe (0.69: instead of the flat picture).
+## `size` = its longest side in globe units; `tint` = colour of the ring on the ground under it
+## (red = UFO, blue = ours). Falls back to the old picture if the model is missing.
+func _craft_marker(model: String, tint: Color, size: float) -> Node3D:
+	if not ResourceLoader.exists("res://assets/models/%s.glb" % model):
+		return _icon_marker(model, tint, size)
+	var holder := Node3D.new()
+	holder.set_meta("craft", true)
+	var m := Game.model(model)
+	Game.ship_ramp(m, 0.0)          # (in the air the back ramp is shut)
+	var box := _mesh_box(m, Transform3D.IDENTITY)
+	var k := size / maxf(0.001, maxf(box.size.x, box.size.z))
+	m.scale = Vector3.ONE * k
+	m.position = -Vector3(box.get_center().x, box.position.y, box.get_center().z) * k     # centred, sitting on its belly
+	m.name = "Model"
+	var spin := Node3D.new()
+	spin.name = "Spin"
+	holder.add_child(spin)
+	spin.add_child(m)
+	for n in m.find_children("*", "GeometryInstance3D", true, false):
+		(n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# rotors and propellers keep turning
+	var props := []
+	for nm in ["RotorF", "RotorR", "PropL", "PropR"]:
+		var r := m.find_child(nm, true, false)
+		if r:
+			props.append(r)
+	holder.set_meta("props", props)
+	holder.set_meta("round", model.begins_with("ufo_") and model != "ufo_harvester")
+	# the ring on the ground under it (blinks for UFOs, like the old marker)
+	var ring := MeshInstance3D.new()
+	ring.name = "Ring"
+	var tm := TorusMesh.new()
+	tm.inner_radius = size * 0.47
+	tm.outer_radius = size * 0.52
+	tm.rings = 24
+	tm.ring_segments = 4
+	ring.mesh = tm
+	ring.scale = Vector3(1, 0.05, 1)
+	var rm := StandardMaterial3D.new()
+	rm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	rm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	rm.albedo_color = Color(tint.r, tint.g, tint.b, 0.65)
+	ring.material_override = rm
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	holder.add_child(ring)
+	globe.add_child(holder)
+	return holder
+
+static func _mesh_box(n: Node, xf: Transform3D) -> AABB:
+	var t := xf
+	if n is Node3D:
+		t = xf * (n as Node3D).transform
+	var b := AABB()
+	var any := false
+	if n is MeshInstance3D and (n as MeshInstance3D).mesh:
+		b = t * (n as MeshInstance3D).mesh.get_aabb()
+		any = true
+	for c in n.get_children():
+		var cb := _mesh_box(c, t)
+		if cb.size != Vector3.ZERO:
+			b = cb if not any else b.merge(cb)
+			any = true
+	return b
+
+const FLY_ALT := 0.035        # how high the ships fly over the globe (globe radius 1)
+var _heading := {}            # marker id -> heading in degrees (from its motion on the globe)
+var _last_ll := {}
+
+## Puts a 3D ship over (lat, lon): belly to the ground, nose along its heading (degrees from
+## north towards east). The heading comes from how the marker moved; `hint` until it moves.
+func _place_craft(id: int, n: Node3D, lat: float, lon: float, hint := INF) -> void:
+	if not n.has_meta("craft"):
+		_place(n, lat, lon)
+		return
+	var hd: float = _heading.get(id, hint if hint != INF else 0.0)
+	if _last_ll.has(id):
+		var o: Vector2 = _last_ll[id]
+		var dn := lat - o.x
+		var de := wrapf(lon - o.y, -180.0, 180.0) * cos(deg_to_rad(lat))
+		if Vector2(dn, de).length() > 0.0005:
+			var want := rad_to_deg(atan2(de, dn))
+			var k := 1.0 if not _heading.has(id) else minf(1.0, get_process_delta_time() * 5.0)
+			hd = hd + wrapf(want - hd, -180.0, 180.0) * k
+	elif hint != INF:
+		hd = hint
+	_heading[id] = hd
+	_last_ll[id] = Vector2(lat, lon)
+	var up := latlon_to_local(lat, lon).normalized()
+	var north := (Vector3.UP - up * up.dot(Vector3.UP))
+	if north.length() < 0.01:
+		north = Vector3.FORWARD
+	north = north.normalized()
+	var east := north.cross(up).normalized()
+	var h := deg_to_rad(hd)
+	var fwd := (north * cos(h) + east * sin(h)).normalized()
+	var z := -fwd                            # the models fly nose first along -Z
+	var x := up.cross(z).normalized()
+	n.transform = Transform3D(Basis(x, up, z), up * (1.0 + FLY_ALT))
+	var ring: Node3D = n.get_node_or_null("Ring")
+	if ring:
+		ring.position = Vector3(0, -FLY_ALT + 0.003, 0)
+
+## Bigger when selected / under the mouse (a 3D ship grows in place, its ring stays on the ground).
+func _mark_scale(n: Node3D, k: float) -> void:
+	if not n.has_meta("craft"):
+		n.scale = Vector3.ONE * k
+		return
+	(n.get_node("Spin") as Node3D).scale = Vector3.ONE * k
+	(n.get_node("Ring") as Node3D).scale = Vector3(k, 0.05, k)
+
+## Turns the rotors, spins the round saucers and bobs the ships a little (every frame).
+func _animate_craft(n: Node3D, delta: float) -> void:
+	if not n.has_meta("craft"):
+		return
+	var spin: Node3D = n.get_node("Spin")
+	if n.get_meta("round", false):
+		spin.rotate_y(delta * 0.8)
+	spin.position.y = sin(t * 2.2 + float(n.get_instance_id() % 97)) * 0.002
+	for r in n.get_meta("props", []):
+		(r as Node3D).rotate_y(delta * 30.0)
 
 ## A picture of the ship itself (rendered from its model) that always faces the camera.
 func _icon_marker(model: String, tint: Color, size: float) -> Node3D:
@@ -204,7 +338,7 @@ var _live_t := 0.0
 ## Teammates watching the host's globe: markers glide to where the host's packet put them
 ## (four packets a second would make them jump otherwise).
 var _shown := {}
-func _glide(id: int, n: Node3D, lat: float, lon: float) -> void:
+func _glide(id: int, n: Node3D, lat: float, lon: float, hint := INF) -> void:
 	if not Campaign.viewer or not _shown.has(id):
 		_shown[id] = Vector2(lat, lon)
 	else:
@@ -215,7 +349,7 @@ func _glide(id: int, n: Node3D, lat: float, lon: float) -> void:
 			k = 1.0          # a jump (new flight, landed): no slow slide across the world
 		_shown[id] = Vector2(lerpf(cur.x, lat, k), wrapf(cur.y + dlon * k, -180.0, 180.0))
 	var v: Vector2 = _shown[id]
-	_place(n, v.x, v.y)
+	_place_craft(id, n, v.x, v.y, hint)
 
 func _place(n: Node3D, lat: float, lon: float) -> void:
 	# local to the globe, so the marker turns with it (look_at_from_position worked in world space = bug)
@@ -253,7 +387,7 @@ func _process(delta: float) -> void:
 	var sun_lon := -(Campaign.utc_hours() - 12.0) * 15.0
 	gmat.set_shader_parameter("sun_dir", latlon_to_local(Campaign.SUN_LAT, sun_lon))     # (the missions use the same sun: Campaign.sun_at)
 	# time
-	if popup == null and not Campaign.viewer and not Campaign.data.get("lost", false):
+	if popup == null and not Campaign.viewer and not Campaign.data.get("lost", false) and not Campaign.base_picking():
 		if Campaign.advance(SPEEDS[speed] * delta):
 			speed = 0
 	if Campaign.viewer:
@@ -264,6 +398,9 @@ func _process(delta: float) -> void:
 		if _live_t <= 0.0:
 			_live_t = 0.25
 			Net.send_geo_live(0.0 if popup != null or Campaign.data.get("lost", false) else SPEEDS[speed])
+	_place(base_marker, Campaign.base_lat(), Campaign.base_lon())
+	base_marker.visible = not Campaign.base_picking()
+	_pick_tick()
 	_sync_markers()
 	_sync_reports()
 	_update_text()
@@ -295,10 +432,22 @@ func _sync_reports() -> void:
 			continue
 		var sp := cam.unproject_position(wp) / Vector2(vp.size) * view.size
 		tag_lbl.text = (Campaign.UFO_NAMES[m["kind"]] if not m.has("type") else str(m["place"]))
-		tag_lbl.position = sp + Vector2(8, -6)
+		var off := 8.0
+		if not m.has("type"):
+			# (0.69) a 3D ship: the tag goes past its side, not over it when zoomed in
+			var half := float(UFO_SIZE.get(String(m.get("kind", "")), 0.1)) * 0.5 * (1.6 if int(m["id"]) == selected else 1.3)
+			var ep := cam.unproject_position(wp + cam.global_transform.basis.x * half) / Vector2(vp.size) * view.size
+			off = maxf(off, ep.x - sp.x + 4.0)
+		tag_lbl.position = sp + Vector2(off, -6)
+		var tw := tag_lbl.get_minimum_size().x
+		if tag_lbl.position.x + tw > view.position.x + view.size.x - 2.0:
+			tag_lbl.position.x = sp.x - off - tw      # (near the right edge: on the other side)
 		tag_lbl.visible = true
 		if int(m["id"]) == selected:
 			break
+
+## How big the UFOs look over the globe (longest side, globe radius = 1).
+const UFO_SIZE := {"scout": 0.075, "raider": 0.095, "harvester": 0.115, "supply": 0.135, "battleship": 0.14}
 
 func _sync_markers() -> void:
 	var ids := {}
@@ -317,22 +466,30 @@ func _sync_markers() -> void:
 		var id := int(f["id"])
 		ids[id] = true
 		if not markers.has(id):
-			markers[id] = _icon_marker("ufo_" + String(f["kind"]), Color(1.0, 0.75, 0.75), 0.11)
-		_glide(id, markers[id], float(f["lat"]), float(f["lon"]))
-		markers[id].visible = fmod(t * 3.0, 1.0) < 0.7 or id == selected
-		markers[id].scale = Vector3.ONE * (1.6 if id == selected else (1.3 if id == hover else 1.0))
+			markers[id] = _craft_marker("ufo_" + String(f["kind"]), Color(1.0, 0.3, 0.25), UFO_SIZE.get(String(f["kind"]), 0.1))
+		_glide(id, markers[id], float(f["lat"]), float(f["lon"]), float(f.get("heading", 0.0)))
+		var on := fmod(t * 3.0, 1.0) < 0.7 or id == selected
+		if markers[id].has_meta("craft"):
+			markers[id].get_node("Ring").visible = on      # (the ship itself stays: only its ring blinks)
+		else:
+			markers[id].visible = on
+		_mark_scale(markers[id], 1.6 if id == selected else (1.3 if id == hover else 1.0))
+		_animate_craft(markers[id], get_process_delta_time())
 	for c in Campaign.crafts():
 		var cid := 900000 + int(c["id"])
 		ids[cid] = true
 		if not markers.has(cid):
-			markers[cid] = _icon_marker({"jet": "sokol", "heli": "heli", "kondor": "dropship"}.get(String(c["kind"]), "dropship"), Color(0.8, 0.95, 1.0), 0.08 if c["kind"] == "jet" else 0.09)
+			markers[cid] = _craft_marker({"jet": "sokol", "heli": "heli", "kondor": "dropship"}.get(String(c["kind"]), "dropship"), Color(0.35, 0.8, 1.0), {"jet": 0.065, "heli": 0.07}.get(String(c["kind"]), 0.08))
 		_glide(cid, markers[cid], float(c["lat"]), float(c["lon"]))
 		markers[cid].visible = true
+		_animate_craft(markers[cid], get_process_delta_time())
 	for id in markers.keys():
 		if not ids.has(id):
 			markers[id].queue_free()
 			markers.erase(id)
 			_shown.erase(id)
+			_heading.erase(id)
+			_last_ll.erase(id)
 			if selected == id:
 				selected = -1
 
@@ -372,6 +529,8 @@ func _input(event: InputEvent) -> void:
 			zoom = min(4.5, zoom + 0.15)
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			dragging = event.pressed and inside
+		elif event.button_index == MOUSE_BUTTON_LEFT and event.pressed and inside and pick_panel != null:
+			_pick_click(lp)
 		elif event.button_index == MOUSE_BUTTON_LEFT and event.pressed and inside:
 			var id := _pick_at(lp)
 			if id != -1 or not Input.is_key_pressed(KEY_SHIFT):
@@ -381,6 +540,175 @@ func _input(event: InputEvent) -> void:
 			yaw += event.relative.x * 0.008 * zoom / 3.2
 			tilt = clamp(tilt + event.relative.y * 0.008 * zoom / 3.2, -1.4, 1.4)
 		hover = _pick_at(lp) if inside else -1
+		if pick_panel != null:
+			_pick_hover = _globe_ll(lp) if inside else Vector2.INF
+
+# ---- 0.69: the host picks the place of the first base ----------------------------------------
+var pick_panel: PanelContainer
+var _pick_hover := Vector2.INF        # lat, lon under the mouse (INF = off the globe)
+var _pick_at_ll := Vector2.INF        # the chosen place
+var _pick_info: Label
+var _pick_go: Button
+var _pick_mark: Node3D
+var _viewer_wait: Label
+static var _region_tex: ImageTexture
+
+## The blocs of 1990 painted into a map the globe shader reads (colour = the bloc, alpha = its number).
+## (Drawn once into assets/textures/blocs_1990.png - the basepick test writes a fresh one to user://
+## when Campaign.bloc_at changes; without the file it is drawn here, about 1,5 s.)
+static func region_texture(fresh := false) -> ImageTexture:
+	if _region_tex != null:
+		return _region_tex
+	if not fresh and ResourceLoader.exists("res://assets/textures/blocs_1990.png"):
+		var tx: Texture2D = load("res://assets/textures/blocs_1990.png")
+		_region_tex = ImageTexture.create_from_image(tx.get_image())
+		return _region_tex
+	var w := 1440
+	var h := 720
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	for y in h:
+		var lat := 90.0 - (float(y) + 0.5) * 180.0 / h
+		for x in w:
+			var lon := (float(x) + 0.5) * 360.0 / w - 180.0
+			if not Campaign.is_land(lat, lon):
+				continue
+			var b := Campaign.bloc_at(lat, lon)
+			if b == "":
+				continue
+			var c: Color = Campaign.BLOCS[b]["color"]
+			c.a = float(Campaign.BLOC_ORDER.find(b) + 1) / 16.0
+			img.set_pixel(x, y, c)
+	_region_tex = ImageTexture.create_from_image(img)
+	return _region_tex
+
+## Where on the globe (lat, lon) is this point of the view? INF = past the edge.
+func _globe_ll(lp: Vector2) -> Vector2:
+	var pos := lp / view.size * Vector2(vp.size)
+	var o := cam.project_ray_origin(pos)
+	var d := cam.project_ray_normal(pos)
+	var b := o.dot(d)
+	var c := o.dot(o) - 1.0
+	var disc := b * b - c
+	if disc < 0.0:
+		return Vector2.INF
+	var hit := o + d * (-b - sqrt(disc))
+	var l := (globe.global_transform.affine_inverse() * hit).normalized()
+	return Vector2(rad_to_deg(asin(clampf(l.y, -1.0, 1.0))), rad_to_deg(atan2(l.x, l.z)))
+
+func _begin_pick() -> void:
+	gmat.set_shader_parameter("region_tex", region_texture())
+	gmat.set_shader_parameter("regions", 1.0)
+	speed = 0
+	pick_panel = PanelContainer.new()
+	_style(pick_panel)
+	pick_panel.position = Vector2(431, 0)
+	pick_panel.size = Vector2(209, 360)
+	pick_panel.clip_contents = true
+	add_child(pick_panel)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 3)
+	pick_panel.add_child(box)
+	var title := _lbl(box, "KDE BUDE ZÁKLADNA", ACCENT, 12)
+	UiSkin.title(title, 11)
+	_lbl(box, "Duben 1990. Vyber na glóbu místo první základny (jen pevnina). Každý blok dává jinou výhodu. Mise se budou objevovat hlavně v okolí.", TEXT, 8)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	box.add_child(grid)
+	for bid in Campaign.BLOC_ORDER:
+		var b: String = bid
+		var bt := _btn(grid, Campaign.BLOCS[b]["name"], func(): _focus_bloc(b), 8)
+		bt.custom_minimum_size = Vector2(94, 15)
+		bt.add_theme_color_override("font_color", (Campaign.BLOCS[b]["color"] as Color).lerp(Color.WHITE, 0.35))
+	var isc := ScrollContainer.new()
+	isc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	isc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	isc.custom_minimum_size = Vector2(196, 40)
+	box.add_child(isc)
+	_pick_info = _lbl(isc, "", TEXT, 8)
+	_pick_info.custom_minimum_size = Vector2(186, 0)
+	_pick_go = _btn(box, "POSTAVIT ZÁKLADNU ZDE", _pick_confirm, 10)
+	_btn(box, "Vysočina (jako dřív)", func():
+		_pick_at_ll = Vector2(Campaign.BASE_LAT, Campaign.BASE_LON)
+		_focus({"lat": Campaign.BASE_LAT, "lon": Campaign.BASE_LON}), 8)
+	_pick_mark = _marker(Color(0.3, 0.9, 1.0), 0.035)
+	_pick_mark.visible = false
+	_focus({"lat": Campaign.BASE_LAT, "lon": Campaign.BASE_LON})
+
+## A bloc's button: turn the globe to the middle of its land.
+const BLOC_VIEW := {"na": [45.0, -98.0], "latam": [-10.0, -62.0], "west": [48.0, 4.0], "east": [50.0, 19.0], "ussr": [57.0, 70.0],
+	"me": [28.0, 42.0], "africa": [3.0, 20.0], "asia": [30.0, 100.0], "pacific": [-20.0, 140.0]}
+func _focus_bloc(b: String) -> void:
+	var v: Array = BLOC_VIEW[b]
+	_focus({"lat": v[0], "lon": v[1]})
+	if _pick_at_ll == Vector2.INF or Campaign.bloc_at(_pick_at_ll.x, _pick_at_ll.y) != b:
+		_pick_info_for(b, Vector2.INF)
+
+func _pick_click(lp: Vector2) -> void:
+	var ll := _globe_ll(lp)
+	if ll == Vector2.INF:
+		return
+	if not Campaign.is_land(ll.x, ll.y) or Campaign.bloc_at(ll.x, ll.y) == "":
+		Game.play_ui(self, "ui_back", -6)
+		_toast_say("Tady je moře. Základnu jde postavit jen na pevnině.")
+		return
+	_pick_at_ll = ll
+	Game.play_ui(self, "ui_confirm", -6)
+
+func _pick_info_for(b: String, ll: Vector2) -> void:
+	if _pick_info == null:
+		return
+	if b == "":
+		_pick_info.text = "Najeď myší nebo klikni na pevninu."
+		return
+	var bl: Dictionary = Campaign.BLOCS[b]
+	var where := ""
+	if ll != Vector2.INF:
+		where = "Místo: %s (%.1f°, %.1f°)\n" % [Campaign.nearest_place(ll.x, ll.y), ll.x, ll.y]
+	_pick_info.text = "%s%s\n%s\n\nVÝHODA: %s" % [where, String(bl["name"]).to_upper(), bl["who"], bl["bonus"]]
+
+func _pick_tick() -> void:
+	if Campaign.viewer:
+		# a teammate waits while the host picks
+		if Campaign.base_picking() and _viewer_wait == null:
+			_viewer_wait = _lbl(self, "Hostitel vybírá místo základny…", ACCENT, 10)
+			_viewer_wait.position = Vector2(110, 314)      # (above the toast line at the bottom)
+		elif not Campaign.base_picking() and _viewer_wait != null:
+			_viewer_wait.queue_free()
+			_viewer_wait = null
+		return
+	if pick_panel == null:
+		return
+	var seen := _pick_at_ll if _pick_at_ll != Vector2.INF else _pick_hover
+	var b := ""
+	if seen != Vector2.INF and Campaign.is_land(seen.x, seen.y):
+		b = Campaign.bloc_at(seen.x, seen.y)
+	if b != "" or _pick_at_ll == Vector2.INF:
+		_pick_info_for(b, seen if b != "" else Vector2.INF)
+	var hb := _pick_hover
+	var hl := 0.0
+	if hb != Vector2.INF and Campaign.is_land(hb.x, hb.y) and Campaign.bloc_at(hb.x, hb.y) != "":
+		hl = float(Campaign.BLOC_ORDER.find(Campaign.bloc_at(hb.x, hb.y)) + 1) / 16.0
+	elif _pick_at_ll != Vector2.INF:
+		hl = float(Campaign.BLOC_ORDER.find(Campaign.bloc_at(_pick_at_ll.x, _pick_at_ll.y)) + 1) / 16.0
+	gmat.set_shader_parameter("hl_bloc", hl)
+	_pick_go.disabled = _pick_at_ll == Vector2.INF
+	_pick_mark.visible = _pick_at_ll != Vector2.INF and fmod(t * 2.0, 1.0) < 0.75
+	if _pick_at_ll != Vector2.INF:
+		_place(_pick_mark, _pick_at_ll.x, _pick_at_ll.y)
+
+func _pick_confirm() -> void:
+	if _pick_at_ll == Vector2.INF or not Campaign.found_base(_pick_at_ll.x, _pick_at_ll.y):
+		return
+	Game.play_ui(self, "research_done", -4)
+	gmat.set_shader_parameter("regions", 0.0)
+	pick_panel.queue_free()
+	pick_panel = null
+	_pick_mark.queue_free()
+	_pick_info = null
+	Net.broadcast_team()
+	var b: Dictionary = Campaign.BLOCS[Campaign.base_bloc()]
+	_alert("ZÁKLADNA POSTAVENA\n%s - %s\n%s\n\nPusť čas. Radar hlídá oblohu." % [Campaign.base_place(), b["name"], b["bonus"]])
 
 ## Which marker is under this point of the globe view (view-local coordinates)? -1 = none.
 ## Tests the marker positions projected to the screen, so it works at any resolution and zoom.
@@ -391,7 +719,7 @@ func _pick_at(lp: Vector2) -> int:
 	var bd := 14.0 * px_scale
 	for m in Campaign.data["missions"] + Campaign.data.get("flights", []):
 		var id := int(m["id"])
-		var wp := globe.global_transform * latlon_to_local(float(m["lat"]), float(m["lon"]), 1.012)
+		var wp := globe.global_transform * latlon_to_local(float(m["lat"]), float(m["lon"]), 1.012 if m.has("type") else 1.0 + FLY_ALT)
 		# skip the far side of the globe
 		if (wp - cam.global_position).dot(wp) > 0.0:
 			continue
@@ -488,7 +816,14 @@ func _update_text() -> void:
 	for c in Campaign.crafts():
 		air.append("%s %s" % [("Stíhačka" if int(c.get("n", 1)) == 1 else "%d× stíhačka" % int(c.get("n", 1))) if c["kind"] == "jet" else Campaign.CRAFT_NAMES[c["kind"]].capitalize(), "letí k cíli" if c["state"] == "out" else ("u cíle" if c["state"] in ["arrived", "ambush"] else "se vrací")])
 	if not air.is_empty():
-		co += "\nVe vzduchu: " + ", ".join(air)
+		# (two jets out on the same errand read once: "2× stíhačka letí k cíli")
+		var seen_air := {}
+		var order := []
+		for a in air:
+			if not seen_air.has(a):
+				order.append(a)
+			seen_air[a] = int(seen_air.get(a, 0)) + 1
+		co += "\nVe vzduchu: " + ", ".join(order.map(func(a): return a if int(seen_air[a]) == 1 else "%d× %s" % [seen_air[a], a.left(1).to_lower() + a.substr(1)]))
 	status_lbl.text = "%s\nRozpočet základny: %d kr   Důvěra: %d %%\nMk-115: %d g   Výzkum: %s   Rychlost: %s%s" % [Campaign.date_text(), int(d["credits"]), int(d["trust"]), Campaign.moskovium(), rs, SPEED_NAMES[speed], co]
 	var fl := _selected_flight()
 	if not fl.is_empty():
@@ -701,7 +1036,7 @@ func _go_base() -> void:
 			for n in mini(int(Campaign.data["found"][k]), 2):
 				live.append(String(k).substr(5))
 	var params := {"type": "home", "type_name": "Základna", "base": Campaign.data["base"].duplicate(true), "grid_w": Campaign.GRID_W, "grid_h": Campaign.GRID_H,
-		"transport": Campaign.transport(), "live": live, "research": Campaign.active_research(), "night": false, "hour": 12.0, "fallen": (Campaign.data.get("fallen", []) as Array).duplicate(true),
+		"transport": Campaign.transport(), "where": Campaign.base_place(), "live": live, "research": Campaign.active_research(), "night": false, "hour": 12.0, "fallen": (Campaign.data.get("fallen", []) as Array).duplicate(true),
 		"blips": Campaign.data["flights"].map(func(f): return [float(f.get("lat", 0)), float(f.get("lon", 0))]) + Campaign.data["missions"].map(func(m): return [float(m.get("lat", 0)), float(m.get("lon", 0))])}
 	if Campaign.viewer:
 		Net.start_local_base(params)     # the host stays on the globe; this is our own copy
@@ -1088,6 +1423,117 @@ func _autotest() -> void:
 		print("RESULT encyshot ", id)
 		get_tree().quit()
 		return
+	if Game.autotest() == "basepick":
+		# 0.69: the host picks the first base (blocs of 1990); snapshots basepick_N.png
+		var want := {"Vysočina": "east", "Bavorsko": "west", "Sasko": "east", "Polsko": "east", "Slovensko": "east", "Rakousko": "west",
+			"Maďarsko": "east", "Normandie": "west", "Skotsko": "west", "Finsko": "west", "Pobaltí": "ussr", "Ukrajina": "ussr",
+			"Rumunsko": "east", "Balkán": "east", "Itálie": "west", "Španělsko": "west", "Maroko": "africa", "Egypt": "me", "Sahara": "africa",
+			"Kongo": "africa", "Keňa": "africa", "Jižní Afrika": "africa", "Turecko": "me", "Írán": "me", "Ural": "ussr", "Sibiř": "ussr",
+			"Kazachstán": "ussr", "Mongolsko": "asia", "Čína": "asia", "Japonsko": "pacific", "Indie": "asia", "Indočína": "asia",
+			"Indonésie": "asia", "Austrálie": "pacific", "Nový Zéland": "pacific", "Aljaška": "na", "Kanada": "na", "Texas": "na",
+			"Mexiko": "latam", "Amazonie": "latam", "Patagonie": "latam", "Grónsko": "na", "Skandinávie": "west"}
+		var bad := []
+		for pl in Campaign.PLACES:
+			if want.has(pl[0]) and Campaign.bloc_at(float(pl[1]), float(pl[2])) != want[pl[0]]:
+				bad.append("%s=%s" % [pl[0], Campaign.bloc_at(float(pl[1]), float(pl[2]))])
+		var t0 := Time.get_ticks_msec()
+		_region_tex = null
+		region_texture(true)
+		_region_tex.get_image().save_png("user://blocs_1990.png")
+		print("[PICK] region map %d ms, wrong places: %s" % [Time.get_ticks_msec() - t0, bad])
+		var picking := pick_panel != null
+		var c0 := int(Campaign.data["credits"])
+		var d0 := float(Campaign.data["day"])
+		speed = 3
+		await get_tree().create_timer(1.0).timeout
+		var frozen := float(Campaign.data["day"]) == d0
+		_pick_hover = Vector2(50.0, 15.0)
+		await get_tree().create_timer(0.5).timeout
+		if DisplayServer.get_name() != "headless":
+			get_viewport().get_texture().get_image().save_png("user://basepick_0.png")
+		# every bloc's text in the panel (the panel clips, so the audit looks with the clip off)
+		var pbad := 0
+		for bid in Campaign.BLOC_ORDER:
+			var pl := Vector2(BLOC_VIEW[bid][0], BLOC_VIEW[bid][1])
+			_pick_info_for(bid, pl)
+			await get_tree().process_frame
+			await get_tree().process_frame
+			pick_panel.clip_contents = false
+			var bx: Control = pick_panel.get_child(0)
+			var need := bx.get_combined_minimum_size().y
+			if need > pick_panel.size.y - 8.0:
+				print("[UI] pick_%s: panel volby základny přetéká o %.0f px" % [bid, need - pick_panel.size.y + 8.0])
+				pbad += 1
+			var sc: ScrollContainer = _pick_info.get_parent()
+			if _pick_info.get_combined_minimum_size().y > sc.size.y + 1.0:
+				print("[UI] pick_%s: text bloku se nevejde (%.0f > %.0f px), posouvá se" % [bid, _pick_info.get_combined_minimum_size().y, sc.size.y])
+			pbad += Game.ui_audit(pick_panel, "pick_" + bid)
+			pick_panel.clip_contents = true
+		print("[PICK] panel bad %d" % pbad)
+		_pick_hover = Vector2(50.0, 15.0)
+		_focus_bloc("na")
+		_pick_hover = Vector2.INF
+		_pick_at_ll = Vector2(31.0, -99.0)
+		await get_tree().create_timer(0.6).timeout
+		if DisplayServer.get_name() != "headless":
+			get_viewport().get_texture().get_image().save_png("user://basepick_1.png")
+		_pick_confirm()
+		_close_popup()
+		await get_tree().create_timer(0.3).timeout
+		var near := 0
+		for i in 40:
+			var m := Campaign.generate_mission()
+			if Campaign.arc_deg(Campaign.base_lat(), Campaign.base_lon(), float(m["lat"]), float(m["lon"])) < 35.0:
+				near += 1
+		speed = 3
+		await get_tree().create_timer(1.0).timeout
+		_close_popup()
+		if DisplayServer.get_name() != "headless":
+			get_viewport().get_texture().get_image().save_png("user://basepick_2.png")
+		print("RESULT basepick picking %s frozen %s bloc %s place %s credits %d->%d near %d/40 running %s" % [picking, frozen, Campaign.base_bloc(),
+			Campaign.base_place(), c0, int(Campaign.data["credits"]), near, float(Campaign.data["day"]) > d0])
+		get_tree().quit()
+		return
+	if Game.autotest() == "geomodels":
+		# 0.69: the 3D ships over the globe (snapshots geo_models_N.png)
+		Campaign.data["missions"] = []
+		Campaign.data["flights"] = []
+		Campaign.data["next_mission"] = 9999.0
+		Campaign.data["next_raid"] = 9999.0
+		var kinds := ["scout", "raider", "harvester", "supply", "battleship"]
+		for i in kinds.size():
+			var f := Campaign.generate_flight()
+			f["kind"] = kinds[i]
+			f["lat"] = Campaign.BASE_LAT + 12.0 - i * 6.0
+			f["lon"] = Campaign.BASE_LON + 4.0 + (i % 2) * 14.0
+			f["heading"] = 40.0 * i
+			f["until"] = float(Campaign.data["day"]) + 5.0
+			Campaign.data["flights"].append(f)
+		var fl: Array = Campaign.data["flights"]
+		for ck in ["jet", "heli", "kondor"]:
+			var c := Campaign.launch_craft(ck, fl[["jet", "heli", "kondor"].find(ck)], "flight")
+			c.erase("ambush_at")
+		_close_popup()
+		speed = 1
+		await get_tree().create_timer(6.0).timeout
+		speed = 0
+		_close_popup()
+		yaw = -deg_to_rad(Campaign.BASE_LON + 8.0)
+		tilt = deg_to_rad(Campaign.BASE_LAT)
+		var shots := [[3.2, -1], [2.3, -1], [1.6, int(fl[2]["id"])]]
+		for i in shots.size():
+			zoom = shots[i][0]
+			selected = shots[i][1]
+			await get_tree().create_timer(0.8).timeout
+			if DisplayServer.get_name() != "headless":
+				get_viewport().get_texture().get_image().save_png("user://geo_models_%d.png" % i)
+		var n3d := 0
+		for id in markers:
+			if markers[id].has_meta("craft"):
+				n3d += 1
+		print("RESULT geomodels ships %d crafts %d models %d" % [fl.size(), Campaign.crafts().size(), n3d])
+		get_tree().quit()
+		return
 	if Game.autotest() == "uigeo":
 		for i in 6:
 			Campaign.data["missions"].append(Campaign.generate_mission())
@@ -1132,6 +1578,19 @@ func _autotest() -> void:
 				if c is ResearchScreen or c is Encyclopedia or c is BaseScreen:
 					c.queue_free()
 			await get_tree().process_frame
+		# (0.69) a busy sky: every craft in the air and research going - the status lines grow,
+		# the side panel must still fit (its buttons at the bottom)
+		var fl0 := Campaign.generate_flight()
+		fl0["until"] = float(Campaign.data["day"]) + 5.0
+		Campaign.data["flights"].append(fl0)
+		for ck in ["jet", "jet", "heli", "kondor"]:
+			var cc := Campaign.launch_craft(ck, fl0, "flight")
+			cc.erase("ambush_at")
+		Campaign.data["research"]["current"] = "vzduch_laser_delo"
+		selected = int(fl0["id"])
+		await get_tree().create_timer(0.4).timeout
+		_close_popup()
+		await _ui_check("geo_busy")
 		# the tree half done, the encyclopedia on an autopsy and a weapon
 		Campaign.data["research"]["done"] = ["pitva", "medicina", "pitva_levit", "zenijni", "tezke", "rozbor_plazma", "vesta", "slitiny", "vyslech"]
 		Campaign.data["research"]["current"] = "laser"

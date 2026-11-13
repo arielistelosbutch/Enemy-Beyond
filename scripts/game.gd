@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.68 prototyp"
-const VERSION_NUM := "0.68"
+const VERSION := "0.69 prototyp"
+const VERSION_NUM := "0.69"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -1176,6 +1176,7 @@ var difficulty := "normal"
 var mouse_sens := 1.0      # multiplier
 var invert_y := false
 var fov := 75.0
+var cam_bob := 1.0     # (0.68+) how much the camera moves with steps and breath (0 = off)
 const HEAL_MINUTES_PER_HP := 10.0   # veteran: wounds heal in real time, like X-COM's days
 
 func veteran() -> bool:
@@ -1197,6 +1198,7 @@ func load_settings() -> void:
 		mouse_sens = cf.get_value("controls", "mouse_sens", 1.0)
 		invert_y = cf.get_value("controls", "invert_y", false)
 		fov = cf.get_value("controls", "fov", 75.0)
+		cam_bob = cf.get_value("controls", "cam_bob", 1.0)
 		retro = false       # (the PS1 look is gone since 0.50: a modern picture)
 		wobble = false
 		volumetric = cf.get_value("video", "volumetric", true)
@@ -1229,6 +1231,7 @@ func save_settings() -> void:
 	cf.set_value("controls", "mouse_sens", mouse_sens)
 	cf.set_value("controls", "invert_y", invert_y)
 	cf.set_value("controls", "fov", fov)
+	cf.set_value("controls", "cam_bob", cam_bob)
 	cf.set_value("video", "retro", retro)
 	cf.set_value("video", "wobble", wobble)
 	cf.set_value("video", "volumetric", volumetric)
@@ -1689,6 +1692,25 @@ func model(mname: String) -> Node3D:
 	_restyle(n)
 	return n
 
+## (0.7x, Ari) The transports' rear ramp (Čáp, Kondor, Pelikán): open = 1 lowered as in the model
+## (on the ground of a mission), 0 shut (in the air, in the hangar, prep inside before the drop).
+## The ramp is its own node "Ramp" (hinge at the floor's back edge, tools/blender/ramp_split.py);
+## shut it swings up into the opening and is stretched a little to fill it up to the lintel; the
+## hydraulic rams ("RampRams") are only there when it is down.
+const RAMP_SHUT := -(PI / 2 + 0.17)
+func ship_ramp(ship: Node, open: float) -> void:
+	if ship == null:
+		return
+	var r: Node3D = ship.find_child("Ramp", true, false)
+	if r == null:
+		return
+	open = clampf(open, 0.0, 1.0)
+	r.rotation.x = lerpf(RAMP_SHUT, 0.0, open)
+	r.scale = Vector3(1.0, 1.0, lerpf(1.12, 1.0, open))
+	var rams: Node3D = ship.find_child("RampRams", true, false)
+	if rams:
+		rams.visible = open > 0.97
+
 func _restyle(n: Node) -> void:
 	if n is MeshInstance3D:
 		var mi: MeshInstance3D = n
@@ -2042,7 +2064,7 @@ func ui_audit(root: Node, tag: String) -> int:
 
 # ---- updates from GitHub ------------------------------------------------------------------
 ## The menu checks GitHub once per start; a newer version is downloaded in the
-## background as a resource pack (a few MB) that Boot mounts on the next start.
+## background (own thread, progress in the menu) as a resource pack that Boot mounts on the next start.
 const UPDATE_URL := "https://raw.githubusercontent.com/arielistelosbutch/Enemy-Beyond/main/update/version.json"
 var upd_state := ""        # "" / checking / downloading / ready / current / error / editor
 var upd_version := ""
@@ -2093,11 +2115,26 @@ func _on_version_info(result: int, code: int, _h: PackedStringArray, body: Packe
 		return
 	upd_state = "downloading"
 	_upd_dl = HTTPRequest.new()
-	_upd_dl.timeout = 300.0
+	# (0.68+) the pack has ~150 MB: download in its own thread with big chunks (the menu
+	# stays smooth), no limit on the whole download (slow lines), only on a stall (_upd_tick)
+	_upd_dl.use_threads = true
+	_upd_dl.download_chunk_size = 1 << 20
+	_upd_dl.timeout = 0.0
 	_upd_dl.download_file = "user://update.pck.part"
 	add_child(_upd_dl)
+	_upd_last_bytes = 0
+	_upd_last_t = Time.get_ticks_msec()
+	_upd_timer = Timer.new()
+	_upd_timer.wait_time = 0.25
+	add_child(_upd_timer)
+	_upd_timer.timeout.connect(_upd_tick)
+	_upd_timer.start()
 	_upd_dl.request_completed.connect(func(r: int, c: int, _hh: PackedStringArray, _b: PackedByteArray):
+		_upd_stop_timer()
+		if upd_state != "downloading":
+			return      # given up as stuck (_upd_tick)
 		if r != HTTPRequest.RESULT_SUCCESS or c != 200:
+			DirAccess.remove_absolute("user://update.pck.part")
 			_upd_fail("stahování selhalo (%d/%d)" % [r, c])
 			return
 		var d := DirAccess.open("user://")
@@ -2114,9 +2151,44 @@ func _on_version_info(result: int, code: int, _h: PackedStringArray, body: Packe
 	update_changed.emit()
 
 func update_progress() -> float:
-	if _upd_dl and _upd_dl.get_body_size() > 0:
+	if _upd_dl and is_instance_valid(_upd_dl) and _upd_dl.get_body_size() > 0:
 		return float(_upd_dl.get_downloaded_bytes()) / float(_upd_dl.get_body_size())
 	return 0.0
+
+## Downloaded and total size in MB (total -1 while the server has not said it yet).
+func update_mb() -> Vector2:
+	if _upd_dl == null or not is_instance_valid(_upd_dl):
+		return Vector2(0, -1)
+	var total := _upd_dl.get_body_size()
+	return Vector2(_upd_dl.get_downloaded_bytes() / 1048576.0, total / 1048576.0 if total > 0 else -1.0)
+
+var _upd_timer: Timer
+var _upd_last_bytes := 0
+var _upd_last_t := 0
+const UPD_STALL_MS := 45000   # no new data this long = the download is stuck
+
+## Four times a second while downloading: let the menu redraw the progress, watch for a stall.
+func _upd_tick() -> void:
+	if upd_state != "downloading" or _upd_dl == null or not is_instance_valid(_upd_dl):
+		_upd_stop_timer()
+		return
+	var b := _upd_dl.get_downloaded_bytes()
+	var now := Time.get_ticks_msec()
+	if b != _upd_last_bytes:
+		_upd_last_bytes = b
+		_upd_last_t = now
+	elif now - _upd_last_t > UPD_STALL_MS:
+		# (no cancel_request: with threads it waits for the blocked read = the game would freeze;
+		# the stuck request is left alone and its late answer ignored, the next start tries again)
+		_upd_stop_timer()
+		_upd_fail("stahování se zastavilo (spojení), zkus to při dalším spuštění")
+		return
+	update_changed.emit()
+
+func _upd_stop_timer() -> void:
+	if _upd_timer and is_instance_valid(_upd_timer):
+		_upd_timer.queue_free()
+	_upd_timer = null
 
 func restart_game() -> void:
 	OS.create_process(OS.get_executable_path(), OS.get_cmdline_args())

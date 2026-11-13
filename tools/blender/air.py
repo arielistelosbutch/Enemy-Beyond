@@ -224,78 +224,47 @@ def giant(kind):
     # the belly and the skirt up to the rim (as on the ground: 0.97 at the bottom, 1.04 at the rim)
     p.append(sq_lathe(hull, [(0.0, Z - 0.6), (0.6, Z - 0.5), (0.9, Z - 0.2), (0.97, Z), (1.04, Z + 4.25)]))
     p.append(sq_lathe(dark, [(1.04, Z + 4.25), (1.02, Z + 4.75), (0.98, Z + 4.6)]))
-    p.append(sq_lathe(hull, [(0.98, Z + 4.6), (0.3, Z + 4.6), (0.0, Z + 4.6)]))         # the deck
-    # rim lights, seams over the deck, glowing rings under the belly
-    for i in range(0, 72, 2):
+    # 0.69 (Ari: the open deck with the halls looked like map pieces and boxes from the air):
+    # a closed upper hull instead - a stepped rounded-square dome, a lit band in every step,
+    # the crown on top; the halls you walk round on the ground stay in the map only.
+    steps = [(0.98, 0.90, Z + 4.6, Z + 5.0, Z + 5.4), (0.90, 0.72, Z + 5.4, Z + 6.0, Z + 6.4),
+             (0.72, 0.50, Z + 6.4, Z + 6.9, Z + 7.3), (0.50, 0.34, Z + 7.3, Z + 7.6, Z + 7.6)]
+    for i, (k0, k1, z0, z1, z2) in enumerate(steps):
+        p.append(sq_lathe(hull, [(k0, z0), (k1, z1)], sm=True))                        # the slope
+        if z2 > z1:
+            p.append(sq_lathe(dim if i % 2 else glow, [(k1, z1), (k1 - 0.004, z2)]))      # the lit riser
+    p.append(sq_lathe(hull, [(0.34, Z + 7.6), (0.0, Z + 7.6)]))                          # the top
+    # seams running down the slopes (on the surface: a hair above each slope)
+    for i in range(0, 72, 9):
         a = TAU * i / 72
-        x, y = squircle_pt(a, 1.025)
-        p.append(bx(glow if (i // 2) % 2 == 0 else dark, (x, y, Z + 4.5), (0.9, 0.1, 0.12), 0.02, rot=(0, 0, math.atan2(y, x) + PI2)))
-    for i in range(0, 72, 6):
-        a = TAU * i / 72
-        x0, y0 = math.cos(a) * 7.0, math.sin(a) * 7.0
-        x1, y1 = squircle_pt(a, 0.97)
-        p.append(beam(glow, (x0, y0, Z + 4.66), (x1, y1, Z + 4.66), 0.12, 0.05))
-    for k, kk in enumerate((0.45, 0.75)):
-        pts = [squircle_pt(TAU * i / 72, kk) for i in range(72)]
-        for i in range(0, 72, 2):
-            a0, b0 = pts[i], pts[(i + 1) % 72]
-            p.append(beam(dim if k else glow, (a0[0], a0[1], Z - 0.52 + 0.3 * k), (b0[0], b0[1], Z - 0.52 + 0.3 * k), 0.14, 0.06))
-    p.append(lathe(eye, [(0, Z - 0.95), (3.0, Z - 0.8), (3.4, Z - 0.6), (0, Z - 0.6)], 32))
-    p.append(torus(rib, (0, 0, Z - 0.62), 3.6, 0.22, seg=32))
-    # the legs folded up against the belly
-    for k in range(6):
-        a = TAU * (k + 0.5) / 6
-        c = (math.cos(a) * 17.0, math.sin(a) * 17.0)
-        p.append(disc(dark, (c[0], c[1], Z - 0.35), 1.1, 0.4, verts=12, b=0.05))
-        p.append(beam(rib, (c[0], c[1], Z - 0.5), (math.cos(a) * 21.5, math.sin(a) * 21.5, Z + 1.5), 0.4, 0.4))
-    # the closed ramp: ribs and the lit lintel at the front (Godot -Z = Blender +Y)
-    for sx in (-1, 1):
-        p.append(bx(dark, (sx * 2.6, 23 * 0.99, Z + 2.2), (0.45, 0.6, 4.4), 0.05, rot=(-0.12, 0, 0)))
-    p.append(bx(hull, (0, 23 * 1.0, Z + 2.1), (4.8, 0.2, 4.0), 0.02, rot=(-0.12, 0, 0)))
-    p.append(bx(glow, (0, 23 * 1.03, Z + 4.0), (5.6, 0.2, 0.12), 0.02))
-    # the halls on the deck: octagons (as _section), joined to the hub by passages
-    R8 = 6.5 / math.cos(math.pi / 8)
-    upper = [(-1, 0), (1, 0), (0, 1)] if not supply else [(-1, 0), (1, 0)]
-    def octo(mtl, prof, cx, cy):
-        # an octagon with flat sides facing the axes (as the halls on the ground)
-        o = lathe(mtl, prof, 8, sm=False)
-        o.rotation_euler = (0, 0, math.pi / 8)
-        o.location = (cx, cy, 0)
-        apply_xf(o)
-        return o
-    for (gx, gz) in upper:
-        cx, cy = gx * 15.0, -gz * 15.0
-        p.append(octo(hull, [(0, Z + 4.8), (R8, Z + 4.8), (R8, Z + 9.3), (R8 + 0.3, Z + 9.3), (R8 + 0.3, Z + 9.6), (0, Z + 9.6)], cx, cy))
-        for j in range(8):
-            a = j * math.pi / 4
-            p.append(bx(glow, (cx + math.cos(a) * 6.52, cy + math.sin(a) * 6.52, Z + 8.9), (0.1, 3.2, 0.1), 0.0, rot=(0, 0, a)))
-        # the passage to the hub
-        mx, my = gx * 9.0, -gz * 9.0
-        p.append(bx(rib, (mx, my, Z + 6.6), (3.6 if gz else 4.4, 4.4 if gz else 3.6, 3.6), 0.05))
-    # the hub: two decks high, its dome
-    p.append(octo(hull, [(0, Z + 4.6), (R8 + 0.3, Z + 4.6), (R8 + 0.3, Z + 9.6), (0, Z + 9.6)], 0, 0))
-    for j in range(8):
-        a = j * math.pi / 4
-        p.append(bx(glow, (math.cos(a) * 6.82, math.sin(a) * 6.82, Z + 9.3), (0.1, 3.6, 0.1), 0.0, rot=(0, 0, a)))
-    top = Z + 9.6
-    p.append(lathe(dark, [(0, top), (6.2, top), (2.0, top + 1.4), (0.4, top + 2.1), (0.0, top + 2.1)], 16, sm=False))
-    p.append(lathe(glow, [(0, top + 2.0), (0.25, top + 2.0), (0.05, top + 2.8), (0, top + 2.8)], 6, sm=False))
+        for (k0, k1, z0, z1, z2) in steps[:3]:
+            x0, y0 = squircle_pt(a, k0 - 0.01)
+            x1, y1 = squircle_pt(a, k1 + 0.01)
+            p.append(beam(rib, (x0, y0, z0 + 0.08), (x1, y1, z1 + 0.06), 0.35, 0.08))
+    # the crown: a dark glass dome with lit slits, a spike of light on top
+    top = Z + 7.6
+    p.append(lathe(dark, [(0, top), (7.4, top), (6.8, top + 0.6), (4.0, top + 1.9), (1.2, top + 2.6), (0.0, top + 2.7)], 32))
+    p.append(torus(glow, (0, 0, top + 0.12), 7.3, 0.14, seg=48))
+    p.append(lathe(glow, [(0, top + 2.6), (0.25, top + 2.6), (0.05, top + 3.4), (0, top + 3.4)], 6, sm=False))
     for k in range(8):
         a = TAU * (k + 0.5) / 8
-        p.append(bx(glow, (math.cos(a) * 4.2, math.sin(a) * 4.2, top + 0.75), (1.2, 0.12, 0.3), 0.02, rot=(0.0, -0.5, a)))
+        p.append(bx(glow, (math.cos(a) * 5.0, math.sin(a) * 5.0, top + 1.25), (1.4, 0.12, 0.3), 0.02, rot=(0.0, -0.45, a)))
     if supply:
-        for k in range(6):
-            x, y = (k % 3 - 1) * 7.0, -(1 if k < 3 else -1) * 17.0
-            p.append(bx(hull, (x, y, Z + 5.2), (4.0, 2.4, 1.2), 0.08))
-            p.append(bx(glow, (x, y, Z + 5.83), (3.2, 0.1, 0.05), 0.0))
+        # the cargo blisters: two long smooth humps on the flanks, lit along the top
+        for sy in (-1, 1):
+            p.append(ball(hull, (0, sy * 15.0, Z + 5.9), 1.0, (9.0, 3.2, 1.5), seg=32, rings=12))
+            p.append(bx(glow, (0, sy * 15.0, Z + 7.35), (11.0, 0.12, 0.06), 0.0))
+            for k in (-1, 1):
+                p.append(ball(dim, (k * 8.6, sy * 15.0, Z + 5.9), 0.9, (0.5, 1.6, 0.9), seg=12, rings=8))
     else:
-        # the battleship's guns: four turrets on the corners of the deck
+        # the battleship's guns: four turrets on the corners of the hull, barrels outward
         for k in range(4):
             a = TAU * (k + 0.5) / 4
             x, y = squircle_pt(a, 0.8)
-            p.append(disc(dark, (x, y, Z + 4.9), 1.4, 0.6, verts=14, b=0.05))
-            p.append(tb(rib, (x, y, Z + 5.3), (x * 1.08, y * 1.08, Z + 5.6), 0.22, 10))
-            p.append(ball(eye, (x, y, Z + 5.3), 0.5, (1, 1, 0.6)))
+            p.append(disc(dark, (x, y, Z + 5.75), 1.6, 0.7, verts=16, b=0.05))
+            p.append(ball(hull, (x, y, Z + 6.3), 1.35, (1, 1, 0.7)))
+            p.append(tb(rib, (x, y, Z + 6.5), (x * 1.13, y * 1.13, Z + 6.7), 0.24, 10))
+            p.append(ball(eye, (x * 1.02, y * 1.02, Z + 6.45), 0.45, (1, 1, 0.6)))
     o = join(p, "Lod_" + kind)
     export_glb(os.path.join(OUTDIR, "ufo_%s.glb" % kind), [o])
 
