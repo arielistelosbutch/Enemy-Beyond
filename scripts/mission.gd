@@ -139,6 +139,8 @@ func _build_door() -> void:
 	mi.material_override = Game.mat("skyranger", 0.5)
 	mi.position = Vector3(0, 1.35, 0)
 	_door.add_child(mi)
+	# (0.7x) the transport's own ramp is the door now (the box only when a model has none)
+	mi.visible = _ship_ramp() == null
 	# a red lamp above the ramp: red while closed, green when open
 	var lamp := OmniLight3D.new()
 	lamp.name = "Lamp"
@@ -150,7 +152,30 @@ func _build_door() -> void:
 	if Game.autotest() != "" and Game.cmd_arg("prep", "") == "":
 		prep_left = 0.0
 
+## (0.7x) Our transport on the landing site with a ramp of its own (null = no model / no ramp).
+var _ramp_ship: Node3D
+var _ramp_done := false
+func _ship_ramp() -> Node3D:
+	if _ramp_ship == null:
+		for s in get_tree().get_nodes_in_group("our_ship"):
+			if s.find_child("Ramp", true, false):
+				_ramp_ship = s
+	return _ramp_ship
+
+## The ramp goes with the door: shut in the prep, falls open with it, then stays down.
+func _ramp_tick() -> void:
+	if _ramp_done or _ship_ramp() == null:
+		return
+	var open := 0.0
+	if _door:
+		open = _door.rotation.x / (PI / 2 + 0.18)
+	elif prep_left <= 0.0:
+		open = 1.0
+		_ramp_done = true
+	Game.ship_ramp(_ramp_ship, open)
+
 func _prep_tick(delta: float) -> void:
+	_ramp_tick()
 	if not go or prep_left <= 0.0 and _door == null:
 		return
 	if prep_left > 0.0:
@@ -359,7 +384,7 @@ func _ready() -> void:
 		vr.seed = Net.mission_seed + 7
 		vip_name = VIP_NAMES[vr.randi() % VIP_NAMES.size()]
 	if home():
-		hud.briefing("Základna v rokli na Vysočině, pod zemí. Mezi misemi se tu dá chodit: ubikace, laboratoř, dílna, hangár s lodí.\n\nE u terminálu:\n  Velín - zpět ke globusu (mise, nákupy, stavby; ovládá hostitel)\n  Laboratoř - strom výzkumu, encyklopedie\n\nNikdo tu po vás nestřílí. Zatím.")
+		hud.briefing(("Základna v rokli na Vysočině, pod zemí." if String(Net.mission_params.get("where", "Vysočina")) == "Vysočina" else "Základna pod zemí, oblast %s." % Net.mission_params.get("where", "")) + " Mezi misemi se tu dá chodit: ubikace, laboratoř, dílna, hangár s lodí.\n\nE u terminálu:\n  Velín - zpět ke globusu (mise, nákupy, stavby; ovládá hostitel)\n  Laboratoř - strom výzkumu, encyklopedie\n\nNikdo tu po vás nestřílí. Zatím.")
 	else:
 		hud.briefing(_briefing_text() + "\nPočasí: " + WEATHER_NAMES[weather] + ".")
 	multiplayer.peer_disconnected.connect(_on_peer_left)

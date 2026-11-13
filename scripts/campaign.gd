@@ -15,6 +15,168 @@ const START_YEAR := 1990      # (Konečný soud: 23. dubna 1990 - the next day P
 const BASE_LAT := 49.6      # the base: somewhere in the Bohemian-Moravian highlands
 const BASE_LON := 15.6
 
+# ---- where the base is (0.69: the host picks the place of the first base) --------------------------------
+## The political blocs of 1990 on the globe: name, what being there gives (shown when picking the place)
+## and the effect (multipliers; missing = 1). Only campaign-level bonuses - nothing about the aliens.
+const BLOCS := {
+	"na": {"name": "Severní Amerika", "who": "USA a Kanada", "bonus": "Bohatí spojenci: o 25 % víc peněz na začátku.", "fx": {"credits": 1.25},
+		"color": Color(0.30, 0.55, 0.95)},
+	"latam": {"name": "Latinská Amerika", "who": "Mexiko, Střední a Jižní Amerika", "bonus": "Levný provoz: údržba základny o 25 % levnější.", "fx": {"upkeep": 0.75},
+		"color": Color(0.35, 0.80, 0.40)},
+	"west": {"name": "Západní Evropa", "who": "státy NATO a neutrální Západ", "bonus": "Univerzity a laboratoře: výzkum o 15 % rychlejší.", "fx": {"research": 1.15},
+		"color": Color(0.40, 0.75, 1.00)},
+	"east": {"name": "Východní blok", "who": "Varšavská smlouva v rozpadu (ČSSR, Polsko, NDR…)", "bonus": "Armádní sklady: navíc 6 zásobníků do pušky, 4 granáty, 2 kouřové granáty a 2 vesty.",
+		"armory": {"rifle_clip": 6, "grenade": 4, "smoke_grenade": 2, "vesta": 2}, "fx": {}, "color": Color(0.95, 0.75, 0.30)},
+	"ussr": {"name": "Sovětský svaz", "who": "SSSR od Pobaltí po Kamčatku", "bonus": "Těžký průmysl: dílna vyrábí o 20 % rychleji.", "fx": {"workshop": 1.2},
+		"color": Color(0.90, 0.30, 0.25)},
+	"me": {"name": "Blízký východ", "who": "Turecko, Egypt, Arábie, Írán", "bonus": "Ropné peníze: státy posílají měsíčně o 15 % víc.", "fx": {"funding": 1.15},
+		"color": Color(0.85, 0.60, 0.85)},
+	"africa": {"name": "Afrika", "who": "Afrika od Maghrebu po Kapsko", "bonus": "Levná výstavba: budovy o 25 % levnější.", "fx": {"build_cost": 0.75},
+		"color": Color(0.80, 0.55, 0.30)},
+	"asia": {"name": "Čína a jižní Asie", "who": "Čína, Mongolsko, Indie, jihovýchodní Asie", "bonus": "Spousta rukou: budovy se staví o 25 % rychleji.", "fx": {"build_time": 0.75},
+		"color": Color(0.95, 0.45, 0.55)},
+	"pacific": {"name": "Japonsko a Oceánie", "who": "Japonsko, Austrálie, Nový Zéland", "bonus": "Elektronika: radar o 40 % levnější, UFO a hlášení vydrží na radaru o 15 % déle.",
+		"fx": {"radar_cost": 0.6, "radar": 1.15}, "color": Color(0.40, 0.90, 0.85)},
+}
+const BLOC_ORDER := ["na", "latam", "west", "east", "ussr", "me", "africa", "asia", "pacific"]
+
+func base_lat() -> float:
+	return float(data.get("base_lat", BASE_LAT))
+
+func base_lon() -> float:
+	return float(data.get("base_lon", BASE_LON))
+
+## Old saves (and the quick missions) keep the base in the Vysočina = the Eastern bloc.
+func base_bloc() -> String:
+	return String(data.get("bloc", "east"))
+
+func base_place() -> String:
+	return String(data.get("base_place", "Vysočina"))
+
+## A bonus of the bloc the base stands in (1.0 = none).
+func bloc_k(key: String) -> float:
+	return float(BLOCS.get(base_bloc(), {}).get("fx", {}).get(key, 1.0))
+
+## Is the host still to pick the place of the first base?
+func base_picking() -> bool:
+	return bool(data.get("base_pick", false))
+
+static func _lat_at(pts: Array, lon: float) -> float:
+	# a border given as [lon, lat] points (lon rising): the lat on it at this lon
+	for i in pts.size() - 1:
+		var a: Array = pts[i]
+		var b: Array = pts[i + 1]
+		if lon >= float(a[0]) and lon <= float(b[0]):
+			return lerpf(float(a[1]), float(b[1]), (lon - float(a[0])) / maxf(0.001, float(b[0]) - float(a[0])))
+	return float(pts[-1][1]) if lon > float(pts[-1][0]) else float(pts[0][1])
+
+## The USSR's southern border in Asia (south of it: Iran, Afghanistan, China, Mongolia).
+const USSR_SOUTH := [[46.0, 38.8], [53.0, 37.3], [57.0, 38.0], [61.0, 36.0], [62.5, 35.3], [66.0, 37.3], [70.0, 37.1], [73.0, 37.2],
+	[74.5, 38.5], [75.0, 40.5], [80.0, 42.5], [82.0, 45.0], [87.0, 49.2], [90.0, 50.5], [95.0, 50.0], [100.0, 51.5], [105.0, 50.5],
+	[110.0, 49.7], [115.0, 49.8], [117.0, 49.6], [120.0, 52.5], [125.0, 53.3], [128.0, 49.5], [131.0, 47.8], [131.5, 43.0], [134.0, 42.0]]
+
+## Which bloc of 1990 this place on the globe belongs to ("" = sea or nobody's).
+static func bloc_at(lat: float, lon: float) -> String:
+	lon = fposmod(lon + 180.0, 360.0) - 180.0
+	# islands and corners first
+	if lat >= 63.0 and lat <= 67.0 and lon >= -25.0 and lon <= -13.0:
+		return "west"                       # Iceland
+	if lat >= 18.0 and lat <= 23.0 and lon >= -161.0 and lon <= -154.0:
+		return "na"                         # Hawaii
+	if (lat > 55.0 and lon > 168.0) or (lat > 60.0 and lon < -168.5):
+		return "ussr"                       # Chukotka
+	if lat >= 24.0 and lat <= 45.6 and lon >= 122.9 and lon <= 146.0 and not (lat > 33.0 and lon < 129.5):
+		return "pacific"                    # Japan (not Korea)
+	if lat >= 46.0 and lon >= 141.0 and lon <= 160.0 and lat <= 62.0:
+		return "ussr"                       # Sakhalin, the Kurils, Kamchatka
+	# the Americas
+	if lon >= -170.0 and lon <= -25.0:
+		if lat > 58.0 and lon > -75.0 and lon < -10.0:
+			return "na"                     # Greenland
+		if lat >= 32.0 and lon < -50.0:
+			return "na"
+		if lat >= 25.0 and lon > -106.0 and lon < -79.0 and not (lon < -97.0 and lat < 29.5):
+			return "na"                     # Texas, the Gulf coast, Florida
+		return "latam" if lon < -30.0 else ""
+	# Europe, the Middle East, Africa
+	if lon >= -25.0 and lon < 46.0:
+		if lat >= 35.0 and lat <= 36.0 and lon >= 32.0 and lon <= 35.0:
+			return "me"                     # Cyprus
+		if lat >= 34.8 and lat <= 35.8 and lon >= 23.0 and lon <= 26.5:
+			return "west"                   # Crete
+		if lat >= 36.0:
+			# the Soviet Union: the Baltics, Belarus, Ukraine, Moldova, the Caucasus
+			if lat >= 60.0 and lon > 30.0:
+				return "ussr"
+			if lat >= 54.3 and lat < 60.0 and lon > 20.5:
+				return "ussr"
+			if lat >= 48.3 and lat < 54.3 and lon > 23.8:
+				return "ussr"
+			if lat >= 45.2 and lat < 48.3 and lon > 28.2:
+				return "ussr"
+			if lat > 46.0 and lon > 33.0:
+				return "ussr"               # (Crimea, the Don)
+			if lat > 41.3 and lon >= 40.0:
+				return "ussr"               # Georgia, Armenia, Azerbaijan, the Caspian
+			# Turkey (and the Middle East) south of the Black Sea
+			if lat <= 42.0 and lon > 26.0:
+				return "me"
+			# the Iron Curtain
+			if lat >= 50.3 and lat < 54.8 and lon > 10.8 and lon <= 23.8:
+				return "east"               # GDR, Poland
+			if lat >= 48.6 and lat < 50.3 and lon > 12.5 + (50.3 - lat) * 0.8:
+				return "east"               # ČSSR
+			if lat >= 45.5 and lat < 48.6 and lon > 16.8:
+				return "east"               # Hungary, Romania
+			if lat >= 45.5 and lat < 46.4 and lon > 13.6:
+				return "east"               # Slovenia
+			if lat < 45.5 and lat >= 41.7 and lon > 13.6 + (45.5 - lat) * 1.55:
+				return "east"               # Yugoslavia, Bulgaria, Romania's south
+			if lat >= 39.6 and lat < 41.7 and lon >= 19.3 and lon < 21.0:
+				return "east"               # Albania
+			return "west"
+		# south of 36: North Africa, Egypt, the Levant, Arabia
+		if lat >= 22.0 and lon > 25.0:
+			return "me"                     # Egypt, the Levant, Iraq
+		if lat >= 12.0 and lat < 30.0 and lon > 35.0 + (29.0 - lat) * 0.5:
+			return "me"                     # Arabia (east of the Red Sea)
+		return "africa"
+	# Asia
+	if lon >= 46.0:
+		if lat >= _lat_at(USSR_SOUTH, lon) and (lon < 134.0 or lat > 42.0):
+			return "ussr"
+		if lon <= 63.0 and lat >= 12.0:
+			return "me"                     # Iran, the Gulf
+		if lon < 60.0 and lat < 12.0:
+			return "africa"                 # (Madagascar, the Horn's islands)
+		if lat < -9.0 or (lon > 141.0 and lat < 0.0) or lon > 150.0:
+			return "pacific"                # Australia, New Guinea, the Pacific
+		return "asia"
+	if lon <= -170.0:
+		return "pacific"
+	return ""
+
+## The host puts the first base here (only on land). Returns false when the place is not allowed.
+func found_base(lat: float, lon: float) -> bool:
+	if not is_land(lat, lon):
+		return false
+	var bloc := bloc_at(lat, lon)
+	if bloc == "":
+		return false
+	data["base_lat"] = lat
+	data["base_lon"] = lon
+	data["bloc"] = bloc
+	data["base_place"] = nearest_place(lat, lon)
+	data["base_pick"] = false
+	var b: Dictionary = BLOCS[bloc]
+	data["credits"] = int(round(float(data["credits"]) * float(b.get("fx", {}).get("credits", 1.0)) / 10.0) * 10)
+	for it in b.get("armory", {}):
+		data["armory"][it] = int(data["armory"].get(it, 0)) + int(b["armory"][it])
+	_log("Základna v oblasti %s (%s) je v provozu. %s" % [base_place(), b["name"], b["bonus"]])
+	save()
+	changed.emit()
+	return true
+
 # ---- mission types -----------------------------------------------------------------------
 const MTYPES := {
 	"crash": {"name": "Havárie UFO", "reward": 450, "aliens": 0, "expire": 1.2, "trust": 4,
@@ -304,7 +466,7 @@ func nearest_land(lat: float, lon: float, heading := 0.0) -> Vector2:
 			var lo := fposmod(lon + sin(a) * r / maxf(0.2, cos(deg_to_rad(la))) + 180.0, 360.0) - 180.0
 			if is_land(la, lo):
 				return Vector2(la, lo)
-	return Vector2(BASE_LAT, BASE_LON)
+	return Vector2(base_lat(), base_lon())
 
 # ---- save / load ----------------------------------------------------------------------------------
 func has_save() -> bool:
@@ -329,10 +491,10 @@ func research_days(id: String) -> float:
 	return float(RESEARCH[id]["days"]) * time_k()
 
 func facility_cost(ft: String) -> int:
-	return int(round(float(FACILITIES[ft]["cost"]) * econ() / 10.0) * 10)
+	return int(round(float(FACILITIES[ft]["cost"]) * econ() * bloc_k("build_cost") * (bloc_k("radar_cost") if ft == "radar" else 1.0) / 10.0) * 10)
 
 func facility_days(ft: String) -> float:
-	return ceilf(float(FACILITIES[ft]["days"]) * time_k())
+	return ceilf(float(FACILITIES[ft]["days"]) * time_k() * bloc_k("build_time"))
 
 func jet_price() -> int:
 	return int(round(JET_PRICE * econ() / 10.0) * 10)
@@ -347,7 +509,7 @@ func new_campaign(diff := "") -> void:
 		"research": {"done": [], "current": "", "progress": 0.0}, "bodies_v34": true,
 		"armory": START_ARMORY.duplicate(), "orders": [], "missions": [], "next_mission": 0.15, "next_id": 1,
 		"stats": {"kills": 0, "captures": 0, "missions": 0, "won": 0},
-		"base": [], "log": ["Kampaň začala. Základna v rokli na Vysočině je v provozu."],
+		"base": [], "log": ["Kampaň začala."], "base_pick": true,
 		"flights": [], "sokol_ready": 0.0,
 		"lost": false, "cid": str(randi()), "transport": "heli", "crafts": [], "built": [],
 	}
@@ -517,7 +679,7 @@ func advance(days: float) -> bool:
 	# research
 	var r: Dictionary = data["research"]
 	if r["current"] != "":
-		r["progress"] = float(r["progress"]) + days * (1.0 + 0.5 * (count("laborator") - 1))
+		r["progress"] = float(r["progress"]) + days * (1.0 + 0.5 * (count("laborator") - 1)) * bloc_k("research")
 		if float(r["progress"]) >= research_days(r["current"]):
 			var done: String = r["current"]
 			r["done"].append(done)
@@ -653,16 +815,16 @@ func advance(days: float) -> bool:
 			# the defences open up on the incoming ship: sometimes it never lands
 			if not already and rng.randf() < defence_shootdown():
 				already = true
-				_log("Nálet na základnu odražen: obrana sestřelila UFO nad Vysočinou. Výsadek nedosedl.")
+				_log("Nálet na základnu odražen: obrana sestřelila UFO nad oblastí %s. Výsadek nedosedl." % base_place())
 				data["trust"] = clampi(int(data["trust"]) + 2, 0, 100)
 				stop = true
 			if not already:
 				var bm := generate_mission()
 				bm["type"] = "base"
-				bm["lat"] = BASE_LAT; bm["lon"] = BASE_LON
-				bm["place"] = "Základna - Vysočina"
+				bm["lat"] = base_lat(); bm["lon"] = base_lon()
+				bm["place"] = "Základna - " + base_place()
 				bm["biome"] = "base"
-				bm["terrain"] = terrain_at(BASE_LAT, BASE_LON)
+				bm["terrain"] = terrain_at(base_lat(), base_lon())
 				bm["size"] = "medium"
 				bm["reward"] = MTYPES["base"]["reward"]
 				bm["extra_aliens"] = maxi(0, int(MTYPES["base"]["aliens"]) + int(float(data["day"]) / 15.0) - defence_hits())
@@ -678,12 +840,12 @@ func advance(days: float) -> bool:
 		data["month"] = month
 		# the countries we protect pay by how much they trust us; the base costs money to run
 		var trust := int(data["trust"])
-		var funding := int(300 + trust * 10 + trust * trust * 0.08)
+		var funding := int((300 + trust * 10 + trust * trust * 0.08) * bloc_k("funding"))
 		var built := 0
 		for c in data["base"]:
 			if float(c.get("days", 0)) <= 0 and c.get("type", "") != "":
 				built += 1
-		var upkeep := 150 + built * 50 + jets() * 80 + (250 if trust < 30 else 0)
+		var upkeep := int((150 + built * 50 + jets() * 80 + (250 if trust < 30 else 0)) * bloc_k("upkeep"))
 		data["credits"] = int(data["credits"]) + funding - upkeep
 		var txt := "MĚSÍČNÍ HLÁŠENÍ\nStáty posílají %d kr (důvěra %d %%). Údržba základny %d kr. Rozpočet: %d kr." % [funding, trust, upkeep, int(data["credits"])]
 		if trust < 30:
@@ -729,7 +891,7 @@ func _strike_tick(days: float) -> bool:
 				var id := int(data["next_id"])
 				data["next_id"] = id + 1
 				var hours := rng.randf_range(6.0, 10.0)
-				var f := {"id": id, "kind": "battleship", "strike": true, "lat": BASE_LAT + cos(a) * 14.0, "lon": BASE_LON + sin(a) * 20.0,
+				var f := {"id": id, "kind": "battleship", "strike": true, "lat": base_lat() + cos(a) * 14.0, "lon": base_lon() + sin(a) * 20.0,
 					"heading": 0.0, "speed": 0.0, "until": float(data["day"]) + hours / 24.0}
 				data["flights"].append(f)
 				_log("POPLACH: Bitevní loď míří přímo k základně! Přílet za %d h." % int(hours))
@@ -741,18 +903,18 @@ func _strike_tick(days: float) -> bool:
 		# straight for us, arriving on time
 		var left := maxf(0.001, float(f["until"]) - float(data["day"]))
 		var k := clampf(days / left, 0.0, 1.0)
-		f["lat"] = lerpf(float(f["lat"]), BASE_LAT, k)
-		f["lon"] = lerpf(float(f["lon"]), BASE_LON, k)
+		f["lat"] = lerpf(float(f["lat"]), base_lat(), k)
+		f["lon"] = lerpf(float(f["lon"]), base_lon(), k)
 		if float(data["day"]) >= float(f["until"]):
 			data["flights"].erase(f)
 			stop = true
 			if count("maskovani") > 0:
-				_log("Bitevní loď visela nad Vysočinou a odletěla. Maskující jádro nás skrylo.")
+				_log("Bitevní loď visela nad oblastí %s a odletěla. Maskující jádro nás skrylo." % base_place())
 			elif rng.randf() < minf(0.8, 0.12 * count("silo") + 0.2 * count("laser_vez") + 0.35 * count("plazma_vez")):
 				_log("Bitevní loď nad základnou nabíjela hlavní kanón - věže ji sestřelily dřív, než vystřelila!")
 				var m := generate_mission()
 				m["type"] = "crash"
-				m["lat"] = BASE_LAT + rng.randf_range(-0.6, 0.6); m["lon"] = BASE_LON + rng.randf_range(-0.8, 0.8)
+				m["lat"] = base_lat() + rng.randf_range(-0.6, 0.6); m["lon"] = base_lon() + rng.randf_range(-0.8, 0.8)
 				m["place"] = nearest_place(float(m["lat"]), float(m["lon"]))
 				m["terrain"] = terrain_at(float(m["lat"]), float(m["lon"]))
 				m["size"] = UFO_SIZES["battleship"]
@@ -766,7 +928,7 @@ func _strike_tick(days: float) -> bool:
 			else:
 				data["lost"] = true
 				_log("Bitevní loď vystřelila. Základna zničena.")
-				report.emit("KONEC\nBitevní loď se zastavila nad Vysočinou. Spodek trupu se rozsvítil - a pak už nic. Z podzemní základny zbyl kráter. Projekt X skončil.")
+				report.emit("KONEC\nBitevní loď se zastavila nad základnou (" + base_place() + "). Spodek trupu se rozsvítil - a pak už nic. Z podzemní základny zbyl kráter. Projekt X skončil.")
 	return stop
 
 ## Výslech velitele: "Subjekt je schopen představovat přímé nebezpečí pro provoz základny
@@ -811,7 +973,7 @@ static func arc_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float
 
 ## hours a craft needs from the base to a place
 func eta_hours(kind: String, lat: float, lon: float) -> float:
-	return arc_deg(BASE_LAT, BASE_LON, lat, lon) / float(CRAFT_SPEED[kind]) * 24.0
+	return arc_deg(base_lat(), base_lon(), lat, lon) / float(CRAFT_SPEED[kind]) * 24.0
 
 func transport_out() -> bool:
 	for c in crafts():
@@ -837,7 +999,7 @@ func _target_of(c: Dictionary) -> Dictionary:
 
 ## Sends a craft from the base. Returns it.
 func launch_craft(kind: String, target: Dictionary, ttype: String, extra := {}) -> Dictionary:
-	var c := {"id": int(data["next_id"]), "kind": kind, "lat": BASE_LAT, "lon": BASE_LON, "target": int(target["id"]),
+	var c := {"id": int(data["next_id"]), "kind": kind, "lat": base_lat(), "lon": base_lon(), "target": int(target["id"]),
 		"ttype": ttype, "state": "out", "start": float(data["day"])}
 	data["next_id"] = int(data["next_id"]) + 1
 	for k in extra:
@@ -845,7 +1007,7 @@ func launch_craft(kind: String, target: Dictionary, ttype: String, extra := {}) 
 	# the way to a mission can be dangerous: once in a while small UFOs jump the transport
 	if kind != "jet" and float(data["day"]) > 3.0 and rng.randf() < 0.22:
 		c["ambush_at"] = rng.randf_range(0.3, 0.7)
-		c["dist0"] = arc_deg(BASE_LAT, BASE_LON, float(target["lat"]), float(target["lon"]))
+		c["dist0"] = arc_deg(base_lat(), base_lon(), float(target["lat"]), float(target["lon"]))
 	crafts().append(c)
 	_log("%s vzlétl k cíli: %s (asi %d h letu)." % [CRAFT_NAMES[kind].capitalize() if kind != "jet" else ("%d× stíhačka" % int(extra.get("n", 1))), target.get("place", nearest_place(float(target["lat"]), float(target["lon"]))), maxi(1, roundi(eta_hours(kind, float(target["lat"]), float(target["lon"]))))])
 	changed.emit()
@@ -897,8 +1059,8 @@ func craft_by_id(id: int) -> Dictionary:
 func _move_crafts(days: float) -> bool:
 	var stop := false
 	for c in crafts().duplicate():
-		var tl: float = BASE_LAT
-		var tn: float = BASE_LON
+		var tl: float = base_lat()
+		var tn: float = base_lon()
 		if c["state"] == "out":
 			var tg := _target_of(c)
 			if tg.is_empty():
@@ -940,8 +1102,8 @@ const UFO_ALIENS := {"scout": 0, "raider": 1, "harvester": 3, "supply": 4, "batt
 const UFO_SIZES := {"scout": "small", "raider": "medium", "harvester": "large", "supply": "huge", "battleship": "huge"}
 
 func generate_flight() -> Dictionary:
-	var lat := BASE_LAT + rng.randf_range(-12, 12)
-	var lon := BASE_LON + rng.randf_range(-22, 22)
+	var lat := base_lat() + rng.randf_range(-12, 12)
+	var lon := base_lon() + rng.randf_range(-22, 22)
 	if rng.randf() < 0.35:
 		lat = rad_to_deg(asin(rng.randf_range(-0.8, 0.9)))
 		lon = rng.randf_range(-180, 180)
@@ -955,7 +1117,7 @@ func generate_flight() -> Dictionary:
 	data["next_id"] = id + 1
 	return {"id": id, "kind": kinds[rng.randi() % kinds.size()], "lat": lat, "lon": lon,
 		"heading": rng.randf_range(0, 360), "speed": rng.randf_range(15, 35),
-		"until": float(data["day"]) + rng.randf_range(0.25, 0.5) * (1.0 + 0.3 * count("radar"))}
+		"until": float(data["day"]) + rng.randf_range(0.25, 0.5) * (1.0 + 0.3 * count("radar")) * bloc_k("radar")}
 
 func sokol_ready() -> bool:
 	return jets_ready() > 0
@@ -1075,8 +1237,8 @@ func intercept_done(id: int, outcome: String, kind: String, jet_hp: float, lost 
 			f = ff
 	if not f.is_empty():
 		data["flights"].erase(f)
-	var lat: float = float(f.get("lat", BASE_LAT))
-	var lon: float = float(f.get("lon", BASE_LON))
+	var lat: float = float(f.get("lat", base_lat()))
+	var lon: float = float(f.get("lon", base_lon()))
 	var txt := ""
 	data["day"] = float(data["day"]) + 0.05
 	for c in crafts():
@@ -1147,8 +1309,8 @@ func generate_mission(at := Vector2.INF) -> Dictionary:
 	for tries in (0 if at != Vector2.INF else 200):
 		# more often closer to home (the radar network is European)
 		if rng.randf() < 0.55:
-			lat = BASE_LAT + rng.randf_range(-14, 14)
-			lon = BASE_LON + rng.randf_range(-25, 25)
+			lat = base_lat() + rng.randf_range(-14, 14)
+			lon = base_lon() + rng.randf_range(-25, 25)
 		else:
 			lat = rad_to_deg(asin(rng.randf_range(-0.85, 0.95)))
 			lon = rng.randf_range(-180, 180)
@@ -1193,7 +1355,7 @@ func generate_mission(at := Vector2.INF) -> Dictionary:
 		biome = "desert"       # sand, rocks, ruins - not fields and cows
 	var id := int(data["next_id"])
 	data["next_id"] = id + 1
-	var exp_days: float = float(info["expire"]) * (1.0 + 0.4 * count("radar")) * rng.randf_range(0.8, 1.3)
+	var exp_days: float = float(info["expire"]) * (1.0 + 0.4 * count("radar")) * bloc_k("radar") * rng.randf_range(0.8, 1.3)
 	return {
 		"id": id, "type": t, "lat": lat, "lon": lon, "place": nearest_place(lat, lon),
 		"expires": float(data["day"]) + exp_days, "biome": biome, "race": "grey", "size": size, "terrain": terr,
@@ -1321,7 +1483,7 @@ func _add_final() -> void:
 			return
 	var id := int(data["next_id"])
 	data["next_id"] = id + 1
-	data["missions"].append({"id": id, "type": "mars", "lat": BASE_LAT, "lon": BASE_LON, "place": "Mars - rudá pláň",
+	data["missions"].append({"id": id, "type": "mars", "lat": base_lat(), "lon": base_lon(), "place": "Mars - rudá pláň",
 		"expires": float(data["day"]) + 9999.0, "biome": "mars", "terrain": "mars", "size": "large", "race": "myslodej",
 		"group": "myslodejove", "extra_aliens": 4, "reward": 0, "seed": rng.randi() % 1000000})
 	_log("Operace POSLEDNÍ ÚSVIT schválena. Pelikán čeká na startovací rampě. Poslední mise: Mars.")
@@ -1342,10 +1504,10 @@ func nearest_place(lat: float, lon: float) -> String:
 ## Parameters handed to the mission scene (and to every client).
 func mission_params(m: Dictionary) -> Dictionary:
 	var p := m.duplicate()
-	p["night"] = is_night(float(m["lon"]), float(m.get("lat", BASE_LAT)))
+	p["night"] = is_night(float(m["lon"]), float(m.get("lat", base_lat())))
 	p["hour"] = local_hour(float(m["lon"]))
 	# (0.62) the sun over the place itself: the mission's light matches the globe
-	var sun := sun_at(float(m.get("lat", BASE_LAT)), float(m["lon"]))
+	var sun := sun_at(float(m.get("lat", base_lat())), float(m["lon"]))
 	p["sun"] = sun.x
 	p["sun_az"] = sun.y
 	p["type_name"] = MTYPES[m["type"]]["name"]
@@ -1808,7 +1970,7 @@ func workshop_lines() -> int:
 
 ## Like the laboratories and research: one queue, and every further workshop makes it go half as fast again.
 func workshop_rate() -> float:
-	return 0.0 if workshop_lines() <= 0 else 1.0 + 0.5 * float(workshop_lines() - 1)
+	return 0.0 if workshop_lines() <= 0 else (1.0 + 0.5 * float(workshop_lines() - 1)) * bloc_k("workshop")
 
 ## Workshop pieces that are built around a stock item (X-WEP-010: every PG-01 takes one PL-MAG-01).
 const MAKE_EATS := {"plasma_grenade": {"plasma_cell": 1}}

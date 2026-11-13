@@ -451,6 +451,7 @@ func _build_farm() -> void:
 	# the helicopter
 	_heli = _prop(s, "heli", Vector3(40, 26, 20), -PI * 0.6)
 	if _heli:
+		Game.ship_ramp(_heli, 0.0)      # (0.7x) shut in the air, drops after it sets down
 		for n in _heli.find_children("*", "Node3D", true, false):
 			if String(n.name).begins_with("Rotor") or String(n.name).begins_with("Prop"):
 				_rotors.append(n)
@@ -795,6 +796,7 @@ func _farm(t: float, delta: float) -> void:
 		for r in _rotors:
 			(r as Node3D).rotate_y(delta * 22.0)
 		_heli.visible = t > 26.0
+		Game.ship_ramp(_heli, smoothstep(37.5, 39.0, t))
 		_heli_light.light_energy = 6.0 if t < 39.0 else 1.5
 	# the team walks out (37..45) towards the yard, then stops and looks round with the lamps
 	for k in _squad.size():

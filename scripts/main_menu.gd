@@ -930,7 +930,12 @@ func _upd_refresh() -> void:
 	var t := ""
 	match Game.upd_state:
 		"checking": t = "Hledám aktualizace..."
-		"downloading": t = "Stahuji verzi %s... %d %%" % [Game.upd_version, int(Game.update_progress() * 100)]
+		"downloading":
+			var mb := Game.update_mb()
+			if mb.y > 0:
+				t = "Stahuji verzi %s... %d %% (%.0f / %.0f MB)" % [Game.upd_version, int(Game.update_progress() * 100), mb.x, mb.y]
+			else:
+				t = "Stahuji verzi %s... %.0f MB" % [Game.upd_version, mb.x]
 		"ready": t = "Verze %s je stažená - restartuj hru." % Game.upd_version
 		"full": t = "Vyšla verze %s - stáhni nový zip z GitHubu (tahle verze se nedá doplnit)." % Game.upd_version
 		"error": t = "Aktualizace: " + Game.upd_error
@@ -1878,7 +1883,7 @@ func _autotest() -> void:
 			get_tree().change_scene_to_file("res://scenes/TileEditor.tscn")
 		"modeler", "modclick", "modspeed":
 			get_tree().change_scene_to_file("res://scenes/Modeler.tscn")
-		"geo", "campaign", "campair", "uigeo", "encyshot", "striketest":
+		"geo", "campaign", "campair", "uigeo", "encyshot", "striketest", "geomodels", "basepick":
 			# (the test machine's merc may still be on the sick bay from an earlier test run)
 			for k in ["heal_days", "injury", "sick", "heal_cid", "heal_seen"]:
 				Game.merc.erase(k)
@@ -2092,13 +2097,13 @@ func _autotest() -> void:
 			await get_tree().create_timer(1.0).timeout
 			get_viewport().get_texture().get_image().save_png("user://72_create_dice.png")
 			get_tree().quit()
-		"air":
+		"air", "airfx":
 			Net.mission_params = {"intercept": true, "id": -1, "ufo": Game.cmd_arg("ufo", "raider")}
 			get_tree().change_scene_to_file("res://scenes/Intercept.tscn")
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "lookshot", "soundcheck", "dronetest", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "wedgetest", "pockettest", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "echotest", "dirtshot":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "wedgetest", "pockettest", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "echotest", "dirtshot":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
@@ -2118,7 +2123,7 @@ func _autotest() -> void:
 			Net.start_mission({"type": "base" if atk else "home", "type_name": "Útok na základnu" if atk else "Základna", "base": b, "grid_w": 6, "grid_h": 4, "transport": "heli",
 				"live": ["grey", "levit"], "night": false, "attack": atk, "blips": [[50.0, 15.0], [40.0, -3.0], [10.0, 30.0]], "group": "sedaci",
 				"fallen": _test_fallen(int(Game.cmd_arg("fallen", "0")))})
-		"solo", "perf", "navcache", "farview", "mergeshot", "shot", "ai", "panic", "arsenal", "evac":
+		"solo", "rampcheck", "perf", "navcache", "farview", "mergeshot", "shot", "ai", "panic", "arsenal", "evac":
 			if Game.autotest() == "shot":
 				await get_tree().create_timer(1.5).timeout
 				get_viewport().get_texture().get_image().save_png("user://00_menu.png")

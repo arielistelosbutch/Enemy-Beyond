@@ -81,6 +81,7 @@ func _build_cabin(heli: bool) -> void:
 	var ship: Node3D = Game.model("heli" if heli else "dropship")
 	if ship:
 		w.add_child(ship)
+		Game.ship_ramp(ship, 0.0)       # (0.7x) flying home: the rear shut
 	if ship == null:
 		# (no model: a plain floor and the two rows of seats)
 		var metal: Material = Game.mat("metal")

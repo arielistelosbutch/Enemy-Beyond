@@ -273,6 +273,61 @@ func _build_body(data: Dictionary) -> void:
 
 ## First-person hands: sway with steps, kick on shots, swing when sprinting,
 ## a proper reload motion, and the slow settling of breath after a run.
+## (0.68+, Ari: "the soldiers are in action") The camera itself moves with the body: a dip on every
+## footfall, the weight swaying from foot to foot with a little roll, a nod in a sprint, the chest
+## heaving when out of breath (and a faint breath all the time), a dip on landing. Only the eye
+## moves (cam inside head): the aim, the body and what others see stay as they were. Down the
+## sights only a quarter of it; Game.cam_bob (Nastavení, 0 = off) scales it all.
+const BOB_STEP := 1.6        # m per step (as the footstep sounds)
+var _bob_ph := 0.0
+var _bob_amt := 0.0
+var _bob_land := 0.0         # landing dip (m), springs back
+var _bob_vy := 0.0           # fall speed last frame (for the landing)
+var _bob_air := false
+var _bob_idle := 0.0
+func _cam_bob(delta: float) -> void:
+	if cam == null:
+		return
+	var k := float(Game.cam_bob)
+	var hs := Vector2(velocity.x, velocity.z).length()
+	var floor_ := is_on_floor() and _mantle_t < 0.0
+	# how much of the walk shows: 0 standing, 1 walking, more running; crouched/prone/crawling less
+	var want := clampf(hs / WALK, 0.0, 1.7) if floor_ else 0.0
+	if prone or downed:
+		want *= 0.6
+	elif crouching:
+		want *= 0.75
+	_bob_amt = lerpf(_bob_amt, want, clampf(delta * 6.0, 0.0, 1.0))
+	_bob_ph = fmod(_bob_ph + delta * hs / BOB_STEP * PI, TAU * 2.0) if floor_ else _bob_ph
+	# landing: the knees take it
+	if floor_ and _bob_air and _bob_vy < -2.0:
+		_bob_land = minf(0.12, (-_bob_vy - 1.5) * 0.028)
+	_bob_air = not is_on_floor()
+	_bob_vy = velocity.y
+	_bob_land = move_toward(_bob_land, 0.0, delta * 0.45)
+	var run := 1.0 + (0.6 if sprinting else 0.0)
+	var a := _bob_amt * run
+	var sv := sin(_bob_ph)
+	var pos := Vector3(
+		sv * 0.018 * a,                                        # the weight from foot to foot
+		-(1.0 - absf(cos(_bob_ph))) * 0.03 * a,                # down on each footfall
+		0.0)
+	var rot := Vector3(
+		-absf(cos(_bob_ph)) * 0.012 * a * (1.5 if sprinting else 0.6),    # a nod with each step
+		0.0,
+		-sv * 0.011 * a)                                       # a roll with the weight
+	# breathing: always a little, hard after a run (the chest heaves, the head with it)
+	_bob_idle += delta * lerpf(1.6, 3.4, breath)
+	var bh := 0.004 + breath * 0.022
+	pos.y += sin(_bob_idle) * bh
+	rot.x += sin(_bob_idle - 0.6) * (0.003 + breath * 0.012)
+	pos.y -= _bob_land
+	rot.x -= _bob_land * 0.5
+	var sight := aiming and not bracing
+	var m := k * (0.25 if sight else 1.0)
+	cam.position = cam.position.lerp(pos * m, clampf(delta * 18.0, 0.0, 1.0))
+	cam.rotation = cam.rotation.lerp(rot * m, clampf(delta * 18.0, 0.0, 1.0))
+
 var _vm_t := 0.0
 var _vm_kick := 0.0
 var _swing := 0.0            # melee swing timer
@@ -365,11 +420,6 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 	_scope_tick(sl)
 	gun.rotation.x = lerp(gun.rotation.x, rot.x + _vm_kick * 0.12 * kick_mult - rl * 0.5, k)
 	gun.rotation.y = lerp(gun.rotation.y, rot.y, k)
-	if _twirl > 0.0:
-		# two turns around the trigger finger, slowing into the grip at the end
-		_twirl = maxf(0.0, _twirl - delta / 0.9)
-		var tw := 1.0 - _twirl
-		gun.rotation.x = rot.x - TAU * 2.0 * (1.0 - pow(1.0 - tw, 2.0))
 	gun.rotation.z = lerp(gun.rotation.z, rot.z + rl * 0.7, k)
 	_fp_hand_snap()
 	if gun_l:
@@ -1786,6 +1836,7 @@ func _physics_process(delta: float) -> void:
 	var bsw := Vector2(sin(_breath_ph * 0.5) * 0.4, sin(_breath_ph)) * breath * 0.035 * (0.6 if aiming else 1.0) * (0.15 if held < 1.0 else 1.0)
 	head.rotation.x = pitch + _sway.y + bsw.y
 	head.rotation.y = _sway.x + bsw.x
+	_cam_bob(delta)      # (0.68+) the head moves with the steps and the breath
 	if _mantle_t >= 0.0:
 		_mantle_tick(delta)
 		return
@@ -2259,10 +2310,8 @@ func _actions(delta: float) -> void:
 		_use_hand("rh", Input.is_action_pressed("fire"), Input.is_action_just_pressed("fire"), delta)
 	if Input.is_action_just_pressed("reload"):
 		var g := gun_in("rh")
-		if not g.is_empty() and g["id"] == "magnum" and int(g.get("loaded", 0)) >= Game.mag_size("magnum") and busy <= 0:
-			_twirl = 1.0      # full already: a twirl on the trigger finger (just for show)
-			Game.play_ui(self, "swish", -18)
-		elif not g.is_empty():
+		# (0.68+) the show-off twirl of a full revolver is gone (Ari: it kept misbehaving)
+		if not g.is_empty():
 			_reload(g, Game.ITEMS[g["id"]])
 		elif item_in("rh").get("id", "") == "energo_nuz":
 			_edge_switch(item_in("rh"))
@@ -3520,7 +3569,6 @@ func _reload(wp: Dictionary, rule: Dictionary) -> void:
 # feeds the rounds one by one, a flick of the wrist snaps it shut.
 var _rl_hand: Node3D
 var _rl_carry := ""
-var _twirl := 0.0
 var _sg_roll := 0.0
 var _sg_was := false
 var _rev_open := 0.0

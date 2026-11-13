@@ -412,6 +412,8 @@ static func merge_build(out: MeshInstance3D) -> void:
 	out.mesh = st.commit() if any else null
 
 func _collect_refs(v, out: Dictionary) -> void:
+	if typeof(v) == TYPE_OBJECT and not is_instance_valid(v):
+		return
 	if v is Node:
 		out[v] = true
 	elif v is Array:
@@ -2811,6 +2813,8 @@ func _skyranger(o: Vector3) -> void:
 	var ship := Game.model("heli" if heli else ("pelikan" if mtype == "mars" else "dropship"))      # 0.57: Mars only by Pelikán
 	root.add_child(ship)
 	ship.position = c
+	ship.add_to_group("our_ship")
+	Game.ship_ramp(ship, 0.0)       # (0.7x) shut while landing / the prep inside; mission opens it
 	# idling blades: a slow, endless turn (the Čáp's rotors, the Kondor's proprotors - nacelles up)
 	for rn in ["RotorF", "RotorR", "PropL", "PropR"]:
 		var r: Node3D = ship.find_child(rn, true, false)

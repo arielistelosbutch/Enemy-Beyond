@@ -1313,6 +1313,7 @@ static func settings_ui(box: Control) -> void:
 		sl.value_changed.connect(func(v): upd.call(v); Game.save_settings())
 	mk.call("Citlivost myši: %.2f", 0.1, 4.0, 0.05, Game.mouse_sens, func(v): Game.mouse_sens = v)
 	mk.call("Zorné pole (FOV): %.0f", 60.0, 100.0, 1.0, Game.fov, func(v): Game.fov = v)
+	mk.call("Pohupování kamery: %.0f %%", 0.0, 150.0, 10.0, Game.cam_bob * 100.0, func(v): Game.cam_bob = v / 100.0)
 	# sound: one slider per bus (music, effects, wind, ambience, teammates)
 	var sh := Label.new()
 	sh.add_theme_font_size_override("font_size", 10)

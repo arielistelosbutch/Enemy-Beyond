@@ -50,14 +50,8 @@ func _ready() -> void:
 		var tl0 := tr_node.find_child(tn, true, false) as Node3D
 		if tl0:
 			tl0.rotation.x = -PI / 2
-	# in the air the rear ramp is shut (it only drops on the ground)
-	var ramp := MeshInstance3D.new()
-	var rbm := BoxMesh.new()
-	rbm.size = Vector3(3.0, 2.7, 0.12)
-	ramp.mesh = rbm
-	ramp.material_override = Game.mat("skyranger", 0.5)
-	tr_node.add_child(ramp)
-	ramp.position = Vector3(0, 1.5, 4.0)
+	# in the air the rear ramp is shut (it only drops on the ground of a mission)
+	Game.ship_ramp(tr_node, 0.0)
 	var tl := OmniLight3D.new()
 	tl.light_color = Color(1.0, 0.8, 0.5)
 	tl.light_energy = 2.0
@@ -177,6 +171,7 @@ func _physics_process(delta: float) -> void:
 	if net:
 		_net_e(delta)
 	_projectiles(delta)
+	_air_extras(delta)
 	_camera(delta)
 	if host:
 		_judge()
@@ -234,12 +229,15 @@ func _swarm_ai(delta: float) -> void:
 		if float(s["fire_cd"]) <= 0.0:
 			s["fire_cd"] = randf_range(3.0, 4.6)
 			var aim_at := tp + tr_vel * (to_tr.length() / 300.0)
+			var aimed_at := tp
 			if randf() < 0.3:
 				var js := _jets()
 				if not js.is_empty():
 					var jt2: Dictionary = js[randi() % js.size()]
 					if (jt2["pos"] as Vector3).distance_to(n.global_position) < 600.0:
 						aim_at = jt2["pos"] + (jt2["vel"] as Vector3) * ((jt2["pos"] as Vector3).distance_to(n.global_position) / 300.0)
+						aimed_at = jt2["pos"]
+			aim_at = _decoy_aim(aim_at, aimed_at)
 			if aim_at.distance_to(n.global_position) < 650.0:
 				var dir := (aim_at - n.global_position).normalized()
 				dir = (dir + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.035).normalized()
@@ -247,6 +245,32 @@ func _swarm_ai(delta: float) -> void:
 					_bolt.rpc(n.global_position + dir * 9.0, dir)
 				else:
 					_bolt(n.global_position + dir * 9.0, dir)
+
+## (0.7x) The wing for orders: other players' jets and the wingmen.
+func _wing_count() -> int:
+	return super._wing_count() + wing.size()
+
+func _order_target() -> int:
+	return swarm.find(_entry(ufo)) if ufo != null else -1
+
+## (0.7x) The quiet cue here: a shot coming at you, or an attacker closing in.
+func _threat_src() -> Vector3:
+	if not me_pilot or down or outcome != "":
+		return Vector3.ZERO
+	var me := jet.global_position
+	for bo in bolts:
+		var bn: Node3D = bo["node"]
+		var to := me - bn.global_position
+		if to.length() < 450.0 and (bo["vel"] as Vector3).normalized().dot(to.normalized()) > 0.995:
+			return bn.global_position
+	var best := Vector3.ZERO
+	var bd := 350.0
+	for s in _alive():
+		var p: Vector3 = (s["node"] as Node3D).global_position
+		if p.distance_to(me) < bd:
+			bd = p.distance_to(me)
+			best = p
+	return best
 
 ## every Sokol still flying (players and wingmen): pos, vel, fwd
 func _jets() -> Array:
@@ -272,24 +296,62 @@ func _transport_ai(delta: float) -> void:
 	tr_node.look_at(tr_node.global_position + tr_vel, Vector3.UP)
 	tr_node.rotate_object_local(Vector3.FORWARD, -tr_vel.normalized().x * 0.6)
 
+## (0.7x) The jet of whoever gave the last order to the wing (null = none / he is down).
+func _commander() -> Node3D:
+	if wing_order.is_empty() or float(wing_order["until"]) < t:
+		return null
+	var pid := int(wing_order["pid"])
+	if pid == Net.my_id():
+		return null if down else jet
+	if others.has(pid) and not others[pid]["down"]:
+		return others[pid]["node"]
+	return null
+
 ## Wingmen flown by their own pilots: hunt the nearest attacker, short bursts when lined up.
+## (0.7x) They obey the last order: 1 attack the commander's target, 2 cover him (go for whatever
+## is near him), 3 hold formation on his wing (shoot only what comes close).
 func _wing_ai(delta: float) -> void:
 	var al := _alive()
-	for w in wing:
+	var boss := _commander()
+	var cmd := String(wing_order.get("cmd", "")) if boss else ""
+	for wi in wing.size():
+		var w: Dictionary = wing[wi]
 		var wn: Node3D = w["node"]
 		var tg: Dictionary = {}
 		var bd := 1e9
+		var from := wn.global_position if cmd != "cover" else boss.global_position
 		for s in al:
-			var d := (s["node"] as Node3D).global_position.distance_to(wn.global_position)
+			var d := (s["node"] as Node3D).global_position.distance_to(from)
 			if d < bd:
 				bd = d
 				tg = s
 		var goal: Vector3 = tr_node.global_position + Vector3(80, 20, 60) if tg.is_empty() else (tg["node"] as Node3D).global_position
+		match cmd:
+			"attack":
+				var ti := int(wing_order.get("tgt", -1))
+				if ti >= 0 and ti < swarm.size() and swarm[ti]["alive"]:
+					tg = swarm[ti]
+					goal = (tg["node"] as Node3D).global_position
+			"cover":
+				if tg.is_empty() or bd > 600.0:
+					tg = {}
+					goal = boss.global_position + boss.global_transform.basis * Vector3(-40.0 if wi % 2 == 0 else 40.0, 10.0, 50.0)
+			"form":
+				goal = boss.global_position + boss.global_transform.basis * Vector3(-35.0 if wi % 2 == 0 else 35.0, 4.0, 25.0 + 20.0 * (wi / 2))
+				if not tg.is_empty() and (tg["node"] as Node3D).global_position.distance_to(wn.global_position) > 300.0:
+					tg = {}
+		bd = (tg["node"] as Node3D).global_position.distance_to(wn.global_position) if not tg.is_empty() else 1e9
 		var fwd := -wn.global_transform.basis.z
 		var to := (goal - wn.global_position).normalized()
+		var spd := 110.0
+		if cmd == "form" or (cmd == "cover" and tg.is_empty()):
+			# catch up with the slot, then hold it (fly with the leader)
+			spd = clampf(50.0 + goal.distance_to(wn.global_position) * 1.2, 45.0, 240.0)
 		var nf := fwd.slerp(to, clampf(delta * 1.4, 0, 1)).normalized()
 		wn.look_at(wn.global_position + nf, Vector3.UP)
-		wn.global_position += nf * 110.0 * delta
+		wn.global_position += nf * spd * delta
+		if cmd == "form" and not tg.is_empty():
+			to = ((tg["node"] as Node3D).global_position - wn.global_position).normalized()
 		w["cd"] = float(w["cd"]) - delta
 		if not tg.is_empty() and float(w["cd"]) <= 0.0 and fwd.angle_to(to) < deg_to_rad(10) and bd < 550.0:
 			w["cd"] = 0.45
@@ -527,8 +589,10 @@ func _draw_hud() -> void:
 	else:
 		_hplate(c, Rect2(4, sz.y - 30, 200, 26))
 		txt.call(Vector2(12, sz.y - 13), "RYCHLOST %d km/h   VÝŠKA %d m" % [int(speed * 3.6), int(jet.global_position.y)], Color(0.84, 0.89, 0.92), 9)
-		_hplate(c, Rect2(sz.x - 218, 4, 214, 24))
+		_hplate(c, Rect2(sz.x - 218, 4, 214, 36))
 		txt.call(Vector2(sz.x - 210, 19), "Myš řídí, A/D úhyb, W/S plyn, Shift forsáž", Color(0.45, 0.78, 0.86), 7)
+		txt.call(Vector2(sz.x - 210, 31), ("Q návnada (%d)" % decoys) if flying_transport else "", Color(0.45, 0.78, 0.86), 7)
+		_draw_air_extras(c, sz, sz / 2, green)
 		if msg_t > 0:
 			_msg_plate(c, Vector2(sz.x / 2, 66), msg, Color(1.0, 0.74, 0.32))
 	# every attacker: a small red box, or an arrow at the edge
@@ -550,6 +614,8 @@ func _draw_hud() -> void:
 
 # ---- test ------------------------------------------------------------------------------------------
 var _ramp_shot := false
+var _order_sent := false
+var _order_done := false
 func _process(_d: float) -> void:
 	if Game.autotest() != "escort":
 		return
@@ -572,6 +638,16 @@ func _process(_d: float) -> void:
 		await get_tree().process_frame
 		get_viewport().get_texture().get_image().save_png("user://escort_ramp.png")
 		c2.queue_free()
+	# wing orders: "hold formation" at 3 s, the wing must close up on me
+	if not _order_sent and t > 3.0 and not wing.is_empty() and not down:
+		_order_sent = true
+		give_order("form")
+	if _order_sent and not _order_done and t > 11.0 and not wing.is_empty():
+		_order_done = true
+		var near := 1e9
+		for w in wing:
+			near = minf(near, (w["node"] as Node3D).global_position.distance_to(jet.global_position))
+		print("[ESCORT-TEST] order=%s wing_near=%.0f" % [String(wing_order.get("cmd", "")), near])
 	if down or flying_transport or ufo == null:
 		return
 	var to := ufo.global_position - jet.global_position

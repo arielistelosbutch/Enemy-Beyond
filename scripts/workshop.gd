@@ -1813,7 +1813,7 @@ func _an_load() -> void:
 		_an_info.text = "Hra teď použije animaci pro všechno. Úpravou a uložením vznikne vlastní pro tenhle předmět."
 	else:
 		_ac = AnimClips.new_clip(_an_druh(), "%s %s" % [sub2, subject])
-		_ac["delka"] = {"reload": 2.0, "reload1": 0.8, "strike": 0.5, "heal": 1.5, "dig": 1.5, "hold": 1.2, "salute": 2.4, "atease": 1.0, "hips": 1.0, "twirl": 0.9}.get(sub2, 1.0)
+		_ac["delka"] = {"reload": 2.0, "reload1": 0.8, "strike": 0.5, "heal": 1.5, "dig": 1.5, "hold": 1.2, "salute": 2.4, "atease": 1.0, "hips": 1.0}.get(sub2, 1.0)
 		_ac["smycka"] = sub2 in ["hold", "heal", "dig", "atease", "hips"]
 		_an_info.text = "Zatím žádná animace - hra používá tu napsanou v kódu. Nastav pózu na začátku (K) a na konci."
 	_an_t = 0.0
