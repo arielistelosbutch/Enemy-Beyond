@@ -212,7 +212,16 @@ static func navcache(at: Node, p: Node) -> void:
 		var t1 := Time.get_ticks_msec()
 		NavigationServer3D.bake_from_source_geometry_data(ref, d)
 		at.out("[NAVC] full parse %d ms, bake %d ms" % [t1 - t0, Time.get_ticks_msec() - t1])
-		var same := got.get_polygon_count() == ref.get_polygon_count() and got.get_vertices().size() == ref.get_vertices().size()
+		# (0.70) the bake cuts the same ground into polygons a little differently with the order the
+		# pieces are merged in (seen: 4283 vs 4278 polygons, 8 extra corners in empty fields far from the
+		# broken wall), so: nearly the same polygons and corners, not exactly
+		var rv := {}
+		for v in ref.get_vertices(): rv[Vector3i((v * 10.0).round())] = true
+		var odd := 0
+		for v in got.get_vertices():
+			if not rv.has(Vector3i((v * 10.0).round())): odd += 1
+		var same := absi(got.get_polygon_count() - ref.get_polygon_count()) <= maxi(4, ref.get_polygon_count() / 200) \
+			and odd <= maxi(4, ref.get_vertices().size() / 100)
 		var va := 0
 		var gl: Array = at.get_meta("mg_groups", [])
 		for g in gl: va += _verts(g)

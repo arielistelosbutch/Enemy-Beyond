@@ -20,7 +20,7 @@ const TIPS := [
 	"Batoh je pomalý. Co budeš potřebovat hned, nos na opasku.",
 	"Svítilna na helmě tě ukáže dřív, než uvidíš ty je.",
 	"Přikrčený a vleže tě vidí z menší dálky. Sprint je slyšet.",
-	"Raněného spolubojovníka odtáhneš klávesou E. Krvácí, nečekej.",
+	"Raněného spolubojovníka odtáhneš klávesou F. Krvácí, nečekej.",
 	"Zavřené ocelové dveře na základně je zdrží. Ne navždy.",
 	"Kouřový granát kryje ústup i oživování.",
 	"Před misí zkontroluj výstroj: co nevezmeš, na místě nenajdeš.",

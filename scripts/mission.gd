@@ -323,6 +323,7 @@ func _ready() -> void:
 	add_child(voice)
 	# 0.70 Facelift II: the echo of the place (a reverb on the sounds the game has, no new sounds)
 	add_child(preload("res://scripts/room_echo.gd").new())
+
 	# no music: wind, silence and what moves in it
 	music = AudioStreamPlayer.new()
 	music.stream = Game.loop_stream(_wind_name())
@@ -384,7 +385,10 @@ func _ready() -> void:
 		vr.seed = Net.mission_seed + 7
 		vip_name = VIP_NAMES[vr.randi() % VIP_NAMES.size()]
 	if home():
-		hud.briefing(("Základna v rokli na Vysočině, pod zemí." if String(Net.mission_params.get("where", "Vysočina")) == "Vysočina" else "Základna pod zemí, oblast %s." % Net.mission_params.get("where", "")) + " Mezi misemi se tu dá chodit: ubikace, laboratoř, dílna, hangár s lodí.\n\nE u terminálu:\n  Velín - zpět ke globusu (mise, nákupy, stavby; ovládá hostitel)\n  Laboratoř - strom výzkumu, encyklopedie\n\nNikdo tu po vás nestřílí. Zatím.")
+		# (0.7x, Ari: "pořád funguje jako samostatná mise") no briefing, no waiting: out of the lift
+		# and walking. A short word on the way back up instead.
+		brief_done()
+		_home_hello()
 	else:
 		hud.briefing(_briefing_text() + "\nPočasí: " + WEATHER_NAMES[weather] + ".")
 	multiplayer.peer_disconnected.connect(_on_peer_left)
@@ -587,17 +591,17 @@ func _briefing_text() -> String:
 			"mars": "Pelikán přistál na rudé pláni. Před vámi je tunel do jejich velína a za ním Velký mozek - to, co je všechny řídí. Chrání ho štít ze tří pylonů. Zničte pylony, pak mozek. Myslí na vás. Uslyšíte ho.",
 			"rescue": "Nouzový maják vysílá z oblasti, kam dosedlo UFO. Někdo tam přežil a vetřelci po něm jdou. Signál ukazuje směr a vzdálenost (nahoře na obrazovce).",
 			"alienbase": "Výslech prozradil, kde mají základnu: jeskyně pod zemí, vykopané do skály a zarostlé jejich zahradou. Sjíždíte šachtou dolů. Někde v hloubce je velitelské centrum s řídicím jádrem - a v líhni prý drží lidi.",
-			"sabotage": "Tři cizí majáky v krajině vysílají k jejich lodím. Dokud stojí, přicházejí další. Každý maják: drž u něj E 3 sekundy, nálož bouchne za 8 sekund.",
+			"sabotage": "Tři cizí majáky v krajině vysílají k jejich lodím. Dokud stojí, přicházejí další. Každý maják: drž u něj F 3 sekundy, nálož bouchne za 8 sekund.",
 			"base": "Vetřelci přistáli nad základnou. Vyřadili pojistky - hlavní světla zhasla, svítí jen rudé nouzové lampy. Lezou dovnitř hangárem a šachtou výtahu, ve vlnách. Vydržet a zabít všechny. Znáte tu každou chodbu - oni ne." if Net.mission_params.has("base") else "Vetřelci přistáli u základny v rokli. Kondor stojí na ploše a nikam se neletí. Útočí ve vlnách od okraje rokle. Vydržet a zabít všechny.",
-			"terror": "Vetřelci vtrhli do městečka. Spojení s místními je přerušeno. Poslední hovor na tísňovou linku: \"Je to černé, je to rychlé, a ti, co to zabilo, zase vstávají.\"\nZachraň, koho můžeš (E u vyděšeného civilisty - půjde za tebou do Kondoru).",
+			"terror": "Vetřelci vtrhli do městečka. Spojení s místními je přerušeno. Poslední hovor na tísňovou linku: \"Je to černé, je to rychlé, a ti, co to zabilo, zase vstávají.\"\nZachraň, koho můžeš (F u vyděšeného civilisty - půjde za tebou do Kondoru).",
 		}
 		var terr: String = {"snow": "\nTerén: sníh.", "desert": "\nTerén: poušť."}.get(mp.get("terrain", ""), "")
 		var task := "ÚKOL: zneškodnit posádku a vrátit se do Kondoru.\nOmráčení vetřelci mají pro výzkum velkou cenu. Co vetřelci upustí, posbíráme při odletu."
 		match String(mp.get("type", "")):
 			"mars": task = "ÚKOL: zničit tři pylony štítu a Velký mozek. Návrat není."
-			"rescue": task = "ÚKOL: najít a přivést do Kondoru živého - ostatní vetřelci jsou až na druhém místě (E u něj = půjde za tebou)."
+			"rescue": task = "ÚKOL: najít a přivést do Kondoru živého - ostatní vetřelci jsou až na druhém místě (F u něj = půjde za tebou)."
 			"sabotage": task = "ÚKOL: zničit všechny tři majáky a vrátit se do Kondoru."
-			"alienbase": task = "ÚKOL: najít velitelské centrum, zničit řídicí jádro (výbuch!) a vrátit se k šachtě. Zajatce z líhně vezměte s sebou (E u nich)."
+			"alienbase": task = "ÚKOL: najít velitelské centrum, zničit řídicí jádro (výbuch!) a vrátit se k šachtě. Zajatce z líhně vezměte s sebou (F u nich)."
 			"base": task = "ÚKOL: ubránit základnu - přežít všechny vlny. Prohra znamená vyrabovanou základnu."
 		var learned := ""
 		var hb: Dictionary = mp.get("habits", {})
@@ -964,6 +968,12 @@ func _maybe_spawn() -> void:
 		var sc: Array = SHIP_CREW[kind]
 		count = int(ceil(float(sc[0]) + float(sc[1]) * maxi(0, Net.roster.size() - 1) - 0.001)) + (1 if mtype() == "landed" else 0) + (1 if Game.veteran() else (-1 if Game.easy() else 0))
 		_crew_cap = int(sc[2])
+	# (Ari 2026-11-13: the defence was brutal - 7 + waves solo, ~30 in four) our base: a raiding party
+	# of 3 (+1 for every other mercenary) plus what the war adds (extra_aliens 0-3), then BASE_WAVES
+	if mtype() == "base":
+		var extra := int(Net.mission_params.get("extra_aliens", 0))
+		count = int(ceil(float(BASE_CREW[0]) + float(BASE_CREW[1]) * maxi(0, Net.roster.size() - 1) - 0.001)) + extra + (1 if Game.veteran() else (-1 if Game.easy() else 0))
+		_crew_cap = int(BASE_CREW[2]) + extra
 	var crew := _crew(count, rng)
 	for k in crew.size():
 		var p: Vector3 = spawns[k % spawns.size()] + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
@@ -1040,6 +1050,11 @@ var crew_style := ""
 ## 0.63: crew by ship (crash / landed) - [alone, each further mercenary, most it carries]
 const SHIP_CREW := {"scout": [2, 0.67, 4], "raider": [3, 1.0, 6], "harvester": [4, 1.34, 9], "supply": [7, 1.67, 13], "battleship": [8, 2.0, 15]}
 var _crew_cap := 0
+## Our base attacked: [first party solo, + per other mercenary, most], waves after it and a wave's
+## size (1 + mercenaries; veteran +1 wave and +1 alien), a breather before a wave once all are down.
+const BASE_CREW := [3, 1.0, 7]
+const BASE_WAVES := 1
+const WAVE_BREATHER := 30.0
 ## Who is on board: one group per ship, soldiers, an officer on bigger ships,
 ## their beasts or machines; on terror missions their terror creatures.
 func _crew(count: int, rng: RandomNumberGenerator) -> Array:
@@ -1156,9 +1171,16 @@ func _spawn(data: Variant) -> Node:
 func players() -> Array:
 	var out := []
 	for c in actors.get_children():
-		if c.has_method("is_player"):
+		if c.has_method("is_player") and not is_out(c):
 			out.append(c)
 	return out
+
+## (0.69) Host: a co-op player who walked out of the mission. His body stays in the scene until he
+## reaches the lobby (his machine still sends it), but for the mission he is gone: no alien sees,
+## targets or hurts him, he is not counted among the living.
+var _out_peers := {}
+func is_out(p: Node) -> bool:
+	return not _out_peers.is_empty() and _out_peers.has(p.get_multiplayer_authority())
 
 func aliens() -> Array:
 	var out := []
@@ -1628,6 +1650,46 @@ func _director(delta: float) -> void:
 
 ## The mercenaries' part of a mission reward (split between them); the rest goes to the base.
 const MERC_SHARE := 0.4
+## (0.70) Pay for each civilian brought out alive, into the team's pot (the base gets its own 60 kr).
+const CIV_PAY := 30
+
+## (0.70, Ari: "ať někdo nemá velký štěstí, ať to víc pobízí ke spolupráci") Everything the
+## mercenaries earn on a mission goes into one pot: each one's pay (30/100 kr + 30 a kill, 80 a capture,
+## 25 a revive), the mercs' part of the reward, CIV_PAY for every civilian saved - all × the mission
+## rating - and the alien packs picked up (as found). The pot is split evenly between everyone who
+## was in the team at the end (the fallen too: their part goes to the recruit who takes over their
+## savings). Counted on every machine from synced numbers (kills, captures, revives, salvage), the
+## same way as quality(). Who walks out of a co-op mission alone (only) gets only his own part.
+## Experience stays personal.
+var my_pot := {}
+func team_pot(success: bool, q: float, only: Node = null) -> Dictionary:
+	var ps: Array = [only] if only else players()
+	var n := maxi(1, ps.size())
+	var work := 0
+	var found := 0
+	for p in ps:
+		work += (100 if success else 30) + int(p.kills) * 30 + int(p.captures) * 80 + int(p.get("revives")) * 25
+		found += int(p.get("salvage"))
+	var civ := 0
+	if only == null:
+		for c in civilians():
+			if c.saved:
+				civ += 1
+	var reward := int(int(Net.mission_params.get("reward", 0)) * MERC_SHARE) if success else 0
+	if only:
+		reward = int(reward / float(maxi(1, players().size())))
+	var total := int((work + reward + civ * CIV_PAY) * q) + found
+	return {"total": total, "share": int(floor(total / float(n))), "n": n, "found": found, "civ": civ * CIV_PAY,
+		"reward": reward}
+
+func pot_text(pot: Dictionary) -> String:
+	var parts := []
+	if int(pot["found"]) > 0:
+		parts.append("nálezy %d kr" % int(pot["found"]))
+	if int(pot["civ"]) > 0:
+		parts.append("civilisté %d kr" % int(pot["civ"]))
+	return "Společná hromádka týmu %d kr%s, děleno %d = %d kr každému" % [int(pot["total"]),
+		(" (z toho " + ", ".join(parts) + ")") if not parts.is_empty() else "", int(pot["n"]), int(pot["share"])]
 
 ## Quiet beats (no radio chatter any more): a knock on the hull, a lure in the barn, the
 ## power going out. And when the job is done, the banner at the top says so.
@@ -1648,8 +1710,7 @@ func _story(ps: Array) -> void:
 		elif t > 150.0 and not _radio_done.has("power") and _radio_done.has("knock_snd") and AD.beat_ok(self, 35.0):
 			_radio_done["power"] = true
 			_blackout.rpc()
-		if not done_banner and _objective_met():
-			_show_done.rpc()
+		_done_check()
 		return
 	if t > 95.0 and not _radio_done.has("knock_snd"):
 		_radio_done["knock_snd"] = true
@@ -1663,8 +1724,7 @@ func _story(ps: Array) -> void:
 	if t > 210.0 and not _radio_done.has("power"):
 		_radio_done["power"] = true
 		_blackout.rpc()
-	if not done_banner and _objective_met():
-		_show_done.rpc()
+	_done_check()
 
 ## Is the task of this mission fulfilled (the team may fly home with a success)?
 func _objective_met() -> bool:
@@ -1680,9 +1740,38 @@ func _objective_met() -> bool:
 			return core_down()
 	return _spawned and aliens_total > 0 and alive_aliens() == 0
 
+## Host: the objective met -> the banner (Enter = fly home at once); (0.69, Ari) reinforcements
+## landing after it ("kill them all" missions) take it away until they are down too.
+func _done_check() -> void:
+	if not done_banner and _objective_met():
+		_show_done.rpc(next_alien_id)
+	elif done_banner and _kill_all() and alive_aliens() > 0:
+		_hide_done.rpc()
+
+## Missions whose task is "the crew down" (not a rescue, beacons, a core...).
+func _kill_all() -> bool:
+	return not mtype() in ["rescue", "sabotage", "base", "mars", "alienbase"]
+
 @rpc("authority", "call_local", "reliable")
-func _show_done() -> void:
+func _hide_done() -> void:
+	done_banner = false
+	Game.play_ui(self, "warning_alarm", -8)
+	if hud:
+		hud.message("POSILY! Úkol ještě není splněný - zneškodněte i je (nebo odleťte z místa výsadku bez splněné mise).", 8.0)
+
+## (0.69) The job was done once (reinforcements may have come since); aliens numbered from
+## _reinf_from on came after it (no loot from them when the team leaves before they are down).
+var _done_once := false
+var _reinf_from := -1
+func _is_reinf(a: Node) -> bool:
+	return _reinf_from >= 0 and String(a.name).begins_with("A") and int(String(a.name).substr(1)) >= _reinf_from
+
+@rpc("authority", "call_local", "reliable")
+func _show_done(first_reinf := -1) -> void:
 	done_banner = true
+	if not _done_once:
+		_done_once = true
+		_reinf_from = first_reinf
 	Game.play_ui(self, "ping", -6)
 	if hud:
 		hud.message("ÚKOL SPLNĚN. Enter = odletět hned, transport vás vyzvedne (k lodi se vracet nemusíte).", 8.0)
@@ -1787,6 +1876,7 @@ func _roofs_check() -> void:
 			tw.parallel().tween_property(n, "rotation:z", randf_range(-0.25, 0.25), 0.9)
 			tw.tween_interval(6.0)
 			tw.tween_callback(n.queue_free)
+			tw.tween_callback(func(): _nav_dirty = 1.0)     # (0.70) the paths learn the fallen roof is gone
 			# dust and sparks where it hit
 			var parts := CPUParticles3D.new()
 			parts.one_shot = true
@@ -2313,8 +2403,11 @@ func _judge() -> void:
 	if standing == 0:
 		_end.rpc(false, "Celý tým padl." if mt != "base" else "Celý tým padl. Základna je v rukou vetřelců.")
 	elif at_evac == living and mt != "base":
-		var won := alive_aliens() == 0
-		var why := "Posádka UFO zneškodněna." if won else "Tým se stáhl z mise."
+		# (0.69, Ari) reinforcements after the job was done take the banner away again (_done_check);
+		# who flies off from the ship before they are down still did the job - a worse rating
+		# (quality), nothing from the reinforcements comes home (_loot)
+		var won := alive_aliens() == 0 or (_done_once and _kill_all())
+		var why := "Posádka UFO zneškodněna." if alive_aliens() == 0 else ("Úkol splněn, ale tým odletěl před posilami." if won else "Tým se stáhl z mise.")
 		match mt:
 			"rescue":
 				var v2 := vip()
@@ -2360,7 +2453,10 @@ func _loot(success: bool) -> Dictionary:
 		return out
 	var r := RandomNumberGenerator.new()
 	r.seed = Net.mission_seed + 77
+	var early := alive_aliens() > 0      # (flown off before the reinforcements were down)
 	for a in aliens():
+		if early and _is_reinf(a):
+			continue
 		# the bodies (and the living) go home on the Kondor for the laboratory
 		if a.captured:
 			out["live_" + a.race] = int(out.get("live_" + a.race, 0)) + 1
@@ -2370,6 +2466,8 @@ func _loot(success: bool) -> Dictionary:
 		elif a.dead and not a.seared:
 			out["corpse_" + a.race] = int(out.get("corpse_" + a.race, 0)) + 1
 	for a in aliens():
+		if early and _is_reinf(a):
+			continue
 		if a.dead and not a.seared and Campaign.RACE_WEAPON.has(a.race) and r.randf() < 0.6:
 			var w: String = Campaign.RACE_WEAPON[a.race]
 			out[w] = int(out.get(w, 0)) + 1
@@ -2408,15 +2506,17 @@ func _end(success: bool, why: String, airlift := false, abandoned := false) -> v
 		Game.merc["missions"] = int(Game.merc.get("missions", 0)) + 1
 		Game.merc["kills"] = int(Game.merc.get("kills", 0)) + me.kills
 		Game.merc["captures"] = int(Game.merc.get("captures", 0)) + me.captures
-		# personal pay: the share of the reward (the base keeps the rest), what he did, what he found
-		var pay: int = (100 if success else 30) + me.kills * 30 + me.captures * 80 + me.revives * 25
-		if success:
-			pay += int(int(Net.mission_params.get("reward", 0)) * MERC_SHARE / maxi(1, players().size()))
-		pay = int(pay * q) + me.salvage
+		# (0.70) the pay: one pot for the whole team (pay, kills, captures, revives, civilians saved,
+		# the packs found), split evenly - see team_pot
+		var pot := team_pot(success, q, me if _walked_out else null)
+		var pay: int = int(pot["share"])
 		my_pay = pay
+		my_pot = pot
 		var purse := int(Game.merc.get("money", 0)) + pay
 		if pay > 0:
-			xp_text += "\nTvůj žold: +%d kr (máš %d kr)%s" % [pay, purse, ("  - z toho nálezy %d kr" % me.salvage) if me.salvage > 0 else ""]
+			xp_text += "\nTvůj žold: +%d kr (máš %d kr)" % [pay, purse]
+			if int(pot["n"]) > 1:
+				xp_text += "\n" + pot_text(pot)
 		var aboard: bool = _airlift or me.global_position.distance_to(map["evac"]) < 3.5
 		if left_behind(me) and not me.dead and not me.downed:
 			# (0.57) the mission given up from the menu: nobody comes for him
@@ -2511,10 +2611,10 @@ func _end(success: bool, why: String, airlift := false, abandoned := false) -> v
 	if campaign:
 		lines.append("Hodnocení mise: %s (odměny ×%.2f)" % [quality_name(q), q])
 	# 0.66: a mission won and he flies home - the look into the transport with his own numbers
-	if success and me and not left_behind(me) and not home() and not local() and (Game.autotest() == "" or Game.autotest() == "transport"):
+	if success and me and not left_behind(me) and not home() and not local() and (Game.autotest() == "" or Game.autotest() == "transport" or Game.autotest().begins_with("coopevac")):
 		_show_transport(me, campaign, q, my_pay, my_xp, fate, camp, civ_saved, civ_dead)
 		return
-	hud.show_result(("MISE SPLNĚNA" if success else "MISE NEÚSPĚŠNÁ"), why + "\n\n" + "\n".join(lines) + "\n\nTvůj voják: " + fate + xp_text + ("\n\n" + camp if camp != "" else ""))
+	hud.show_result(("MISE SPLNĚNA" if success else ("ZÁKLADNA PADLA" if mtype() == "base" and campaign else "MISE NEÚSPĚŠNÁ")), why + "\n\n" + "\n".join(lines) + "\n\nTvůj voják: " + fate + xp_text + ("\n\n" + camp if camp != "" else ""))
 	if Game.autotest() != "": print("[END] result shown, leaving in a moment")
 	get_tree().create_timer(8.0 if Game.autotest() != "campaign" else 2.0).timeout.connect(func(): _leave(""))
 
@@ -2548,12 +2648,12 @@ func _show_transport(me: Node, campaign: bool, q: float, pay: int, xp: int, fate
 			guns += int(loot[k])
 	var stats := [["Zabití", str(me.kills)], ["Zajatí živí", str(me.captures)],
 		["Oživil jsi", str(me.revives)], ["Zranění v týmu", "%d z %d" % [hurt, players().size()]],
-		["Nálezy", "%d kr" % me.salvage], ["Žold", ("+%d kr" % pay) if campaign else "-"],
+		["Hromádka týmu", ("%d kr / %d" % [int(my_pot.get("total", 0)), int(my_pot.get("n", 1))]) if campaign else "-"], ["Tvůj díl", ("+%d kr" % pay) if campaign else "-"],
 		["Zkušenosti", ("+%d" % xp) if campaign and xp > 0 else "-"], ["Hodnocení", quality_name(q) if campaign else "-"],
 		["Kořist: těla", str(bodies)], ["zajatci", str(live)], ["zbraně", str(guns)], ["moskovium", str(int(loot.get("moskovium", 0)))]]
 	if civs_total > 0:
 		stats.append_array([["Civilisté zachránění", str(civ_saved)], ["mrtví", str(civ_dead)]])
-	var report := "Tvůj voják: " + fate + ("\n\n" + camp if camp != "" else "")
+	var report := "Tvůj voják: " + fate + (("\n" + pot_text(my_pot)) if campaign and not my_pot.is_empty() else "") + ("\n\n" + camp if camp != "" else "")
 	var heli := String(Net.mission_params.get("transport", "kondor")) == "heli"
 	transport = TransportScene.new()
 	add_child(transport)
@@ -2612,6 +2712,8 @@ func quality(success: bool) -> float:
 		if c.saved: q += 0.06
 		elif c.dead: q -= 0.05
 	q += 0.08 * mini(caps, 3)
+	if success and _done_once and _kill_all() and alive_aliens() > 0:
+		q -= 0.35         # (0.69, Ari) the job done, but the reinforcements were left standing
 	return clampf(q, 0.25, 1.5)
 
 static func quality_name(q: float) -> String:
@@ -2649,7 +2751,10 @@ func left_behind(p: Node) -> bool:
 ## A co-op client: only he walks out - his merc is lost unless he stands at the evac point,
 ## the others play on and he counts among the lost at their end.
 func leave_from_menu() -> void:
-	if finished or home() or local():
+	if home() or local():
+		up_to_globe()
+		return
+	if finished:
 		Net.after_mission()
 		return
 	if multiplayer.is_server():
@@ -2659,6 +2764,8 @@ func leave_from_menu() -> void:
 	# the host takes his body out of the game as he goes - see _leave)
 	_walked_out = true
 	_end(false, "Opustil jsi misi. Tým pokračuje bez tebe.", false, true)
+	if Net.is_online():
+		_walking_out.rpc_id(1)      # (0.69) at once - not after the result screen and the loading
 
 var _walked_out := false
 
@@ -2671,13 +2778,32 @@ func _deserted() -> void:
 	var n := actors.get_node_or_null("P%d" % id)
 	if n == null:
 		return
+	if not _out_peers.has(id):
+		_deserters += 1
+		hud_note.rpc("%s opustil misi." % String(n.display_name))
+	n.queue_free()
+
+## (0.69, Ari: they kept shooting him on the result and loading screens) Host: a co-op player
+## pressed "Opustit misi" - from this moment he is out of the fight (is_out), his body goes
+## away once he is in the lobby (_deserted).
+@rpc("any_peer", "call_remote", "reliable")
+func _walking_out() -> void:
+	if not multiplayer.is_server() or finished:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var n := actors.get_node_or_null("P%d" % id)
+	if n == null or _out_peers.has(id):
+		return
+	_out_peers[id] = true
 	_deserters += 1
 	hud_note.rpc("%s opustil misi." % String(n.display_name))
-	n.queue_free()
+	for a in aliens():
+		if is_instance_valid(a.get("target")) and a.target == n:
+			a.target = null
 
 func _leave(why: String) -> void:
 	if Game.autotest() != "": print("[END] leave '%s'" % why)
-	if Game.autotest() != "" and Game.autotest() != "campaign" and not Game.autotest().begins_with("coopwipe"):
+	if Game.autotest() != "" and Game.autotest() != "campaign" and not Game.autotest().begins_with("coopwipe") and not Game.autotest().begins_with("coopevac"):
 		return
 	if why != "":
 		# the host went away (his game, his connection): not this player's doing - his merc lives
@@ -2795,20 +2921,42 @@ func _home_tick(delta: float) -> void:
 	if not home():
 		return
 	# the campaign clock keeps going down here (slowly): the radar may see something
-	if multiplayer.is_server() and Campaign.active and started():
+	if multiplayer.is_server() and Campaign.active and not Campaign.viewer and started():
 		_clock_t += delta
 		if _clock_t >= 1.0:
 			_clock_t = 0.0
-			Campaign.advance(5.0 / 1440.0)
+			Campaign.advance(HOME_CLOCK)
+		# (0.7x) the host walks round his own copy: the others' globes keep turning with this clock
+		if local() and Net.is_online():
+			_geo_t -= delta
+			if _geo_t <= 0.0:
+				_geo_t = 0.25
+				Net.send_geo_live(HOME_CLOCK)
+	_ready_call(delta)
 	var me := local_player()
 	_term_note -= delta
 	if me and _term_note <= 0.0 and hud and not hud.inventory_open:
 		var tm := terminal_near(me.global_position)
 		if not tm.is_empty():
 			_term_note = 1.0
-			hud.message("E: " + String(tm["label"]), 1.1)
+			hud.message("F: " + String(tm["label"]), 1.1)
+
+## (0.7x) A co-op player down in his own base while the host waits for the team on the globe:
+## a reminder now and then (PŘIPRAVEN is in the Esc menu; a started drop pulls him up anyway).
+var _ready_t := 0.0
+func _ready_call(delta: float) -> void:
+	if not local() or not Net.is_online() or Net.ready_wait == "" or Net.is_ready(Net.my_id()) or hud == null:
+		_ready_t = 0.0
+		return
+	_ready_t -= delta
+	if _ready_t <= 0.0:
+		_ready_t = 8.0
+		hud.message("Hostitel čeká na tým: %s. Esc - PŘIPRAVEN." % Net.ready_wait, 5.0)
+		Game.play_ui(self, "radar_ping", -10)
 
 # ---- alarms: orange beacons and a siren when the radar sees a UFO; red blinking when attacked ----
+const HOME_CLOCK := 5.0 / 1440.0     # days the campaign moves on per second down in the base
+var _geo_t := 0.0
 var _clock_t := 0.0
 var _orange_t := 0.0
 var _siren: AudioStreamPlayer
@@ -2876,7 +3024,7 @@ func _work_loop(wk: Dictionary, sname: String, on: bool, db: float) -> void:
 ## per room, never more than there are places to work. Not while the base is attacked (no posts then).
 const BaseNpc := preload("res://scripts/base_npc.gd")
 func _base_people() -> void:
-	if AnimClips.get_clip("tp_npc_walk").is_empty() and Game.autotest() != "npcshot":
+	if AnimClips.get_clip("tp_npc_walk").is_empty() and not Game.autotest() in ["npcshot", "baseshot"]:
 		return       # (Ari's movements are only in the game's .pck: without them nobody walks the base)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = Net.mission_seed + 404
@@ -2891,6 +3039,15 @@ func _base_people() -> void:
 			npc.set_script(BaseNpc)
 			add_child(npc)
 			npc.setup(String(c["role"]), posts, busy, rng.randi(), rng.randf() < 0.3)
+	# (0.69, Ari: the builders are the base's technicians, not villagers) one at each job, staying put
+	for wk in map.get("workers", []):
+		if not wk.has("npc"):
+			continue
+		var npc := Node3D.new()
+		npc.set_script(BaseNpc)
+		add_child(npc)
+		var q: Dictionary = wk["npc"]
+		npc.setup("tech", [{"pos": q["pos"], "yaw": q["yaw"], "act": q["act"]}], {}, rng.randi(), false, true)
 
 ## The builders behind the tape: welding flicker and crackle, hammer blows, the jackhammer's rattle.
 var _work_t := {}
@@ -2913,14 +3070,17 @@ func _workers_tick(delta: float) -> void:
 				if t <= 0.0:
 					t = 0.7 if randf() < 0.8 else 2.5
 					Game.play_at(self, "hammer", wk["pos"], -6)
-					node.rotation.x = 0.12
-				node.rotation.x = move_toward(node.rotation.x, 0.0, delta * 0.6)
+					if node:
+						node.rotation.x = 0.12
+				if node:
+					node.rotation.x = move_toward(node.rotation.x, 0.0, delta * 0.6)
 			"drill":
 				var burst := fmod(Time.get_ticks_msec() * 0.001, 5.0) < 2.2
 				_work_loop(wk, "jackhammer", burst, -6.0)
-				node.position.y = (randf_range(0.0, 0.025) if burst else 0.0) + float(wk.get("y0", node.position.y if not wk.has("y0") else wk["y0"]))
-				if not wk.has("y0"):
-					wk["y0"] = node.position.y
+				if node:
+					if not wk.has("y0"):
+						wk["y0"] = node.position.y
+					node.position.y = (randf_range(0.0, 0.025) if burst else 0.0) + float(wk["y0"])
 		_work_t[wk] = t
 
 # ---- doors: E opens and shuts them; the aliens shove them open; a shot or a blast breaks them ----
@@ -3141,16 +3301,36 @@ func terminal_near(p: Vector3) -> Dictionary:
 			return tm
 	return {}
 
+## (0.7x) Into the base: a word on where we are and how to get back up, once the loading is gone.
+func _home_hello() -> void:
+	while Game.loading_busy():
+		await get_tree().process_frame
+	if not is_instance_valid(hud):
+		return
+	var where := String(Net.mission_params.get("where", "Vysočina"))
+	hud.message(("Základna v rokli na Vysočině." if where == "Vysočina" else "Základna, oblast %s." % where) + " Zpět na glóbus: terminál ve velínu (E) nebo Esc.", 6.0)
+
+## (0.7x) Up the lift, straight back to the globe: one's own copy of the base (the co-op connection
+## stayed alive above it), or a solo walk. Never the lobby - the campaign goes on up there.
+func up_to_globe() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if local():
+		Game.camo = ""
+		Net.mission_params = {}
+		if Campaign.viewer or Campaign.active:
+			Game.load_scene("res://scenes/Geoscape.tscn")
+		else:
+			get_tree().change_scene_to_file("res://scenes/Main.tscn")
+		return
+	Net.after_mission()
+
 ## The local player pressed E at a terminal.
 func use_terminal(tm: Dictionary) -> void:
 	Game.play_ui(self, "ui_click", -6)
 	match String(tm["kind"]):
 		"globe":
 			if local():
-				# up the lift, straight to the host's globe (the co-op connection stayed alive)
-				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-				Net.mission_params = {}
-				get_tree().change_scene_to_file("res://scenes/Geoscape.tscn" if Campaign.viewer else "res://scenes/Main.tscn")
+				up_to_globe()
 				return
 			if not multiplayer.is_server():
 				hud.message("Velín ovládá hostitel.", 2.5)
@@ -3170,7 +3350,7 @@ func use_terminal(tm: Dictionary) -> void:
 					got.append(am)
 					for n in 2:
 						drop_item({"id": am}, me.global_position + Vector3(0, 0.3, 0) - me.global_transform.basis.z * 0.7 + Vector3(n * 0.2, 0, 0))
-			hud.message("Zásobníky leží u bedny (E sebrat)." if not got.is_empty() else "Nemáš zbraň, do které by šly náboje.", 2.5)
+			hud.message("Zásobníky leží u bedny (F sebrat)." if not got.is_empty() else "Nemáš zbraň, do které by šly náboje.", 2.5)
 
 @rpc("authority", "call_local", "reliable")
 func _go_home_globe() -> void:
@@ -3226,10 +3406,8 @@ func _spawn_objectives(rng: RandomNumberGenerator) -> void:
 			for k in 2:
 				spawn_alien(_crew(1, rng)[0], best + Vector3(rng.randf_range(-12, 12), 0.3, rng.randf_range(-12, 12)))
 		"base":
-			waves_left = 2 + (1 if Game.veteran() else 0) + (1 if Net.roster.size() > 2 else 0)
-			if int(Net.mission_params.get("base_def", 0)) > 0:
-				waves_left = maxi(1, waves_left - 1)      # (the towers keep one of their ships from landing)
-			_wave_t = 75.0
+			waves_left = BASE_WAVES + (1 if Game.veteran() else 0)
+			_wave_t = 90.0
 
 ## Every machine builds the beacons from the map (same seed = same places).
 func _build_beacons() -> void:
@@ -3329,14 +3507,18 @@ func _objectives_tick(delta: float) -> void:
 			hud_note.rpc("Maják vysílá - z temnoty přichází další vetřelec.")
 	if mtype() == "base" and waves_left > 0:
 		_wave_t -= delta
-		if _wave_t <= 0.0 or alive_aliens() == 0:
-			if _wave_t > 82.0 and alive_aliens() == 0 and _wave_t > 0.0:
-				return          # the last wave is still landing
+		if alive_aliens() == 0 and _wave_t > WAVE_BREATHER:
+			# all of them down: a breather to patch up and reload before the next ship sets down
+			_wave_t = WAVE_BREATHER
+			hud_note.rpc("Další loď nad roklí. Přistane asi za %d s." % int(WAVE_BREATHER))
+		if _wave_t <= 0.0:
 			waves_left -= 1
-			_wave_t = 90.0
+			_wave_t = 100.0
 			var rr2 := RandomNumberGenerator.new()
 			rr2.randomize()
-			var n := 2 + Net.roster.size() + (1 if Game.veteran() else 0)
+			var n := 1 + Net.roster.size() + (1 if Game.veteran() else 0)
+			if int(Net.mission_params.get("base_def", 0)) > 0:
+				n = maxi(1, n - 1)       # (the towers pick one of them off on the way down)
 			var crew := _crew(n, rr2)
 			var from := _edge_point(rr2)
 			for k in crew.size():
@@ -3437,7 +3619,7 @@ func objective_text() -> String:
 				return "%s jde za tebou (zdraví %d/3) - do Kondoru!" % [vip_name, v.vip_hp]
 			return "Najdi: %s (nouzový maják)" % vip_name
 		"sabotage":
-			return "Majáky: zničeno %d/%d (drž E u majáku 3 s)" % [beacons.size() - beacons_left(), beacons.size()]
+			return "Majáky: zničeno %d/%d (drž F u majáku 3 s)" % [beacons.size() - beacons_left(), beacons.size()]
 		"base":
 			return "Obrana základny: vln zbývá %d, vetřelců %d" % [waves_left, alive_aliens()]
 	return ""

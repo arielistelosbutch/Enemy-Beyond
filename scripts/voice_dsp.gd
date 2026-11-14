@@ -204,79 +204,217 @@ static func decode(bytes: PackedByteArray) -> PackedFloat32Array:
 	return out
 
 # ---- receiving -------------------------------------------------------------------------------------
-## One incoming voice into one AudioStreamGenerator playback.
+## (0.70) One incoming voice into one AudioStreamGenerator playback: an adaptive jitter buffer.
+## Packets wait in a queue (by sequence number, so late and reordered ones still fit), and pump()
+## - called every frame - keeps only ~0.1 s in the sound card's buffer. The cushion before a
+## sentence starts follows the measured jitter of the line (Radmin, Wi-Fi: 60-300 ms). A lost
+## packet is replaced by a fading copy of the previous one; when the line runs dry the voice fades
+## out instead of being cut in the middle of a wave. Every join of two pieces that do not follow
+## each other (a fill-in, a skipped packet, the end of a sentence) is crossfaded over 3 ms: no clicks.
 class Rx:
 	extends RefCounted
-	static var _heard_ms := -100000      # anybody's voice played lately (raises the voice activation threshold)
-	var pb                               # AudioStreamGeneratorPlayback (or a stand-in in the autotest)
+	const XF := 48                        # crossfade, 3 ms
+	const LOW := 0.07                     # keep at least this much in the sound card buffer
+	const MAX_LAG := 0.35                 # more queued than target + this: skip ahead
+	static var _heard_ms := -100000       # anybody's voice played lately (raises the voice activation threshold)
+	var pb                                # AudioStreamGeneratorPlayback (or a stand-in in the autotest)
 	var cap := 0
-	var last_seq := -1
-	var last_ms := -100000
-	var prev := PackedFloat32Array()
+	var q := {}                           # seq -> samples
+	var q_len := 0
+	var playing := false
+	var next_seq := -1
+	var _first_ms := 0                    # when the first packet of a sentence came
+	var _last_seq := -1                   # newest seq that arrived
+	var _last_ms := -100000
+	var _hist := {}                       # recently played or skipped seqs (duplicates, late ones)
+	var prev := PackedFloat32Array()      # the last real packet (for fill-ins)
+	var _tail := PackedFloat32Array()     # last XF samples written, not yet pushed (crossfade)
+	var _cont := false                    # the next block continues the previous one seamlessly
+	var _conceal := 0
+	var _fin_ms := -100000
+	var _fin_seq := 0
+	var jitter := 0.02                    # seconds (RFC 3550 style estimate)
+	var boost := 0.0                      # extra cushion after running dry
+	var pkt_len := 0.06
+	# statistics
 	var lost := 0
-	var dropped := 0
 	var rescued := 0
+	var dropped := 0
+	var late := 0
+	var underruns := 0
+	var received := 0
 
 	func _init(playback, frames: int) -> void:
 		pb = playback
 		cap = frames
+		_tail.resize(XF)
 
 	## 2.5 while somebody is heard (their voice from my speakers must not open my microphone).
 	static func duck() -> float:
 		return 2.5 if Time.get_ticks_msec() - _heard_ms < 300 else 1.0
 
+	static func sdiff(a: int, b: int) -> int:
+		return ((a - b + 128) & 255) - 128
+
 	func fill() -> int:
 		return cap - int(pb.get_frames_available())
 
-	## Push one packet's samples (seq < 0 = no sequence number).
+	func target() -> float:
+		return clampf(0.04 + jitter * 3.0 + boost, 0.06, 0.32)
+
+	## One packet arrived (seq < 0 = no sequence number: just appended in order).
 	func push(seq: int, smp: PackedFloat32Array, now_ms: int = -1) -> void:
-		if pb == null:
+		if pb == null or smp.is_empty():
 			return
 		var now := Time.get_ticks_msec() if now_ms < 0 else now_ms
 		_heard_ms = Time.get_ticks_msec()
-		var start := now - last_ms > 250
-		var have := fill()
-		if start:
-			_silence(int(RATE * 0.08))            # cushion for late packets
-		elif seq >= 0 and last_seq >= 0:
-			var gap := (seq - last_seq) & 255
-			if gap == 0 or gap > 128:
-				return                            # a duplicate or one that came after its successor
-			if gap > 1:
-				lost += gap - 1
-				# fill up to two lost packets with a fading copy of the last one, more as silence
-				for k in mini(gap - 1, 3):
-					var f := PackedFloat32Array()
-					f.resize(prev.size())
-					var a0 := 0.6 / (k + 1)
-					var a1 := 0.6 / (k + 2) if k < 1 else 0.0
-					for j in prev.size():
-						f[j] = prev[j] * lerpf(a0, a1, float(j) / prev.size())
-					if k >= 2:
-						f.fill(0.0)
-					_put(f)
-					rescued += 1
-		if not start and have <= 0:
-			_silence(int(RATE * 0.04))            # ran dry mid-sentence: a short cushion again
-		if fill() > int(RATE * 0.35):
-			dropped += 1                          # too far behind: skip this one, catch up
-			last_seq = seq
-			last_ms = now
+		received += 1
+		pkt_len = smp.size() / float(RATE)
+		if seq < 0:
+			seq = (_last_seq + 1) & 255 if _last_seq >= 0 else 0
+		if q.has(seq) or (_hist.has(seq) and now - int(_hist[seq]) < 3000):
+			late += 1                         # a duplicate, or one we already gave up on
 			return
-		var s := smp
-		if start:
-			s = smp.duplicate()
-			for j in mini(80, s.size()):
-				s[j] *= float(j) / 80.0           # fade in (no click)
-		_put(s)
-		prev = smp
-		last_seq = seq
-		last_ms = now
+		# jitter: how much the arrival spacing differs from the packets' own spacing
+		if _last_seq >= 0 and now - _last_ms < 1500:
+			var ds := sdiff(seq, _last_seq)
+			if ds > 0 and ds < 8:
+				var d := absf((now - _last_ms) / 1000.0 - ds * pkt_len)
+				jitter += (minf(d, 0.4) - jitter) / 16.0
+		if _last_seq < 0 or sdiff(seq, _last_seq) > 0 or now - _last_ms > 1500:
+			_last_seq = seq
+			_last_ms = now
+		if not playing and now - _fin_ms < 500:
+			var dd := sdiff(seq, _fin_seq)
+			if dd >= -2 and dd <= 4:
+				underruns += 1                # it was not the end of the sentence: the line ran dry
+				boost = minf(0.12, boost + 0.03)
+				_fin_ms = -100000
+		if playing and next_seq >= 0 and sdiff(seq, next_seq) < 0:
+			late += 1                         # its turn has passed (filled in already)
+			boost = minf(0.12, boost + 0.01)
+			return
+		if not playing and q.is_empty():
+			_first_ms = now
+		q[seq] = smp
+		q_len += smp.size()
 
-	func _silence(n: int) -> void:
+	## Every frame: keep the sound card fed.
+	func pump(delta: float = 0.016, now_ms: int = -1) -> void:
+		if pb == null:
+			return
+		var now := Time.get_ticks_msec() if now_ms < 0 else now_ms
+		boost = maxf(0.0, boost - delta * 0.01)
+		if not playing:
+			if q.is_empty():
+				return
+			if q_len < int(RATE * target()) and now - _first_ms < int(target() * 1000.0):
+				return
+			playing = true
+			_conceal = 0
+			next_seq = _oldest()
+		var low := int(RATE * maxf(LOW, delta * 2.5))
+		# too far behind (a burst after a hiccup): skip the oldest, catch up
+		while playing and q_len + fill() > int(RATE * (target() + MAX_LAG)) and q.size() > 1:
+			var o := _oldest()
+			q_len -= (q[o] as PackedFloat32Array).size()
+			q.erase(o)
+			_hist[o] = now
+			dropped += 1
+			if sdiff(o, next_seq) >= 0:
+				next_seq = (o + 1) & 255
+			_cont = false
+		var crit := int(RATE * maxf(0.025, delta * 1.5))
+		var guard := 0
+		while playing and guard < 12:
+			guard += 1
+			var f0 := fill()
+			if q.has(next_seq):
+				if f0 >= low:
+					break
+				var blk: PackedFloat32Array = q[next_seq]
+				q.erase(next_seq)
+				q_len -= blk.size()
+				_hist[next_seq] = now
+				next_seq = (next_seq + 1) & 255
+				_write(blk)
+				prev = blk
+				_cont = true
+				_conceal = 0
+			elif f0 >= crit:
+				break                         # still sounding: the packet may yet come
+			elif not q.is_empty() or _conceal < 2:
+				# lost (a later one is here) or late: a fading copy of the last one, then silence
+				if not q.is_empty():
+					lost += 1
+				_hist[next_seq] = now
+				next_seq = (next_seq + 1) & 255
+				# (a packet long plus the two crossfades, so the cushion does not shrink)
+				var f := PackedFloat32Array()
+				f.resize(int(RATE * pkt_len) + XF * 2)
+				if not prev.is_empty():
+					for j in f.size():
+						f[j] = prev[j % prev.size()]
+				var c := mini(_conceal, 2)
+				var a0: float = [0.7, 0.35, 0.0][c]
+				var a1: float = [0.35, 0.0, 0.0][c]
+				for j in f.size():
+					f[j] *= lerpf(a0, a1, float(j) / f.size())
+				_cont = false
+				_write(f)
+				_cont = false
+				_conceal += 1
+				rescued += 1
+			else:
+				# nothing left: the sentence ended (or the line ran dry) - fade out, wait for more
+				_finish()
+				_fin_ms = now
+				_fin_seq = next_seq
+		# forget old history
+		if _hist.size() > 96:
+			for k in _hist.keys():
+				if now - int(_hist[k]) > 3000:
+					_hist.erase(k)
+
+	func _oldest() -> int:
+		var best := -1
+		for k in q:
+			if best < 0 or sdiff(int(k), best) < 0:
+				best = int(k)
+		return best
+
+	## Writes a block. A seamless continuation goes straight on; anything else is crossfaded
+	## with the held-back end of the previous block.
+	func _write(blk: PackedFloat32Array) -> void:
+		var n := blk.size()
+		if n <= XF:
+			return
+		if _cont:
+			_put(_tail)
+			_put(blk.slice(0, n - XF))
+		else:
+			var head := PackedFloat32Array()
+			head.resize(XF)
+			for j in XF:
+				var k := (j + 0.5) / XF
+				head[j] = _tail[j] * (1.0 - k) + blk[j] * k
+			_put(head)
+			_put(blk.slice(XF, n - XF))
+		_tail = blk.slice(n - XF)
+
+	## Fade the held-back end to silence and stop until the next sentence.
+	func _finish() -> void:
 		var f := PackedFloat32Array()
-		f.resize(n)
+		f.resize(XF)
+		for j in XF:
+			f[j] = _tail[j] * (1.0 - (j + 0.5) / XF)
 		_put(f)
+		_tail.fill(0.0)
+		_cont = false
+		playing = false
+		_conceal = 0
+		if not q.is_empty():
+			_first_ms = Time.get_ticks_msec()
 
 	func _put(smp: PackedFloat32Array) -> void:
 		var fr := PackedVector2Array()

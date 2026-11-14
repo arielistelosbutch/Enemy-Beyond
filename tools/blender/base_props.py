@@ -92,13 +92,19 @@ def console():
     reset(); m = M(); vis = []
     vis.append(bx(m["beige"], (0, -0.02, 0.45), (1.4, 0.56, 0.9), 0.015))
     vis.append(bx(m["dark"], (0, 0.03, 0.04), (1.36, 0.5, 0.08), 0.005))
-    sl = bx(m["grey"], (0, 0.1, 0.94), (1.38, 0.42, 0.06), 0.01, rot=(0.3, 0, 0))
+    # the desk of switches slopes up towards the monitor (low front edge at the operator; 0.69: it
+    # sloped the other way, the back edge sank into the cabinet - Ari: "klávesnice ve špatném sklonu")
+    tilt = -0.3
+    sl = bx(m["grey"], (0, 0.1, 0.99), (1.38, 0.42, 0.06), 0.01, rot=(tilt, 0, 0))
     vis.append(sl)
     rr = random.Random(4)
     for i in range(10):
         for j in range(2):
             col = [m["led_g"], m["led_r"], m["led_a"], m["key"], m["key"]][rr.randrange(5)]
-            vis.append(bx(col, (-0.55 + i * 0.12, 0.04 + j * 0.13, 0.97 + j * 0.04), (0.06, 0.06, 0.025), 0.005, rot=(0.3, 0, 0)))
+            dy, dz = -0.06 + j * 0.13, 0.042           # on the slab, in its own frame
+            ky = 0.1 + dy * math.cos(tilt) - dz * math.sin(tilt)
+            kz = 0.99 + dy * math.sin(tilt) + dz * math.cos(tilt)
+            vis.append(bx(col, (-0.55 + i * 0.12, ky, kz), (0.06, 0.06, 0.025), 0.005, rot=(tilt, 0, 0)))
     for k in range(6):
         vis.append(bx(m["dark"], (-0.4 + k * 0.16, 0.262, 0.4), (0.1, 0.005, 0.3), 0.0))
     # the monitor housing: a frame round the game's screen (1.1 x 0.6 at y -0.125)

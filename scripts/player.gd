@@ -12,6 +12,14 @@ const BLEED_OUT := 60.0
 var pitch := 0.0
 var crouching := false
 var light_on := true
+# (0.70 Ari) náklon za roh: Q vlevo, E vpravo (držet). -1..1, synchronizuje se - hlava, kamera,
+# svítilna i výstřel jdou s ní, ostatní vidí nakloněný trup, vetřelci vidí a střílí na to, co vykouklo
+var lean := 0.0
+const LEAN_OFF := 0.36         # m do strany (hlava) ve stoje; v kleku o něco méně
+const LEAN_ROLL := 0.2         # rad, náklon pohledu
+const LEAN_SPEED := 4.5        # za sekundu (celý náklon ~0,22 s)
+var _lean_cs: CollisionShape3D  # hlava, která vykoukla za rohem - dá se do ní trefit
+var _lean_room := 1.0
 var hp := 30.0
 var max_hp := 30.0
 var downed := false
@@ -53,7 +61,14 @@ var _winded := false      # ran out of stamina: sprint locked until it recovers 
 var merc := {}
 var inv := {}             # slot -> {"id":..., "loaded":..., "uses":...}
 var stamina := 100.0
-var stress := 0.0
+## (0.69, Ari: "strach roste hrozně rychle") every rise of fear is a third smaller - the
+## creeping fear in _stress, a hit, a bolt past the head, a roar, a dead mate; it fades as before.
+const STRESS_GAIN := 0.67
+var stress := 0.0:
+	set(v):
+		if v > stress:
+			v = stress + (v - stress) * STRESS_GAIN
+		stress = clampf(v, 0.0, 100.0)
 var bleeding := 0.0
 var spread_bloom := 0.0
 var fire_cd := 0.0
@@ -101,6 +116,12 @@ func setup(data: Dictionary) -> void:
 	add_child(cs)
 	_body_cs = cs
 	_body_cap = cap
+	_lean_cs = CollisionShape3D.new()
+	var hs := SphereShape3D.new()
+	hs.radius = 0.17
+	_lean_cs.shape = hs
+	_lean_cs.disabled = true
+	add_child(_lean_cs)
 	head = Node3D.new()
 	head.position.y = 1.6
 	add_child(head)
@@ -134,13 +155,17 @@ func setup(data: Dictionary) -> void:
 	var cfg := SceneReplicationConfig.new()
 	for prop in [":position", ":rotation", ":pitch", ":crouching", ":light_on", ":hp", ":downed", ":dead", ":wounded",
 			":bleed_left", ":carried_by", ":wants_evac", ":kills", ":held", ":panic", ":gear",
-			":held_l", ":held_back", ":prone", ":sprinting", ":captures", ":infected", ":ir_on", ":act", ":emote", ":bleeding", ":aiming", ":shield_up"]:
+			":held_l", ":held_back", ":prone", ":sprinting", ":captures", ":infected", ":ir_on", ":act", ":emote", ":bleeding", ":aiming", ":shield_up",
+			":revives", ":salvage", ":lean"]:
 		cfg.add_property(NodePath("." + prop))
 		cfg.property_set_replication_mode(NodePath("." + prop), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	sync.replication_config = cfg
 	sync.root_path = NodePath("..")
+	# (0.70) 30x a second for the movement, the rest only when it changes; the picture glides
+	NetSmooth.setup(sync, cfg, ["position", "rotation", "pitch"])
 	add_child(sync)
 	sync.set_multiplayer_authority(get_multiplayer_authority())
+	NetSmooth.attach(self, sync, body, true)
 
 func _part(parent: Node3D, pos: Vector3, size: Vector3, m: Material) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
@@ -285,6 +310,62 @@ var _bob_land := 0.0         # landing dip (m), springs back
 var _bob_vy := 0.0           # fall speed last frame (for the landing)
 var _bob_air := false
 var _bob_idle := 0.0
+## (0.70) Q/E: vykouknout za roh. Jen pohled a hlava (žádný nový pohyb nohou): hlava jde do strany
+## a pohled se nakloní; zeď vedle náklon zkrátí (hlava ani hlaveň do ní nevlezou).
+func _lean_tick(delta: float, inv_open: bool) -> void:
+	var want := 0.0
+	if not (inv_open or prone or downed or dead or sprinting or panic != "" or _mantle_t >= 0.0 or emote != 0):
+		want = (1.0 if Input.is_action_pressed("lean_right") else 0.0) - (1.0 if Input.is_action_pressed("lean_left") else 0.0)
+	_lean_room = 1.0
+	if want != 0.0 or absf(lean) > 0.01:
+		var side := signf(want if want != 0.0 else lean)
+		var hy: float = head.position.y
+		var from := global_position + Vector3(0, hy, 0)
+		var to := from + global_transform.basis.x * side * (_lean_off() + 0.24)
+		var q := PhysicsRayQueryParameters3D.create(from, to, Game.WORLD | Game.GLASS)
+		q.exclude = [get_rid()]
+		var hit := get_world_3d().direct_space_state.intersect_ray(q)
+		if not hit.is_empty():
+			_lean_room = clampf((from.distance_to(hit["position"]) - 0.24) / _lean_off(), 0.0, 1.0)
+	lean = move_toward(lean, want * _lean_room, delta * LEAN_SPEED)
+	lean = clampf(lean, -_lean_room, _lean_room)
+	_lean_apply()
+
+func _lean_off() -> float:
+	return LEAN_OFF * (0.8 if crouching else 1.0)
+
+## Kam se hlava naklonila (svět, vůči středu postavy).
+func lean_offset() -> Vector3:
+	return global_transform.basis.x * lean * _lean_off()
+
+## Hlava vojáka i s náklonem (na to se dívají a míří vetřelci, když vykoukne).
+func peek_point() -> Vector3:
+	return global_position + Vector3(0, 1.0 if crouching else 1.5, 0) + lean_offset()
+
+func _lean_apply() -> void:
+	head.position.x = lean * _lean_off()
+	head.rotation.z = -lean * LEAN_ROLL
+	if _lean_cs:
+		var on := absf(lean) > 0.15 and not (prone or downed or dead)
+		_lean_cs.disabled = not on
+		_lean_cs.position = Vector3(lean * _lean_off(), (1.0 if crouching else 1.6) - 0.08, 0.0)
+
+## Ostatní vidí náklon na těle: trup se nakloní v páteři, hlava zůstane rovněji (jen kosti, bez klipu).
+func _lean_overlay() -> void:
+	if _sk == null or absf(lean) < 0.01 or dead or downed or prone:
+		return
+	var fwd := -body.global_transform.basis.z
+	var axis := (_sk.global_transform.basis.inverse() * fwd).normalized()
+	var sgn := signf(_sk.global_transform.basis.determinant())
+	for pair in [["spine", 0.42], ["neck", -0.18]]:
+		var i := _bone(pair[0])
+		if i < 0:
+			continue
+		var par := _sk.get_bone_parent(i)
+		var pg := _sk.get_bone_global_pose(par).basis.get_rotation_quaternion() if par >= 0 else Quaternion()
+		var r := Quaternion(axis, lean * float(pair[1]) * sgn)
+		_sk.set_bone_pose_rotation(i, (pg.inverse() * r * pg) * _sk.get_bone_pose_rotation(i))
+
 func _cam_bob(delta: float) -> void:
 	if cam == null:
 		return
@@ -415,7 +496,10 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 	# the eye is behind the sight once the gun has come up and settled
 	# (it stays there through the recoil of a shot: the kick throws the gun back a few cm, the
 	# eye does not leave the sight - before, the scope's picture went out after every shot)
-	var settled := gun.position.distance_to(base) < 0.006 and absf(gun.rotation.x - rot.x) < 0.02
+	# (2026-11-13) "settled" = within 2 cm / 2.3 degrees: before (6 mm / 1.1 degrees) the eye often
+	# never got there while walking, after a sprint or with a slow frame rate, and the eye looked at
+	# the dark back of the sight's housing instead of through it (the "black flap")
+	var settled := gun.position.distance_to(base) < SIGHT_SNAP and absf(gun.rotation.x - rot.x) < 0.04
 	_sight_on = not sl.is_empty() and rl <= 0.0 and (settled or (_sight_on and gun.position.distance_to(base) < 0.09))
 	_scope_tick(sl)
 	gun.rotation.x = lerp(gun.rotation.x, rot.x + _vm_kick * 0.12 * kick_mult - rl * 0.5, k)
@@ -675,6 +759,7 @@ func _animate_body(delta: float) -> void:
 		_drag_ex.remove_collision_exception_with(self)
 		_drag_ex = null
 	_hit_overlay(delta)
+	_lean_overlay()
 	# the long gun sits in the right hand (follows the arms in every pose), not on the belly
 	if _sk and _hand_r >= 0 and body_gun:
 		var hand := _sk.global_transform * _sk.get_bone_global_pose(_hand_r)
@@ -1439,6 +1524,13 @@ func _shield_fp(n: Node) -> void:
 func _fp_layer(n: Node) -> void:
 	if n is VisualInstance3D:
 		(n as VisualInstance3D).layers = FP_LAYER
+	if n is MeshInstance3D:
+		# (2026-11-13) the glass of a sight right in front of the eye: clear, no tint and no glare
+		# (the tinted window glass went dark against the light and at night)
+		var mi: MeshInstance3D = n
+		for i in mi.get_surface_override_material_count():
+			if mi.get_surface_override_material(i) == Game.glass_mat():
+				mi.set_surface_override_material(i, Game.sight_glass_mat())
 	for c in n.get_children():
 		_fp_layer(c)
 
@@ -1813,6 +1905,8 @@ func _physics_process(delta: float) -> void:
 	_fit_body_shape()
 	if dead or mission.finished:
 		velocity = Vector3.ZERO
+		if dead:
+			_spectate(delta)
 		return
 	var inv_open: bool = mission.hud.inventory_open
 	# look
@@ -1837,6 +1931,7 @@ func _physics_process(delta: float) -> void:
 	head.rotation.x = pitch + _sway.y + bsw.y
 	head.rotation.y = _sway.x + bsw.x
 	_cam_bob(delta)      # (0.68+) the head moves with the steps and the breath
+	_lean_tick(delta, inv_open)
 	if _mantle_t >= 0.0:
 		_mantle_tick(delta)
 		return
@@ -1988,6 +2083,8 @@ func _physics_process(delta: float) -> void:
 	spread_bloom = max(0.0, spread_bloom - delta * 3.0)
 	spin = max(0.0, spin - delta * 0.8)
 	_act_tick()
+	if busy > 0:
+		_heal_release()
 	if busy > 0:
 		busy -= delta
 		if busy <= 0 and busy_done.is_valid():
@@ -2315,7 +2412,7 @@ func _actions(delta: float) -> void:
 			_reload(g, Game.ITEMS[g["id"]])
 		elif item_in("rh").get("id", "") == "energo_nuz":
 			_edge_switch(item_in("rh"))
-	if Input.is_action_just_pressed("swap") and busy <= 0:
+	if Input.is_action_just_pressed("swap") and busy <= 0 and not mission.hud.inventory_open:
 		_q_swap(two)
 	_radio_tick(delta)
 	if Input.is_action_just_pressed("drop") and not mission.hud.inventory_open:
@@ -2340,6 +2437,7 @@ func _actions(delta: float) -> void:
 		_quick_melee()
 	if Input.is_action_just_pressed("heal"):
 		_medkit()
+		_hold_heal("heal")
 	if Input.is_action_just_pressed("use"):
 		_use_t = 0.8
 		var tm: Dictionary = mission.terminal_near(global_position) if mission.home() else {}
@@ -2422,6 +2520,7 @@ func _use_hand(slot: String, pressed: bool, just: bool, delta: float) -> void:
 		"medkit":
 			if just:
 				_medkit()
+				_hold_heal("fire")
 		"radio":
 			# hold the button of the hand with the radio = talk on the radio
 			if pressed:
@@ -2435,6 +2534,7 @@ func pistol_grip() -> bool:
 
 # ---- (0.57) looking through the sight of a gun: the eye on its line, a scope magnifies ---------
 var _sight_on := false
+const SIGHT_SNAP := 0.02     # how close to the eye the sight must come for the eye to be behind it
 var _scope_vp: SubViewport
 var _scope_cam: Camera3D
 var scope_r := 0.0           # the eyepiece's radius on the screen (HUD pixels)
@@ -3130,6 +3230,8 @@ func _mantle_top(space: PhysicsDirectSpaceState3D, feet: Vector3, fwd: Vector3, 
 	var top := space.intersect_ray(q2)
 	if top.is_empty() or (top.normal as Vector3).y < 0.65:
 		return Vector3.INF
+	if top.collider is Node and (top.collider as Node).has_meta("border"):
+		return Vector3.INF      # 0.69: the edge of the map (on top of it and out, under the map)
 	var lift: float = (top.position as Vector3).y - feet.y
 	if lift < 0.7 or lift > reach:
 		return Vector3.INF
@@ -3144,6 +3246,14 @@ func _mantle_top(space: PhysicsDirectSpaceState3D, feet: Vector3, fwd: Vector3, 
 	var stand: Vector3 = (top.position as Vector3) + Vector3(0, 0.6, 0)
 	q3.transform = Transform3D(Basis(), stand)
 	if not space.intersect_shape(q3, 1).is_empty():
+		return Vector3.INF
+	# 0.69 (Ari: „kluci proskočili stropem budovy“): the body first rises straight up where it
+	# stands (_mantle_tick moves it without collisions) - under a ceiling or a roof there is no
+	# ledge to pull up to, whatever lies on the far side of the wall (it used to find the roof's
+	# top over the room and carry the merc through the ceiling)
+	var qv := PhysicsRayQueryParameters3D.create(feet + Vector3(0, 1.0, 0), feet + Vector3(0, lift + 0.4, 0), Game.WORLD)
+	qv.exclude = [get_rid()]
+	if not space.intersect_ray(qv).is_empty():
 		return Vector3.INF
 	var q4 := PhysicsRayQueryParameters3D.create(feet + Vector3(0, lift + 0.4, 0), stand, Game.WORLD)
 	q4.exclude = [get_rid()]
@@ -3249,6 +3359,8 @@ func _mantle_tick(delta: float) -> void:
 		Game.play_at(mission, "step_wood0", global_position, -10)
 
 func _start_busy(time: float, text: String, done: Callable) -> void:
+	_heal_hold = ""
+	_heal_patient = null
 	busy_total = time
 	busy = time
 	busy_text = text
@@ -4279,9 +4391,25 @@ func _spawn_throwable(kind: String, from: Vector3, vel: Vector3, thrower: String
 	sm.radius = 0.08; sm.height = 0.16
 	mi.mesh = sm
 	rb.add_child(mi)
+	# (Ari 2026-11-13: the flare "burned out like a firecracker") - an 8 cm ball thrown at 13 m/s
+	# went through a thin floor in one physics step and fell under the map (in the base test 4.8 km
+	# down in a minute); on open ground it rolled on for 15-20 m. Now continuous collision, a guard
+	# that catches it on the surface it passed through, and the flare (a stick, it does not roll)
+	# stops where it lands - at the same spot for everybody in co-op (the thrower sends it).
+	_throw_n += 1
+	rb.name = "Thrown_%s_%d" % [thrower, _throw_n]
+	rb.continuous_cd = true
+	if kind == "flare":
+		var pm := PhysicsMaterial.new()
+		pm.friction = 1.0
+		pm.bounce = 0.1
+		rb.physics_material_override = pm
+		rb.linear_damp = 0.8
+		rb.angular_damp = 6.0
 	mission.add_child(rb)
 	rb.global_position = from
 	rb.linear_velocity = vel
+	_guard_throwable(rb, kind)
 	if kind == "smoke_grenade":
 		mi.material_override = Game.color_mat(Color(0.45, 0.46, 0.44))
 		get_tree().create_timer(1.5).timeout.connect(func():
@@ -4381,6 +4509,49 @@ func _spawn_throwable(kind: String, from: Vector3, vel: Vector3, thrower: String
 								hurt *= 0.35
 						pl.hurt.rpc_id(pl.get_multiplayer_authority(), hurt, p, false, "plasma" if pg else "blast"))
 
+## A thrown thing that passed through a floor or a wall in one physics step goes back onto that
+## surface (bounced off it, slower). A flare that has come to rest (or after 4 s) stays put: the
+## thrower's game sends where it lies, the others put theirs there too.
+func _guard_throwable(rb: RigidBody3D, kind: String) -> void:
+	var prev := rb.global_position
+	var still := 0.0
+	var t := 0.0
+	while is_instance_valid(rb) and not rb.freeze:
+		await get_tree().physics_frame
+		if not is_instance_valid(rb) or rb.freeze or not rb.is_inside_tree():
+			return
+		var dt := get_physics_process_delta_time()
+		t += dt
+		var cur := rb.global_position
+		var q := PhysicsRayQueryParameters3D.create(prev, cur, rb.collision_mask, [rb.get_rid()])
+		var hit := rb.get_world_3d().direct_space_state.intersect_ray(q)
+		if not hit.is_empty():
+			var n: Vector3 = hit["normal"]
+			var v := rb.linear_velocity
+			rb.global_position = hit["position"] + n * 0.1
+			rb.linear_velocity = (v - 2.0 * v.dot(n) * n) * 0.3
+			cur = rb.global_position
+		prev = cur
+		if kind != "flare":
+			continue
+		still = still + dt if rb.linear_velocity.length() < 0.3 else 0.0
+		if is_multiplayer_authority() and (still > 0.25 or t > 4.0):
+			_settle_throwable.rpc(String(rb.name), rb.global_position)
+			return
+		if t > 8.0:      # (the thrower left the game before it landed)
+			_settle_throwable(String(rb.name), rb.global_position)
+			return
+
+@rpc("any_peer", "call_local", "reliable")
+func _settle_throwable(rb_name: String, pos: Vector3) -> void:
+	var rb := mission.get_node_or_null(NodePath(rb_name)) as RigidBody3D if mission else null
+	if rb == null:
+		return
+	rb.freeze = true
+	rb.linear_velocity = Vector3.ZERO
+	rb.angular_velocity = Vector3.ZERO
+	rb.global_position = pos
+
 ## The plasma grenade's ball: a green flash over the explosion.
 func _plasma_burst_fx(p: Vector3) -> void:
 	var l := OmniLight3D.new()
@@ -4436,7 +4607,7 @@ var vest_wear := 0.0       # ARM-02 plates burnt by plasma this mission (0..0.6)
 
 @rpc("any_peer", "call_local", "reliable")
 func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
-	if not is_multiplayer_authority() or dead:
+	if not is_multiplayer_authority() or dead or safe_out():
 		return
 	if Game.easy():
 		dmg *= 0.7
@@ -4520,6 +4691,12 @@ func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
 					mission.hud.message("DRUHÝ DECH - zvedl ses sám.", 4.0))
 		Game.play_ui(self, Game.voice_of("death", merc.get("look", {}).get("female", false)), -6)
 
+## (0.69, Ari: they kept shooting him while the transport left) once the mission is over for this
+## player - the team flew off, he walked out, the result/transport/loading screen is up - nothing
+## in the mission hurts him any more: his fate was written down at the end.
+func safe_out() -> bool:
+	return mission == null or not is_instance_valid(mission) or mission.finished or mission.is_out(self)
+
 ## How long a downed merc bleeds before he dies (tough mercs and research make it longer).
 var _second_wind_used := false
 var _eyes_done := false
@@ -4527,6 +4704,8 @@ func bleed_time() -> float:
 	return BLEED_OUT + (45.0 if Game.has_talent(merc, "houzevnaty") else 0.0) + (20.0 if Game.has_research("medicina") else 0.0)
 
 func _bleed(delta: float) -> void:
+	if safe_out():
+		return
 	if bleeding > 0 and not downed and healed_t <= 0.0:      # (a hand pressing on the wound stops it)
 		hp -= bleeding * delta
 		if hp <= 0:
@@ -4535,7 +4714,7 @@ func _bleed(delta: float) -> void:
 func _downed(delta: float) -> void:
 	head.position.y = lerp(head.position.y, 0.35, delta * 4.0)
 	healed_t = maxf(0.0, healed_t - delta)
-	if healed_t <= 0.0:
+	if healed_t <= 0.0 and not safe_out():
 		bleed_left -= delta      # while a medic works on you, you do not bleed out
 	if bleed_left <= 0:
 		dead = true
@@ -4654,7 +4833,7 @@ func _medkit() -> void:
 		if from == "":
 			mission.hud.message("Nemáš lékárničku.", 1.5)
 			return
-		mission.hud.message("Beru lékárničku do rukou - X ošetří, Q vrátí zbraň.", 2.5)
+		mission.hud.message("Beru lékárničku do rukou - X ošetří, kolečko myši vrátí zbraň.", 2.5)
 		_came_from["medkit"] = from
 		_q_prev = ""
 		draw_slot(from)
@@ -4673,6 +4852,30 @@ func _heal_still() -> bool:
 	if healed_t > 0.0:
 		return true
 	return busy > 0 and (busy_text.begins_with("Obvazuji ") or (busy_text.begins_with("Ošetřuji ") and busy_text != "Ošetřuji se"))
+
+## (Ari 2026-11-13) Bandaging lasts only while the button that started it is held (H or the
+## mouse button of the hand with the medkit); let go = it stops (e.g. to run away). Nothing is used up.
+var _heal_hold := ""          # the input action that must stay pressed, "" = none (autotests, VR...)
+var _heal_patient: Node = null  # the teammate being treated (told when it stops)
+func _hold_heal(action: String) -> void:
+	if busy > 0 and (_self_healing() or busy_text.begins_with("Obvazuji ") or busy_text.begins_with("Ošetřuji ")):
+		_heal_hold = action
+		if not _self_healing():
+			_heal_patient = heal_target()
+
+func _heal_release() -> void:
+	if _heal_hold == "" or Input.is_action_pressed(_heal_hold):
+		return
+	if not (_self_healing() or busy_text.begins_with("Obvazuji ") or busy_text.begins_with("Ošetřuji ")):
+		_heal_hold = ""
+		return
+	if is_instance_valid(_heal_patient) and not _heal_patient.dead:
+		_heal_patient.being_healed.rpc_id(_heal_patient.get_multiplayer_authority(), display_name, 0.0)   # he may move again
+	busy = 0.0
+	busy_done = Callable()
+	_heal_hold = ""
+	_heal_patient = null
+	mission.hud.message("Ošetřování přerušeno.", 1.5)
 
 func _heal_self() -> void:
 	var slot := find_item(func(it): return it["id"] == "medkit" and int(it.get("uses", 0)) > 0)
@@ -4731,6 +4934,7 @@ func _treat_teammate(slot: String) -> void:
 		target.being_healed.rpc_id(target.get_multiplayer_authority(), display_name, heal_time)
 		Game.play_at(mission, "bandage", global_position + Vector3.UP, -6)
 		_start_busy(heal_time, verb % best.display_name, func():
+			_heal_patient = null
 			if not is_instance_valid(target) or target.dead:
 				return
 			if Vector2(target.global_position.x - global_position.x, target.global_position.z - global_position.z).length() > 3.6:
@@ -4943,7 +5147,7 @@ func abducted_note() -> void:
 var ko := false
 @rpc("any_peer", "call_local", "reliable")
 func knock_out() -> void:
-	if not is_multiplayer_authority() or dead or downed:
+	if not is_multiplayer_authority() or dead or downed or safe_out():
 		return
 	hp = 0
 	downed = true
@@ -5037,7 +5241,7 @@ func _panic_check(delta: float) -> void:
 		inv.erase("rh")
 		_update_held()
 		mission.drop_item(it, global_position + Vector3(0, 0.2, 0) - global_transform.basis.z * 0.6)
-		mission.hud.message("PANIKA! Zbraň ti vypadla z rukou. (E ji zvedne)", 3.5)
+		mission.hud.message("PANIKA! Zbraň ti vypadla z rukou. (F ji zvedne)", 3.5)
 	else:
 		panic = "flee"
 		panic_t = 4.0
@@ -5092,7 +5296,7 @@ func _pick_up() -> void:
 		mission.take_pickup.rpc(it["pid"])
 		var v := int(it["item"].get("value", 100))
 		salvage += v
-		mission.hud.message("Batoh vetřelce: %s. Za nález dostaneš +%d kr." % [it["item"].get("what", "cizí technologie"), v], 3.0)
+		mission.hud.message("Batoh vetřelce: %s. +%d kr do společné hromádky týmu." % [it["item"].get("what", "cizí technologie"), v], 3.0)
 		Game.play_ui(self, "ping", -8)
 		return
 	var slot := ""
@@ -5284,6 +5488,7 @@ func _blood_watch(delta: float) -> void:
 
 ## Hit: the trunk and the head jerk (tp_hit_1, _2...: one at random), on top of whatever he does.
 var _hit_id := ""
+var _throw_n := 0      # thrown things, for the same name on every peer
 var _hit_t := 0.0
 var _hp_seen := -1.0
 func _hit_overlay(delta: float) -> void:
@@ -5301,6 +5506,22 @@ func _hit_overlay(delta: float) -> void:
 		if i >= 0 and p0.has(bn):
 			var add := Quaternion.from_euler(p0[bn]).inverse() * Quaternion.from_euler(pt[bn])
 			_sk.set_bone_pose_rotation(i, _sk.get_bone_pose_rotation(i) * add)
+
+## (0.70+) Ari: dead in a co-op mission - watch the living teammates (scripts/spectator.gd).
+## Meanwhile the own body lies where he fell (others see it there too).
+var spectator: Node = null
+func _spectate(delta: float) -> void:
+	if spectator == null and not mission.finished and Game.cmd_arg("nospect", "") == "" \
+			and not (mission.has_method("home") and mission.home()) and Spectator.wanted(mission, self):
+		spectator = Spectator.new()
+		spectator.me = self
+		spectator.mission = mission
+		mission.add_child(spectator)
+	if spectator != null and is_instance_valid(spectator) and spectator.active():
+		if not body.visible:
+			body.visible = true
+			_apply_gear()
+		_animate_body(delta)
 
 func _remote_visuals() -> void:
 	if _hp_seen >= 0.0 and hp < _hp_seen - 0.5 and not dead and not downed:
@@ -5320,6 +5541,7 @@ func _remote_visuals() -> void:
 	_remote_steps()
 	_show_items(held, held_l, held_back)
 	head.rotation.x = pitch
+	_lean_apply()
 	flash.visible = light_on and not downed
 	# 0.62 výkon: baterka spoluhráče svítí, ale stín (scéna znovu za každého hráče) jen na vysoké stíny
 	if flash.shadow_enabled != (Game.shadows >= 2):

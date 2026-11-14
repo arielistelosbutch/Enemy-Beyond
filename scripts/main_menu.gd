@@ -1786,11 +1786,19 @@ func _refresh_lobby() -> void:
 			bits.append("hostitel")
 		elif ping >= 0:
 			bits.append("ping %d ms" % ping)
+		# (0.70) how steady the line is: wobble of the round trip and lost packets
+		var ln := Net.line_of(id)
+		var shaky := false
+		if not ln.is_empty():
+			bits.append("±%d  ztráty %d %%" % [int(ln["var"]), roundi(float(ln["loss"]) * 100.0)])
+			shaky = float(ln["loss"]) > 0.03 or int(ln["var"]) > 40
 		if MIC_TEXT.has(mic_s):
 			bits.append(MIC_TEXT[mic_s])
 		var col := FRAME
 		if id != 1 and ping >= 0:
 			col = Color(0.55, 0.9, 0.5) if ping < 80 else (Color(1, 0.85, 0.4) if ping < 160 else Color(1, 0.45, 0.35))
+			if shaky and ping < 160:
+				col = Color(1, 0.85, 0.4)
 		if mic_s == "dead":
 			col = Color(1, 0.6, 0.35)
 		(r["info"] as Label).text = "   ".join(bits)
@@ -2003,24 +2011,26 @@ func _autotest() -> void:
 			if Game.autotest() == "vnethost":
 				Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
 				var t0 := Time.get_ticks_msec()
-				while Time.get_ticks_msec() - t0 < 9000:
+				while Time.get_ticks_msec() - t0 < 9000 + maxi(0, int(Game.cmd_arg("pkts", "50")) - 50) * 60:
 					await get_tree().create_timer(0.2).timeout
 				var rx = lv._chan.values()[0]["rx"] if not lv._chan.is_empty() else null
-				print("RESULT vnet received %d lost %d rescued %d" % [lv.received, rx.lost if rx else -1, rx.rescued if rx else -1])
+				print("RESULT vnet received %d lost %d dry %d" % [lv.received, rx.lost if rx else -1, rx.underruns if rx else -1])
+				if rx:
+					print("[VNET] late %d dropped %d filled %d jitter %.0f ms cushion %.0f ms" % [rx.late, rx.dropped, rx.rescued, rx.jitter * 1000.0, rx.target() * 1000.0])
 			else:
 				await get_tree().create_timer(1.5).timeout
 				Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
 				await get_tree().create_timer(2.5).timeout
 				var chunk := int(lv.Voice.RATE * lv.Voice.CHUNK)
 				var n := 0
-				for k in 50:
+				for k in int(Game.cmd_arg("pkts", "50")):
 					var smp := PackedFloat32Array()
 					smp.resize(chunk)
 					for i in chunk:
 						smp[i] = sin(TAU * 200.0 * (k * chunk + i) / lv.Voice.RATE) * 0.2
 					var pkt: PackedByteArray = lv.dsp.packet(smp)
-					if k % 7 != 3:
-						lv._lobby_voice.rpc(pkt)
+					if k % 7 != 3 or Game.cmd_arg("pkts", "") != "":
+						lv._lobby_voice.rpc(pkt, false, false)
 						n += 1
 					await get_tree().create_timer(0.06).timeout
 				print("RESULT vnet client sent %d" % n)
@@ -2103,14 +2113,14 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "wedgetest", "pockettest", "leaveany", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "echotest", "dirtshot":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "leaktest", "ufohull", "wedgetest", "leantest", "pockettest", "leaveany", "safeend", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "ceiltest", "interiors", "spectate", "echotest", "dirtshot", "flaretest":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
 				"hour": float(Game.cmd_arg("hour", "14.0" if Game.cmd_arg("day", "0") == "1" else "23.0")), "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "testroom": Game.autotest() == "testroom", "terrain": Game.cmd_arg("terrain", "temperate"), "size": Game.cmd_arg("size", "medium"), "ufo": Game.cmd_arg("ufo", ""), "crew_of": Game.cmd_arg("crewof", ""), "group": Game.cmd_arg("group", ""), "research": Array(Game.cmd_arg("research", "").split(",", false)),
 				"habits": {String(Game.merc.get("name", "")): Game.cmd_arg("habits", "").split(",", false)} if Game.cmd_arg("habits", "") != "" else {},
 				"styles": {String(Game.merc.get("name", "")): Array(Game.cmd_arg("styles", "").split(",", false))} if Game.cmd_arg("styles", "") != "" else {}})
-		"basewalk", "basepass", "basenade", "basefly", "blastdoor", "npcshot", "echobase", "wallshot":
+		"basewalk", "basepass", "basenade", "basefly", "blastdoor", "npcshot", "baseshot", "echobase", "wallshot":
 			Net.play_solo()
 			var b := []
 			for i in 24:
@@ -2236,6 +2246,48 @@ func _autotest() -> void:
 			Campaign.mission_done(-1, false, 0, 0, 1, 0, 0, [], {}, true, {1: kit}, 1.0, {1: {"rifle": 1, "rifle_clip": 3, "grenade": 2, "vesta": 1}}, {1: {}})
 			print("RESULT gearloss order_wait %s arrived %s sold %s won_grenades %d->%d clips_kept %s lost_grenades %d vests %d" % [arrived0, arrived1, sold, gr, gr1, clips1 == int(Campaign.START_ARMORY["rifle_clip"]), int(Campaign.data["armory"].get("grenade", 0)), int(Campaign.data["armory"].get("vesta", 0))])
 			get_tree().quit()
+		"basedef":
+			# (Ari 2026-11-13) raids on the base are rare, and a lost (or ignored) defence ends the campaign
+			Campaign.new_campaign()
+			Campaign.data["base_pick"] = false
+			var raids := []
+			while float(Campaign.data["day"]) < 240.0 and not Campaign.data["lost"]:
+				Campaign.data["trust"] = 60
+				Campaign.data["credits"] = 100000
+				Campaign.data["next_strike"] = 9999.0
+				Campaign.advance(0.25)
+				for mm in Campaign.data["missions"].duplicate():
+					if mm["type"] == "base":
+						raids.append([float(Campaign.data["day"]), int(mm["extra_aliens"])])
+						Campaign.data["missions"].erase(mm)       # (defended)
+			var gaps := []
+			for i in range(1, raids.size()):
+				gaps.append(snappedf(raids[i][0] - raids[i - 1][0], 0.1))
+			print("[BASEDEF] raids %s gaps %s" % [str(raids), str(gaps)])
+			# a defence won: the campaign goes on
+			var bid := func() -> int:
+				Campaign.data["next_raid"] = float(Campaign.data["day"])
+				Campaign.data["trust"] = 60
+				Campaign.advance(0.01)
+				for mm in Campaign.data["missions"]:
+					if mm["type"] == "base":
+						return int(mm["id"])
+				return -1
+			var id1: int = bid.call()
+			Campaign.mission_done(id1, true, 4, 0, 0)
+			var lost_won: bool = Campaign.data["lost"]
+			# lost: game over
+			var id2: int = bid.call()
+			var t2 := Campaign.mission_done(id2, false, 1, 0, 1, 0, 0, [], {}, true)
+			var lost_fail: bool = Campaign.data["lost"]
+			# nobody went: game over too
+			Campaign.new_campaign()
+			Campaign.data["base_pick"] = false
+			Campaign.data["day"] = 40.0
+			var id3: int = bid.call()
+			Campaign.advance(0.3)
+			print("RESULT basedef raids %d first %.1f won_lost %s fail_lost %s konec %s ignored %s ignored_lost %s" % [raids.size(), raids[0][0] if not raids.is_empty() else -1.0, lost_won, lost_fail, t2.begins_with("KONEC"), id3 >= 0, Campaign.data["lost"]])
+			get_tree().quit()
 		"workshoptest":
 			# 0.57: what research opened is made in the workshop (credits, alloys, Moskovium, days);
 			# ordinary gear is bought and here the next day; the Jestřáb and the Kondor are built too
@@ -2338,6 +2390,21 @@ func _autotest() -> void:
 			await get_tree().create_timer(2.5).timeout
 			print("[ECON] after gift my=%d wallets=%s" % [Net.my_money(), Net.wallets])
 			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+		"readyhost":
+			Campaign.new_campaign("normal")
+			Game.merc["name"] = "Hostitel"
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			while Net.roster.size() < 2:
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(1.0).timeout
+			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+		"readyclient":
+			Game.merc["name"] = "Klient"
+			await get_tree().create_timer(1.0).timeout
+			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+			while not Campaign.viewer:
+				await get_tree().create_timer(0.2).timeout
+			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
 		"geolivehost":
 			# the host flies a transport on his globe; the client's globe must show it moving
 			Campaign.new_campaign("normal")
@@ -2359,6 +2426,34 @@ func _autotest() -> void:
 			while not Campaign.viewer:
 				await get_tree().create_timer(0.2).timeout
 			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+		"coopevachost":
+			# (0.69, Ari: crash flying home) a co-op campaign mission won, everybody at the Kondor:
+			# the transport, then the host to the globe and the clients back to the lobby
+			if Net.is_online():
+				return
+			Campaign.new_campaign("normal")
+			for k in ["heal_days", "injury", "sick", "heal_cid", "heal_seen"]:
+				Game.merc.erase(k)
+			Game.merc["name"] = "Hostitel"
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			while Net.roster.size() < int(Game.cmd_arg("players", "2")):
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(1.0).timeout
+			var me2: Dictionary = Campaign.generate_mission()
+			me2["type"] = "crash"
+			Campaign.data["missions"].append(me2)
+			Net.start_mission(Campaign.mission_params(me2))
+		"coopevacclient":
+			if Net.is_online():
+				print("[EVAC] client back in the menu, online")
+				await get_tree().create_timer(3.0).timeout
+				get_tree().quit()
+				return
+			for k in ["heal_days", "injury", "sick", "heal_cid", "heal_seen"]:
+				Game.merc.erase(k)
+			Game.merc["name"] = "Klient" + Game.cmd_arg("ci", "1")
+			await get_tree().create_timer(1.0 + 0.5 * int(Game.cmd_arg("ci", "1"))).timeout
+			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
 		"coopwipehost":
 			# co-op campaign mission that the team loses to the last man, then back to the globe
 			Campaign.new_campaign("normal")
@@ -2394,6 +2489,24 @@ func _autotest() -> void:
 				return
 			print("[LB] host starts the mission")
 			Net.start_mission({"type": "crash", "biome": "farm", "night": false, "hour": 14.0, "place": "Test", "type_name": "Test", "id": -1})
+		"hbhost":
+			# (0.7x) the HOST goes down to the base alone; the client stays on the globe and sees the
+			# campaign go on; then the host comes up and starts a drop - it pulls the client in
+			Campaign.new_campaign("normal")
+			Game.merc["name"] = "Hostitel"
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			while Net.roster.size() < 2:
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(3.0).timeout
+			print("[HB] host goes down to the base alone")
+			Net.start_local_base({"type": "home", "type_name": "Základna", "base": Campaign.data["base"].duplicate(true), "grid_w": Campaign.GRID_W, "grid_h": Campaign.GRID_H, "transport": "heli", "live": [], "research": [], "night": false, "hour": 12.0, "blips": []})
+		"hbclient":
+			Game.merc["name"] = "Klient"
+			await get_tree().create_timer(1.0).timeout
+			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+			while not Campaign.viewer:
+				await get_tree().create_timer(0.2).timeout
+			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
 		"lbclient":
 			Game.merc["name"] = "Klient"
 			await get_tree().create_timer(1.0).timeout
@@ -2403,19 +2516,23 @@ func _autotest() -> void:
 			await get_tree().create_timer(1.0).timeout
 			print("[LB] client goes down to the base alone")
 			Net.start_local_base({"type": "home", "type_name": "Základna", "base": Campaign.data["base"].duplicate(true), "grid_w": Campaign.GRID_W, "grid_h": Campaign.GRID_H, "transport": "heli", "live": [], "research": [], "night": false, "hour": 12.0, "blips": []})
-		"coophealhost", "aimphost":
+		"coophealhost", "aimphost", "safeouthost", "hullhost", "pothost", "leakhost":
 			if Game.autotest() == "aimphost":
 				Game.seed_override = int(Game.cmd_arg("seed", "4242"))     # (the same map for the old and the new AI)
 			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
 			while Net.roster.size() < int(Game.cmd_arg("players", "2")):
 				await get_tree().create_timer(0.2).timeout
 			await get_tree().create_timer(0.5).timeout
-			Net.start_mission({"type": "crash", "biome": "farm", "night": false, "hour": 14.0, "place": "Test", "type_name": "Test", "id": -1})
-		"coophealclient", "aimpclient":
+			var mp := {"type": Game.cmd_arg("mtype", "crash"), "biome": Game.cmd_arg("biome", "farm"), "night": false, "hour": 14.0, "place": "Test", "type_name": "Test", "id": -1, "ufo": Game.cmd_arg("ufo", "raider" if Game.autotest() == "hullhost" else ""), "size": Game.cmd_arg("size", "medium")}
+			if Game.autotest() == "pothost":
+				mp["cid"] = "pottest"      # (0.70: the pay is counted only in a campaign mission)
+				mp["reward"] = 200
+			Net.start_mission(mp)
+		"coophealclient", "aimpclient", "safeoutclient", "hullclient", "potclient", "leakclient":
 			Game.merc["name"] = "Klient" if Game.cmd_arg("ci", "1") == "1" else "Klient" + Game.cmd_arg("ci", "1")
 			await get_tree().create_timer(1.0 + 0.5 * int(Game.cmd_arg("ci", "1"))).timeout
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
-		"nadehost":
+		"nadehost", "flarehost":
 			# (Ari 2026-11-10) the whole team in the base together, grenades in the velín
 			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
 			while Net.roster.size() < 2:
@@ -2428,7 +2545,7 @@ func _autotest() -> void:
 				b[k] = {"type": {0: "velin", 1: "hangar", 6: "ubikace", 7: "laborator", 2: "dilna"}[k], "days": 0.0}
 			Net.start_mission({"type": "home", "type_name": "Základna", "base": b, "grid_w": 6, "grid_h": 4, "transport": "heli",
 				"live": [], "research": [], "night": false, "hour": 12.0, "blips": []})
-		"nadeclient":
+		"nadeclient", "flareclient":
 			Game.merc["name"] = "Klient"
 			await get_tree().create_timer(1.0).timeout
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
