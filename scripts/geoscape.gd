@@ -90,8 +90,17 @@ func _ready() -> void:
 				(func(): _on_ambush(c)).call_deferred()
 				break
 	if Net.last_result != "":
-		_alert("NÁVRAT Z MISE\n" + Net.last_result)
+		var lr := Net.last_result
+		if lr.begins_with("KONEC"):
+			Game.play_ui(self, "warning_alarm", -6)      # (the base fell: the campaign is over)
+			_alert(lr)
+		else:
+			_alert("NÁVRAT Z MISE\n" + lr)
 		Net.last_result = ""
+	elif Campaign.data.get("lost", false):
+		# a lost campaign (also a co-op mate back from the fallen base): say why the clock stands
+		var lg: Array = Campaign.data.get("log", [])
+		_alert("KONEC\n" + (String(lg[-1]) if not lg.is_empty() else "Projekt X skončil."))
 	if Campaign.won() and not Campaign.data.get("won_shown", false):
 		Campaign.data["won_shown"] = true
 		Campaign.save()
@@ -401,6 +410,7 @@ func _process(delta: float) -> void:
 	_place(base_marker, Campaign.base_lat(), Campaign.base_lon())
 	base_marker.visible = not Campaign.base_picking()
 	_pick_tick()
+	_ready_tick()
 	_sync_markers()
 	_sync_reports()
 	_update_text()
@@ -765,6 +775,7 @@ func _build_side() -> void:
 	p.add_child(side)
 	var title := _lbl(side, "VELÍN", ACCENT, 13)
 	UiSkin.title(title, 12)
+	_build_ready()
 	status_lbl = _lbl(side, "", TEXT, 8)
 	var row := HBoxContainer.new()
 	side.add_child(row)
@@ -783,7 +794,7 @@ func _build_side() -> void:
 	var entries := [["Základna", _show_base], ["Výzkum", _show_research], ["Zbrojnice", _show_armory],
 			["Výstroj", func(): _menu_screen("loadout")], ["Voják", func(): _menu_screen("merc")],
 			["Úpravy zbraní", func(): _menu_screen("mods")],
-			["Hlášení", _show_log], ["Encyklopedie", func(): _show_archive()]]
+			["Hlášení", _show_log], ["Encyklopedie", func(): _show_archive()], ["Hangár", _show_hangar]]
 	if Campaign.viewer:
 		# a co-op client: the host's globe, read-only; buying with own money
 		_lbl(side, "Díváš se na základnu hostitele. Misi spouští on.", FRAME, 8)
@@ -858,6 +869,117 @@ func _selected_mission() -> Dictionary:
 			return m
 	return {}
 
+# ---- (0.7x) co-op: "Připraven" -----------------------------------------------------------------------
+## Above the date and the time controls: my button and who of the team is ready. The host's starts
+## (the drop, the jets, the fight, the base) wait until everybody is ready - or the host starts anyway.
+var _ready_box: VBoxContainer
+var _ready_btn: Button
+var _ready_lbl: Label
+var _ready_key := ""
+var _gate_go := Callable()       # host: the start waiting for the team
+var _gate_back := Callable()     # host: where "Zpět" goes (the window the start came from)
+var _gate_what := ""
+var _ready_heard := ""
+
+func _build_ready() -> void:
+	_ready_box = VBoxContainer.new()
+	_ready_box.add_theme_constant_override("separation", 1)
+	side.add_child(_ready_box)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	_ready_box.add_child(row)
+	_ready_btn = _btn(row, "PŘIPRAVEN", func(): Net.set_ready(not Net.is_ready(Net.my_id())), 9)
+	_ready_btn.custom_minimum_size = Vector2(84, 16)
+	_ready_btn.tooltip_text = "Dej najevo, že jsi připraven na další výsadek. Hostitel začne, až budou připraveni všichni."
+	_ready_lbl = _lbl(row, "", TEXT, 8)
+	_ready_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ready_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_ready_lbl.custom_minimum_size = Vector2(100, 0)
+	_ready_box.visible = false
+
+func _ready_tick() -> void:
+	if _ready_box == null:
+		return
+	var on: bool = Net.is_online() and not Campaign.data.get("lost", false)
+	_ready_box.visible = on
+	if not on:
+		_gate_go = Callable()
+		return
+	if Net.ready_wait != _ready_heard:
+		if Net.ready_wait != "" and Campaign.viewer:
+			Game.play_ui(self, "radar_ping", -6)       # (a client: the host waits for us)
+		_ready_heard = Net.ready_wait
+	var me := Net.is_ready(Net.my_id())
+	var waiting := Net.not_ready()
+	var key := "%s|%s|%s|%d" % [me, ",".join(waiting), Net.ready_wait, Net.roster.size()]
+	if key != _ready_key:
+		_ready_key = key
+		_ready_btn.text = "[X] PŘIPRAVEN" if me else "[  ] PŘIPRAVEN"
+		_ready_btn.add_theme_color_override("font_color", Color(0.5, 1.0, 0.55) if me else TEXT)
+		var n := Net.roster.size()
+		var t := "Připraveni %d/%d" % [n - waiting.size(), n]
+		if waiting.is_empty():
+			t += " - všichni"
+		elif waiting.size() <= 2:
+			t += "\nčeká se: " + ", ".join(waiting)
+		else:
+			t += "\nčeká se na %d" % waiting.size()
+		_ready_lbl.text = t
+		_ready_lbl.add_theme_color_override("font_color", Color(0.5, 1.0, 0.55) if waiting.is_empty() else (ACCENT if Net.ready_wait != "" else TEXT))
+		if popup and popup.has_meta("ready_wait"):
+			_show_gate()
+	# host: the start goes as soon as everybody is ready
+	if _gate_go.is_valid() and Net.is_online() and multiplayer.is_server():
+		if Net.all_ready():
+			_gate_run()
+		elif popup == null:
+			_show_gate()      # (another window took its place: back to the waiting)
+
+## Host: start now when the team is ready (or playing alone), otherwise wait for it.
+func _gate(what: String, go: Callable, back := Callable()) -> void:
+	if not Net.is_online() or not multiplayer.is_server() or Net.all_ready() and Net.roster.size() > 0 \
+			or (Game.autotest() != "" and not Game.autotest().begins_with("ready")):
+		_close_popup()
+		go.call()
+		return
+	_gate_go = go
+	_gate_back = back
+	_gate_what = what
+	Net.ask_ready(what)
+	if Net.all_ready():
+		_gate_run()
+		return
+	_show_gate()
+
+func _show_gate() -> void:
+	var box := _overlay("ČEKÁ SE NA TÝM", 330)
+	popup.set_meta("ready_wait", true)
+	popup.position.x = (431.0 - 330.0) / 2.0     # (over the globe: the team's PŘIPRAVEN stays in sight)
+	_lbl(box, _gate_what, TEXT, 9)
+	var waiting := Net.not_ready()
+	_lbl(box, "Připraveni %d z %d. Ještě nejsou: %s" % [Net.roster.size() - waiting.size(), Net.roster.size(), ", ".join(waiting)], ACCENT, 9).autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_lbl(box, "Začne se samo, až všichni zmáčknou PŘIPRAVEN.", FRAME, 8)
+	var row := HBoxContainer.new()
+	box.add_child(row)
+	_btn(row, "Začít hned", _gate_run, 10)
+	_btn(row, "Zpět", func():
+		var back := _gate_back
+		_gate_go = Callable()
+		_gate_back = Callable()
+		Net.stop_waiting()
+		_close_popup()
+		if back.is_valid():
+			back.call(), 10)
+
+func _gate_run() -> void:
+	var go := _gate_go
+	_gate_go = Callable()
+	_gate_back = Callable()
+	_close_popup()
+	Net.stop_waiting()
+	if go.is_valid():
+		go.call()
+
 # ---- actions -------------------------------------------------------------------------------------
 ## Who flies what (co-op): peer ids picked in the launch window.
 var _pick := {}
@@ -877,7 +999,7 @@ func _launch() -> void:
 		return
 	# the base and Mars: nobody has to fly anywhere first
 	if m["type"] in ["base", "mars"]:
-		_start_ground(m)
+		_gate("Mise: %s" % m.get("place", "?"), func(): _start_ground(m))
 		return
 	for c in Campaign.crafts():
 		if c["kind"] != "jet" and int(c["target"]) == int(m["id"]):
@@ -922,7 +1044,7 @@ func _launch_jets(fl: Dictionary) -> void:
 		_lbl(box, "Letíš sám (stíhaček připraveno: %d)." % ready, ACCENT, 9)
 	var row := HBoxContainer.new()
 	box.add_child(row)
-	_btn(row, "VZLÉTNOUT", func(): _go_jets(fl), 10)
+	_btn(row, "VZLÉTNOUT", func(): _gate("Stíhačky k UFO (%s)" % Campaign.UFO_NAMES[fl["kind"]], func(): _go_jets(fl), func(): _launch_jets(fl)), 10)
 	_btn(row, "Zrušit", func(): _pick = {}; _close_popup(), 10)
 
 func _go_jets(fl: Dictionary) -> void:
@@ -966,7 +1088,7 @@ func _launch_transport(m: Dictionary) -> void:
 			_btn(dr, ("> " if drv == pid else "") + str(Net.roster[pid]["name"]), func(): _pick["driver"] = pid; _launch_transport(m), 8)
 	var row := HBoxContainer.new()
 	box.add_child(row)
-	_btn(row, "VZLÉTNOUT", func(): _go_transport(m, tk), 10)
+	_btn(row, "VZLÉTNOUT", func(): _gate("Výsadek: %s" % m.get("place", "?"), func(): _go_transport(m, tk), func(): _launch_transport(m)), 10)
 	_btn(row, "Zrušit", func(): _pick = {}; _close_popup(), 10)
 
 func _go_transport(m: Dictionary, tk: String) -> void:
@@ -998,13 +1120,12 @@ func _on_arrived(c: Dictionary) -> void:
 		var box := _overlay("SOKOL U CÍLE", 320)
 		_lbl(box, "%s má UFO na radaru. Zbraně odjištěny." % ("Stíhačka" if int(c.get("n", 1)) == 1 else "%d stíhačky" % int(c.get("n", 1))), TEXT, 9)
 		_btn(box, "DO BOJE", func():
-			_close_popup()
-			_start_air(c, fl), 10)
+			_gate("Souboj se UFO", func(): _start_air(c, fl), func(): _on_arrived(c)), 10)
 		return
 	var m := Campaign._target_of(c)
 	var box2 := _overlay("PŘISTÁNÍ", 320)
 	_lbl(box2, "%s dosedl u cíle: %s.\nRampa se otevře, až budete připraveni." % [Campaign.CRAFT_NAMES[c["kind"]].capitalize(), m.get("place", "?")], TEXT, 9)
-	_btn(box2, "ZAČÍT MISI", func(): _begin_landed(c, m), 10)
+	_btn(box2, "ZAČÍT MISI", func(): _gate("Mise: %s" % m.get("place", "?"), func(): _begin_landed(c, m), func(): _on_arrived(c)), 10)
 
 func _begin_landed(c: Dictionary, m: Dictionary) -> void:
 	_close_popup()
@@ -1038,8 +1159,12 @@ func _go_base() -> void:
 	var params := {"type": "home", "type_name": "Základna", "base": Campaign.data["base"].duplicate(true), "grid_w": Campaign.GRID_W, "grid_h": Campaign.GRID_H,
 		"transport": Campaign.transport(), "where": Campaign.base_place(), "live": live, "research": Campaign.active_research(), "night": false, "hour": 12.0, "fallen": (Campaign.data.get("fallen", []) as Array).duplicate(true),
 		"blips": Campaign.data["flights"].map(func(f): return [float(f.get("lat", 0)), float(f.get("lon", 0))]) + Campaign.data["missions"].map(func(m): return [float(m.get("lat", 0)), float(m.get("lon", 0))])}
-	if Campaign.viewer:
-		Net.start_local_base(params)     # the host stays on the globe; this is our own copy
+	if Campaign.viewer or Net.is_online():
+		# (0.7x) co-op: everyone goes down alone (own copy), the others stay on the globe; the host's
+		# campaign runs on under him. A drop the host starts later pulls everybody up again.
+		if not Campaign.viewer:
+			Net.stop_waiting()
+		Net.start_local_base(params)
 	else:
 		Net.start_mission(params)
 
@@ -1055,7 +1180,7 @@ func _on_ambush(c: Dictionary) -> void:
 	var box := _overlay("TRANSPORT NAPADEN!", 340)
 	var esc := int(c.get("escort", 0))
 	_lbl(box, "Cestou k cíli se na %s vrhla malá UFO.\n%s" % [Campaign.CRAFT_NAMES[c["kind"]], ("Doprovod %d stíhaček se otáčí k obraně." % esc) if esc > 0 else "Bez doprovodu: pilot musí uniknout."], RED, 9)
-	_btn(box, "BRÁNIT TRANSPORT", func(): _begin_escort(c), 10)
+	_btn(box, "BRÁNIT TRANSPORT", func(): _gate("Obrana transportu", func(): _begin_escort(c), func(): _on_ambush(c)), 10)
 
 func _begin_escort(c: Dictionary) -> void:
 	_close_popup()
@@ -1126,6 +1251,43 @@ func _alert(text: String) -> void:
 	if parts.size() > 1:
 		_lbl(box, parts[1], TEXT, 9)
 	_btn(box, "OK", _close_popup, 10)
+
+## (0.7x) The hangar straight from the globe: what flies, and a Sokol bought from the base budget
+## or from one's own money (co-op friends too - no need to go through the base screen).
+func _show_hangar() -> void:
+	var box := _overlay("HANGÁR - STÍHAČKY", 360)
+	_lbl(box, "Ve službě: %d z %d, připraveno k letu %d%s." % [Campaign.jets(), Campaign.MAX_JETS, Campaign.jets_ready(),
+		(", z toho Jestřábů %d" % Campaign.hawks()) if Campaign.hawks() > 0 else ""], TEXT, 8)
+	var coming := Campaign.crafts_coming("sokol") + Campaign.crafts_coming("jestrab")
+	if coming > 0:
+		_lbl(box, "Na cestě nebo v dílně: %d" % coming, ACCENT, 8)
+	var price := Campaign.jet_price()
+	_lbl(box, "Nový Sokol stojí %d kr a v hangáru je druhý den. Tvoje peníze: %d kr." % [price, Net.my_money()], FRAME, 8).custom_minimum_size = Vector2(340, 0)
+	if not Campaign.jet_room():
+		_lbl(box, "Hangár je plný.", ACCENT, 8)
+	else:
+		var mine := _btn(box, "Koupit Sokol ze svých peněz - %d kr" % price, func():
+			if Net.my_money() < price:
+				_alert("Nelze koupit\nNemáš dost vlastních peněz.")
+				return
+			Net.buy_jet_mine()
+			Game.play_ui(self, "money", -10)
+			await get_tree().create_timer(0.5).timeout
+			_show_hangar(), 9)
+		mine.disabled = Net.my_money() < price
+		if not Campaign.viewer:
+			var bb := _btn(box, "Koupit Sokol z rozpočtu základny (%d kr)" % int(Campaign.data["credits"]), func():
+				if Campaign.buy_jet():
+					Game.play_ui(self, "money", -10)
+					Net.broadcast_team()
+					_show_hangar()
+				else: _alert("Nelze koupit\nV rozpočtu základny není dost kreditů."), 9)
+			bb.disabled = int(Campaign.data["credits"]) < price
+	var row := HBoxContainer.new()
+	box.add_child(row)
+	if not Campaign.viewer:
+		_btn(row, "Výzbroj a dílna...", func(): _show_base(1), 9)
+	_btn(row, "Zavřít", _close_popup, 9)
 
 func _show_log() -> void:
 	var box := _overlay("HLÁŠENÍ", 460)
@@ -1333,6 +1495,52 @@ func _ui_check(tag: String) -> void:
 		get_viewport().get_texture().get_image().save_png("user://ui_%s.png" % tag)
 
 func _autotest() -> void:
+	if Game.autotest() == "readyhost":
+		# (0.7x) the host's start waits for the client's PŘIPRAVEN
+		await get_tree().create_timer(1.0).timeout
+		var ran := [false]
+		_gate("Výsadek: test", func(): ran[0] = true)
+		await get_tree().create_timer(3.0).timeout
+		var early: bool = ran[0]
+		var shown := popup != null and popup.has_meta("ready_wait")
+		await _ui_check("ready_host")
+		var t0 := Time.get_ticks_msec()
+		while not ran[0] and Time.get_ticks_msec() - t0 < 20000:
+			await get_tree().create_timer(0.1).timeout
+		print("RESULT readyhost early %s window %s ran %s wait '%s'" % [early, shown, ran[0], Net.ready_wait])
+		await get_tree().create_timer(1.0).timeout
+		get_tree().quit()
+		return
+	if Game.autotest() == "readyclient":
+		var t1 := Time.get_ticks_msec()
+		while Net.ready_wait == "" and Time.get_ticks_msec() - t1 < 15000:
+			await get_tree().create_timer(0.1).timeout
+		var saw := Net.ready_wait
+		await get_tree().create_timer(4.0).timeout     # (the host checks meanwhile that nothing started)
+		var lbl := _ready_lbl.text.replace("\n", " / ")
+		await _ui_check("ready_client")
+		Net.set_ready(true)
+		var t2 := Time.get_ticks_msec()
+		while Net.ready_wait != "" and Time.get_ticks_msec() - t2 < 10000:
+			await get_tree().create_timer(0.1).timeout
+		print("RESULT readyclient saw '%s' panel '%s' me %s done %s" % [saw, lbl, Net.is_ready(Net.my_id()), Net.ready_wait == ""])
+		get_tree().quit()
+		return
+	if Game.autotest() == "hbhost":
+		# back up from the own base: a drop now pulls the client out of wherever he is
+		await get_tree().create_timer(2.0).timeout
+		print("[HB] host on the globe again, starts a drop")
+		Net.start_mission({"type": "crash", "biome": "farm", "night": false, "hour": 14.0, "place": "Test", "type_name": "Test", "id": -1})
+		return
+	if Game.autotest() == "hbclient":
+		# the host is down in his base meanwhile: our globe must stay ours and the clock go on
+		var t0 := Time.get_ticks_msec()
+		while not Net.in_own_base() and Time.get_ticks_msec() - t0 < 4000:
+			await get_tree().create_timer(0.2).timeout
+		var d0 := float(Campaign.data["day"])
+		await get_tree().create_timer(5.0).timeout
+		print("RESULT hbclient globe %s day +%.4f speed %.4f" % [get_tree().current_scene == self, float(Campaign.data["day"]) - d0, Net.geo_speed])
+		return
 	if Game.autotest() == "geolivehost":
 		await get_tree().create_timer(14.0).timeout
 		get_tree().quit()
@@ -1566,7 +1774,7 @@ func _autotest() -> void:
 					Campaign.data["credits"] = int(Campaign.data["credits"]) + 4000
 					Campaign.make("pancir"); Campaign.make("laser_rifle"); Campaign.make("mine")
 					_show_workshop()],
-				["geo_archive", _show_archive], ["geo_log", _show_log], ["geo_build", func(): _build_menu(2)], ["geo_hangar", func(): _show_base(1)],
+				["geo_archive", _show_archive], ["geo_log", _show_log], ["geo_build", func(): _build_menu(2)], ["geo_hangar", func(): _show_base(1)], ["geo_jets", _show_hangar],
 				["geo_menu", _game_menu], ["geo_menu_viewer", func(): Campaign.viewer = true; _game_menu(); Campaign.viewer = false],
 				["geo_alert", func(): _alert("VELMI DLOUHÉ HLÁŠENÍ\n" + "Tohle je velmi dlouhý text upozornění, který by se měl zalomit. ".repeat(8))]]:
 			e[1].call()

@@ -18,6 +18,7 @@ const ACTS := {
 	"write": ["tp_npc_idle2", "tp_npc_listen", "tp_npc_nod"],
 	"talk": ["tp_npc_talk", "tp_npc_listen", "tp_npc_nod", "tp_npc_yes"],
 }
+const HAT_AT := Vector3(0, 0.16, 0.0)  # the hard hat's rim from the head bone (rest pose, model space)
 const BOARD_ACTS := ["write", "confused", "talk"]      # the clipboard stays in his hand for these (and walking)
 
 var role := "sci"
@@ -34,9 +35,11 @@ var _board: Node3D
 var _rng := RandomNumberGenerator.new()
 var _busy: Dictionary          # shared by the room: post index -> who stands there
 var _walk_id := "tp_npc_walk"
+var builder := false           # (0.69) a technician on the building site: a yellow hard hat, no clipboard
 
-func setup(r: String, p: Array, busy: Dictionary, seed_: int, female: bool) -> void:
+func setup(r: String, p: Array, busy: Dictionary, seed_: int, female: bool, build := false) -> void:
 	role = r
+	builder = build
 	posts = p
 	_busy = busy
 	_rng.seed = seed_
@@ -62,9 +65,9 @@ func setup(r: String, p: Array, busy: Dictionary, seed_: int, female: bool) -> v
 ## The clothes: the look of a soldier (face, hair) with a white coat or blue overalls on top.
 func _dress(female: bool) -> void:
 	var look := {
-		"female": female, "skin": _rng.randi() % 5, "hair": (["long", "bun", "pony"] if female else ["short", "buzz", "none"])[_rng.randi() % 3],
+		"female": female, "skin": _rng.randi() % 5, "hair": (["long", "bun", "pony"] if female else ["short", "buzz", "none"])[_rng.randi() % 3] if not builder else "buzz",
 		"hair_color": _rng.randi() % 9, "eye_color": _rng.randi() % 6, "beard": 0 if female or _rng.randf() < 0.55 else 1 + _rng.randi() % 4,
-		"top": 0 if role == "sci" else 1, "pants": 2, "vest": 3, "headgear": 2 if role == "sci" or _rng.randf() < 0.5 else 1,
+		"top": 0 if role == "sci" else 1, "pants": 2, "vest": 3, "headgear": 2 if role == "sci" or builder or _rng.randf() < 0.5 else 1,
 		"glasses": 0, "flag": "",
 	}
 	Game.apply_look(_model, look)
@@ -105,6 +108,29 @@ func _dress(female: bool) -> void:
 		bar.material_override = gold
 		bar.rotation.z = r
 		x.add_child(bar)
+	# the builders' hard hat: a yellow shell with a ridge and a brim, on the head bone
+	if builder:
+		var hb := _sk.find_bone("head")
+		var top := (_sk.get_bone_global_rest(hb).origin if hb >= 0 else Vector3(0, 1.6, 0))
+		var hat := _on_bone("head", top + HAT_AT)
+		var yel := Game.color_mat(Color(0.95, 0.75, 0.08))
+		var shell := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.2; sm.height = 0.2; sm.is_hemisphere = true
+		sm.radial_segments = 20; sm.rings = 6
+		shell.mesh = sm
+		shell.material_override = yel
+		shell.scale = Vector3(0.95, 0.8, 1.05)      # (over the square head and its hair)
+		hat.add_child(shell)
+		var brim := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.215; cm.bottom_radius = 0.22; cm.height = 0.014; cm.radial_segments = 20
+		brim.mesh = cm
+		brim.material_override = yel
+		brim.scale = Vector3(0.95, 1.0, 1.12)
+		brim.position = Vector3(0, 0.006, -0.02)
+		hat.add_child(brim)
+		return
 	# a clipboard for the scientists (brown board, white sheet, the clip)
 	if role == "sci" or _rng.randf() < 0.4:
 		var hb := _sk.find_bone("hand.L")

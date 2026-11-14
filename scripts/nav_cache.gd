@@ -12,6 +12,7 @@ var nav: NavigationRegion3D
 var _units := {}        # Vector2i -> {instance_id: Node}  (pevná tělesa a překážky ve čtverci)
 var _cells := {}        # Vector2i -> NavigationMeshSourceGeometryData3D (geometrie čtverce)
 var _dirty := {}        # Vector2i -> true
+var _xf := {}           # instance_id -> Transform3D při posledním průchodu (spadlá střecha se pohne, nezmizí)
 var _busy := false
 var _again := false
 var _parse_nm: NavigationMesh
@@ -55,6 +56,7 @@ func _parse(units: Dictionary) -> NavigationMeshSourceGeometryData3D:
 		_parse_nm.geometry_source_group_name = GROUP
 	for n in units.values():
 		(n as Node).add_to_group(GROUP)
+		_xf[(n as Node).get_instance_id()] = (n as Node3D).global_transform
 	var d := NavigationMeshSourceGeometryData3D.new()
 	NavigationServer3D.parse_source_geometry_data(_parse_nm, d, nav)
 	for n in units.values():
@@ -77,12 +79,21 @@ func rebake() -> void:
 	if _busy:
 		_again = true
 		return
+	var moved: Array = []
 	for c in _units:
 		var u: Dictionary = _units[c]
 		for id in u.keys():
 			if not is_instance_id_valid(id) or not (u[id] as Node).is_inside_tree():
 				u.erase(id)
+				_xf.erase(id)
 				_dirty[c] = true
+			elif not (u[id] as Node3D).global_transform.is_equal_approx(_xf.get(id, Transform3D())):
+				# (0.70) moved since it was parsed - a collapsing wooden roof: its old place is no floor any more
+				moved.append(u[id])
+				u.erase(id)
+				_dirty[c] = true
+	for n in moved:
+		_add(n)
 	for c in _dirty:
 		_cells[c] = _parse(_units.get(c, {}))
 	_dirty.clear()

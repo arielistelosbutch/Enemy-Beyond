@@ -323,6 +323,64 @@ static func npcshot(at: Node, p: Node) -> void:
 	at.out("RESULT npc moved %d of %d" % [moved, npcs.size()])
 	at.get_tree().quit()
 
+## --autotest=baseshot (0.69, Ari's glitches at the base): the building site (builders = technicians with
+## hard hats, the shut door without a sign), the gun rack, a console from the front and the side, the
+## hangar's corner by the west doorway. Pictures user://base_<what>.png (xvfb).
+static func baseshot(at: Node, p: Node) -> void:
+	at._skip_brief()
+	if p == null or at.step > 0 or not at.m().started():
+		return
+	at.step = 1
+	var m: Node = at.m()
+	var builders := []
+	for c in m.get_children():
+		if c.get_script() == m.BaseNpc and c.builder:
+			builders.append(c)
+	at.out("RESULT baseshot builders %d" % builders.size())
+	p.body.visible = false
+	m.hud.visible = false
+	var cam := Camera3D.new()
+	m.add_child(cam)
+	cam.fov = 60.0
+	cam.current = true
+	var views := [
+		["site", Vector3(30.0, 1.7, 21.5), Vector3(30.0, 1.2, 26.0)],
+		["site_in", Vector3(33.5, 2.2, 33.5), Vector3(28.5, 0.6, 28.0)],
+		["rack", Vector3(27.1, 1.5, 3.9), Vector3(27.1, 1.45, 1.1)],
+		["rack_side", Vector3(29.6, 1.6, 3.0), Vector3(26.8, 1.4, 1.2)],
+		["console", Vector3(21.4, 1.65, 15.0), Vector3(20.6, 1.0, 13.5)],
+		["console_side", Vector3(22.2, 1.3, 14.0), Vector3(20.6, 1.0, 13.6)],
+		["hangar", Vector3(16.5, 1.7, 3.0), Vector3(13.4, 1.0, 8.0)],
+	]
+	for v in views:
+		cam.global_position = v[1]
+		cam.look_at(v[2], Vector3.UP)
+		await at.get_tree().create_timer(0.6).timeout
+		shot(at, "base_" + String(v[0]))
+	var k := 0
+	for n in builders:
+		var fwd := Vector3(-sin(n.rotation.y), 0, -cos(n.rotation.y))
+		var side := fwd.cross(Vector3.UP)
+		cam.global_position = n.global_position + fwd * 1.7 + side * 1.2 + Vector3(0, 1.6, 0)
+		cam.look_at(n.global_position + Vector3(0, 0.9, 0), Vector3.UP)
+		await at.get_tree().create_timer(0.6).timeout
+		shot(at, "base_builder_%d" % k)
+		var hb: int = n._sk.find_bone("head")
+		var head: Vector3 = (n._sk.global_transform * n._sk.get_bone_global_pose(hb)).origin
+		cam.global_position = head + side * 0.7 + fwd * 0.3 + Vector3(0, 0.1, 0)
+		cam.look_at(head + Vector3(0, 0.1, 0), Vector3.UP)
+		cam.fov = 40.0
+		await at.get_tree().process_frame
+		await at.get_tree().process_frame
+		shot(at, "base_builder_head_%d" % k)
+		cam.fov = 60.0
+		k += 1
+		continue
+		await at.get_tree().create_timer(0.6).timeout
+		shot(at, "base_builder_%d" % k)
+		k += 1
+	at.get_tree().quit()
+
 ## Overflow check for one screen (0.66, Ari: "aby nic nepřetékalo"): Game.ui_audit (out of the screen)
 ## and on top: a control sticking out of its panel, a text taller/wider than its box, a container
 ## squeezed under its minimum, a scrolling box too narrow to read. Prints "[UI] <tag>: ... přetéká".

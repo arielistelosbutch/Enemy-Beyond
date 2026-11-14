@@ -38,7 +38,7 @@ run menu_ui     300 x "\[UI\] ready: 0"                    --autotest=ui
 run mods_ui     200 x "\[MODS\] bought true"              --autotest=modsui
 run talent_ui   200 x "\[TALENT\] skip true chain true rank true spent true eye true drone true" --autotest=talentui
 run presets     200 x "\[PRESET\] first false list true merc true levels true dice_nolevels true gear true" --autotest=presets
-run sights      700 x "scope mode=scope on=true"          --autotest=sightshot --day=1
+run sights     1000 x "scope mode=scope on=true"          --autotest=sightshot --day=1 --fast=1
 run menu_flick  200 x "RESULT menuflicker 0"               --autotest=menuflicker
 run geo_ui      300 x "\[UI\] geo_ency_grey: 0"            --autotest=uigeo
 run geo_models  120 x "RESULT geomodels ships 5 crafts 3 models 8"   --autotest=geomodels
@@ -53,6 +53,7 @@ run voicedsp    120 h "RESULT voicedsp ok"                 --autotest=voicedsp
 run basewalk    400 x "RESULT basewalk 16"                 --autotest=basewalk
 run base_attack 400 x "RESULT basewalk 16"                 --autotest=basewalk --attack=1
 run base_fly    300 h "RESULT basefly top [0-2]\.[0-9]+ inside 0 .* unreachable 0" --autotest=basefly --attack=1 --crew=levit,levit,levit_velitel,grey
+run base_def    120 h "RESULT basedef raids ([5-9]|1[0-6]) .* won_lost false fail_lost true konec true ignored true ignored_lost true" --autotest=basedef
 run alienbase   400 x "RESULT abase"                       --autotest=abase --mtype=alienbase
 run fire        450 x "RESULT fireshot"                    --autotest=fireshot
 run doors       300 x "RESULT doorshot"                    --autotest=doorshot --biome=farm
@@ -76,9 +77,14 @@ pair() {   # name, host mode, client mode, expected in host log, expected in cli
   fi
 }
 pair coop_mission host client          "players=2"                "blk=false vet=false players=2"  7901
+pair coop_pot     pothost potclient     "RESULT potpaid pothost paid 315 money \\+315" "RESULT potpaid potclient paid 315 money \\+315" 7936
 pair coop_heal    coophealhost coophealclient "RESULT coopheal host ok" "client t=10 hp [0-9.]+ bleeding 0.00"  7902
+pair safe_out   safeouthost safeoutclient "RESULT safeout host out true players 1 shots 0" "RESULT safeout client finished true hp ([0-9.]+) -> \\1" 7935
+pair coop_evac  coopevachost coopevacclient "reinf cleared: hidden true back true" "client back in the menu, online" 7937
 pair coop_base    lbhost lbclient       "start_mission"            "RESULT lb lbclient players 2" 7903
+pair host_base    hbhost hbclient       "RESULT hb drop hbhost players 2" "RESULT hbclient globe true day \\+0\\.0[1-9]" 7951
 pair coop_wipe    coopwipehost coopwipeclient "globe ready"     "END\\] leave"                  7904
+pair coop_ready readyhost readyclient "RESULT readyhost early false window true ran true" "RESULT readyclient saw 'Výsadek: test' panel '.*' me true done true" 7938
 pair geo_live geolivehost geoliveclient "globe ready \(viewer false\)" "RESULT geolive day \+0\.0[1-9][0-9]* craft moved [1-9]" 7912
 pair ai_coop    aimphost aimpclient "RESULT aimp old 0 players 2 hide [1-9]" "AIMP aimpclient" 7913
 # co-op with four mercenaries: a host and three clients (0.63: the squads know about all of them)
@@ -100,7 +106,10 @@ quad() {   # name, expected in host log, port
 }
 quad ai_coop4 "RESULT aimp old 0 players 4 hide [1-9]" 7915
 pair lobby_kick kickhost kickclient "RESULT kick summary rows 2 ping [0-9]+ mic open after 1 rejoined false" "RESULT kick client .*vyhodil.*za 5 min" 7914
-pair voice_net vnethost vnetclient "RESULT vnet received 43 lost 7 rescued 7" "RESULT vnet client sent 43" 7916
+pair ufo_hull hullhost hullclient "RESULT ufohull raider rays [0-9]+ leak 0\.[0-4] % hug_inside 0 seen 0" "RESULT ufohull raider rays [0-9]+ leak 0\.[0-4] % hug_inside 0 seen 0" 7917
+pair coop_leak leakhost leakclient "RESULT leakhost .* stone_leak 0\.[0-4] %" "RESULT leakclient .* stone_leak 0\.[0-4] %" 7958
+pair coop_flare flarehost flareclient "RESULT coopflare flarehost seen (59|6[0-9]) pos \\(-?[0-9.]+, [0-9]" "RESULT coopflare flareclient seen (59|6[0-9]) pos \\(-?[0-9.]+, [0-9]" 7918
+pair voice_net vnethost vnetclient "RESULT vnet received 43 lost [0-9]+ dry 0" "RESULT vnet client sent 43" 7916
 # (0.61) a client with an other version of the game is not let in, both are told why
 timeout 60 $G --headless --path . -- --autotest=host --port=7915 > $LOG/version_host.log 2>&1 &
 vh=$!; sleep 1
@@ -117,7 +126,23 @@ run climb       200 x "RESULT climb ok"                    --autotest=climb --mt
 run ground     250 h "RESULT groundtest [0-9]+ raised, 0 bare, .*sunk 0 .*kerbs alien [6-8]/8 merc [6-8]/8" --autotest=groundtest --day=1 --nomerge=all --dur=20 --seed=5
 run rocks       250 x "RESULT rocktest [0-9]+ stones, 0 hollow, 0 nav inside, walked 12, 0 bad" --autotest=rocktest --mtype=crash --biome=mountain --seed=7 --day=1
 run hitbox      200 h "RESULT hitbox [0-9]+ props, [0-9]+ rays, phantom [0-4]\.[0-9] %" --autotest=hitbox --mtype=crash --biome=farm --seed=7
+run leak_mtn  250 x "RESULT leaktest mountain .* stone_leak 0\.[0-4] %" --autotest=leaktest --mtype=crash --biome=mountain --seed=7 --day=1
+run leak_abase 300 x "RESULT leaktest alienbase .* stone_leak 0\.[0-4] %" --autotest=leaktest --mtype=alienbase --biome=alienbase --seed=7 --day=1
+run leak_mars 200 x "RESULT leaktest mars .* stone_leak 0\.[0-4] %" --autotest=leaktest --mtype=mars --biome=mars --seed=7 --day=1
+# (0.69 oprava) plášť UFO zastaví střely i pohled (Ari: stříleli nás skrz obrys lodě)
+for u in scout raider harvester; do
+run ufohull_$u 150 h "RESULT ufohull $u rays [0-9]+ leak 0\.[0-4] % hug_inside 0 seen 0" --autotest=ufohull --mtype=crash --ufo=$u --biome=farm --day=1
+done
+for u in battleship supply; do
+run ufohull_$u 300 h "RESULT ufohull $u rays [0-9]+ leak 0\.[0-4] % hug_inside 0 seen 0" --autotest=ufohull --mtype=landed --ufo=$u --size=huge --biome=farm --day=1
+done
 run wedge      150 x "RESULT wedgetest ok"                --autotest=wedgetest --mtype=crash --biome=farm --seed=7 --day=1
+run ceiling   200 h "RESULT ceiltest [0-9]+ spots, [0-9]+ tries, leaks 0, unstuck 0, jumps [0-9]+ bad 0" --autotest=ceiltest --mtype=terror --biome=farm --seed=7 --day=1
+for bm in town farm mountain industrial base; do
+run interiors_$bm 200 h "RESULT interiors [0-9]+ houses, pockets 0, stairs_bad 0" --autotest=interiors --mtype=terror --biome=$bm --seed=3
+done
+run spectate  200 x "RESULT spectate active true eyes true next true auto true running true" --autotest=spectate --mtype=terror --biome=farm --seed=3 --day=1
+run lean       200 x "RESULT leantest ok"                 --autotest=leantest --mtype=crash --biome=farm --seed=7 --day=1
 run ws_click    100 x "RESULT wsclick bone true ring true item true" --autotest=wsclick
 run agun        150 x "RESULT agun ([0-9]+) of \1"        --autotest=agun
 run modelcheck  120 h "RESULT modelcheck [0-9]+ problems"  --autotest=modelcheck
@@ -135,11 +160,13 @@ done
 run civanim     150 h "RESULT civanim [0-9]+ civilians afk idle,walk,run,lurk cower lurk" --autotest=civanim --mtype=terror
 run civdeath    150 h "RESULT civdeath 10 deaths bad 0" --autotest=civdeath --mtype=terror
 # 0.66 Facelift I: the drone's radar in solo, the transport after a mission, the people of the base, the loading screen
+run flare       200 h "RESULT flaretest life (59|6[0-9]) lit true moved 0.00" --autotest=flaretest --mtype=crash --biome=farm
 run radar       150 h "RESULT radar solo true scanner true kit_scanner false kit_radio false" --autotest=radartest --mtype=crash --biome=farm --day=1
 run rampcheck   200 h "RESULT rampcheck shut true open true" --autotest=rampcheck --prep=1
 run transport   150 h "RESULT transport closed true"     --autotest=transport --mtype=crash --biome=farm --day=1
 run uifit       150 x "RESULT uifit bad 0"               --autotest=uifit --mtype=crash --biome=farm --day=1
 run npcbase     150 h "RESULT npc moved [1-9]"           --autotest=npcshot --shots=0 --wait=25
+run baseshot    150 x "RESULT baseshot builders 3"     --autotest=baseshot
 # 0.70 Facelift II: the echo of the place (a reverb on the sounds the game has), dirt and blood, the wall of the fallen, the intro
 run echo_farm   150 h "RESULT echo kinds room,metal,[a-z]*,room open true bus Room" --autotest=echotest --mtype=landed --biome=farm --day=1
 run echo_base   150 h "RESULT echo kinds metal,metal,metal open false bus Room" --autotest=echobase
@@ -152,6 +179,8 @@ run mocapgame  200 h "RESULT mocapgame 19 of 19" --autotest=mocapgame
 run tileround  300 h "RESULT tileround ok 38 bad 0" --autotest=tileround
 run tileeditor 150 x "RESULT tileeditor parts [0-9]+ click true moved true turned true stretched true follows true model true mirror true delete true undo true saved true picked true built true" --autotest=tileeditor
 run leaveany    150 h "RESULT leaveany early_block true done true finished true" --autotest=leaveany
+run reinf_early 90 h "success=true why=Úkol splněn, ale tým odletěl před posilami" --autotest=coopevachost --port=7939 --players=1 --reinf=early
+run safeend     150 h "RESULT safeend finished true hp ([0-9.]+) -> \\1 shots 0 stress_rise 20.1" --autotest=safeend
 run suit        100 h "RESULT suittest down true"        --autotest=suittest --group=sedaci --mtype=crash
 run levgrab     100 h "RESULT levgrab ko true carried true" --autotest=levgrab --group=levite --mtype=crash
 run mirotest   150 h "RESULT mirotest frenzy true .* mending true .* healed true" --autotest=mirotest --group=levite --mtype=landed

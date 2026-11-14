@@ -291,8 +291,10 @@ func _big_hangar(gx: int, params: Dictionary) -> void:
 	for p in [Vector3(0.8, 0, 1.0), Vector3(1.6, 0, 1.1), Vector3(0.9, 0, 2.0), Vector3(w - 0.8, 0, dd - 1.0), Vector3(w - 1.7, 0, dd - 0.9)]:
 		_barrel(a + p)
 	box(a + Vector3(w - 1.0, 1.0, 2.5), Vector3(1.4, 2.0, 2.2), _col(Color(0.2, 0.3, 0.75)))       # loader
-	_cabinet(a + Vector3(0.4, 0, dd - 3.0), PI / 2, Color(0.55, 0.45, 0.15))
-	_cabinet(a + Vector3(0.4, 0, dd - 4.0), PI / 2, Color(0.55, 0.45, 0.15))
+	# (0.69, Ari: a cabinet stood in the doorway to the west) the west door is at dd - 6.2 .. dd - 3.8:
+	# both cabinets in the corner behind it
+	_cabinet(a + Vector3(0.4, 0, dd - 1.0), PI / 2, Color(0.55, 0.45, 0.15))
+	_cabinet(a + Vector3(0.4, 0, dd - 2.0), PI / 2, Color(0.55, 0.45, 0.15))
 	info["entries"].append(a + Vector3(2.0, 0.3, 2.0))
 	_cover(a + Vector3(1.5, 0, 4.5)); _cover(a + Vector3(w - 1.5, 0, dd - 4.5)); _cover(a + Vector3(1.5, 0, dd - 6.0))
 	# the ground crew: at the transport (kneeling at the gear, checking the hull), the loader, the cabinets
@@ -303,7 +305,7 @@ func _big_hangar(gx: int, params: Dictionary) -> void:
 	_post(crew, "tech", c + Vector3(half_x, 0, -1.5), Vector3(-1, 0, 0), "interact")
 	_post(crew, "tech", c + Vector3(0.8, 0, bb.size.z * fit * 0.42 + 0.9), Vector3(0, 0, -1), "fix")
 	_post(crew, "tech", a + Vector3(w - 1.0, 0, 4.3), Vector3(0, 0, -1), "interact")
-	_post(crew, "tech", a + Vector3(1.25, 0, dd - 3.5), Vector3(-1, 0, 0), "write")
+	_post(crew, "tech", a + Vector3(1.25, 0, dd - 1.5), Vector3(-1, 0, 0), "write")
 	_post(crew, "tech", a + Vector3(w * 0.5 + 2.6, 0, dd - 2.5), Vector3(-0.5, 0, -1), "talk")
 
 ## 0.66 Facelift I: a place where one of the base's people works (scripts/base_npc.gd): where he stands
@@ -514,14 +516,25 @@ func _lab(a: Vector3, w: float) -> void:
 
 func _workshop(a: Vector3, w: float) -> void:
 	# weapon racks, benches with tools, ammo crates
-	var guns := ["rifle", "shotgun", "pistol", "sniper", "minigun"]
-	for k in 5:
+	# (0.69, Ari: "zbraně jsou křivě") the guns stand upright side by side, muzzle up, butt on the
+	# ledge, the left side to the room, each set by its own size (the models lie along -Z), held
+	# by brackets on the board
+	box(a + Vector3(2.1, 1.5, 0.15), Vector3(3.2, 1.6, 0.08), _col(Color(0.4, 0.38, 0.35)), false)
+	var rack_z := a.z + 0.19
+	box(a + Vector3(2.1, 0.74, 0.27), Vector3(3.2, 0.04, 0.16), _col(Color(0.3, 0.29, 0.27)), false)
+	var guns := ["rifle", "shotgun", "sniper", "laser_rifle", "minigun"]
+	for k in guns.size():
 		var g: Node3D = Game.model(guns[k])
 		root.add_child(g)
-		g.position = a + Vector3(0.9 + k * 0.6, 1.5, 0.35)
-		g.rotation = Vector3(0, PI / 2, PI / 2 * 0.0)
-		g.rotation.z = PI / 2
-	box(a + Vector3(2.1, 1.5, 0.15), Vector3(3.2, 1.6, 0.08), _col(Color(0.4, 0.38, 0.35)), false)
+		g.rotation = Vector3(PI / 2, PI / 2, 0.0)
+		g.position = Vector3.ZERO
+		var gb: AABB = g.transform * _aabb3(g)
+		var slot := Vector3(a.x + 0.85 + k * 0.62, 0.76, rack_z + 0.01)
+		g.position = Vector3(slot.x - (gb.position.x + gb.size.x / 2.0), slot.y - gb.position.y, slot.z - gb.position.z)
+		# two brackets either side of it, at the grip and up the barrel
+		for y in [1.15, 1.75]:
+			for sd in [-1.0, 1.0]:
+				box(Vector3(slot.x + sd * (gb.size.x / 2.0 + 0.025), y, rack_z + 0.06), Vector3(0.03, 0.04, 0.1), _col(Color(0.2, 0.2, 0.21)), false)
 	for k in 2:
 		var b := a + Vector3(3.2 + k * 3.6, 0, w * 0.55)
 		box(b + Vector3(0, 0.46, 0), Vector3(1.8, 0.92, 0.75), _col(Color(0.5, 0.42, 0.32))).visible = false
@@ -928,18 +941,34 @@ func _blockade(c: Vector3, along_x: bool, inward: float) -> void:
 	var steel := Game.mat("metal", 0.5)
 	var door_off := Vector3(-wd * 0.18, 0, 0) if along_x else Vector3(0, 0, -wd * 0.18)
 	box(c + door_off + Vector3(0, 1.3, 0), Vector3(wd * 0.65, 2.6, 0.1) if along_x else Vector3(0.1, 2.6, wd * 0.65), steel, false)
-	# the sign on the door
-	var lbl := Label3D.new()
-	lbl.text = "STAVÍ SE\nVSTUP ZAKÁZÁN"
-	lbl.font_size = 40
-	lbl.pixel_size = 0.004
-	lbl.modulate = Color(0.1, 0.08, 0.05)
-	lbl.outline_size = 0
-	var plate := box(c + door_off + Vector3(0, 1.6, 0) + (Vector3(0, 0, -inward * 0.07) if along_x else Vector3(-inward * 0.07, 0, 0)),
-		Vector3(0.9, 0.45, 0.02) if along_x else Vector3(0.02, 0.45, 0.9), Game.color_mat(Color(0.95, 0.78, 0.1)), false)
-	root.add_child(lbl)
-	lbl.position = plate.position + (Vector3(0, 0, -inward * 0.02) if along_x else Vector3(-inward * 0.02, 0, 0))
-	lbl.rotation.y = (0.0 if inward < 0 else PI) if along_x else (PI / 2 if inward < 0 else -PI / 2)
+	# (0.69, Ari: the "STAVÍ SE / VSTUP ZAKÁZÁN" plate did not fit) no text: the door's leading edge is
+	# painted in yellow-black hazard stripes and an amber beacon turns over the doorway
+	var side := Vector3(1, 0, 0) if along_x else Vector3(0, 0, 1)
+	var outward := (Vector3(0, 0, -inward) if along_x else Vector3(-inward, 0, 0))
+	var edge := c + door_off + side * (wd * 0.65 / 2.0 - 0.12)
+	var yel := Game.color_mat(Color(0.95, 0.78, 0.1))
+	var blk := Game.color_mat(Color(0.08, 0.08, 0.08))
+	for k in 13:
+		box(edge + outward * 0.056 + Vector3(0, 0.1 + k * 0.2, 0), Vector3(0.24, 0.2, 0.012) if along_x else Vector3(0.012, 0.2, 0.24), yel if k % 2 == 0 else blk, false)
+	for k in 7:
+		var q := c + door_off + side * ((k - 3) * wd * 0.65 / 7.0) + outward * 0.056 + Vector3(0, 0.12, 0)
+		box(q, Vector3(wd * 0.65 / 7.0, 0.24, 0.012) if along_x else Vector3(0.012, 0.24, wd * 0.65 / 7.0), yel if k % 2 == 0 else blk, false)
+	var lamp := c + outward * 0.25 + Vector3(0, H - 0.75, 0)
+	box(lamp + Vector3(0, 0.12, 0) + outward * -0.1, Vector3(0.14, 0.04, 0.3) if along_x else Vector3(0.3, 0.04, 0.14), blk, false)
+	cyl(lamp, 0.09, 0.1, 0.18, Game.color_mat(Color(1.0, 0.55, 0.1), true), false, 10)
+	if not attack:
+		var turn := Node3D.new()
+		root.add_child(turn)
+		turn.position = lamp
+		turn.set_meta("spin", 4.5)
+		var beam := SpotLight3D.new()
+		beam.light_color = Color(1.0, 0.6, 0.15)
+		beam.light_energy = 1.4
+		beam.spot_range = 6.0
+		beam.spot_angle = 22.0
+		turn.add_child(beam)
+		beam.rotation.x = -0.35
+		info["spinners"].append(turn)
 	# tape: diagonal-ish bands of yellow and black across the opening (on the corridor side)
 	for y in [0.9, 1.3]:
 		for k in 8:
@@ -956,40 +985,29 @@ func _blockade(c: Vector3, along_x: bool, inward: float) -> void:
 	root.add_child(sb)
 	sb.position = c + Vector3(0, 1.5, 0)
 
-## The builders: hard hats, one welding (sparks, blue flicker), one hammering, one on a jackhammer.
-## Only scenery behind the tape; the mission plays their noises.
+## The builders: (0.69, Ari: "dělníci mají být technici, ne vesničani") the base's own technicians
+## (scripts/base_npc.gd, blue overalls, the gold X) with yellow hard hats - one welding kneeling at a
+## steel beam (sparks, blue flicker), one hammering at a concrete pillar, one on a jackhammer. Each keeps
+## to his own place; the mission spawns them (mission._base_people) and plays their noises. Not while
+## the base is attacked (the fuses are out, nobody builds).
 func _workers(a: Vector3, w: float) -> void:
+	if attack:
+		return
 	var jobs := [["weld", Vector3(w * 0.3, 0, w * 0.35), PI * 0.5], ["hammer", Vector3(w * 0.65, 0, w * 0.4), -PI * 0.3], ["drill", Vector3(w * 0.5, 0, w * 0.7), PI]]
 	for j in jobs:
-		var m: Node3D = Game.model("civ_a" if j[0] != "hammer" else "civ_b")
-		root.add_child(m)
-		m.position = a + (j[1] as Vector3)
-		m.rotation.y = float(j[2])
-		var ap: AnimationPlayer = m.find_child("AnimationPlayer", true, false)
-		if ap and ap.has_animation("idle"):
-			ap.get_animation("idle").loop_mode = Animation.LOOP_LINEAR
-			ap.play("idle")
-		var bb := _aabb3(m)
-		# hard hat and a hi-vis vest
-		var hat := MeshInstance3D.new()
-		var hm := SphereMesh.new()
-		hm.radius = 0.15; hm.height = 0.18; hm.is_hemisphere = true
-		hat.mesh = hm
-		hat.material_override = Game.color_mat(Color(1.0, 0.8, 0.1))
-		m.add_child(hat)
-		hat.position = Vector3(0, bb.end.y - 0.08, 0)
-		var vest := MeshInstance3D.new()
-		var vm := BoxMesh.new()
-		vm.size = Vector3(0.42, 0.45, 0.26)
-		vest.mesh = vm
-		vest.material_override = Game.color_mat(Color(1.0, 0.55, 0.05))
-		m.add_child(vest)
-		vest.position = Vector3(0, bb.end.y * 0.68, 0)
-		var fwd := Vector3(-sin(float(j[2])), 0, -cos(float(j[2])))
-		var tool_at: Vector3 = m.position + fwd * 0.55 + Vector3(0, 0.9 if j[0] == "weld" else (1.0 if j[0] == "hammer" else 0.1), 0)
-		var fx := {"kind": j[0], "pos": tool_at, "node": m}
+		var at: Vector3 = a + (j[1] as Vector3)
+		var yaw := float(j[2])
+		var fwd := Vector3(-sin(yaw), 0, -cos(yaw))
+		var fx := {"kind": j[0], "node": null, "npc": {"pos": at, "yaw": yaw, "act": "fix" if j[0] == "weld" else "interact"}}
 		match j[0]:
 			"weld":
+				# a steel beam on two trestles, the torch at its near side at kneeling height
+				var tool_at := at + fwd * 0.62 + Vector3(0, 0.5, 0)
+				var steel := Game.mat("metal", 0.5)
+				box(at + fwd * 0.95 + Vector3(0, 0.42, 0), Vector3(0.3, 0.3, 1.8) if absf(fwd.x) > 0.5 else Vector3(1.8, 0.3, 0.3), steel, false)
+				for sd in [-0.7, 0.7]:
+					var off := Vector3(0, 0, sd) if absf(fwd.x) > 0.5 else Vector3(sd, 0, 0)
+					box(at + fwd * 0.95 + off + Vector3(0, 0.14, 0), Vector3(0.36, 0.28, 0.08) if absf(fwd.x) > 0.5 else Vector3(0.08, 0.28, 0.36), _col(Color(0.75, 0.55, 0.12)), false)
 				var l := OmniLight3D.new()
 				l.light_color = Color(0.55, 0.75, 1.0)
 				l.omni_range = 4.0
@@ -1012,12 +1030,28 @@ func _workers(a: Vector3, w: float) -> void:
 				root.add_child(sp)
 				sp.position = tool_at
 				fx["sparks"] = sp
-				box(tool_at + fwd * 0.3 + Vector3(0, -0.4, 0), Vector3(0.8, 0.8, 0.8), Game.mat("metal", 0.5), false)    # the beam being welded
+				fx["pos"] = tool_at
 			"drill":
-				box(tool_at + Vector3(0, 0.45, 0), Vector3(0.12, 0.8, 0.12), _col(Color(0.8, 0.15, 0.1)), false)
-				box(tool_at + Vector3(0, 0.85, 0), Vector3(0.5, 0.06, 0.06), _col(Color(0.2, 0.2, 0.2)), false)
+				# the jackhammer stands in front of him (it shakes, not he), a cracked slab under it
+				var tool_at := at + fwd * 0.5
+				var dr := Node3D.new()
+				root.add_child(dr)
+				dr.position = tool_at
+				for part in [[Vector3(0, 0.42, 0), Vector3(0.12, 0.7, 0.12), Color(0.8, 0.15, 0.1)], [Vector3(0, 0.03, 0), Vector3(0.03, 0.1, 0.03), Color(0.5, 0.5, 0.52)],
+						[Vector3(0, 0.8, 0), Vector3(0.5, 0.05, 0.05) if absf(fwd.x) < 0.5 else Vector3(0.05, 0.05, 0.5), Color(0.15, 0.15, 0.15)]]:
+					var mi := MeshInstance3D.new()
+					var bm := BoxMesh.new()
+					bm.size = part[1]
+					mi.mesh = bm
+					mi.material_override = _col(part[2])
+					dr.add_child(mi)
+					mi.position = part[0]
+				box(tool_at + Vector3(0, 0.02, 0), Vector3(1.0, 0.04, 1.0), Game.mat("concrete", 0.5), false)
+				fx["node"] = dr
+				fx["pos"] = tool_at
 			"hammer":
-				box(tool_at + fwd * 0.25 + Vector3(0, -0.2, 0), Vector3(0.6, 1.4, 0.6), Game.mat("concrete", 0.5), false)
+				box(at + fwd * 0.85 + Vector3(0, 0.7, 0), Vector3(0.6, 1.4, 0.6), Game.mat("concrete", 0.5), false)
+				fx["pos"] = at + fwd * 0.55 + Vector3(0, 1.0, 0)
 		info.get_or_add("workers", []).append(fx)
 
 func _aabb3(n: Node3D) -> AABB:

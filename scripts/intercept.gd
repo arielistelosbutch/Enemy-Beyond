@@ -863,8 +863,10 @@ func _damage_ufo(d: float, at: Vector3) -> void:
 	if net:
 		_hit_ufo.rpc_id(1, d)
 	else:
-		ufo_hp -= _field_absorb(d)
+		var hit := _field_absorb(d)
+		ufo_hp -= hit
 		recent.append([t, d])
+		_dmg_by[1] = float(_dmg_by.get(1, 0.0)) + hit
 	if randf() < 0.3:
 		_flash(at, 2.0)
 
@@ -987,8 +989,13 @@ func _ufo_state(pos: Vector3, rot_y: float, hp: float, flee: bool) -> void:
 func _hit_ufo(d: float) -> void:
 	if not multiplayer.is_server() or outcome != "":
 		return
-	ufo_hp -= _field_absorb(d)
+	var pid := multiplayer.get_remote_sender_id()
+	if pid == 0:
+		pid = 1
+	var hit := _field_absorb(d)
+	ufo_hp -= hit
 	recent.append([t, d])
+	_dmg_by[pid] = float(_dmg_by.get(pid, 0.0)) + hit
 
 ## Somebody's Sokol went down.
 @rpc("any_peer", "call_local", "reliable")
@@ -1094,6 +1101,8 @@ func _end(o: String) -> void:
 		_end_all.rpc(o)
 		outcome = ""
 	outcome = o
+	if (not net or multiplayer.is_server()) and o in ["crashed", "destroyed"]:
+		_pay_pilots()
 	Game.play_ui(self, "explosion", 2)
 	if _alarm:
 		_alarm.stop()
@@ -1159,7 +1168,7 @@ func _air_extras(delta: float) -> void:
 	_decoy_cd -= delta
 	_order_cd -= delta
 	if me_pilot and not down and outcome == "":
-		if Input.is_action_just_pressed("swap"):
+		if Input.is_action_just_pressed("decoy"):
 			_drop_decoy()
 		var keys := ["primary", "secondary", "belt1"]
 		for i in 3:
@@ -1294,7 +1303,12 @@ func _damage_fx(delta: float) -> void:
 
 @rpc("any_peer", "reliable")
 func _jet_hp_fx(pid: int, frac: float) -> void:
+	var was := float(others_hp.get(pid, 1.0))
 	others_hp[pid] = frac
+	# a wingman badly hit says so on the radio (once as he drops under 30 %)
+	if was >= 0.3 and frac < 0.3 and others.has(pid) and outcome == "":
+		_say("%s: Mám to těžce poškozené!" % String(others[pid]["name"]), 3.0)
+		Game.play_ui(self, "radio_click", -12)
 
 var _smoke_cds := {}
 func _smoke_from(n: Node3D, frac: float, delta: float) -> void:
@@ -1477,6 +1491,8 @@ func _draw_hud() -> void:
 		# the fly-over over the wreck: only the message and how to skip it
 		if msg_t > 0:
 			_msg_plate(c, Vector2(mid.x, 66), msg, Color(1.0, 0.74, 0.32))
+		if _pay_text != "":
+			_msg_plate(c, Vector2(mid.x, 100), _pay_text, Color(0.55, 1.0, 0.6), 8)
 		_msg_plate(c, Vector2(mid.x, sz.y - 20), "libovolná klávesa = pokračovat", Color(0.45, 0.78, 0.86), 8)
 		return
 	var txt := func(p: Vector2, s: String, col := green, size := 9):
@@ -1509,8 +1525,29 @@ func _draw_hud() -> void:
 		var on: Node3D = others[pid]["node"]
 		if not others[pid]["down"] and on != jet and not cam.is_position_behind(on.global_position):
 			var op := cam.unproject_position(on.global_position)
-			c.draw_arc(op, 5, 0, TAU, 10, Color(0.5, 0.8, 1.0), 1.0)
-			txt.call(op + Vector2(7, 3), String(others[pid]["name"]), Color(0.5, 0.8, 1.0), 7)
+			var hf := float(others_hp.get(pid, 1.0))
+			var wcol := _hull_col(hf)
+			c.draw_arc(op, 5, 0, TAU, 10, Color(0.5, 0.8, 1.0) if hf >= 0.35 else wcol, 1.0)
+			txt.call(op + Vector2(7, 3), String(others[pid]["name"]), Color(0.5, 0.8, 1.0) if hf >= 0.35 else wcol, 7)
+			# his hull under the name, as everyone sees it
+			c.draw_rect(Rect2(op + Vector2(7, 6), Vector2(30, 3)), Color(0, 0, 0, 0.6))
+			c.draw_rect(Rect2(op + Vector2(7, 6), Vector2(30 * clampf(hf, 0, 1), 3)), wcol)
+	# (0.7x) the wing panel: every co-op pilot's hull at a glance, above the flight panel
+	if net and not others.is_empty():
+		var n_w := others.size()
+		var ph := 14 + 12 * n_w
+		_hplate(c, Rect2(4, sz.y - 66 - ph, 200, ph))
+		txt.call(Vector2(12, sz.y - 66 - ph + 11), "KŘÍDLO", Color(0.45, 0.78, 0.86), 7)
+		var wi := 0
+		for pid in others:
+			var y := sz.y - 66 - ph + 22 + 12 * wi
+			var hf2 := float(others_hp.get(pid, 1.0))
+			txt.call(Vector2(12, y), String(others[pid]["name"]).left(14), Color(0.84, 0.89, 0.92), 7)
+			if others[pid]["down"]:
+				txt.call(Vector2(110, y), "SESTŘELEN", Color(1, 0.4, 0.3), 7)
+			else:
+				_hbar(c, Rect2(108, y - 6, 88, 6), hf2, _hull_col(hf2))
+			wi += 1
 	if down and net:
 		_msg_plate(c, Vector2(mid.x, sz.y - 76), "Tvoje stíhačka je dole - sleduješ spoluhráče.", Color(1, 0.6, 0.4))
 	# 0.57: the panels on plates of the menus' metal (UiSkin), as in the ground HUD
@@ -1570,6 +1607,8 @@ func _draw_hud() -> void:
 ## orders over the wingmen.
 func _draw_air_extras(c: Control, sz: Vector2, mid: Vector2, green: Color) -> void:
 	var f := ThemeDB.fallback_font
+	if _pay_text != "":
+		_msg_plate(c, Vector2(mid.x, 100), _pay_text, Color(0.55, 1.0, 0.6), 8)
 	# lead: a small diamond where the gun cross has to be for the shells to meet the target
 	if _lead_dir != Vector3.ZERO and outcome == "" and not down and ufo != null and is_instance_valid(ufo) \
 			and jet.global_position.distance_to(ufo.global_position) < 1400.0:
@@ -1665,6 +1704,15 @@ func _process(_d: float) -> void:
 		if (bo["node"] as Node3D).global_position.distance_to(jet.global_position) < 140.0 and break_cd <= 0.0:
 			_break(-1.0 if randf() < 0.5 else 1.0)
 			print("[AIR] uhyb t=%.1f hp=%d" % [t, jet_hp])
+	# (0.7x) the wing panel: the client gets badly hit, the host must see it
+	if Game.autotest() == "airclient" and t > 2.0 and not _shot_done.has("hurt"):
+		_shot_done["hurt"] = true
+		jet_hp = 22.0
+	if Game.autotest() == "airhost" and t > 4.0 and not _shot_done.has("wing"):
+		_shot_done["wing"] = true
+		print("RESULT airwing others_hp %s" % [others_hp])
+		if DisplayServer.get_name() != "headless":
+			get_viewport().get_texture().get_image().save_png("user://airwing_host.png")
 	for st in [5, 8, 20]:
 		if t >= st and not _shot_done.has(st):
 			_shot_done[st] = true
@@ -1754,3 +1802,62 @@ func _airfx_test() -> void:
 					_fx.get("lead"), _fx.get("hit_a"), int(_fx.get("cracks", 0)), _fx.get("hit_b"), int(_fx.get("decoys", -1)), float(_fx["thr"]),
 					float(_fx.get("hurt", 0.0)), float(_fx.get("look", 0.0)), float(_fx.get("back", 0.0)), _crash_at != Vector3.ZERO, _show_over()])
 				get_tree().quit()
+
+# ---- (0.7x) the pilot's own pay: who shot the UFO down gets something too ---------------------
+## Flight pay for a downed UFO, by ship size [kr, xp]. The money is split evenly among the pilots
+## who took part; the xp is 30 % for taking part and the rest by the share of the damage.
+## The biggest share counts as the kill.
+const AIR_PAY := {"scout": [60, 30], "raider": [90, 45], "harvester": [130, 70], "supply": [180, 90], "battleship": [240, 120]}
+var _dmg_by := {}          # host: peer -> damage done to the UFO
+var _pay_text := ""
+
+func _pay_pilots() -> void:
+	var total := 0.0
+	var top := -1
+	for pid in _dmg_by:
+		total += float(_dmg_by[pid])
+		if top < 0 or float(_dmg_by[pid]) > float(_dmg_by[top]):
+			top = pid
+	if total <= 0.0:
+		return
+	# the money goes in one pot, split evenly among the pilots who took part (Ari: co-op = one team);
+	# the experience and the kill go by each one's share of the damage
+	var flew := []
+	for pid in _dmg_by:
+		if float(_dmg_by[pid]) / total >= 0.02:
+			flew.append(pid)
+	for pid in flew:
+		var share := float(_dmg_by[pid]) / total
+		if not net or pid == multiplayer.get_unique_id():
+			_air_pay(share, pid == top, flew.size())
+		elif multiplayer.get_peers().has(pid):
+			_air_pay.rpc_id(pid, share, pid == top, flew.size())
+
+@rpc("authority", "call_remote", "reliable")
+func _air_pay(share: float, kill: bool, pilots := 1) -> void:
+	var base: Array = AIR_PAY.get(kind, AIR_PAY["scout"])
+	var k := 0.3 + 0.7 * clampf(share, 0.0, 1.0)
+	var pay := int(round(float(base[0]) / maxf(1.0, pilots) / 5.0)) * 5
+	var xp := int(round(float(base[1]) * k))
+	Game.merc["money"] = int(Game.merc.get("money", 0)) + pay
+	var promo: Array = Game.add_xp(xp)
+	if kill:
+		Game.merc["air_kills"] = int(Game.merc.get("air_kills", 0)) + 1
+	Game.save_merc()
+	Net.update_merc()
+	_pay_text = "Letecký příplatek: +%d kr, +%d zk (tvůj podíl %d %%)" % [pay, xp, int(round(share * 100.0))]
+	if pilots > 1:
+		_pay_text = "Letecký příplatek: +%d kr (rovný díl z %d kr pro %d piloty), +%d zk (podíl %d %%)" % [pay, int(base[0]), pilots, xp, int(round(share * 100.0))]
+	if kill:
+		_pay_text += "   sestřel č. %d" % int(Game.merc["air_kills"])
+	if not promo.is_empty():
+		_pay_text += "   POVÝŠENÍ!"
+	print("[AIR] pay %d xp %d share %.2f kill %s air_kills %d" % [pay, xp, share, kill, int(Game.merc.get("air_kills", 0))])
+
+## Green / amber / red by how much hull is left.
+func _hull_col(f: float) -> Color:
+	if f < 0.3:
+		return Color(1, 0.35, 0.3)
+	if f < 0.6:
+		return Color(1.0, 0.74, 0.32)
+	return Color(0.4, 0.95, 0.5)

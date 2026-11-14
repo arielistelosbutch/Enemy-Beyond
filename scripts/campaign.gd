@@ -196,7 +196,7 @@ const MTYPES := {
 	"alienbase": {"name": "Základna vetřelců", "reward": 1400, "aliens": 5, "expire": 9999.0, "trust": 14,
 		"text": "Výslech prozradil, kde mají základnu. Jeskyně pod zemí, velitelské centrum s řídicím jádrem, v líhni zajatí lidé. Zničit jádro."},
 	"base": {"name": "Útok na základnu", "reward": 600, "aliens": 3, "expire": 0.2, "trust": 6,
-		"text": "Radar hlásí loď nad roklí. Míří na NÁS. Bránit základnu do posledního vetřelce."},
+		"text": "Radar hlásí loď nad roklí. Míří na NÁS. Bránit základnu do posledního vetřelce. Když základna padne, Projekt X končí."},
 }
 
 # ---- research: a tree - each project needs what came before it ---------------------------------
@@ -719,7 +719,8 @@ func advance(days: float) -> bool:
 		if float(m["expires"]) < float(data["day"]):
 			data["missions"].erase(m)
 			if m["type"] == "base":
-				_log(_base_raided())
+				# (Ari 2026-11-13) nobody came down to defend it: the base falls and the project ends
+				report.emit(_base_fell("Nikdo základnu nebránil."))
 				stop = true
 				continue
 			var lost_trust := int(round((15 if m["type"] == "terror" else 5) * (1.0 + war_stage())))     # (the later, the less patience)
@@ -803,11 +804,13 @@ func advance(days: float) -> bool:
 		if rh["current"] != "":
 			rh["progress"] = maxf(0.0, float(rh["progress"]) - 2.0)
 		stop = true
-	# from the third week on they know where we are: now and then they come for the base
-	if (float(data["day"]) > 18.0 or float(data.get("vrak_signal", 0.0)) < 0.0) and not data.get("won", false):
-		data["next_raid"] = float(data.get("next_raid", float(data["day"]) + rng.randf_range(6.0, 12.0)))
+	# (Ari 2026-11-13: rare, but a lost defence ends the campaign) from the second month on they
+	# know where we are (sooner if a wreck gave us away): now and then they come for the base -
+	# first raid 8-16 days later, then every 3-5 weeks early in the war, 2-3 weeks late in it
+	if (float(data["day"]) > BASE_RAID_FROM or float(data.get("vrak_signal", 0.0)) < 0.0) and not data.get("won", false):
+		data["next_raid"] = float(data.get("next_raid", float(data["day"]) + rng.randf_range(8.0, 16.0)))
 		if float(data["day"]) >= float(data["next_raid"]):
-			data["next_raid"] = float(data["day"]) + rng.randf_range(lerpf(9.0, 4.0, war_stage()), lerpf(16.0, 8.0, war_stage())) * (1.6 if count("maskovani") > 0 else 1.0)
+			data["next_raid"] = float(data["day"]) + rng.randf_range(lerpf(22.0, 14.0, war_stage()), lerpf(34.0, 22.0, war_stage())) * (1.6 if count("maskovani") > 0 else 1.0)
 			var already := false
 			for mm in data["missions"]:
 				if mm["type"] == "base":
@@ -827,7 +830,8 @@ func advance(days: float) -> bool:
 				bm["terrain"] = terrain_at(base_lat(), base_lon())
 				bm["size"] = "medium"
 				bm["reward"] = MTYPES["base"]["reward"]
-				bm["extra_aliens"] = maxi(0, int(MTYPES["base"]["aliens"]) + int(float(data["day"]) / 15.0) - defence_hits())
+				# (Ari 2026-11-13: was 3 + day/15 on top of the waves - brutal) +1 a month of the war, at most +3
+				bm["extra_aliens"] = clampi(int(float(data["day"]) / 30.0) - 1 - defence_hits(), 0, 3)
 				bm["base_def"] = count("plazma_vez") + count("laser_vez")       # (they drop fewer waves under fire)
 				bm["expires"] = float(data["day"]) + float(MTYPES["base"]["expire"])
 				data["missions"].append(bm)
@@ -1142,13 +1146,21 @@ func buy_jet() -> bool:
 	if jets() + hulls_coming() >= MAX_JETS or int(data["credits"]) < jet_price():
 		return false
 	data["credits"] = int(data["credits"]) - jet_price()
+	order_jet("")
+	return true
+
+## (0.7x) Room for one more Sokol in the hangar (bought or on the way)?
+func jet_room() -> bool:
+	return jets() + hulls_coming() < MAX_JETS
+
+## The Sokol on order, paid already (from the base budget, or by a player from his own money).
+func order_jet(by: String) -> void:
 	if not data.has("orders"):
 		data["orders"] = []
 	data["orders"].append({"item": "craft_sokol", "at": float(data["day"]) + 1.0})
-	_log("Objednána stíhačka Sokol - v hangáru bude zítra.")
+	_log(("Objednána stíhačka Sokol - v hangáru bude zítra." if by == "" else "%s koupil ze svých peněz stíhačku Sokol - v hangáru bude zítra." % by))
 	save()
 	changed.emit()
-	return true
 
 ## 0.57: the Jestřáb - a new one into a free place in the hangar, or a Sokol rebuilt into one.
 const HAWK_PRICE := 4000
@@ -1532,26 +1544,13 @@ func mission_params(m: Dictionary) -> Dictionary:
 		p["attack"] = true
 	return p
 
-## The base fell to a raid (lost defence or nobody went): money, a facility and gear are gone.
-func _base_raided() -> String:
-	var lost_cr := int(int(data["credits"]) * 0.35)
-	data["credits"] = int(data["credits"]) - lost_cr
-	var txt := "Vetřelci vyplenili základnu: ztráta %d kr" % lost_cr
-	var built := []
-	for i in data["base"].size():
-		var cell: Dictionary = data["base"][i]
-		if cell.get("type", "") in ["laborator", "dilna", "radar", "osetrovna"] and float(cell.get("days", 0)) <= 0:
-			built.append(i)
-	if not built.is_empty():
-		var i2: int = built[rng.randi() % built.size()]
-		var ft: String = data["base"][i2]["type"]
-		data["base"][i2]["days"] = facility_days(ft) * 0.5
-		txt += ", %s poničena (oprava %.0f dní)" % [FACILITIES[ft]["name"], facility_days(ft) * 0.5]
-	for k in data["armory"].keys():
-		data["armory"][k] = int(int(data["armory"][k]) / 2)
-	txt += ", polovina skladu zbraní je pryč."
-	data["trust"] = int(data["trust"]) - 8
-	return txt
+## The base fell to a raid (lost defence, the team fled, or nobody went): the campaign is over
+## (Ari 2026-11-13: "pokud to hráči nedají, konec hry"). Returns the KONEC text for the report.
+const BASE_RAID_FROM := 30.0
+func _base_fell(why: String) -> String:
+	data["lost"] = true
+	_log("Základna (%s) padla. %s Projekt X skončil." % [base_place(), why])
+	return "KONEC\nVetřelci obsadili základnu (%s). %s Velín mlčí, hangár hoří, ze sklepů se ozývají jen jejich hlasy.\nProjekt X skončil." % [base_place(), why]
 
 ## After the team comes back.
 ## True while the replacement Kondor is still on its way (after a lost team).
@@ -1726,16 +1725,19 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 		txt += " Civilisté: zachráněno %d, mrtvých %d." % [civ_saved, civ_dead]
 	if not got.is_empty():
 		txt += " Kořist: " + ", ".join(got) + "."
+	var fell := ""
 	if m["type"] == "base" and not success:
-		txt += " " + _base_raided()
+		pass       # (the base fell: see below, after the mission's own line in the log)
 	elif wiped and not success:
 		var kl := _kondor_lost({})
 		txt += kl if transport() != "heli" else kl.replace("Kondoru", "Čápa").replace("Kondor", "Čáp")
 	txt += gear_txt
 	_log(txt)
+	if m["type"] == "base" and not success:
+		fell = _base_fell("Obrana selhala.")
 	save()
 	changed.emit()
-	return txt
+	return (fell + "\n\n" + txt) if fell != "" else txt
 
 # ---- research, building, shop -----------------------------------------------------------------
 ## 0.57: what research gives Project X is a design - the workshop has to make it before anyone has it.

@@ -192,6 +192,8 @@ static func _ser(mg, n: Node3D, pxf: Transform3D, o: Vector3, els: Array, idx: D
 			e["retex"] = n.get_meta("retex")
 		if n.has_meta("nocol"):
 			e["nocol"] = true
+		if n.has_meta("noslab"):
+			e["noslab"] = true       # (a roof without its flat collision slab: the cabin's loft)
 		for sb in n.find_children("*", "StaticBody3D", true, false):
 			if sb.has_meta("break_kind"):
 				e["br"] = String(sb.get_meta("break_kind"))
@@ -234,6 +236,8 @@ static func _ser(mg, n: Node3D, pxf: Transform3D, o: Vector3, els: Array, idx: D
 				idx[n] = els.size()
 				els.append(e)
 				return
+		if n.has_meta("under_ramp"):
+			return          # (made again under the ramp when the tile is built)
 		if meshes.is_empty() and shapes.size() == 1 and (shapes[0] as CollisionShape3D).shape is BoxShape3D:
 			var e := {"k": "solid", "s": _v(((shapes[0] as CollisionShape3D).shape as BoxShape3D).size)}
 			_put_xf(e, xf * (shapes[0] as CollisionShape3D).transform, o)
@@ -412,6 +416,11 @@ static func make(mg, e: Dictionary, o: Vector3, els := []) -> Node3D:
 				n = Game.model(nm)
 				mg.root.add_child(n)
 				n.position = p
+				# 0.69: a stone from the editor is solid in its shape too (it came with a hollow box)
+				if nm.begins_with("mars_rock"):
+					mg._solid_stone(n)
+				elif nm.begins_with("mars_"):
+					preload("res://scripts/fit_collision.gd").fit(n)
 				if bool(e.get("volne", false)):
 					mg._loose.append(n)
 			n.rotation_degrees = r
@@ -419,6 +428,8 @@ static func make(mg, e: Dictionary, o: Vector3, els := []) -> Node3D:
 				for sb in n.find_children("*", "StaticBody3D", true, false):
 					sb.free()
 				n.set_meta("nocol", true)
+			if bool(e.get("noslab", false)):
+				mg._roof_no_slab(n)
 			if e.has("retex"):
 				var swap := {}
 				for key in e["retex"]:
@@ -487,6 +498,10 @@ static func make(mg, e: Dictionary, o: Vector3, els := []) -> Node3D:
 			sb.position = p
 			sb.rotation_degrees = r
 			n = sb
+			# a ramp (a thin tilted slab): solid under it, as the generator's stairs (2026-11-13)
+			var tz := absf(sb.transform.basis.z.normalized().y)
+			if sh.size.y < 0.3 and tz > 0.25 and tz < 0.95:
+				mg._under_ramp(sb, sh.size)
 		"point":
 			var key := String(e.get("t", "waypoints"))
 			if not mg.info.has(key):

@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.69 prototyp"
-const VERSION_NUM := "0.69"
+const VERSION := "0.70 prototyp"
+const VERSION_NUM := "0.70"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -568,11 +568,12 @@ const LOAD_WHAT := {"Mission.tscn": "Příprava mise", "Geoscape.tscn": "Velín"
 	"Escort.tscn": "Doprovod transportu"}
 ## Changes the scene behind the loading screen: shows it, lets it be drawn (the building of a mission
 ## blocks the screen - what is drawn last stays up), changes, and lets it fade into the new scene.
-func load_scene(path: String) -> void:
+func load_scene(path: String, what := "", short := false) -> void:
 	var tree := get_tree()
 	if not is_instance_valid(_loading):
 		_loading = LoadingScreen.new()
-		_loading.setup(String(LOAD_WHAT.get(path.get_file(), "Načítání")), path.ends_with("Mission.tscn"))
+		# (0.7x) the walk down into our base is no mission: its own title, the short wait
+		_loading.setup(what if what != "" else String(LOAD_WHAT.get(path.get_file(), "Načítání")), path.ends_with("Mission.tscn") and not short)
 		add_child(_loading)
 		for i in 3:
 			if DisplayServer.get_name() == "headless":
@@ -626,12 +627,14 @@ func _setup_input() -> void:
 		"move_forward": [KEY_W, KEY_UP], "move_back": [KEY_S, KEY_DOWN],
 		"move_left": [KEY_A], "move_right": [KEY_D],
 		"sprint": [KEY_SHIFT], "crouch": [KEY_C, KEY_CTRL], "jump": [KEY_SPACE],
-		"reload": [KEY_R], "flashlight": [KEY_F], "use": [KEY_E], "heal": [KEY_X],
-		"grenade": [KEY_G], "flare": [KEY_7], "swap": [KEY_Q], "inventory": [KEY_I],
-		"pause": [KEY_ESCAPE], "prone": [KEY_Z, KEY_Y], "melee": [KEY_V], "smoke": [KEY_H], "mine": [KEY_B],
+		# (0.70 Ari) Q/E = náklon za roh, F = použít, svítilna L, dávky B, mina 8, rychlá výměna kolečkem
+		"reload": [KEY_R], "flashlight": [KEY_L], "use": [KEY_F], "heal": [KEY_X],
+		"grenade": [KEY_G], "flare": [KEY_7], "swap": [], "inventory": [KEY_I],
+		"lean_left": [KEY_Q], "lean_right": [KEY_E], "decoy": [KEY_Q],
+		"pause": [KEY_ESCAPE], "prone": [KEY_Z, KEY_Y], "melee": [KEY_V], "smoke": [KEY_H], "mine": [KEY_8],
 		"primary": [KEY_1], "secondary": [KEY_2],
 		"belt1": [KEY_3], "belt2": [KEY_4], "belt3": [KEY_5], "belt4": [KEY_6],
-		"talk": [KEY_TAB], "radio_talk": [KEY_T, KEY_K], "mic_toggle": [KEY_M], "nvg": [KEY_N], "firemode": [KEY_L], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
+		"talk": [KEY_TAB], "radio_talk": [KEY_T, KEY_K], "mic_toggle": [KEY_M], "nvg": [KEY_N], "firemode": [KEY_B], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
 	}
 	for action in keys:
 		if not InputMap.has_action(action):
@@ -646,7 +649,7 @@ func _setup_input() -> void:
 			for ev in InputMap.action_get_events(ui):
 				if ev is InputEventKey and ((ev as InputEventKey).keycode == KEY_TAB or (ev as InputEventKey).physical_keycode == KEY_TAB):
 					InputMap.action_erase_event(ui, ev)
-	for pair in [["fire", MOUSE_BUTTON_LEFT], ["aim", MOUSE_BUTTON_RIGHT]]:
+	for pair in [["fire", MOUSE_BUTTON_LEFT], ["aim", MOUSE_BUTTON_RIGHT], ["swap", MOUSE_BUTTON_WHEEL_UP], ["swap", MOUSE_BUTTON_WHEEL_DOWN]]:
 		if not InputMap.has_action(pair[0]):
 			InputMap.add_action(pair[0])
 		var mb := InputEventMouseButton.new()
@@ -1720,6 +1723,11 @@ func _restyle(n: Node) -> void:
 				if camo != "" and src.resource_name in CAMO_PARTS:
 					mi.set_surface_override_material(i, camo_mat(camo))
 					continue
+				if src.resource_name == "VCarGlass":
+					# (Ari 13. 11.) the cars have no inside: through clear glass you saw the body's flat
+					# lid at the beltline - red, blue, beige panes. Tinted glass, as on the cars of 1990
+					mi.set_surface_override_material(i, car_glass_mat())
+					continue
 				if src.resource_name.ends_with("Glass"):
 					mi.set_surface_override_material(i, glass_mat())     # (a window you can see through)
 					continue
@@ -1741,6 +1749,30 @@ func glass_mat() -> StandardMaterial3D:
 		_glass_m.metallic_specular = 0.9
 		_glass_m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return _glass_m
+
+var _car_glass_m: StandardMaterial3D
+func car_glass_mat() -> StandardMaterial3D:
+	if _car_glass_m == null:
+		_car_glass_m = StandardMaterial3D.new()
+		_car_glass_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_car_glass_m.albedo_color = Color(0.07, 0.09, 0.11, 0.82)
+		_car_glass_m.roughness = 0.08
+		_car_glass_m.metallic = 0.3
+		_car_glass_m.metallic_specular = 0.9
+		_car_glass_m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return _car_glass_m
+
+## (2026-11-13) Glass of sights seen from the eye: almost invisible (a faint sheen only), never dark.
+var _sight_glass_m: StandardMaterial3D
+func sight_glass_mat() -> StandardMaterial3D:
+	if _sight_glass_m == null:
+		_sight_glass_m = StandardMaterial3D.new()
+		_sight_glass_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_sight_glass_m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_sight_glass_m.albedo_color = Color(0.7, 0.85, 0.9, 0.05)
+		_sight_glass_m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_sight_glass_m.no_depth_test = false
+	return _sight_glass_m
 
 # ---- camouflage: the uniform matches where the team flies ---------------------------------------
 ## "" = plain uniform (menus, our own base). Set by the mission before anybody is spawned.

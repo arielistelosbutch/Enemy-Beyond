@@ -290,7 +290,9 @@ func setup(data: Dictionary) -> void:
 		cfg.add_property(NodePath("." + prop))
 	sync.replication_config = cfg
 	sync.root_path = NodePath("..")
+	NetSmooth.setup(sync, cfg, ["position", "rotation"])
 	add_child(sync)
+	NetSmooth.attach(self, sync, body, false, not String(get_script().resource_path).ends_with("boss.gd"))
 
 func _unused_part(pos: Vector3, size: Vector3, m: Material) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
@@ -1536,6 +1538,10 @@ func visible_to(p: Node) -> bool:
 	var fwd := -global_transform.basis.z
 	if d > 4.0 and fwd.dot((head_pos - eye()).normalized()) < SIGHT_ANGLE and not alert:
 		return false
+	# (0.70) vykouknul za roh (Q/E): vidět je hlava, která vykoukla, i když trup kryje zeď
+	var peek := absf(float(p.get("lean") if p.get("lean") != null else 0.0)) > 0.15
+	if peek and not _los(head_pos):
+		head_pos = p.peek_point()
 	if mission.smoke_blocks(eye(), head_pos):
 		# (0.57, SM-01's entry) smoke is for eyes: the machines see heat and radar through it, the
 		# Ohnivec feels the ground shake, a grey's gear still picks out a man close by
@@ -3652,7 +3658,11 @@ func _face(p: Vector3, delta: float) -> void:
 	rotation.y = lerp_angle(rotation.y, want, delta * 6.0)
 
 func _fire(p: Node) -> void:
+	if mission.finished or not is_instance_valid(p) or (p.has_method("safe_out") and p.safe_out()):
+		return      # (0.69) the mission is over (transport leaving, loading): no more shots
 	var tgt: Vector3 = p.global_position + Vector3(0, 0.75 if p.crouching else 1.15, 0)
+	if absf(float(p.get("lean") if p.get("lean") != null else 0.0)) > 0.15 and not _los(tgt):
+		tgt = p.peek_point() - Vector3(0, 0.08, 0)      # (0.70) trup za rohem: míří na to, co vykouklo
 	var dist := global_position.distance_to(tgt)
 	if (R.has("rocket") and _rocket_cd <= 0.0 and dist > 7.0) or (gun == "rocket" and dist > 6.0):
 		# Levit officer: a rocket at his feet

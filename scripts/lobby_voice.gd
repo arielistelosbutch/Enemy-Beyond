@@ -52,6 +52,7 @@ func take_for_mission() -> PackedFloat32Array:
 	return out
 
 func _process(delta: float) -> void:
+	_pump(delta)
 	var want := _want_mic()
 	if want and mic == null:
 		_open()
@@ -101,7 +102,7 @@ func _process(delta: float) -> void:
 	while _acc.size() >= chunk:
 		var part := _acc.slice(0, chunk)
 		_acc = _acc.slice(chunk)
-		_lobby_voice.rpc(dsp.packet(part))
+		_lobby_voice.rpc(dsp.packet(part), false, false)
 		sent += 1
 
 ## (0.62) Push-to-talk / voice activation with pre-roll and tail; what to send now.
@@ -166,30 +167,70 @@ func stop_test() -> void:
 		_echo.queue_free()
 		_echo = null
 
-@rpc("any_peer", "unreliable_ordered", "call_remote", 3)
-func _lobby_voice(bytes: PackedByteArray) -> void:
-	if _in_mission():
+## (0.70) The one voice channel of the whole game: lobby, globe, soldier creation, the transporter
+## and the mission all send and hear through here, so two players in different parts of the game
+## still hear each other. In a mission the mission's Voice plays it from the speaker's head (and
+## over the radio); anybody it cannot place (not in my mission) is heard plainly.
+## Unreliable (not ordered): the jitter buffer puts late and swapped packets back in order itself.
+@rpc("any_peer", "unreliable", "call_remote", 3)
+func _lobby_voice(pkt: PackedByteArray, radio: bool, may_mimic: bool) -> void:
+	if pkt.size() < 2:
 		return
 	var from := multiplayer.get_remote_sender_id()
 	received += 1
-	if not _chan.has(from) or not is_instance_valid(_chan[from]["player"]):
-		var ap := AudioStreamPlayer.new()
-		var g := AudioStreamGenerator.new()
-		g.mix_rate = Voice.RATE
-		g.buffer_length = 0.5
-		ap.stream = g
-		ap.bus = "Voice"
-		add_child(ap)
-		ap.play()
-		var pb0 := ap.get_stream_playback()
-		_chan[from] = {"player": ap, "rx": DSP.Rx.new(pb0, pb0.get_frames_available()), "last": 0}
-	var ch: Dictionary = _chan[from]
+	var vm := _mission_voice()
+	if vm and vm.on_packet(from, pkt, radio, may_mimic):
+		return
+	var ch := _flat(from)
 	(ch["player"] as AudioStreamPlayer).volume_db = linear_to_db(maxf(0.001, Game.peer_volume(Net.roster.get(from, {}).get("name", ""))))
 	ch["last"] = Time.get_ticks_msec()
-	var smp := DSP.decode(bytes.slice(1))
+	var smp := DSP.decode(pkt.slice(1))
 	if Game.autotest().begins_with("mic"):
 		dbg_rx.append_array(smp)
-	(ch["rx"] as DSP.Rx).push(bytes[0] if bytes.size() > 0 else -1, smp)
+	(ch["rx"] as DSP.Rx).push(pkt[0], smp)
+
+## The mission's Voice node, when I am in a real (shared) mission.
+func _mission_voice() -> Node:
+	if not _in_mission():
+		return null
+	return get_tree().current_scene.get_node_or_null("Voice")
+
+## A plain (not positional) playback channel for one teammate.
+func _flat(from: int) -> Dictionary:
+	if _chan.has(from) and is_instance_valid(_chan[from]["player"]):
+		return _chan[from]
+	var ap := AudioStreamPlayer.new()
+	var g := AudioStreamGenerator.new()
+	g.mix_rate = Voice.RATE
+	g.buffer_length = 0.5
+	ap.stream = g
+	ap.bus = "Voice"
+	add_child(ap)
+	ap.play()
+	var pb0 := ap.get_stream_playback()
+	_chan[from] = {"player": ap, "rx": DSP.Rx.new(pb0, pb0.get_frames_available()), "last": 0}
+	return _chan[from]
+
+## Every frame: feed the plain channels' sound buffers (jitter buffer, fill-ins, fade-outs).
+func _pump(delta: float) -> void:
+	for k in _chan.keys():
+		var ch: Dictionary = _chan[k]
+		if not is_instance_valid(ch["player"]):
+			_chan.erase(k)
+			continue
+		(ch["rx"] as DSP.Rx).pump(delta)
+
+## (0.70) Line quality towards each teammate's voice: lost / late / ran dry, and the cushion.
+func quality(peer: int) -> Dictionary:
+	var rx: DSP.Rx = null
+	if _chan.has(peer):
+		rx = _chan[peer]["rx"]
+	var vm := _mission_voice()
+	if vm and vm._chan.has(peer):
+		rx = vm._chan[peer]["rx_near"]
+	if rx == null or rx.received == 0:
+		return {}
+	return {"loss": float(rx.lost) / maxf(1.0, rx.received + rx.lost), "jitter": rx.jitter, "target": rx.target(), "dry": rx.underruns}
 
 ## Who is speaking right now (for the lobby list).
 func speaking(peer: int) -> bool:

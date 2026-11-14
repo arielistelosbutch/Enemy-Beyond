@@ -12,6 +12,10 @@ extends RefCounted
 static var _cache := {}
 const SLICE := 0.6            # m: tall pieces are cut into slices this high
 const MAX_PIECES := 160       # more than this (grass, chains...): keep the old boxes
+## 0.69 (Ari: „kameny pořád protékají“): models that are rock all through - a stalagmite, a heap
+## of rubble, a log. Every visible piece is solid in full, not only the part inside the old box
+## (the box often held just the foot of a spire: you walked through its top half).
+const WHOLE := ["v_ab_spire", "v_ab_spire_low", "mars_spire", "v_rubble", "v_debris", "v_log"]
 
 ## Refits the collision of @a n (a model instance, before it is scaled or moved - the shapes
 ## are in the model's own space, so scaling the node later scales them too).
@@ -23,7 +27,7 @@ static func fit(n: Node3D) -> void:
 	if bodies.is_empty():
 		return
 	if not _cache.has(key):
-		_cache[key] = _build(n, bodies)
+		_cache[key] = _build(n, bodies, key in WHOLE)
 	var plan: Array = _cache[key]
 	if plan.is_empty():
 		return          # (nothing better found: the old boxes stay)
@@ -40,7 +44,7 @@ static func fit(n: Node3D) -> void:
 		sb.add_child(cs)
 
 ## [{b: body index, shape, xf: the shape's transform in the body}] or [] = keep as it is.
-static func _build(n: Node3D, bodies: Array) -> Array:
+static func _build(n: Node3D, bodies: Array, whole := false) -> Array:
 	# the old boxes, in the model's space
 	var boxes := []        # [body index, AABB]
 	for bi in bodies.size():
@@ -157,12 +161,15 @@ static func _build(n: Node3D, bodies: Array) -> Array:
 				owner = int(b[0])
 				obox = ab
 				best = share
+		if owner < 0 and whole:
+			owner = 0         # (rock all through: solid even where the old box did not reach)
+			obox = bb
 		if owner < 0:
 			continue          # (not something the model was meant to stop: a crown, a hat)
 		var vol := maxf(bb.size.x, 0.01) * maxf(bb.size.y, 0.01) * maxf(bb.size.z, 0.01)
 		var cut := obox.intersection(bb)
 		var in_vol := maxf(cut.size.x, 0.01) * maxf(cut.size.y, 0.01) * maxf(cut.size.z, 0.01)
-		if not obox.encloses(bb) and in_vol < vol * 0.6:
+		if not whole and not obox.encloses(bb) and in_vol < vol * 0.6:
 			# sticking well out of its box (a branch off the trunk, a tower's leg): only the part
 			# that was solid before stays solid - the piece cut by the box
 			var inside := PackedVector3Array()
@@ -191,6 +198,14 @@ static func _build(n: Node3D, bodies: Array) -> Array:
 		var sh := ConvexPolygonShape3D.new()
 		sh.points = p2
 		plan.append({"b": owner, "shape": sh, "xf": rel(bodies[owner], n).affine_inverse()})
+	if whole and plan.size() > MAX_PIECES:
+		# too many bits for one hull each: one hull of the whole heap (as a stone)
+		var all := PackedVector3Array()
+		for pc in pieces:
+			all.append_array(pc)
+		var sh1 := ConvexPolygonShape3D.new()
+		sh1.points = all
+		return [{"b": 0, "shape": sh1, "xf": rel(bodies[0], n).affine_inverse()}]
 	if plan.is_empty() or plan.size() > MAX_PIECES:
 		return []
 	return plan
