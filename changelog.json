@@ -1,4 +1,19 @@
 {
+ "0.70": [
+  "Co-op přes VPN je plynulejší: hra posílá polohy 30× za sekundu místo každého snímku a cizí postavy se mezi nimi hladce posouvají. Hlas jde jednou cestou, takže se slyšíme v menu, na glóbu, v tvorbě vojáka, v misi i v transportéru, a už tolik nepraská.",
+  "Na glóbu je v co-opu tlačítko PŘIPRAVEN: hostitel s výsadkem, stíhačkami i misí počká, až budou všichni připraveni (nebo začne hned).",
+  "Na základnu chodím přímo z glóbu, každý do své kopie, a mezitím, co čekáme, běží kampaň dál. Zpátky se vrátím z Velína nebo přes Esc.",
+  "Když v co-opu padnu, můžu sledovat spoluhráče, který ještě žije: za zády nebo z jeho očí a přepínat mezi nimi.",
+  "Q a E nakloní vojáka za roh. Klávesy se přeházely: F = použít, kolečko myši = rychlá výměna zbraně, L = svítilna, B = dávky, 8 = mina.",
+  "Odměny z misí jdou do společné hromádky a dělí se rovným dílem mezi celý tým. Piloti stíhaček dostanou letecký příplatek a v Hangáru na glóbu si můžu koupit Sokol ze svých peněz. V souboji stíhaček vidím, jak jsou na tom letouny spoluhráčů.",
+  "Obrana základny je vzácnější (první útok až po 30. dni) a lehčí, ale když ji prohrajeme, kampaň končí.",
+  "Posily po splnění úkolu vezmou hlášku o splnění zpět. Odlet před nimi je úspěch s horším hodnocením. Po konci mise mě už nikdo nezraní a strach roste o třetinu pomaleji.",
+  "Ošetřování běží, jen dokud držím tlačítko. Světlice zůstane ležet a svítí na místě (dřív propadla pod mapu).",
+  "Kolize: plášť UFO je pevný (už se nedá střílet skrz loď), skalní stěny, krápníky, suť a klády nepropustí, nedá se proskočit stropem budovy ani přelézt okraj mapy.",
+  "Domy: v patrovém domě odděluje schodiště stěna, gauč nestojí za schody, pod schody se nedá vlézt, podkroví srubu je vyšší a obchod a sklad mají zábradlí u schodů.",
+  "Grafika: auta mají správné sloupky a tmavá skla, stodola nemá bílý pás přes vrata, na stavbě základny pracují technici v helmách, stojan na zbraně v dílně a konzole jsou opravené a ranění v transportéru leží na zádech.",
+  "Mířidla jsou při míření vždycky průhledná: oko se za kolimátor usadí hned i v chůzi a po sprintu (už žádná černá klapka) a sklo mířidel je čiré."
+ ],
  "0.69": [
   "Novou kampaň začínám výběrem místa pro základnu na glóbu: devět bloků světa roku 1990 a každý dává jinou výhodu na začátek (Vysočina zůstává jako dřív).",
   "Na glóbu létají malé 3D modely UFO i našich lodí místo obrázků. Velká UFO mají zavřený trup, žádné díly mapy pod nimi.",

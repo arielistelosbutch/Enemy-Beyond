@@ -110,6 +110,9 @@ func _process(delta: float) -> void:
 		_dead_radio_tick()
 	for peer in _chan.keys():
 		_chan[peer]["last"] = float(_chan[peer]["last"]) + delta
+		if is_instance_valid(_chan[peer]["near"]):
+			(_chan[peer]["rx_near"] as DSP.Rx).pump(delta)
+			(_chan[peer]["rx_radio"] as DSP.Rx).pump(delta)
 	for k in speakers.keys():
 		speakers[k] = float(speakers[k]) + delta
 		if speakers[k] > 0.4:
@@ -170,24 +173,23 @@ func _capture(delta: float, me: Node) -> void:
 		var part := _acc.slice(0, int(RATE * CHUNK))
 		_acc = _acc.slice(int(RATE * CHUNK))
 		var pkt: PackedByteArray = lv.dsp.packet(part) if lv else (PackedByteArray([0]) + encode(part))
-		_voice.rpc(pkt, on_radio, Game.mimic_ok)
+		if lv:
+			lv._lobby_voice.rpc(pkt, on_radio, Game.mimic_ok)
 		if lv: lv.sent += 1
 		if multiplayer.is_server() and Game.mimic_ok:
 			_store(1, pkt.slice(1))
 
-## (0.62) A channel of its own: voice packets no longer get thrown away as "out of order"
-## behind the game's other unreliable traffic. First byte = sequence number.
-@rpc("any_peer", "unreliable_ordered", "call_remote", 3)
-func _voice(pkt: PackedByteArray, radio: bool, may_mimic: bool) -> void:
-	if pkt.size() < 2:
-		return
-	var from := multiplayer.get_remote_sender_id()
-	var lv0: Node = Net.get_node_or_null("LobbyVoice")
-	if lv0: lv0.received += 1
+## (0.70) Voice packets come through LobbyVoice (one channel for the whole game). True when the
+## speaker is in this mission and was played here; false = LobbyVoice plays it plainly.
+func on_packet(from: int, pkt: PackedByteArray, radio: bool, may_mimic: bool) -> bool:
+	var p: Node = mission.actors.get_node_or_null("P%d" % from)
+	if p == null:
+		return false
 	var bytes := pkt.slice(1)
 	if multiplayer.is_server() and may_mimic:
 		_store(from, bytes)
 	_play(from, bytes, radio, pkt[0])
+	return true
 
 # ---- playback -------------------------------------------------------------------------------------
 func _channel(peer: int, p: Node) -> Dictionary:
@@ -362,7 +364,7 @@ func _mimic_tick(delta: float) -> void:
 	var snip: PackedByteArray = arr[randi() % arr.size()]
 	var own: bool = mission.actors.get_node_or_null("P%d" % best_peer) == listener
 	var mode := "eerie" if own or randf() < 0.45 else "lure"
-	_mimic.rpc(alien.name, snip, mode)
+	_to_present(_mimic, [alien.name, snip, mode])
 
 @rpc("authority", "call_local", "reliable")
 func _mimic(alien_name: String, bytes: PackedByteArray, mode: String) -> void:
@@ -383,6 +385,15 @@ func _mimic(alien_name: String, bytes: PackedByteArray, mode: String) -> void:
 		print("[MIMIC] %s plays %.1f s as %s" % [alien_name, bytes.size() / float(RATE), mode])
 
 ## A dead mercenary's voice over the radio, once, a while after the death.
+## (0.70) Only to the machines still in this mission (one in the transporter or the menu has no
+## Mission/Voice node: the packet would be an error there) - and here.
+func _to_present(f: Callable, args: Array) -> void:
+	f.callv(args)
+	for p in mission.players():
+		var id: int = p.get_multiplayer_authority()
+		if id != multiplayer.get_unique_id() and id in multiplayer.get_peers():
+			callv("rpc_id", [id, f.get_method()] + args)
+
 func _dead_radio_tick() -> void:
 	for p in mission.players():
 		if not p.dead or _dead_said.has(p.name):
@@ -394,7 +405,7 @@ func _dead_radio_tick() -> void:
 			continue
 		_dead_said[p.name] = true
 		var arr: Array = snippets[peer]
-		_dead_radio.rpc(arr[randi() % arr.size()], p.display_name)
+		_to_present(_dead_radio, [arr[randi() % arr.size()], p.display_name])
 
 @rpc("authority", "call_local", "reliable")
 func _dead_radio(bytes: PackedByteArray, who: String) -> void:

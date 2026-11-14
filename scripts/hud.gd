@@ -423,6 +423,10 @@ func _draw_hud() -> void:
 	if p == null:
 		return
 	if p.dead:
+		var sp: Node = p.get("spectator")
+		if sp != null and is_instance_valid(sp) and sp.active():
+			_spectator_hud(c, sz, sp)
+			return
 		c.draw_rect(Rect2(Vector2.ZERO, sz), Color(0, 0, 0, 0.7))
 		_text(c, Vector2(mid.x - 60, mid.y), "JSI MRTVÝ", RED, 16)
 		return
@@ -501,14 +505,14 @@ func _draw_hud() -> void:
 			elif ht.downed:
 				t2 = "nemáš lékárničku"
 			if ht.downed:
-				t2 += "    E - táhnout"
+				t2 += "    F - táhnout"
 			_prompt(t2, Color(0.5, 1.0, 0.5) if in_hand else ACCENT)
 	if p.busy > 0 and p.busy_total > 0 and (p.busy_text.begins_with("Ošetřuji") or p.busy_text.begins_with("Obvazuji") or p.busy_text.begins_with("Vyřezávám")):
 		c.draw_rect(Rect2(mid.x - 60, mid.y + 42, 120, 5), Color(0, 0, 0, 0.6))
 		c.draw_rect(Rect2(mid.x - 60, mid.y + 42, 120 * (1.0 - p.busy / p.busy_total), 5), Color(0.4, 1.0, 0.4))
 	if not p.downed and not mission().nearest_pickup(p.global_position).is_empty():
 		var it: Dictionary = mission().nearest_pickup(p.global_position)["item"]
-		_prompt("E - sebrat: " + Game.ITEMS[it["id"]]["name"], TEXT)
+		_prompt("F - sebrat: " + Game.ITEMS[it["id"]]["name"], TEXT)
 	if p.bleeding > 0:
 		_text(c, base + Vector2(0, -12), "KRVÁCÍŠ (-%.1f zdraví/s) - X lékárnička (do ruky, pak X)" % p.bleeding, RED, 9)
 	# hands, bottom: left hand on the left, right hand on the right
@@ -541,7 +545,7 @@ func _draw_hud() -> void:
 	if p.radio_up:
 		_text(c, Vector2(10, sz.y - 72), "VYSÍLAČKA (T)", ACCENT, 8)
 	if not p.light_on:
-		_text(c, right + Vector2(0, -12), "Svítilna vypnutá (F)", FRAME, 9)
+		_text(c, right + Vector2(0, -12), "Svítilna vypnutá (L)", FRAME, 9)
 	# busy (reloading, healing...)
 	if p.busy > 0:
 		_prompt(p.busy_text + "...", ACCENT, true)
@@ -572,7 +576,7 @@ func _draw_hud() -> void:
 		c.draw_rect(Rect2(mid.x - 40, mid.y + 20, 80, 4), Color(0, 0, 0, 0.6))
 		c.draw_rect(Rect2(mid.x - 40, mid.y + 20, 80 * p.plant_hold / 3.0, 4), RED)
 	elif mission().beacon_near(p.global_position) >= 0:
-		_prompt("Drž E 3 s - položit nálož", ACCENT)
+		_prompt("Drž F 3 s - položit nálož", ACCENT)
 	_cards(c, p)
 	if p.has_scanner():
 		_plate(c, Rect2(sz.x - 98, 6, 94, 104))
@@ -676,7 +680,7 @@ func _line_plate(c: Control, at: Vector2, s: String, col: Color, size := 9) -> v
 	c.draw_string_outline(f, Vector2(at.x - w / 2.0, at.y), s, HORIZONTAL_ALIGNMENT_LEFT, w, size, 3, Color(0, 0, 0, 0.8))
 	c.draw_string(f, Vector2(at.x - w / 2.0, at.y), s, HORIZONTAL_ALIGNMENT_LEFT, w, size, col)
 
-## (0.66) "E - ..." and the like: all on the same plate, stacked under the crosshair.
+## (0.66) "F - ..." and the like: all on the same plate, stacked under the crosshair.
 var _prompts := []
 func _prompt(s: String, col: Color, busy := false) -> void:
 	if busy:
@@ -879,6 +883,23 @@ func _draw_scanner(c: Control, center: Vector2, r: float, p: Node) -> void:
 	_text(c, center + Vector2(-r, r + 10), ("STRÁŽCE  " if p.drone_radar() else "DETEKTOR  ") + (("%d m" % int(snappedf(_scan_near, 2.0))) if _scan_near < SCAN_RANGE else "--"), Color(0.3, 0.9, 0.4), 8)
 
 # ---- drawing helpers ---------------------------------------------------------------------
+## (0.70+) Dead, watching a living teammate (scripts/spectator.gd): only who it is and the keys -
+## nothing of his HUD, no aliens marked (hardcore).
+func _spectator_hud(c: Control, sz: Vector2, sp: Node) -> void:
+	if Game.hud_hidden:
+		return
+	var f := ThemeDB.fallback_font
+	c.draw_rect(Rect2(0, 0, sz.x, 34), Color(0, 0, 0, 0.45))
+	var t: Node = sp.target
+	var st := "MRTEV" if t.dead else ("PADL" if t.downed else "")
+	var who: String = "Sleduješ: %s%s" % [t.display_name, (" - " + st) if st != "" else ""]
+	var a := "JSI MRTVÝ"
+	_text(c, Vector2((sz.x - f.get_string_size(a, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x) / 2.0, 14), a, RED, 12)
+	_text(c, Vector2((sz.x - f.get_string_size(who, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x) / 2.0, 28), who, ACCENT if st == "" else RED, 10)
+	var n: int = Spectator.living(mission(), me()).size()
+	var keys := ("LTM / PTM další (%d) · " % n if n > 1 else "") + ("Mezerník: za zády" if sp.eyes else "Mezerník: z očí · myš otáčí · kolečko blíž/dál")
+	_text(c, Vector2((sz.x - f.get_string_size(keys, HORIZONTAL_ALIGNMENT_LEFT, -1, 8).x) / 2.0, sz.y - 8), keys, TEXT, 8)
+
 func _text(c: Control, pos: Vector2, s: String, col: Color, size := 10) -> void:
 	var f := ThemeDB.fallback_font
 	c.draw_string_outline(f, pos, s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, 3, Color(0, 0, 0, 0.8))
@@ -1082,7 +1103,7 @@ func _build_inventory() -> void:
 	left.add_theme_constant_override("separation", 3)
 	cols.add_child(left)
 	var groups := [["V RUKOU a ŠTÍT  (LTM = použít / střílet, PTM = mířit)", ["rh", "lh"]],
-		["ZBRANĚ - 1 primární, 2 sekundární (jednoruční); Q = primární a zpět", ["back", "side"]],
+		["ZBRANĚ - 1 primární, 2 sekundární (jednoruční); kolečko myši = primární a zpět", ["back", "side"]],
 		["OPASEK - rychlý: klávesy 3 4 5 6 (do rukou, náboje nabijí)", ["b0", "b1", "b2", "b3"]],
 		["BATOH - pomalý: stojíš a hrabeš se (granáty, světlice... i odtud fungují svou klávesou)", Game.pack_slots()]]
 	var names := {"rh": "v rukou - jedna věc, zbraň oběma rukama", "lh": "štít (jen s jednoruční zbraní)", "back": "primární zbraň (klávesa 1)", "side": "sekundární zbraň - pistole, revolver, nůž (klávesa 2)"}
@@ -1137,21 +1158,21 @@ func _keys_text(p: Node) -> String:
 		"R    nabít zbraň / zapnout ostří energo nože",
 		"1    primární zbraň (%s)" % hand.call("back") if p.item_in("rh").get("home", "") != "back" else "1    primární zbraň - znovu 1 ji uklidí",
 		"2    sekundární zbraň (%s)" % hand.call("side") if p.item_in("rh").get("home", "") != "side" else "2    sekundární zbraň - znovu 2 ji uklidí",
-		"Q    primární do rukou / znovu Q: zpět, co jsi držel",
+		"Kolečko  primární do rukou / znovu: zpět, co jsi držel",
 		"3-6  věc z opasku do rukou / nabít",
-		"G granát z opasku (%d výbušné)   H kouřový %d   B mina %d   7 světlice %d" % [p.inv.values().filter(func(it): return it["id"] == "grenade").size(), p.inv.values().filter(func(it): return it["id"] == "smoke_grenade").size(), p.inv.values().filter(func(it): return it["id"] == "mine").size(), p.inv.values().filter(func(it): return it["id"] == "flare").size()],
+		"G granát z opasku (%d výbušné)   H kouřový %d   8 mina %d   7 světlice %d" % [p.inv.values().filter(func(it): return it["id"] == "grenade").size(), p.inv.values().filter(func(it): return it["id"] == "smoke_grenade").size(), p.inv.values().filter(func(it): return it["id"] == "mine").size(), p.inv.values().filter(func(it): return it["id"] == "flare").size()],
 		"Backspace  zahodit, co máš v ruce",
 		"X    lékárnička - do rukou, pak ošetří (%s)" % where.call("medkit"),
-		"E    táhnout padlého / sebrat / civilista",
+		"F    táhnout padlého / sebrat / civilista / dveře",
 		"Enter  v lodi: připraven (start mise i odlet)",
 		"V    rána zblízka (%s)" % ("pažbou zbraně" if melee == "" else Game.ITEMS[p.inv[melee]["id"]]["short"]),
-		"F    svítilna na helmě",
+		"L    svítilna (na helmě, zapnutá od začátku)",
 		"N    noktovizor / přísvit (%s)" % where.call("nvg"),
-		"L    dávky / jednotlivé rány, délka dávky, druh nábojů",
+		"B    dávky / jednotlivé rány, délka dávky, druh nábojů",
 		"Tab  držet = mluvit (nahlas, kdo je blízko)",
 		"M    mikrofon stále zapnutý / vypnout (%s)" % ("ZAPNUTO" if Game.mic_live else "vypnuto"),
 		"" if p.drone_radar() else "T    držet = vysílačka (%s)" % ("helma" if Game.has_research("vysilacky") else where.call("radio")),
-		"C  kleknout   Y  lehnout   Shift  sprint",
+		"C  kleknout   Y  lehnout   Shift  sprint   Q / E  držet = náklon za roh",
 	]
 	return "\n".join(lines.filter(func(x): return x != ""))
 
@@ -1272,8 +1293,26 @@ func _build_pause() -> void:
 	# (0.57) hardcore: walking out of a real mission is its failure - the first press only warns
 	_leave_warn = _lbl(outer, "", RED, 9)
 	_leave_warn.visible = false
-	_leave_btn = _btn(outer, "Opustit misi", _leave_pressed)
+	# (0.7x) down in one's own base, co-op: the host may be waiting for the team on the globe
+	if mission().local() and Net.is_online():
+		_ready_pbtn = _btn(outer, "", func():
+			Net.set_ready(not Net.is_ready(Net.my_id()))
+			_ready_ptext.call_deferred())
+		Net.ready_changed.connect(_ready_ptext)
+		_ready_ptext()
+	_leave_btn = _btn(outer, _leave_text(), _leave_pressed)
 	pause_panel.visible = false
+
+var _ready_pbtn: Button
+func _ready_ptext() -> void:
+	if _ready_pbtn:
+		var on := Net.is_ready(Net.my_id())
+		_ready_pbtn.text = ("[X] PŘIPRAVEN" if on else "[  ] PŘIPRAVEN") + (" - hostitel čeká: " + Net.ready_wait if Net.ready_wait != "" else "")
+
+## (0.7x) The walk round the base is no mission: the button just takes the lift up.
+func _leave_text() -> String:
+	var m := mission()
+	return "Zpět na glóbus" if m and (m.home() or m.local()) else "Opustit misi"
 
 var _leave_btn: Button
 var _leave_warn: Label
@@ -1563,6 +1602,7 @@ func open_screen(c: Control) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED)
 
 func _pause() -> void:
+	_ready_ptext()
 	paused = true
 	inventory_open = true   # blocks player input the same way
 	pause_panel.visible = true
@@ -1572,7 +1612,7 @@ func _resume() -> void:
 	if _leave_armed:
 		_leave_armed = false
 		_leave_warn.visible = false
-		_leave_btn.text = "Opustit misi"
+		_leave_btn.text = _leave_text()
 	_back_to_game()
 	paused = false
 	inventory_open = false

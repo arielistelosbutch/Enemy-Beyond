@@ -1513,7 +1513,7 @@ func _wall(start: Vector3, length: float, along_x: bool, h: float, material: Mat
 
 ## 0.55: the outside of a box-shaped building (c the corner, w x d, walls h high): boards on the
 ## corners, a band where the walls meet the roof, and per style a little more (decoration only).
-func _exterior(c: Vector3, w: float, d: float, h: float, style: String) -> void:
+func _exterior(c: Vector3, w: float, d: float, h: float, style: String, front_gaps := [], back_gaps := []) -> void:
 	var trim: Material
 	match style:
 		"barn", "hut": trim = Game.color_mat(Color(0.86, 0.85, 0.8))
@@ -1539,9 +1539,16 @@ func _exterior(c: Vector3, w: float, d: float, h: float, style: String) -> void:
 			box(c + Vector3(0, 0.19, d / 2), Vector3(0.31, 0.38, d - 0.4), Game.mat("concrete", 1.0), false)
 			box(c + Vector3(w, 0.19, d / 2), Vector3(0.31, 0.38, d - 0.4), Game.mat("concrete", 1.0), false)
 		"barn":
-			# a white band halfway up, like the boards of an old barn
-			box(c + Vector3(w / 2, 1.2, 0), Vector3(w - 0.4, 0.12, 0.3), trim, false)
-			box(c + Vector3(w / 2, 1.2, d), Vector3(w - 0.4, 0.12, 0.3), trim, false)
+			# a white band halfway up, like the boards of an old barn - broken off at the doorways
+			# (it used to run straight across them as a white plank over the door)
+			for side in [[0.0, front_gaps], [d, back_gaps]]:
+				var cuts := [0.2]
+				for g in side[1]:
+					cuts.append(float(g[0])); cuts.append(float(g[1]))
+				cuts.append(w - 0.2)
+				for i in range(0, cuts.size(), 2):
+					if cuts[i + 1] - cuts[i] > 0.05:
+						box(c + Vector3((cuts[i] + cuts[i + 1]) / 2, 1.2, side[0]), Vector3(cuts[i + 1] - cuts[i], 0.12, 0.3), trim, false)
 
 static var _glass: StandardMaterial3D
 func _glass_mat() -> Material:
@@ -1577,6 +1584,51 @@ func _ramp(a: Vector3, b: Vector3, width: float) -> void:
 	root.add_child(sb)
 	sb.position = (a + b) / 2 - Vector3(0, 0.06, 0)
 	sb.look_at_from_position(sb.position, sb.position + d, Vector3.UP)
+	_under_ramp(sb, sh.size)
+
+## 2026-11-13 (Ari: interiéry domů): schody jsou jen vidět a chodí se po tenké rampě - pod vyšším
+## koncem schodů se dalo vejít do schodů zboku (hlava se vešla pod rampu) a stát v nich. Pod rampou
+## jsou teď pevné kvádry po 0,3 m, jejich vršek je 0,2 m pod povrchem rampy (chůze nahoru se nemění).
+## Volá se i pro rampy z uložených dílků (MapPieces "solid"); tile editor je při ukládání vynechá.
+func _under_ramp(sb: Node3D, size: Vector3) -> void:
+	var bz := sb.global_transform.basis.z.normalized() if sb.is_inside_tree() else sb.transform.basis.z.normalized()
+	var ctr := sb.global_position if sb.is_inside_tree() else sb.position
+	var e0 := ctr + bz * size.z / 2.0
+	var e1 := ctr - bz * size.z / 2.0
+	var lo := e0 if e0.y < e1.y else e1
+	var hi := e1 if e0.y < e1.y else e0
+	var rise := hi.y - lo.y
+	var flat := Vector3(hi.x - lo.x, 0, hi.z - lo.z)
+	if rise < 1.0 or flat.length() < 0.5:
+		return
+	var yaw := atan2(flat.x, flat.z)
+	var n := ceili(flat.length() / 0.3)
+	var floor_y := lo.y - 0.04
+	for k in n:
+		var t0 := float(k) / n
+		var top := lo.y + 0.06 + rise * t0 - 0.2       # the ramp's surface at the low edge of the slice, less a margin
+		if top - floor_y < 0.45:
+			continue                                  # (low down the slope stops you anyway)
+		var mid := lo + flat * ((k + 0.5) / n)
+		var fb := StaticBody3D.new()
+		var cs := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = Vector3(size.x, top - floor_y, flat.length() / n)
+		cs.shape = bs
+		fb.add_child(cs)
+		fb.set_meta("under_ramp", true)
+		root.add_child(fb)
+		fb.position = Vector3(mid.x, (floor_y + top) / 2.0, mid.z)
+		fb.rotation.y = yaw
+
+## The village roof model carries a flat collision slab (the "-colonly" body "Roof", half a metre
+## over its base) - fine over a ceiling, but under it nothing can stand: a loft right under the roof
+## (the cabin) loses it. The tiles keep their own collision (the trimesh "*_col").
+func _roof_no_slab(rf: Node) -> void:
+	for sb in rf.find_children("*", "StaticBody3D", true, false):
+		if not String(sb.name).ends_with("_col"):       # (the "-colonly" import, not the tiles' trimesh)
+			sb.free()
+	rf.set_meta("noslab", true)
 
 ## Stairs: wooden steps you see and a slope you walk on.
 func _stairs(a: Vector3, b: Vector3, width: float, mat: Material) -> void:
@@ -1707,7 +1759,7 @@ func _barn(o: Vector3) -> void:
 	_wall(c, d, false, h, m, [], "wood")
 	_wall(c + Vector3(w, 0, 0), d, false, h, m, [[3.0, 4.2]], "wood")
 	var bceil := box(c + Vector3(w / 2, h + 0.05, d / 2), Vector3(w, 0.1, d), Game.mat("planks", 0.5), false)
-	_exterior(c, w, d, h, "barn")
+	_exterior(c, w, d, h, "barn", [[3.5, 6.5]], [[3.85, 5.35]])    # the back door widens to 1.5 m in _wall
 	# the two halves of the big sliding door, pushed open along the front wall: red boards in a
 	# white frame with the cross brace
 	for side in [-1.0, 1.0]:
@@ -1839,7 +1891,8 @@ func _house2(o: Vector3) -> void:
 	box(c + Vector3(w / 2, 0.05, d / 2), Vector3(w, 0.1, d), fl, false)
 	# ground floor
 	_wall(c, w, true, h, m, [[3.0, 4.2], [1.0, 2.0, 0.9], [5.6, 6.6, 0.9]], "brick")
-	_wall(c + Vector3(0, 0, d), w, true, h, m, [[1.5, 2.6], [4.5, 5.5, 0.9]], "brick")
+	# (the back window used to sit half behind the partition at x 4.6)
+	_wall(c + Vector3(0, 0, d), w, true, h, m, [[1.5, 2.6], [5.2, 6.2, 0.9]], "brick")
 	_wall(c, d, false, h, m, [[2.5, 3.5, 0.9]], "brick")
 	_wall(c + Vector3(w, 0, 0), d, false, h, m, [], "brick")
 	_wall(c + Vector3(4.6, 0, 0), d, false, h, Game.mat("wallpaper", 1.0), [[2.0, 3.5]], "wood")
@@ -1849,16 +1902,20 @@ func _house2(o: Vector3) -> void:
 	var run := h / 0.62
 	# (thick slabs: the navigation voxels lose floors thinner than a voxel)
 	box(c + Vector3((w - sw) / 2, h - 0.05, d / 2), Vector3(w - sw, 0.3, d), fl)
-	box(c + Vector3(w - sw / 2, h - 0.05, z0 / 2), Vector3(sw, 0.3, z0), fl)
+	# (no floor over the foot of the stair any more: walled into the stairwell it was a ledge nobody could reach)
 	box(c + Vector3(w - sw / 2, h - 0.05, (z0 + run + d) / 2), Vector3(sw, 0.3, d - z0 - run), fl)
 	_stairs(c + Vector3(w - sw / 2 - 0.1, 0.0, z0), c + Vector3(w - sw / 2 - 0.1, h + 0.1, z0 + run), sw - 0.2, Game.mat("planks", 1.0))
-	box(c + Vector3(w - sw - 0.05, h + 0.55, z0 + run / 2), Vector3(0.08, 0.9, run), Game.mat("planks", 1.0), false)    # banister
 	var up := c + Vector3(0, h, 0)
 	_wall(up, w, true, h, m, [[1.0, 2.0, 0.9], [3.2, 4.2, 0.9], [5.6, 6.6, 0.9]], "brick")
 	_wall(up + Vector3(0, 0, d), w, true, h, m, [[1.5, 2.5, 0.9], [4.5, 5.5, 0.9]], "brick")
 	_wall(up, d, false, h, m, [[2.5, 3.5, 0.9]], "brick")
 	_wall(up + Vector3(w, 0, 0), d, false, h, m, [[3.5, 4.5, 0.9]], "brick")
-	_wall(up + Vector3(0, 0, 3.6), w - sw - 0.1, true, h, Game.mat("wallpaper", 1.0), [[2.0, 3.4]], "wood")
+	# 2026-11-13 (Ari: „patro není od schodů odděleno, stěna vede do zábradlí“): the stairwell is
+	# walled off upstairs along its whole length (it used to be open to both rooms with a low
+	# banister, and the wall between the bedrooms ran into the banister); the stair comes up at
+	# the back onto the landing, which opens into the back bedroom
+	_wall(up + Vector3(w - sw - 0.125, 0, 0), z0 + run, false, h, Game.mat("wallpaper", 1.0), [], "wood")
+	_wall(up + Vector3(0, 0, 3.6), w - sw - 0.25, true, h, Game.mat("wallpaper", 1.0), [[2.0, 3.4]], "wood")
 	box(c + Vector3(w / 2, 2 * h + 0.05, d / 2), Vector3(w, 0.1, d), fl, false)
 	var rf := _prop("house_roof", c + Vector3(w / 2, 2 * h, d / 2), 0.0, false)
 	rf.scale = Vector3(w / 8.0, 1.0, d / 6.0)
@@ -1866,7 +1923,9 @@ func _house2(o: Vector3) -> void:
 	_table(c + Vector3(2.0, 0.1, 2.2), Vector2(1.6, 1.0))
 	for ch in [[Vector3(1.0, 0.1, 2.2), -PI / 2], [Vector3(3.0, 0.1, 2.2), PI / 2], [Vector3(2.0, 0.1, 1.4), PI]]:
 		_house_chair(c + (ch[0] as Vector3), float(ch[1]))
-	_sofa(c + Vector3(6.4, 0.1, d - 0.65), 0.0, Color(0.32, 0.2, 0.16))
+	# the sofa stands against the partition in the big room (it used to stand behind the top of the
+	# stairs, half hidden and walled in by the steps)
+	_sofa(c + Vector3(4.6 - 0.125 - 0.46, 0.1, 5.7), PI / 2, Color(0.32, 0.2, 0.16))
 	_wardrobe(up + Vector3(0.45, 0.1, 1.8), -PI / 2)
 	_bed(up + Vector3(2.4, 0.1, 1.2), 0.0, Color(0.5, 0.48, 0.42), false)
 	_bed(up + Vector3(3.0, 0.1, d - 1.4), PI / 2, Color(0.45, 0.4, 0.45), false)
@@ -2054,7 +2113,11 @@ func _cabin(o: Vector3) -> void:
 	var c := o + Vector3(1.2, 0, 2.5)
 	var w := 8.0
 	var d := 7.0
-	var h := 2.6
+	# 2026-11-13: the loft (2.6 m) lay right under the roof, whose flat collision slab sat 0.4 m over
+	# the loft floor - nobody could stand up there, the stair ran head first into the roof. The log
+	# walls are taller now (knee walls of the loft), the roof sits on them
+	var lh := 2.6
+	var h := 3.4
 	var m := Game.mat("bark", 0.6)
 	box(c + Vector3(w / 2, 0.05, d / 2), Vector3(w, 0.1, d), Game.mat("planks", 0.5), false)
 	_wall(c, w, true, h, m, [[2.6, 4.0], [0.8, 1.7, 0.9], [5.0, 6.0, 0.9]], "wood")
@@ -2062,16 +2125,21 @@ func _cabin(o: Vector3) -> void:
 	_wall(c, d, false, h, m, [[2.5, 3.4, 0.9]], "wood")
 	_wall(c + Vector3(w, 0, 0), d, false, h, m, [[1.0, 2.4]], "wood")
 	# loft over the back half
-	box(c + Vector3(w / 2, h - 0.05, d * 0.75), Vector3(w, 0.3, d / 2), Game.mat("planks", 0.5))
+	box(c + Vector3(w / 2, lh - 0.05, d * 0.75), Vector3(w, 0.3, d / 2), Game.mat("planks", 0.5))
 	# stairs along the loft edge, a landing at the top
-	var run := (h + 0.1) / 0.62
-	_stairs(c + Vector3(1.7, 0, d / 2 - 0.9), c + Vector3(1.7 + run, h + 0.1, d / 2 - 0.9), 1.7, Game.mat("planks", 1.0))
-	box(c + Vector3((1.7 + run + w) / 2, h - 0.05, d / 2 - 0.9), Vector3(w - 1.7 - run, 0.3, 1.8), Game.mat("planks", 0.5))
+	var run := (lh + 0.1) / 0.62
+	_stairs(c + Vector3(1.7, 0, d / 2 - 0.9), c + Vector3(1.7 + run, lh + 0.1, d / 2 - 0.9), 1.7, Game.mat("planks", 1.0))
+	box(c + Vector3((1.7 + run + w) / 2, lh - 0.05, d / 2 - 0.9), Vector3(w - 1.7 - run, 0.3, 1.8), Game.mat("planks", 0.5))
+	# a rail along the open side of the loft (the front half is open up to the roof)
+	# rails: along the loft's open edge beside the stair and on the front of the landing
+	box(c + Vector3((1.7 + run) / 2, lh + 0.55, d / 2 + 0.04), Vector3(1.7 + run - 0.1, 0.9, 0.08), Game.mat("planks", 1.0))
+	box(c + Vector3((1.7 + run + w) / 2, lh + 0.55, d / 2 - 1.76), Vector3(w - 1.7 - run - 0.2, 0.9, 0.08), Game.mat("planks", 1.0))
 	# a gable roof over the whole cabin (the loft sits under it) - it used to be a flat slab
 	# on half-height walls at the back, hanging over the front half with nothing under it
-	var up := c + Vector3(0, h, 0)
+	var up := c + Vector3(0, lh, 0)
 	var cr := _prop("house_roof", c + Vector3(w / 2, h, d / 2), 0.0, false)
 	cr.scale = Vector3(w / 8.0, 1.0, d / 6.0)
+	_roof_no_slab(cr)
 	# a log cabin: wooden shingles and log gables, not the village house's tiles and plaster
 	_retexture(cr, {"VRoofTile": Game.mat("planks", 1.0), "VPlaster": Game.mat("bark", 0.6)})
 	_wood_roof(cr, c, w, d)
@@ -2082,7 +2150,7 @@ func _cabin(o: Vector3) -> void:
 	box(c + Vector3(w / 2, 2.45, -1.0), Vector3(w + 0.4, 0.1, 2.2), Game.mat("roof", 1.0), false)
 	box(c + Vector3(w - 1.0, 0.45, d - 1.0), Vector3(1.2, 0.9, 0.8), Game.mat("planks", 1.0))
 	_lamp(c + Vector3(w / 2, 2.2, 2.0), 0.9)
-	_prop("woodpile", c + Vector3(w + 1.2, 0, 2.0), PI / 2)
+	_prop("woodpile", c + Vector3(w + 1.2, 0, 5.4), PI / 2)     # (along the wall behind the side door, not in front of it)
 	_cover(c + Vector3(w / 2, 0, -2.4)); _cover(up + Vector3(3.0, 0.1, d / 2 + 0.6))
 	info["waypoints"].append(c + Vector3(w / 2, 0, 2.0))
 	info["waypoints"].append(up + Vector3(4.0, 0.1, d / 2 + 0.6))
@@ -2115,7 +2183,8 @@ func _warehouse(o: Vector3) -> void:
 	var gy := 3.0
 	var gd := 2.4
 	box(c + Vector3(w / 2, gy - 0.09, d - gd / 2), Vector3(w - 0.3, 0.3, gd), Game.mat("metal", 0.5))
-	box(c + Vector3(w / 2 - 1.0, gy + 0.55, d - gd), Vector3(w - 4.5, 1.0, 0.06), Game.mat("metal", 0.5))
+	# the rail runs the whole gallery edge up to the top of the stair (2026-11-13: both ends were open, a 3 m drop)
+	box(c + Vector3((0.2 + w - 2.05) / 2, gy + 0.55, d - gd), Vector3(w - 2.25, 1.0, 0.06), Game.mat("metal", 0.5))
 	_stairs(c + Vector3(w - 1.1, 0, d - gd - 4.6), c + Vector3(w - 1.1, gy + 0.06, d - gd), 1.8, Game.mat("metal", 0.5))
 	for ix in 3:
 		cyl(c + Vector3(1.5 + ix * 4.0, gy / 2, d - gd), 0.1, 0.1, gy, Game.mat("metal", 0.5), true, 6)
@@ -2362,12 +2431,12 @@ func _barracks(o: Vector3) -> void:
 		box(c + Vector3(px, 1.25, -1.2), Vector3(0.1, 2.5, 0.1), Game.color_mat(Color(0.3, 0.32, 0.34), false, 0.5, 0.5), false)
 	_lamp(c + Vector3(5.2, 2.35, -0.5), 0.6, 4.0, Color(0.9, 0.95, 1.0))
 	for i in 4:
-		box(c + Vector3(1.2 + i * 2.6, 0.6, d - 1.0), Vector3(0.9, 1.2, 1.9), Game.color_mat(Color(0.3, 0.33, 0.28)))
+		box(c + Vector3([1.2, 3.7, 6.2, 8.6][i], 0.6, d - 1.0), Vector3(0.9, 1.2, 1.9), Game.color_mat(Color(0.3, 0.33, 0.28)))    # (the last one off the wall: the corner by it was too narrow)
 		box(c + Vector3(1.2 + i * 2.6, 0.9, 0.5), Vector3(0.8, 1.8, 0.45), Game.mat("metal", 0.5))
 	_lamp(c + Vector3(w / 2, 2.7, d / 2), 0.9, 6.0, Color(0.9, 0.95, 1.0))
 	_cover(c + Vector3(5.2, 0, -1.0)); _cover(c + Vector3(3.0, 0, 2.6))
 	info["waypoints"].append(c + Vector3(w / 2, 0, d / 2))
-	info["vip_spots"].append(c + Vector3(9.5, 0.3, d - 1.0))
+	info["vip_spots"].append(c + Vector3(9.65, 0.3, d - 1.0))
 
 ## The radar: a steel lattice tower with the dish and a hut at its foot.
 func _radar_tower(o: Vector3) -> void:
@@ -2579,8 +2648,9 @@ func _shop(o: Vector3) -> void:
 	box(c + Vector3((w - 2.2) / 2, h - 0.05, d / 2), Vector3(w - 2.2, 0.3, d), Game.mat("concrete", 0.5))
 	box(c + Vector3(w - 1.1, h - 0.05, 0.9), Vector3(2.2, 0.3, 1.8), Game.mat("concrete", 0.5))
 	_stairs(c + Vector3(w - 1.1, 0, d - 0.4 - 5.6), c + Vector3(w - 1.1, rh, d - 0.4), 1.9, Game.mat("concrete", 0.5))
-	for side in [[Vector3(w / 2, rh + 0.4, -0.05), Vector3(w, 0.8, 0.15)], [Vector3(w / 2, rh + 0.4, d + 0.05), Vector3(w, 0.8, 0.15)], [Vector3(-0.05, rh + 0.4, d / 2), Vector3(0.15, 0.8, d)]]:
+	for side in [[Vector3(w / 2, rh + 0.4, -0.05), Vector3(w, 0.8, 0.15)], [Vector3(w / 2, rh + 0.4, d + 0.05), Vector3(w, 0.8, 0.15)], [Vector3(-0.05, rh + 0.4, d / 2), Vector3(0.15, 0.8, d)], [Vector3(w + 0.05, rh + 0.4, d / 2), Vector3(0.15, 0.8, d)]]:
 		box(c + side[0], side[1], Game.mat("concrete", 0.5))
+	_shop_rail(c, w, d, rh)
 	# aisles
 	var goods := [Color(0.8, 0.2, 0.15), Color(0.2, 0.5, 0.8), Color(0.9, 0.75, 0.2), Color(0.3, 0.6, 0.3)]
 	var shelf_m := Game.color_mat(Color(0.7, 0.72, 0.74), false, 0.4, 0.5)
@@ -2627,6 +2697,18 @@ func _shop(o: Vector3) -> void:
 	info["waypoints"].append(c + Vector3(3.0, 0, 7.6))
 	info["waypoints"].append(c + Vector3(4.0, rh, 3.0))
 	info["vip_spots"].append(c + Vector3(1.0, 0.3, 8.2))
+
+## 2026-11-13: the stair hole in the shop roof had no rail (from the roof you fell 3.4 m down the
+## stairwell) and the roof had no parapet on the side of the stair. A low parapet round the hole,
+## open at the top of the stair (you step off it sideways onto the roof). The saved shop tile
+## (dilky/shop/shop.json) has the same rail and parapet as its own boxes.
+func _shop_rail(c: Vector3, w: float, d: float, rh: float) -> void:
+	# a low concrete parapet like the one round the roof's edge
+	var cm := Game.mat("concrete", 0.5)
+	var hx := w - 2.2
+	var z_top := d - 2.1          # from here to the back wall the side stays open: the way off the stair
+	box(c + Vector3(hx - 0.075, rh + 0.4, (1.8 + z_top) / 2), Vector3(0.15, 0.8, z_top - 1.8), cm)
+	box(c + Vector3(hx + 1.1, rh + 0.4, 1.8 - 0.075), Vector3(2.2, 0.8, 0.15), cm)
 
 ## The pub: tables and chairs, the bar, a kitchen behind it, a beer garden with benches outside.
 func _pub(o: Vector3) -> void:
@@ -2879,6 +2961,7 @@ func _ufo(center: Vector3) -> void:
 	u.position = center
 	u.rotation = Vector3(0.0, yaw, 0.0)
 	var r: float = {"scout": 5.0, "raider": 7.0, "harvester": 10.0}[kind]
+	_ufo_shell(u, kind, r)
 	var xf: Transform3D = u.transform
 	for c in u.get_children():
 		var nm := String(c.name)
@@ -2936,6 +3019,46 @@ func _ufo(center: Vector3) -> void:
 		var wp := center + Vector3(sin(a4) * (r + 4.5), 0, cos(a4) * (r + 4.5))
 		info["waypoints"].append(wp)
 		info["alien_spawns"].append(wp + Vector3(0, 0.2, 0))
+
+## 0.69 oprava (Ari: „stříleli nás skrz obrys lodě“): kolize lodi byly jen stěny místností (do 2,6 m)
+## a podlaha - plášť kolem (sukně dolů k zemi, okraj, horní trup, kopule, strop, křídla, motory,
+## nohy) byl jen vidět. Vojáka natisknutého na loď měl hlavu uvnitř sukně, vetřelec ho trefil a
+## viděl skrz ni, stejně přes horní trup a strop. Teď plášť dostane kolizi podle tvaru (trimesh
+## z viditelné sítě „Hull“): jen trojúhelníky vně stěn nebo nad nimi, výš než 0,3 m (rampa a
+## patky noh mají svoje), takže vnitřek (konzole, sedačky) a dveře zůstávají jako dřív.
+## Vrstva 1 = blokuje střely, výhled, pohyb i cesty vetřelců. Stejně na všech počítačích (mapa
+## se staví z téhož semínka), nic po síti.
+static var _shells := {}
+const SHELL_ROOM_H := {"scout": 2.5, "raider": 2.6, "harvester": 2.8}
+func _ufo_shell(u: Node3D, kind: String, r: float) -> void:
+	var hull := u.get_node_or_null("Hull") as MeshInstance3D
+	if hull == null or hull.mesh == null:
+		return
+	var key := "%s|%d" % [kind, hull.mesh.get_instance_id()]
+	if not _shells.has(key):
+		var top: float = 0.12 + float(SHELL_ROOM_H.get(kind, 2.5)) + 0.02
+		var src := hull.mesh.get_faces()
+		var keep := PackedVector3Array()
+		for i in range(0, src.size(), 3):
+			var c := (src[i] + src[i + 1] + src[i + 2]) / 3.0
+			if c.y < 0.3:
+				continue
+			if Vector2(c.x, c.z).length() > r + 0.12 or c.y > top:
+				keep.append(src[i]); keep.append(src[i + 1]); keep.append(src[i + 2])
+		var sh := ConcavePolygonShape3D.new()
+		sh.set_faces(keep)
+		sh.backface_collision = true
+		_shells[key] = sh
+	var sb := StaticBody3D.new()
+	sb.name = "HullShell"
+	sb.collision_layer = 1
+	sb.set_meta("surf", "metal")
+	var cs := CollisionShape3D.new()
+	cs.shape = _shells[key]
+	sb.add_child(cs)
+	u.add_child(sb)
+	sb.transform = hull.transform
+	info["ufo_shell"] = [hull]
 
 # ---- the giants: a ship of octagonal halls joined by short passages (late in the war) ----------
 ## Battleship: command bridge in the middle, power core, lab with tanks, quarters, cargo with cages and
@@ -3179,8 +3302,11 @@ func _giant_hull(center: Vector3, upper: Dictionary) -> void:
 		lo.append(center + p * 0.97 + Vector3(0, 0.0, 0))
 		hi.append(center + p * 1.04 + Vector3(0, 4.25, 0))
 		rim.append(center + p * 1.02 + Vector3(0, 4.75, 0))
-	_strip(lo, hi, hullm, in_door)
-	_strip(hi, rim, dark, Callable())
+	# (0.69 oprava) sukně, okraj i paluba jsou pevné podle tvaru (dřív jen krabice u země:
+	# sukně se rozšiřuje nahoru, hlava vojáka u lodi byla uvnitř pláště a šlo se střílet skrz)
+	var shell := []
+	shell.append(_strip(lo, hi, hullm, in_door, true))
+	shell.append(_strip(hi, rim, dark, Callable(), true))
 	for i in n:
 		var a: Vector3 = lo[i]
 		var b: Vector3 = lo[(i + 1) % n]
@@ -3197,7 +3323,8 @@ func _giant_hull(center: Vector3, upper: Dictionary) -> void:
 		var a2 := TAU * i / n
 		inner.append(center + Vector3(cos(a2) * 7.0, 4.6, sin(a2) * 7.0))
 		outer.append(rim[i] + Vector3(0, -0.15, 0))
-	_strip(inner, outer, hullm, Callable())
+	shell.append(_strip(inner, outer, hullm, Callable(), true))
+	info["ufo_shell"] = shell
 	# lights all round the rim, seams across the deck, the dome, the legs
 	for i in range(0, n, 2):
 		var p: Vector3 = rim[i]
@@ -3211,8 +3338,8 @@ func _giant_hull(center: Vector3, upper: Dictionary) -> void:
 		var seam := box(m2, Vector3(0.12, 0.05, dd.length()), glow, false)
 		seam.look_at(m2 + dd, Vector3.UP)
 	var top := center + Vector3(0, 2.0 * SEC_H + 0.6, 0)
-	cyl(top + Vector3(0, 0.7, 0), 2.0, 6.2, 1.4, dark, false, 16)
-	cyl(top + Vector3(0, 1.7, 0), 0.4, 2.0, 0.7, dark, false, 16)
+	cyl(top + Vector3(0, 0.7, 0), 2.0, 6.2, 1.4, dark, true, 16)
+	cyl(top + Vector3(0, 1.7, 0), 0.4, 2.0, 0.7, dark, true, 16)
 	cyl(top + Vector3(0, 2.4, 0), 0.05, 0.25, 0.8, glow, false, 6)
 	for k in 8:
 		var a3 := TAU * (k + 0.5) / 8.0
@@ -3221,19 +3348,19 @@ func _giant_hull(center: Vector3, upper: Dictionary) -> void:
 		var a4 := TAU * (k + 0.5) / 6.0
 		var foot := center + Vector3(cos(a4), 0, sin(a4)) * 25.2
 		var at := center + Vector3(cos(a4), 0, sin(a4)) * 22.0 + Vector3(0, 3.0, 0)
-		var leg := box((foot + at) / 2.0, Vector3(0.35, foot.distance_to(at), 0.35), dark, false)
+		var leg := box((foot + at) / 2.0, Vector3(0.35, foot.distance_to(at), 0.35), dark, true)
 		leg.look_at((foot + at) / 2.0 + (at - foot), Vector3.UP)
 		leg.rotate_object_local(Vector3.RIGHT, PI / 2.0)
 		cyl(foot + Vector3(0, 0.08, 0), 0.8, 0.9, 0.16, dark, false, 10)
 	# the door: two ribs and a glowing lintel in the skirt
 	for sx in [-1.0, 1.0]:
-		box(center + Vector3(sx * (door_x + 0.2), 2.2, -HS * 0.99), Vector3(0.45, 4.4, 0.6), dark, false)
+		box(center + Vector3(sx * (door_x + 0.2), 2.2, -HS * 0.99), Vector3(0.45, 4.4, 0.6), dark, true)
 	box(center + Vector3(0, 4.0, -HS * 1.0), Vector3(door_x * 2.0 + 0.8, 0.12, 0.2), glow, false)
 	if supply:
 		# the supply ship: cargo pods along the deck
 		for k in 6:
 			var pp := center + Vector3((k % 3 - 1) * 7.0, 5.2, (1 if k < 3 else -1) * 17.0)
-			box(pp, Vector3(4.0, 1.2, 2.4), hullm, false)
+			box(pp, Vector3(4.0, 1.2, 2.4), hullm, true)
 			box(pp + Vector3(0, 0.62, 0), Vector3(3.2, 0.05, 0.1), glow, false)
 
 func _crash_fire(fp: Vector3) -> void:
@@ -3248,7 +3375,9 @@ func _crash_fire(fp: Vector3) -> void:
 	info["lights"].append(fire)
 
 ## Quads between two loops of points (both sides drawn); @a skip(mid) leaves a quad out.
-func _strip(a: Array, b: Array, mat: Material, skip: Callable) -> void:
+## @a solid (0.69): the same quads as a collision (layer 1: bullets, sight, bodies, paths).
+func _strip(a: Array, b: Array, mat: Material, skip: Callable, solid := false) -> MeshInstance3D:
+	var faces := PackedVector3Array()
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var n := a.size()
@@ -3260,6 +3389,8 @@ func _strip(a: Array, b: Array, mat: Material, skip: Callable) -> void:
 		var q1: Vector3 = b[j]
 		if skip.is_valid() and skip.call(((p0 + p1) / 2.0) - (info["ufo"] as Vector3)):
 			continue
+		if solid:
+			faces.append_array(PackedVector3Array([p0, p1, q1, p0, q1, q0]))
 		for tri in [[p0, p1, q1], [p0, q1, q0], [p0, q1, p1], [p0, q0, q1]]:
 			var nrm := ((tri[1] as Vector3) - (tri[0] as Vector3)).cross((tri[2] as Vector3) - (tri[0] as Vector3)).normalized()
 			for v in tri:
@@ -3270,6 +3401,18 @@ func _strip(a: Array, b: Array, mat: Material, skip: Callable) -> void:
 	mi.mesh = st.commit()
 	mi.material_override = mat
 	root.add_child(mi)
+	if solid and not faces.is_empty():
+		var sh := ConcavePolygonShape3D.new()
+		sh.set_faces(faces)
+		sh.backface_collision = true
+		var sb := StaticBody3D.new()
+		sb.collision_layer = 1
+		sb.set_meta("surf", "metal")
+		var cs := CollisionShape3D.new()
+		cs.shape = sh
+		sb.add_child(cs)
+		root.add_child(sb)
+	return mi
 
 ## A short covered passage from one hall's doorway to the next (2 m, 3 m wide).
 func _passage(a: Vector3, d: Vector3) -> void:
@@ -3416,4 +3559,5 @@ func _borders() -> void:
 		m = Game.mat("sand", 0.3)
 	for p in [[Vector3(s / 2, 2, -0.5), Vector3(s, 4, 1)], [Vector3(s / 2, 2, s + 0.5), Vector3(s, 4, 1)],
 			[Vector3(-0.5, 2, s / 2), Vector3(1, 4, s)], [Vector3(s + 0.5, 2, s / 2), Vector3(1, 4, s)]]:
-		box(p[0], p[1], m)
+		# (0.69: the edge of the map - nobody climbs on top of it and walks out; player.mantle_spot)
+		box(p[0], p[1], m).set_meta("border", true)

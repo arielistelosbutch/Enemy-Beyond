@@ -127,7 +127,7 @@ func _rock_wall(p: Vector3, along_x: bool, gap: bool) -> void:
 			var t := rng.randf_range(a + 0.5, b - 0.5)
 			var lp := p + (Vector3(t, rng.randf_range(0.5, H - 1.0), 0) if along_x else Vector3(0, rng.randf_range(0.5, H - 1.0), t))
 			var sz := rng.randf_range(0.6, 1.3)
-			box(lp, Vector3(sz, sz * 1.4, sz * 2.2) if along_x else Vector3(sz * 2.2, sz * 1.4, sz), rock, false, rng.randf() * 0.6)
+			box(lp, Vector3(sz, sz * 1.4, sz * 2.2) if along_x else Vector3(sz * 2.2, sz * 1.4, sz), rock, true, rng.randf() * 0.6)   # (0.69: solid - you walked into the rock)
 	if gap:
 		# the lintel over the passage
 		var gc := p + (Vector3(BLOCK / 2, H - 0.7, 0) if along_x else Vector3(0, H - 0.7, BLOCK / 2))

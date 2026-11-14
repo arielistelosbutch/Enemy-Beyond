@@ -73,7 +73,9 @@ func setup(data: Dictionary) -> void:
 		cfg.add_property(NodePath("." + prop))
 	sync.replication_config = cfg
 	sync.root_path = NodePath("..")
+	NetSmooth.setup(sync, cfg, ["position", "rotation"])
 	add_child(sync)
+	NetSmooth.attach(self, sync, body, false)
 
 ## 0.62: frightened people - Ari's afk movements on their bones (animace/al_civ_a|b_<clip>.json,
 ## tools/test/afk_install.gd --race=civ_a): looking round nervously, walking, running, and cowering

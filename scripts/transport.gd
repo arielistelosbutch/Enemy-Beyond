@@ -10,6 +10,7 @@ signal closed
 
 const SEAT_Y := 0.54           # top of the seats (the hips go there)
 const FLOOR_Y := 0.2
+const LIE_CLIP := "tp_npc_sleep"   # (Ari 0.69) out cold: flat on the back, a calm patient (afk Sleeping, base people pack)
 
 var _vp: SubViewport
 var _cam: Camera3D
@@ -135,7 +136,7 @@ func _box(parent: Node3D, pos: Vector3, size: Vector3, m: Material) -> void:
 func _seat(team: Array) -> void:
 	var seats := [Vector3(-1.25, 0, 0.5), Vector3(1.25, 0, -0.5), Vector3(-1.25, 0, -0.9), Vector3(1.25, 0, -1.8), Vector3(-1.25, 0, -2.1), Vector3(1.25, 0, 0.7)]
 	var floor_spots := [Vector3(0.85, 0, -1.15), Vector3(-0.85, 0, -0.2), Vector3(0.85, 0, 0.15)]
-	var lie_spots := [Vector3(-0.15, 0, -1.4), Vector3(0.2, 0, 0.0)]
+	var lie_spots := [Vector3(-0.3, 0, -1.5), Vector3(0.2, 0, 0.0)]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = Net.mission_seed + 5
 	var oks := 0
@@ -154,11 +155,14 @@ func _seat(team: Array) -> void:
 		var on_seat := false
 		match String(e["state"]):
 			"down":
-				clip_id = "tp_body_dead"
+				# (Ari 0.69) on the back, a calm patient - face down they looked like they were dying
+				clip_id = LIE_CLIP
 				var p: Vector3 = lie_spots.pop_front() if not lie_spots.is_empty() else Vector3(0, 0, 0.8)
 				pivot.position = p + Vector3(0, FLOOR_Y, 0)
 				pivot.rotation.y = rng.randf_range(-0.2, 0.2)
-				t0 = 99.0      # (the end of the fall: lying)
+				if AnimClips.get_clip(LIE_CLIP).is_empty():
+					clip_id = "tp_body_dead"
+					t0 = 99.0      # (no lying clip in the pack: the end of the fall)
 			"hurt":
 				clip_id = "tp_body_dragged"
 				var p: Vector3 = floor_spots.pop_front() if not floor_spots.is_empty() else Vector3(0.6, 0, 1.0)

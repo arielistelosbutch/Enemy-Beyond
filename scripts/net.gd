@@ -36,7 +36,7 @@ func _ready() -> void:
 	tm.timeout.connect(func():
 		_watch_link()
 		var sc := get_tree().current_scene
-		if multiplayer.is_server() and is_online() and Campaign.active and sc and sc.name != "Mission":
+		if multiplayer.is_server() and is_online() and Campaign.active and sc and (sc.name != "Mission" or in_own_base()):
 			broadcast_team())
 	add_child(tm)
 	var lt := Timer.new()
@@ -60,6 +60,11 @@ func _patient(peer: ENetMultiplayerPeer, id: int) -> void:
 	var p := peer.get_peer(id)
 	if p:
 		p.set_timeout(64, 30000, 90000)
+		# (0.70) ENet "throttles" a line whose round trip wobbles by throwing away unreliable
+		# packets at random - over Radmin / Wi-Fi that was the voice breaking up and other players
+		# jumping. The game sends little now (30 updates a second), so never throttle.
+		if Game.cmd_arg("throttle", "") == "":
+			p.throttle_configure(5000, 32, 0)
 
 ## The version check (0.61). Different versions of the game do not understand each other's
 ## messages (the calls are numbered by the scripts, the synced values listed by them): with
@@ -154,6 +159,8 @@ func close() -> void:
 	roster = {}
 	wallets = {}
 	link = {}
+	ready_peers = {}
+	ready_wait = ""
 	if Campaign.viewer:
 		Campaign.viewer = false
 		Campaign.data = {}
@@ -179,6 +186,8 @@ func _on_peer_connected(id: int) -> void:
 func _on_peer_disconnected(id: int) -> void:
 	_refused.erase(id)
 	link.erase(id)
+	if multiplayer.is_server() and ready_peers.erase(id):
+		_ready_state.rpc(ready_peers, ready_wait)
 	if multiplayer.is_server() and roster.has(id):
 		_note.rpc("%s odešel ze hry." % roster[id]["name"])
 	if roster.erase(id):
@@ -255,6 +264,7 @@ func start_mission(params := {}) -> bool:
 var friendly_fire := true
 @rpc("authority", "call_local", "reliable")
 func _start(s: int, diff := "normal", params := {}, ff := true) -> void:
+	_ready_reset()
 	if Game.autotest() != "": print("[NET] _start received (server %s)" % multiplayer.is_server())
 	friendly_fire = ff
 	mission_seed = s
@@ -266,7 +276,10 @@ func _start(s: int, diff := "normal", params := {}, ff := true) -> void:
 	if real and not Game.skirmish and Game.autotest() == "":
 		Game.mission_out(true)      # (0.57) until the mission's end: a crash on the way counts as missing
 	mission_started.emit()
-	Game.load_scene("res://scenes/Mission.tscn")
+	if String(params.get("type", "")) == "home":
+		Game.load_scene("res://scenes/Mission.tscn", "Výtah do základny", true)
+	else:
+		Game.load_scene("res://scenes/Mission.tscn")
 
 ## Host: everybody into the air fight (pilots fly, the rest watch from the host's wing).
 func start_intercept(params: Dictionary) -> void:
@@ -275,6 +288,7 @@ func start_intercept(params: Dictionary) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func _start_intercept(params: Dictionary) -> void:
+	_ready_reset()
 	mission_params = params
 	Game.load_scene("res://scenes/Intercept.tscn")
 
@@ -285,15 +299,24 @@ func start_escort(params: Dictionary) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func _start_escort(params: Dictionary) -> void:
+	_ready_reset()
 	mission_params = params
 	Game.load_scene("res://scenes/Escort.tscn")
 
-## A co-op client: down into the base alone (own copy, offline branch) while the host is on the globe.
+## Down into the base alone (own copy, offline branch) while the others stay on the globe.
+## (0.7x, Ari: "z glóbu, aby kluci mohli ven i dovnitř, mezitím co budou čekat") the host too: the
+## campaign keeps running under him (mission._home_tick sends the globe to the others), anybody may
+## go down and back up as he likes, and a drop started by the host pulls everybody out (_start).
 func start_local_base(params: Dictionary) -> void:
 	mission_params = params.duplicate()
 	mission_params["local"] = true
 	mission_seed = randi() % 100000
-	Game.load_scene("res://scenes/Mission.tscn")
+	Game.load_scene("res://scenes/Mission.tscn", "Výtah do základny", true)
+
+## Is this machine walking round its own copy of the base right now?
+func in_own_base() -> bool:
+	var sc := get_tree().current_scene
+	return sc != null and sc.name == "Mission" and sc.has_method("local") and sc.local()
 
 func back_to_menu() -> void:
 	get_tree().change_scene_to_file("res://scenes/Main.tscn")
@@ -454,6 +477,35 @@ func _req_buy(item: String) -> void:
 	_note.rpc("%s koupil pro základnu: %s." % [roster.get(from, {}).get("name", "?"), Game.ITEMS[item]["name"]])
 	broadcast_team()
 
+## (0.7x) Anyone (the host too) buys a Sokol for the hangar from his own money.
+func buy_jet_mine() -> void:
+	if is_online():
+		_req_jet.rpc_id(1)
+	else:
+		_req_jet()
+
+@rpc("any_peer", "call_local", "reliable")
+func _req_jet() -> void:
+	if is_online() and not multiplayer.is_server():
+		return
+	if not Campaign.active or not Campaign.jet_room():
+		return
+	var from := multiplayer.get_remote_sender_id() if is_online() else 1
+	if from == 0:
+		from = 1
+	wallets[1] = _host_purse()
+	var price := Campaign.jet_price()
+	if int(wallets.get(from, 0) if from != 1 else _host_purse()) < price:
+		return
+	_add_money(from, -price)
+	if from == 1:
+		Game.save_merc()
+	var who := String(roster.get(from, {}).get("name", Game.merc.get("name", "?")))
+	Campaign.order_jet(who)
+	if is_online():
+		_note.rpc("%s koupil ze svých peněz stíhačku Sokol (v hangáru zítra)." % who)
+		broadcast_team()
+
 signal note(text: String)
 @rpc("authority", "call_local", "reliable")
 func _note(t: String) -> void:
@@ -519,6 +571,28 @@ func _rtt(id: int) -> int:
 		return -1
 	return int(pp.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME))
 
+## (0.70) Line quality to a peer: jitter (ms, how much the round trip wobbles) and packet loss (0..1).
+func _line(id: int) -> Dictionary:
+	var p := multiplayer.multiplayer_peer
+	if not (p is ENetMultiplayerPeer):
+		return {}
+	var pp := (p as ENetMultiplayerPeer).get_peer(id)
+	if pp == null or not pp.is_active():
+		return {}
+	return {"var": int(pp.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME_VARIANCE)),
+		"loss": pp.get_statistic(ENetPacketPeer.PEER_PACKET_LOSS) / float(ENetPacketPeer.PACKET_LOSS_SCALE)}
+
+## The lobby: jitter and loss between a player and the host ({} = unknown / the host himself).
+func line_of(id: int) -> Dictionary:
+	if id == 1:
+		return {}
+	if not multiplayer.is_server() and id == my_id():
+		return _line(1)
+	if multiplayer.is_server():
+		return _line(id)
+	var l: Dictionary = link.get(id, {})
+	return {"var": int(l["var"]), "loss": float(l["loss"])} if l.has("var") else {}
+
 ## What the lobby shows by a player: his ping to the host (the host himself 0).
 func ping_of(id: int) -> int:
 	if id == 1:
@@ -546,6 +620,10 @@ func _link_tick() -> void:
 			if not link.has(id):
 				link[id] = {}
 			link[id]["ping"] = 0 if id == 1 else _rtt(id)
+			var ln := _line(id) if id != 1 else {}
+			if not ln.is_empty():
+				link[id]["var"] = ln["var"]
+				link[id]["loss"] = snappedf(float(ln["loss"]), 0.001)
 		link[1]["mic"] = mine
 		for id in link.keys():
 			if not roster.has(id):
@@ -595,3 +673,78 @@ func _cut(id: int) -> void:
 @rpc("authority", "reliable")
 func _kicked(why: String) -> void:
 	_kick_why = why
+
+# ---- (0.7x) "Připraven" on the globe -------------------------------------------------------------
+## Co-op: before a drop (or a fight in the air, or going down into the base) every player says he is
+## ready; the host's start waits until all are (the host can start anyway). The host keeps the list
+## and sends it to everybody; a start (_start, _start_intercept, _start_escort) clears it everywhere.
+signal ready_changed
+var ready_peers := {}     # peer id -> true
+var ready_wait := ""      # what the host's start is waiting for ("" = nothing waits)
+
+func is_ready(id: int) -> bool:
+	return ready_peers.has(id)
+
+## Me: ready / not ready (the button on the globe).
+func set_ready(on: bool) -> void:
+	if not is_online():
+		return
+	if multiplayer.is_server():
+		_apply_ready(1, on)
+	else:
+		_req_ready.rpc_id(1, on)
+
+@rpc("any_peer", "reliable")
+func _req_ready(on: bool) -> void:
+	if multiplayer.is_server():
+		_apply_ready(multiplayer.get_remote_sender_id(), on)
+
+func _apply_ready(id: int, on: bool) -> void:
+	if not roster.has(id):
+		return
+	if on == ready_peers.has(id):
+		return
+	if on:
+		ready_peers[id] = true
+	else:
+		ready_peers.erase(id)
+	_ready_state.rpc(ready_peers, ready_wait)
+
+## Names of the players who are not ready yet.
+func not_ready() -> Array:
+	var out := []
+	for id in roster:
+		if not ready_peers.has(int(id)):
+			out.append(str(roster[id].get("name", "?")))
+	return out
+
+func all_ready() -> bool:
+	return is_online() and not roster.is_empty() and not_ready().is_empty()
+
+## Host: a start waits for the team (what = shown to everybody); the host himself is ready by asking.
+func ask_ready(what: String) -> void:
+	if not is_online() or not multiplayer.is_server():
+		return
+	ready_wait = what
+	ready_peers[1] = true
+	_ready_state.rpc(ready_peers, ready_wait)
+
+## Host: nothing waits any more (cancelled); who is ready stays ready.
+func stop_waiting() -> void:
+	if is_online() and multiplayer.is_server() and ready_wait != "":
+		ready_wait = ""
+		_ready_state.rpc(ready_peers, ready_wait)
+
+func _ready_reset() -> void:
+	ready_peers = {}
+	ready_wait = ""
+	ready_changed.emit()
+
+@rpc("authority", "call_local", "reliable")
+func _ready_state(r: Dictionary, wait: String) -> void:
+	var was := ready_wait
+	ready_peers = r
+	ready_wait = wait
+	ready_changed.emit()
+	if wait != "" and was == "" and not multiplayer.is_server():
+		note.emit("Hostitel čeká, až budou všichni připraveni: %s" % wait)
