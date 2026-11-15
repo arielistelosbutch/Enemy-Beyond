@@ -36,6 +36,7 @@ func _ready() -> void:
 	_build_logo()
 	Net.roster_changed.connect(_refresh_lobby)
 	Net.wallets_changed.connect(_refresh_lobby)
+	Net.stock_changed.connect(_stock_redraw)
 	Net.note.connect(_on_note)
 	Net.connection_failed.connect(func(r): _show_main(r))
 	Net.connected_ok.connect(_show_lobby)
@@ -48,6 +49,9 @@ func _ready() -> void:
 		elif scr == "merc": _show_merc()
 		elif scr == "money": _show_money()
 		elif scr == "mods": _show_mods()
+		elif scr == "lobby":
+			_back_target = ""
+			_show_lobby()        # (0.7x: the host after the end of a co-op campaign - the friends stay)
 		elif scr == "quick":
 			_back_target = ""
 			_show_quick()
@@ -157,7 +161,19 @@ func _logo(on: bool) -> void:
 	if l:
 		l.visible = on
 
+## (0.7x) the armory changed (a teammate took something, a delivery came): the kit screen redraws
+## when what I can take is different now.
+var _panel_title := ""
+var _stock_sig := ""
+func _stock_redraw() -> void:
+	if _panel_title != "VÝSTROJ NA MISI" or not is_inside_tree():
+		return
+	var sig := str(Game.stash_for(Game.difficulty == "veteran"))
+	if sig != _stock_sig:
+		_show_loadout()
+
 func _panel(title: String) -> void:
+	_panel_title = title
 	_logo(true)
 	_title_mode = false
 	if _title:
@@ -355,12 +371,27 @@ func _show_campaign(msg := "") -> void:
 	_button("Založit novou kampaň", _show_new_campaign)
 	_button("Připojit se ke hře (kampaň kamaráda)", _show_join)
 	_button("Moji vojáci", func(): _back_target = "campaign"; _show_merc())
+	var past := Campaign.past_campaigns()
+	if not past.is_empty():
+		_button("Skončené kampaně (%d)" % past.size(), _show_past)
 	if not Game.merc.get("created", true):
 		_label("Nemáš vlastního vojáka - vytvoř si ho v \"Moji vojáci\".", Color(1.0, 0.75, 0.4), 9)
 	_label("Vojáci rostou jen v kampani: mise, žold, zranění i smrt. Co-op kampaň si pamatuje hostitel - hraje se s jeho záznamem o každém vojákovi.", FRAME, 8).custom_minimum_size = Vector2(300, 0)
 	_button("Zpět", _show_main)
 	if msg != "":
 		_label(msg, Color(1, 0.5, 0.4), 10)
+
+## (0.7x) The record of ended campaigns (lost or won): one line each, a click opens its end screen.
+func _show_past() -> void:
+	_panel("SKONČENÉ KAMPANĚ")
+	for s in Campaign.past_campaigns().slice(0, 8):
+		var d: Dictionary = s
+		var diff := String(d.get("diff", ""))
+		_button("%s  %s - %s, %d dní, %s" % ["VÍTĚZSTVÍ" if d.get("won", false) else "KONEC", d.get("start", ""), d.get("end", ""), int(d.get("days", 0)), Game.DIFF_NAMES.get(diff, diff)], func():
+			var scr: Control = preload("res://scripts/campaign_end.gd").new()
+			scr.setup(d, [["Zpět", func(): scr.queue_free()]])
+			add_child(scr))
+	_button("Zpět", _show_campaign)
 
 func _peek_campaign() -> Dictionary:
 	var cf := ConfigFile.new()
@@ -1464,7 +1495,9 @@ func _show_loadout() -> void:
 	var vet := Game.difficulty == "veteran"
 	var cur: Dictionary = Game.valid_loadout(vet)
 	Game.loadout = cur
+	Net.report_claim()      # (0.7x) the others see at once what this kit takes from the armory
 	var left: Dictionary = Game.stash_for(vet).duplicate()
+	_stock_sig = str(left)
 	for slot in cur:
 		left[cur[slot]] = int(left[cur[slot]]) - 1
 	for k in left.keys():
@@ -1891,7 +1924,7 @@ func _autotest() -> void:
 			get_tree().change_scene_to_file("res://scenes/TileEditor.tscn")
 		"modeler", "modclick", "modspeed":
 			get_tree().change_scene_to_file("res://scenes/Modeler.tscn")
-		"geo", "campaign", "campair", "uigeo", "encyshot", "striketest", "geomodels", "basepick":
+		"geo", "campaign", "campair", "uigeo", "encyshot", "striketest", "geomodels", "basepick", "carttest", "gameover":
 			# (the test machine's merc may still be on the sick bay from an earlier test run)
 			for k in ["heal_days", "injury", "sick", "heal_cid", "heal_seen"]:
 				Game.merc.erase(k)
@@ -1934,7 +1967,7 @@ func _autotest() -> void:
 				["quick", _show_quick], ["campaign", func(): _show_campaign()], ["newcamp", _show_new_campaign], ["editor", _show_editor], ["merc", func(): Game.merc["created"] = true; _show_merc()],
 				["create", func(): _show_create(true)], ["look", func(): _show_create(false)],
 				["settings", _show_settings],
-				["loadout", _show_loadout], ["join", _show_join], ["connecting", func(): _connecting("192.168.0.99")], ["news", _show_news], ["mods", _show_mods], ["talents", _show_talents], ["money", _show_money], ["lobby", _show_lobby],
+				["loadout", _show_loadout], ["join", _show_join], ["connecting", func(): _connecting("192.168.0.99")], ["news", _show_news], ["mods", _show_mods], ["talents", _show_talents], ["money", _show_money], ["lobby", _show_lobby], ["past", _show_past],
 				["update", func(): Game.upd_state = "full"; Game.upd_version = "0.14"; _show_main()],
 				["ready", func(): Game.upd_state = "ready"; _show_main()]]
 			for e in shots:
@@ -2113,14 +2146,14 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "leaktest", "ufohull", "wedgetest", "leantest", "pockettest", "leaveany", "safeend", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "ceiltest", "interiors", "spectate", "echotest", "dirtshot", "flaretest":
+		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "leaktest", "leakmap", "ufohull", "wedgetest", "leantest", "pockettest", "leaveany", "safeend", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "ceiltest", "interiors", "spectate", "dazetest", "echotest", "dirtshot", "flaretest":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
 				"hour": float(Game.cmd_arg("hour", "14.0" if Game.cmd_arg("day", "0") == "1" else "23.0")), "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "testroom": Game.autotest() == "testroom", "terrain": Game.cmd_arg("terrain", "temperate"), "size": Game.cmd_arg("size", "medium"), "ufo": Game.cmd_arg("ufo", ""), "crew_of": Game.cmd_arg("crewof", ""), "group": Game.cmd_arg("group", ""), "research": Array(Game.cmd_arg("research", "").split(",", false)),
 				"habits": {String(Game.merc.get("name", "")): Game.cmd_arg("habits", "").split(",", false)} if Game.cmd_arg("habits", "") != "" else {},
 				"styles": {String(Game.merc.get("name", "")): Array(Game.cmd_arg("styles", "").split(",", false))} if Game.cmd_arg("styles", "") != "" else {}})
-		"basewalk", "basepass", "basenade", "basefly", "blastdoor", "npcshot", "baseshot", "echobase", "wallshot":
+		"basewalk", "basepass", "basenade", "basefly", "blastdoor", "npcshot", "baseshot", "echobase", "wallshot", "dazebase":
 			Net.play_solo()
 			var b := []
 			for i in 24:
@@ -2377,7 +2410,7 @@ func _autotest() -> void:
 			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
 		"econclient":
 			Game.merc["name"] = "Klient"
-			Game.merc["money"] = 700
+			Game.merc["money"] = 1100
 			await get_tree().create_timer(1.5).timeout
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
 			while not Campaign.viewer:
@@ -2389,8 +2422,27 @@ func _autotest() -> void:
 			Net.give_money(1, 200)
 			await get_tree().create_timer(2.5).timeout
 			print("[ECON] after gift my=%d wallets=%s" % [Net.my_money(), Net.wallets])
+			# (0.7x) the armory basket: several things for the base in one request (300 kr: 2 clips + 1 grenade, 120 kr more than money left -> grenade 2 is not bought)
+			var arm0 := int(Campaign.data["armory"].get("rifle_clip", 0)) + Campaign.on_order("rifle_clip")
+			Net.buy_cart_for_base({"rifle_clip": 2, "grenade": 2})
+			await get_tree().create_timer(2.5).timeout
+			print("RESULT cart client my=%d clips +%d grenades on order %d" % [Net.my_money(), int(Campaign.data["armory"].get("rifle_clip", 0)) + Campaign.on_order("rifle_clip") - arm0, Campaign.on_order("grenade")])
 			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
-		"readyhost":
+		"stockhost", "stockclient":
+			# (0.7x, Ari: co-op saw a different store) host and client must see the same armory
+			Game.merc["name"] = "Hostitel" if Game.autotest() == "stockhost" else "Klient"
+			if Game.autotest() == "stockhost":
+				Campaign.new_campaign("normal")
+				Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+				while Net.roster.size() < 2:
+					await get_tree().create_timer(0.2).timeout
+			else:
+				await get_tree().create_timer(1.0).timeout
+				Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+				while not Campaign.viewer:
+					await get_tree().create_timer(0.2).timeout
+			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+		"readyhost", "gohost":
 			Campaign.new_campaign("normal")
 			Game.merc["name"] = "Hostitel"
 			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
@@ -2398,7 +2450,7 @@ func _autotest() -> void:
 				await get_tree().create_timer(0.2).timeout
 			await get_tree().create_timer(1.0).timeout
 			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
-		"readyclient":
+		"readyclient", "goclient":
 			Game.merc["name"] = "Klient"
 			await get_tree().create_timer(1.0).timeout
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))

@@ -196,10 +196,7 @@ func _channel(peer: int, p: Node) -> Dictionary:
 	if _chan.has(peer) and is_instance_valid(_chan[peer]["near"]):
 		return _chan[peer]
 	var near := AudioStreamPlayer3D.new()
-	var g := AudioStreamGenerator.new()
-	g.mix_rate = RATE
-	g.buffer_length = 0.5
-	near.stream = g
+	near.stream = DSP.generator()     # (0.71) 48 kHz, upsampled by us (cleaner than Godot's)
 	near.unit_size = 3.0
 	near.max_distance = 30.0
 	near.volume_db = 2.0
@@ -209,17 +206,14 @@ func _channel(peer: int, p: Node) -> Dictionary:
 	near.play()
 	var pbn := near.get_stream_playback()
 	var rad := AudioStreamPlayer.new()
-	var g2 := AudioStreamGenerator.new()
-	g2.mix_rate = RATE
-	g2.buffer_length = 0.5
-	rad.stream = g2
+	rad.stream = DSP.generator()
 	rad.bus = "Radio"
 	rad.volume_db = -2.0
 	add_child(rad)
 	rad.play()
 	var pbr := rad.get_stream_playback()
-	_chan[peer] = {"near": near, "radio": rad, "rx_near": DSP.Rx.new(pbn, pbn.get_frames_available()),
-		"rx_radio": DSP.Rx.new(pbr, pbr.get_frames_available()), "last": 9.0}
+	_chan[peer] = {"near": near, "radio": rad, "rx_near": DSP.Rx.new(pbn, pbn.get_frames_available(), DSP.UP),
+		"rx_radio": DSP.Rx.new(pbr, pbr.get_frames_available(), DSP.UP), "last": 9.0}
 	return _chan[peer]
 
 func _play(peer: int, bytes: PackedByteArray, radio: bool, seq: int = -1) -> void:
@@ -244,7 +238,8 @@ func _play(peer: int, bytes: PackedByteArray, radio: bool, seq: int = -1) -> voi
 		var drop := bad > 0.6 and randf() < (bad - 0.6)
 		for i in smp.size():
 			var v := 0.0 if drop else smp[i] * 1.4
-			v += randf_range(-1.0, 1.0) * (0.004 + bad * 0.05)
+			# (0.71) half the static of before: a wall or 100 m between you used to sound like a broken set
+			v += randf_range(-1.0, 1.0) * (0.003 + bad * 0.025)
 			rf[i] = v
 		if float(ch["last"]) > 0.4:
 			Game.play_ui(mission, "radio", -16)
@@ -392,7 +387,9 @@ func _to_present(f: Callable, args: Array) -> void:
 	for p in mission.players():
 		var id: int = p.get_multiplayer_authority()
 		if id != multiplayer.get_unique_id() and id in multiplayer.get_peers():
-			callv("rpc_id", [id, f.get_method()] + args)
+			# (0.71) through LobbyVoice, which every machine has: one that has just left for the
+			# transporter got "Node not found: Mission/Voice" errors before
+			Net.get_node("LobbyVoice")._voice_fx.rpc_id(id, f.get_method(), args)
 
 func _dead_radio_tick() -> void:
 	for p in mission.players():

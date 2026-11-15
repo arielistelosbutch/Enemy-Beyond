@@ -467,9 +467,20 @@ func _charge_fx() -> void:
 	Game.play_at(mission, "ohar_charge" if race == "ohar" else ("lihnoun_charge" if race == "lihnoun" else "hiss"), global_position + Vector3.UP, 4 if race == "ohar" else 2)
 
 ## The Ohař's roar as it breaks cover: the green ones freeze for a moment (bravery and missions help).
+## (Ari 2026-11-15, co-op base defence: "too much stun, we could hardly move") a pack in tight
+## corridors roared at everyone within 20 m through every wall, at every run-in: now only who sees
+## it, or hears it close (ROAR_WALL through walls), and one scaring roar per ROAR_CD from each.
+const ROAR_CD := 14.0
+const ROAR_WALL := 9.0
+var _roar_cd := 0.0
 func _roar_scare() -> void:
+	if mission.t < _roar_cd:
+		return
+	_roar_cd = mission.t + ROAR_CD
 	for p in mission.players():
 		if p.dead or p.downed or p.global_position.distance_to(global_position) > 20.0:
+			continue
+		if p.global_position.distance_to(global_position) > ROAR_WALL and not visible_to(p):
 			continue
 		p.ohar_roar.rpc_id(p.get_multiplayer_authority(), rng.randf())
 

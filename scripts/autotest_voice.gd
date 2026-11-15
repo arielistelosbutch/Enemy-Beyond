@@ -197,7 +197,64 @@ static func run() -> void:
 		got += d4.process(raw.slice(k * 800, k * 800 + 800), 48000.0, 1.0, true, 0.03).size()
 	var ms := (Time.get_ticks_usec() - t0) / 1000.0 / 3.0
 	print("[VOICEDSP] cpu %.1f ms per second of audio, out %d (want %d)" % [ms, got, R * 3])
-	var ok: bool = res[true][0] > res[false][0] + 10.0 and res[true][1] >= 0.0 and res[true][1] < 0.12 \
+	# (0.71) quality: distortion of the whole send chain (AGC, limiter, mu-law) on a voiced sound,
+	# and the mirror images of our 16 -> 48 kHz upsampling
+	var q := _quality()
+	print("[VOICEDSP] quality: signal/distortion %.1f dB, upsampling images %.1f dB, upsampling cpu %.1f ms per second" % [q[0], q[1], q[2]])
+	var ok: bool = res[true][0] > res[false][0] + 10.0 and q[0] > 32.0 and q[1] < -40.0 and q[2] < 60.0 and res[true][1] >= 0.0 and res[true][1] < 0.12 \
 		and first_len >= int(R * 0.18) and tail >= int(R * 0.25) and rx.rescued == 12 and rx.late == 1 \
 		and bad[0] == 0 and bad[1] == 0 and calm[0] == 0 and calm[1] == 0 and calm[5] < 0.12 and ms < 40.0 and absi(got - R * 3) < 400
 	print("RESULT voicedsp %s" % ("ok" if ok else "CHYBA"))
+
+## [signal/distortion dB, image level dB, upsampling ms per second of voice]
+static func _quality() -> Array:
+	var R := DSP.RATE
+	# a vowel: 150 Hz with harmonics, loud enough that the limiter used to bend it
+	var n := R * 2
+	var x := PackedFloat32Array()
+	x.resize(n)
+	for i in n:
+		var t := float(i) / R
+		var v := 0.0
+		for h in range(1, 30):
+			var f := 150.0 * h
+			if f > 6500.0:
+				break
+			v += sin(TAU * f * t + h * 0.7) / h * (1.0 + 2.0 * exp(-pow((f - 700.0) / 300.0, 2)))
+		x[i] = v * 0.08 * (0.6 + 0.4 * sin(TAU * 1.5 * t))
+	var d := DSP.new()
+	var y := DSP.decode(DSP.encode(d.process_mono(x, false, 0.03)))
+	var sig := 0.0
+	var err := 0.0
+	for f in range(40, n / DSP.FRAME):
+		var o := f * DSP.FRAME
+		var xy := 0.0
+		var xx := 0.0
+		for k in DSP.FRAME:
+			xy += x[o + k] * y[o + k]
+			xx += x[o + k] * x[o + k]
+		var g := xy / maxf(xx, 1e-9)
+		for k in DSP.FRAME:
+			var e := y[o + k] - g * x[o + k]
+			sig += g * g * x[o + k] * x[o + k]
+			err += e * e
+	var sdr := 10.0 * log(sig / maxf(err, 1e-12)) / log(10.0)
+	# a 3 kHz tone upsampled: how strong is its mirror at 13 kHz compared to it
+	var tone := PackedFloat32Array()
+	tone.resize(R)
+	for i in R:
+		tone[i] = 0.5 * sin(TAU * 3000.0 * i / R)
+	var up := DSP.Up.new()
+	var t0 := Time.get_ticks_usec()
+	var u := up.run(tone)
+	var ms := (Time.get_ticks_usec() - t0) / 1000.0
+	var fs := float(R * DSP.UP)
+	var amp := func(fq: float) -> float:
+		var c := 0.0
+		var s := 0.0
+		for i in range(2000, u.size()):
+			c += u[i].x * cos(TAU * fq * i / fs)
+			s += u[i].x * sin(TAU * fq * i / fs)
+		return sqrt(c * c + s * s)
+	var img := 20.0 * log(maxf(amp.call(13000.0), amp.call(19000.0)) / maxf(amp.call(3000.0), 1e-9)) / log(10.0)
+	return [sdr, img, ms]

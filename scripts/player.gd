@@ -1528,8 +1528,11 @@ func _fp_layer(n: Node) -> void:
 		# (2026-11-13) the glass of a sight right in front of the eye: clear, no tint and no glare
 		# (the tinted window glass went dark against the light and at night)
 		var mi: MeshInstance3D = n
+		# (2026-11-15) recognised by the model's own material too ("LensGlass"), not only by the
+		# override, so no lens in front of the eye is ever left tinted
 		for i in mi.get_surface_override_material_count():
-			if mi.get_surface_override_material(i) == Game.glass_mat():
+			var src: Material = mi.mesh.surface_get_material(i) if mi.mesh else null
+			if mi.get_surface_override_material(i) == Game.glass_mat() or (src != null and src.resource_name.ends_with("Glass")):
 				mi.set_surface_override_material(i, Game.sight_glass_mat())
 	for c in n.get_children():
 		_fp_layer(c)
@@ -2372,6 +2375,7 @@ func locker_lost(items: Dictionary) -> void:
 			lk.erase(it)
 	Game.merc["locker"] = lk
 	Game.save_merc()
+	Net.update_merc()      # (0.7x) the host's copy of this merc must not bring the used pieces back
 
 var _click_lock := false
 ## The shield: carried low (out of the way), or held up to the face on the right button -
@@ -5022,16 +5026,19 @@ func psi_attack(roll: float) -> void:
 	Game.play_ui(self, "psi", -2)
 	mission.hud.psi_flash()
 	var resist := brave * 0.8 + (0.3 if Game.has_talent(merc, "zelezne_nervy") else 0.0) + (0.15 if Game.has_research("vyslech") else 0.0) + (0.3 if Game.has_research("psi_clona") else 0.0) + _psi_shield()
-	if roll < resist or panic != "":
+	if home_ground():
+		resist += DAZE_HOME_RESIST * 0.6      # (our own walls, our own lights: easier to hold on)
+	if roll < resist or panic != "" or not daze_ok():
 		mission.hud.message("Cizí hlas v hlavě. Odolal jsi.", 3.0)
 		return
+	var k := DAZE_HOME_TIME if home_ground() else 1.0
 	if roll > 0.75 and not weapon().is_empty():
 		panic = "berserk"
-		panic_t = 5.0
+		panic_t = 5.0 * k
 		mission.hud.message("NĚCO TI OVLÁDÁ RUCE!", 4.0)
 	else:
 		panic = "flee"
-		panic_t = 4.0
+		panic_t = 4.0 * k
 		_panic_dir = Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
 		mission.hud.message("Hlas ti šeptá: UTEČ.", 3.0)
 	Game.play_ui(self, "heartbeat", 0)
@@ -5046,6 +5053,7 @@ func psi_free() -> void:
 		panic_t = 0.0
 		stress = minf(stress, 55.0)
 		panic_cd = 25.0
+		_daze_free_t = mission.t + daze_immune()
 		mission.hud.message("Vzpamatoval ses.", 2.0)
 
 ## A Líhavec in sight, close: the fear grows before it even touches you.
@@ -5068,12 +5076,12 @@ func ohar_roar(roll: float) -> void:
 	var brave := float(merc.get("bravery", 40)) / 100.0
 	var seasoned := minf(1.0, float(merc.get("missions", 0)) / 8.0)
 	stress = min(100.0, stress + 22.0 * (1.3 - brave))
-	var resist := brave * 0.5 + seasoned * 0.4 + (0.3 if Game.has_talent(merc, "zelezne_nervy") else 0.0)
-	if roll < resist or panic != "":
+	var resist := brave * 0.5 + seasoned * 0.4 + (0.3 if Game.has_talent(merc, "zelezne_nervy") else 0.0) + (DAZE_HOME_RESIST if home_ground() else 0.0)
+	if roll < resist or panic != "" or not daze_ok():
 		mission.hud.message("Řev ti projel až do morku. Ustál jsi to.", 2.0)
 		return
 	panic = "drop"
-	panic_t = randf_range(1.4, 2.2)
+	panic_t = randf_range(1.4, 2.2) * (DAZE_HOME_TIME if home_ground() else 1.0)
 	mission.hud.message("ŘEV TĚ OCHROMIL!", 2.0)
 	Game.play_ui(self, "heartbeat", 0)
 
@@ -5195,7 +5203,7 @@ func _stress(delta: float) -> void:
 			continue
 		var d: float = a.global_position.distance_to(global_position)
 		if d < 13.0:
-			gain += (13.0 - d) * 0.22      # you cannot see it, but you feel it
+			gain += (13.0 - d) * 0.22 * (DAZE_HOME_DREAD if home_ground() else 1.0)      # you cannot see it, but you feel it
 		if d < 16.0 and a.visible_to(self):
 			gain += (16.0 - d) * 0.38      # (0.60: gentler - it used to freeze you at once)
 	for p in mission.players():
@@ -5215,13 +5223,30 @@ func _stress(delta: float) -> void:
 	_panic_check(delta)
 
 # ---- panic (like X-COM: the soldier stops obeying) -----------------------------------------
+## (Ari 2026-11-15, co-op base defence: "too much stun, we could hardly move") after any freeze
+## (an Ohař's roar, a psi panic, a fear panic) the merc keeps his head for a while: the next roar or
+## psi push only frightens him. At our own base (defence, walk) the freezes are rarer and shorter:
+## home ground, own walls and lights - and in its corridors the aliens are always close.
+const DAZE_IMMUNE := 9.0
+const DAZE_HOME_IMMUNE := 14.0
+const DAZE_HOME_RESIST := 0.25
+const DAZE_HOME_TIME := 0.6
+const DAZE_HOME_DREAD := 0.5     # the unseen "you feel it" fear through the base's walls
+var _daze_free_t := -99.0
+func daze_ok() -> bool:
+	return mission == null or mission.t >= _daze_free_t
+func daze_immune() -> float:
+	return DAZE_HOME_IMMUNE if home_ground() else DAZE_IMMUNE
+func home_ground() -> bool:
+	return String(Net.mission_params.get("type", "")) in ["base", "home"]
+
 var panic_t := 0.0
 var panic_cd := 25.0
 var _panic_dir := Vector3.ZERO
 
 func _panic_check(delta: float) -> void:
 	panic_cd -= delta
-	if panic != "" or panic_cd > 0 or downed:
+	if panic != "" or panic_cd > 0 or downed or not daze_ok():
 		return
 	var limit := 85.0 if Game.veteran() else 98.0
 	if stress < limit:
@@ -5282,6 +5307,7 @@ func _panic_tick(delta: float) -> void:
 		panic = ""
 		stress = 55.0
 		panic_cd = 25.0
+		_daze_free_t = mission.t + daze_immune()
 		mission.hud.message("Vzpamatoval ses.", 2.0)
 
 ## Money for what the mercenary found (alien packs), paid with his share after the mission.

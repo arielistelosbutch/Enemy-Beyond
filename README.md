@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.70
+# Operace X - Enemy Beyond — prototyp 0.71
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,16 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.71
+- Ve zbrojnici je nákupní košík: záložky podle druhu zboží, vyberu, co chci do skladu a co sobě, vidím mezisoučty proti rozpočtu a vlastním penězům a teprve pak potvrdím. V co-opu se nákup pro základnu ohlásí všem.
+- Sklad je v co-opu u všech stejný a okna se samy překreslí. Když si spoluhráč něco vezme do výstroje, ostatní to vidí a nemůžou si vzít totéž.
+- Když kampaň skončí, ukáže se obrazovka se statistikou celé války: mise, zneškodnění vetřelci podle druhu, sestřelená UFO, padlí, nejlepší vojáci. Prohraná pozice se smaže, i u spoluhráčů v co-opu.
+- Vojáci se mezi hrami přenáší spolehlivě: zkušenosti, talenty, vzhled, peníze a díly na zbraních jdou s vojákem, ale věci koupené za vlastní peníze zůstávají v kampani, kde jsem je koupil. Padlý voják se už nikomu nevrátí.
+- Míň omráčení: po každém ochromení mám chvíli klid, Ohař straší řevem jen toho, kdo ho vidí nebo je blízko, a na vlastní základně se vojáci drží líp.
+- Hlas v co-opu je čistší: bez zkreslení, sykání a zbytečného šumu vysílačky.
+- Sklo kolimátoru je z očí úplně čiré, už není modré a v noci jako stínítko.
+- Věci na mapách už neprotékají: hromady dřeva, bedny, vraky aut, traktor, studna, regály v obchodě, vysokozdvižný vozík, Sokol v hangáru, velín na Marsu i Kondor a Pelikán zvenku jsou pevné celé, ne jen kousek.
 
 ## Novinky 0.70
 - Co-op přes VPN je plynulejší: hra posílá polohy 30× za sekundu místo každého snímku a cizí postavy se mezi nimi hladce posouvají. Hlas jde jednou cestou, takže se slyšíme v menu, na glóbu, v tvorbě vojáka, v misi i v transportéru, a už tolik nepraská.

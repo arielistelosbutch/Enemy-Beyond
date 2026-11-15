@@ -13,6 +13,7 @@ var _chan := {}            # peer -> {player, rx, last}
 var testing := false       # microphone test: hear yourself
 var _echo: AudioStreamPlayer
 var _echo_pb: AudioStreamGeneratorPlayback
+var _echo_up: DSP.Up
 var talking := false
 var _mission_feed := PackedFloat32Array()   # what the mission's Voice takes each frame
 # diagnostics for the settings screen: is the microphone delivering, is anything going out / coming in
@@ -142,22 +143,19 @@ func _open() -> void:
 func _play_echo(fresh: PackedFloat32Array) -> void:
 	if _echo == null:
 		_echo = AudioStreamPlayer.new()
-		var g := AudioStreamGenerator.new()
-		g.mix_rate = Voice.RATE
+		var g := DSP.generator()
 		g.buffer_length = 1.0
 		_echo.stream = g
+		_echo_up = DSP.Up.new()
 		add_child(_echo)
 		_echo.play()
 		_echo_pb = _echo.get_stream_playback()
 		# half a second of silence first, so you hear yourself after you speak
 		var pad := PackedVector2Array()
-		pad.resize(int(Voice.RATE * 0.5))
+		pad.resize(int(g.mix_rate * 0.5))
 		_echo_pb.push_buffer(pad)
-	var fr := PackedVector2Array()
-	fr.resize(fresh.size())
 	var d := DSP.decode(DSP.encode(fresh))     # exactly what the others will hear
-	for i in d.size():
-		fr[i] = Vector2(d[i], d[i])
+	var fr := _echo_up.run(d)
 	if _echo_pb.can_push_buffer(fr.size()):
 		_echo_pb.push_buffer(fr)
 
@@ -200,15 +198,12 @@ func _flat(from: int) -> Dictionary:
 	if _chan.has(from) and is_instance_valid(_chan[from]["player"]):
 		return _chan[from]
 	var ap := AudioStreamPlayer.new()
-	var g := AudioStreamGenerator.new()
-	g.mix_rate = Voice.RATE
-	g.buffer_length = 0.5
-	ap.stream = g
+	ap.stream = DSP.generator()       # (0.71) 48 kHz, upsampled by us
 	ap.bus = "Voice"
 	add_child(ap)
 	ap.play()
 	var pb0 := ap.get_stream_playback()
-	_chan[from] = {"player": ap, "rx": DSP.Rx.new(pb0, pb0.get_frames_available()), "last": 0}
+	_chan[from] = {"player": ap, "rx": DSP.Rx.new(pb0, pb0.get_frames_available(), DSP.UP), "last": 0}
 	return _chan[from]
 
 ## Every frame: feed the plain channels' sound buffers (jitter buffer, fill-ins, fade-outs).
@@ -245,3 +240,11 @@ func mic_state() -> String:
 	if mic != null and Time.get_ticks_msec() - opened_at > 3000 and frames_in == 0:
 		return "dead"
 	return "open" if Game.voice_mode == "open" or Game.mic_live else "ptt"
+
+## (0.71) The host's alien mimicry and a dead man's radio for one machine; played only if that
+## machine is still in the mission (it may already be in the transporter or the menu).
+@rpc("authority", "call_remote", "reliable")
+func _voice_fx(method: String, args: Array) -> void:
+	var vm := _mission_voice()
+	if vm and method in ["_mimic", "_dead_radio"]:
+		vm.callv(method, args)
