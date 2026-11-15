@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.70 prototyp"
-const VERSION_NUM := "0.70"
+const VERSION := "0.71 prototyp"
+const VERSION_NUM := "0.71"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -478,6 +478,23 @@ func buy_for_me(item: String) -> bool:
 	Net.update_merc()
 	return true
 
+## (0.7x) The armory basket, the "for me" part: {item: count}, paid at once (all or nothing).
+func buy_many_for_me(cart: Dictionary) -> bool:
+	var total := 0
+	for item in cart:
+		if not Campaign.unlocked(item) or Campaign.workshop_item(item) or not Campaign.SHOP.has(item):
+			return false
+		total += Campaign.price(item) * int(cart[item])
+	if total <= 0 or not spend(total):
+		return false
+	var lk: Dictionary = merc.get("locker", {})
+	for item in cart:
+		lk[item] = int(lk.get(item, 0)) + int(cart[item])
+	merc["locker"] = lk
+	save_merc()
+	Net.update_merc()
+	return true
+
 func buy_mod(weapon: String, mod: String) -> bool:
 	if owns_mod(weapon, mod) or not mod in MOD_FITS.get(weapon, []) or not spend(mod_price(mod)):
 		return false
@@ -666,7 +683,7 @@ func new_merc(name_hint := "") -> Dictionary:
 	var female := r.randf() < 0.3
 	var n := name_hint if name_hint != "" else random_name(female, r)
 	var m := {
-		"name": n,
+		"name": n, "uid": new_uid(r),
 		"missions": 0, "kills": 0, "captures": 0, "xp": 0, "talents": [], "talent_points": 0,
 		"created": false,     # not shaped by the player yet (the menu offers the creation screen)
 		"look": random_look(female, r),
@@ -1051,6 +1068,52 @@ func mission_out(going: bool) -> void:
 	on_mission = String(merc.get("name", "")) if going else ""
 	save_merc()
 
+## (0.7x, Ari: "vojáci se přenáší nějak zvláštně") Every soldier has his own id: the host's campaign
+## keeps its record of him by it (Campaign.keep_merc), not by the name - a new recruit made from a
+## template with the name of a fallen one is somebody else (he used to come back with the dead one's
+## record, kit and all).
+func new_uid(r: RandomNumberGenerator = null) -> String:
+	if r == null:
+		r = RandomNumberGenerator.new()
+		r.randomize()
+	return "%08x%08x" % [r.randi(), r.randi()]
+
+## (0.7x) The soldier's own locker (things bought with his own money, Game.buy_for_me) belongs to the
+## campaign he bought them in: a plasma gun from his own war does not come along into a friend's
+## co-op that has no plasma yet. merc["locker"] = the locker of the campaign merc["gear_cid"],
+## merc["lockers"] = cid -> the lockers waiting in his other campaigns (they come back with him).
+## Called wherever a soldier steps into a campaign (the host's register, the host loading his own).
+## Returns true when it changed anything.
+const LOCKERS_KEPT := 6
+func gear_to(m: Dictionary, cid: String) -> bool:
+	if cid == "":
+		return false
+	var cur := String(m.get("gear_cid", ""))
+	if cur == cid:
+		return false
+	m["gear_cid"] = cid
+	if cur == "":
+		return false        # (a locker from before 0.7x with no home known: it stays where he goes first)
+	var kept: Dictionary = (m.get("lockers", {}) as Dictionary).duplicate(true)
+	var lk: Dictionary = m.get("locker", {})
+	if lk.is_empty():
+		kept.erase(cur)
+	else:
+		kept[cur] = lk
+	var back: Dictionary = kept.get(cid, {})
+	kept.erase(cid)
+	while kept.size() > LOCKERS_KEPT:
+		kept.erase(kept.keys()[0])
+	m["lockers"] = kept
+	m["locker"] = back
+	return true
+
+func _local_cid() -> String:
+	var cf := ConfigFile.new()
+	if cf.load("user://campaign.cfg") != OK:
+		return ""
+	return String((cf.get_value("campaign", "data", {}) as Dictionary).get("cid", ""))
+
 func load_merc() -> void:
 	var cf := ConfigFile.new()
 	if cf.load("user://merc.cfg") == OK:
@@ -1074,6 +1137,19 @@ func load_merc() -> void:
 				crash_note = "Hra skončila uprostřed mise. %s zůstal na místě - NEZVĚSTNÝ (odškodné rodině -250 kr; úspory převzal nový voják %s)." % [on_mission, String(fresh["name"])]
 				break
 		on_mission = ""
+	# (0.7x) soldiers from before the ids: an id each; their lockers are taken to be from the campaign
+	# on this computer (the friend's campaign gets them only when there is none here)
+	var home_cid := ""
+	var looked := false
+	for m in mercs:
+		if String(m.get("uid", "")) == "":
+			m["uid"] = new_uid()
+		if not m.has("gear_cid") and not (m.get("locker", {}) as Dictionary).is_empty():
+			if not looked:
+				home_cid = _local_cid()
+				looked = true
+			if home_cid != "":
+				m["gear_cid"] = home_cid
 	merc = mercs[active]
 	# wounds from before 0.26 healed in real time - let them be healed
 	for m in mercs:
@@ -1400,6 +1476,16 @@ func stash_for(vet: bool) -> Dictionary:
 	if Campaign.active or Campaign.viewer:
 		# what the (host's) base has, plus what this merc bought for himself
 		var st: Dictionary = Campaign.stash().duplicate()
+		# (0.7x) co-op: what the others' planned kits already take from the armory is not here
+		# (each one still has his free allotment)
+		var oc := Net.others_claim()
+		if not oc.is_empty():
+			var al: Dictionary = Campaign.allot()
+			for k in oc:
+				if st.has(k):
+					st[k] = int(al.get(k, 0)) + maxi(0, int(st[k]) - int(al.get(k, 0)) - int(oc[k]))
+					if int(st[k]) <= 0:
+						st.erase(k)
 		for k in merc.get("locker", {}):
 			st[k] = int(st.get(k, 0)) + int(merc["locker"][k])
 		return st
@@ -1762,16 +1848,20 @@ func car_glass_mat() -> StandardMaterial3D:
 		_car_glass_m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return _car_glass_m
 
-## (2026-11-13) Glass of sights seen from the eye: almost invisible (a faint sheen only), never dark.
+## (2026-11-13) Glass of sights seen from the eye: fully clear, never dark (2026-11-15: even a 3 %
+## tint came out as a milky blue-grey disc in Forward+ at night and indoors, so none at all).
 var _sight_glass_m: StandardMaterial3D
 func sight_glass_mat() -> StandardMaterial3D:
 	if _sight_glass_m == null:
 		_sight_glass_m = StandardMaterial3D.new()
 		_sight_glass_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		_sight_glass_m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		_sight_glass_m.albedo_color = Color(0.7, 0.85, 0.9, 0.05)
+		_sight_glass_m.albedo_color = Color(0.75, 0.9, 1.0, 0.0)
 		_sight_glass_m.cull_mode = BaseMaterial3D.CULL_DISABLED
 		_sight_glass_m.no_depth_test = false
+		# (2026-11-15) no fog on it: the volumetric fog (Forward+) turned the glass right in front
+		# of the eye into a milky blue-grey shade (worst at night and indoors)
+		_sight_glass_m.disable_fog = true
 	return _sight_glass_m
 
 # ---- camouflage: the uniform matches where the team flies ---------------------------------------

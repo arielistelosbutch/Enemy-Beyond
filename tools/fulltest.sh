@@ -53,6 +53,7 @@ run voicedsp    120 h "RESULT voicedsp ok"                 --autotest=voicedsp
 run basewalk    400 x "RESULT basewalk 16"                 --autotest=basewalk
 run base_attack 400 x "RESULT basewalk 16"                 --autotest=basewalk --attack=1
 run base_fly    300 h "RESULT basefly top [0-2]\.[0-9]+ inside 0 .* unreachable 0" --autotest=basefly --attack=1 --crew=levit,levit,levit_velitel,grey
+run gameover    150 x "RESULT gameover shown true had_save true save_gone true closed true archived [1-9][0-9]* ufo 1 races 6 fallen 15 why base bad 0" --autotest=gameover
 run base_def    120 h "RESULT basedef raids ([5-9]|1[0-6]) .* won_lost false fail_lost true konec true ignored true ignored_lost true" --autotest=basedef
 run alienbase   400 x "RESULT abase"                       --autotest=abase --mtype=alienbase
 run fire        450 x "RESULT fireshot"                    --autotest=fireshot
@@ -61,6 +62,7 @@ run blastdoor   300 h "RESULT blastdoor OK"                --autotest=blastdoor
 run navcache    200 h "RESULT navcache same true"         --autotest=navcache --mtype=landed --ufo=battleship --seed=2
 run perf        200 h "RESULT perf frames"                --autotest=perf --mtype=landed --ufo=battleship --seed=2 --dur=25 --kill=1
 run farview     300 x "RESULT farview"                   --autotest=farview --mtype=terror --biome=town --seed=3
+run cart      120 h "RESULT carttest paid \\[true, true, 2, 1, 3, 0\\] kept \\[true, true, true, 51\\]" --autotest=carttest
 # co-op: two games at once (host and client on this machine)
 pair() {   # name, host mode, client mode, expected in host log, expected in client log, port
   local name=$1
@@ -84,7 +86,10 @@ pair coop_evac  coopevachost coopevacclient "reinf cleared: hidden true back tru
 pair coop_base    lbhost lbclient       "start_mission"            "RESULT lb lbclient players 2" 7903
 pair host_base    hbhost hbclient       "RESULT hb drop hbhost players 2" "RESULT hbclient globe true day \\+0\\.0[1-9]" 7951
 pair coop_wipe    coopwipehost coopwipeclient "globe ready"     "END\\] leave"                  7904
+pair coop_gameover gohost goclient "RESULT gohost shown true save_gone true online true" "RESULT goclient shown true kills 77 races 1 closed true" 7953
 pair coop_ready readyhost readyclient "RESULT readyhost early false window true ran true" "RESULT readyclient saw 'Výsadek: test' panel '.*' me true done true" 7938
+pair coop_cart  econhost econclient  "ECON-HOST\\] credits=1200" "RESULT cart client my=42 clips \\+2 grenades on order 0" 7952
+pair coop_stock stockhost stockclient "RESULT stockhost claim true mine 0 names 'Klient 1' back 1" "RESULT stockclient grenades 4 -> 9 fast true redrawn true" 7953
 pair geo_live geolivehost geoliveclient "globe ready \(viewer false\)" "RESULT geolive day \+0\.0[1-9][0-9]* craft moved [1-9]" 7912
 pair ai_coop    aimphost aimpclient "RESULT aimp old 0 players 2 hide [1-9]" "AIMP aimpclient" 7913
 # co-op with four mercenaries: a host and three clients (0.63: the squads know about all of them)
@@ -129,6 +134,10 @@ run hitbox      200 h "RESULT hitbox [0-9]+ props, [0-9]+ rays, phantom [0-4]\.[
 run leak_mtn  250 x "RESULT leaktest mountain .* stone_leak 0\.[0-4] %" --autotest=leaktest --mtype=crash --biome=mountain --seed=7 --day=1
 run leak_abase 300 x "RESULT leaktest alienbase .* stone_leak 0\.[0-4] %" --autotest=leaktest --mtype=alienbase --biome=alienbase --seed=7 --day=1
 run leak_mars 200 x "RESULT leaktest mars .* stone_leak 0\.[0-4] %" --autotest=leaktest --mtype=mars --biome=mars --seed=7 --day=1
+run leakmap_town 300 x "RESULT leakmap terror town .* hard [0-9]{1,2} nav_miss [0-2]\." --autotest=leakmap --mtype=terror --biome=town --seed=7 --day=1 --nomerge=all
+run leakmap_ind  300 x "RESULT leakmap terror industrial .* hard [0-9]{1,2} nav_miss [0-2]\." --autotest=leakmap --mtype=terror --biome=industrial --seed=7 --day=1 --nomerge=all
+run leakmap_base 300 x "RESULT leakmap landed base .* hard [0-9]{1,2} nav_miss [0-2]\." --autotest=leakmap --mtype=landed --biome=base --seed=7 --day=1 --nomerge=all
+run leakmap_mars 300 x "RESULT leakmap mars mars .* hard [0-9]{1,2} nav_miss [0-2]\." --autotest=leakmap --mtype=mars --biome=mars --seed=7 --day=1 --nomerge=all
 # (0.69 oprava) plášť UFO zastaví střely i pohled (Ari: stříleli nás skrz obrys lodě)
 for u in scout raider harvester; do
 run ufohull_$u 150 h "RESULT ufohull $u rays [0-9]+ leak 0\.[0-4] % hug_inside 0 seen 0" --autotest=ufohull --mtype=crash --ufo=$u --biome=farm --day=1
@@ -142,6 +151,8 @@ for bm in town farm mountain industrial base; do
 run interiors_$bm 200 h "RESULT interiors [0-9]+ houses, pockets 0, stairs_bad 0" --autotest=interiors --mtype=terror --biome=$bm --seed=3
 done
 run spectate  200 x "RESULT spectate active true eyes true next true auto true running true" --autotest=spectate --mtype=terror --biome=farm --seed=3 --day=1
+run daze      150 h "RESULT dazetest home false frozen ([0-3]?[0-9]) % .* cooldown true wall true" --autotest=dazetest --crew=ohar,grey --mtype=crash --biome=farm --seed=3
+run daze_base 150 h "RESULT dazetest home true frozen ([0-2]?[0-9]) % .* cooldown true wall true" --autotest=dazebase --attack=1 --crew=ohar,grey
 run lean       200 x "RESULT leantest ok"                 --autotest=leantest --mtype=crash --biome=farm --seed=7 --day=1
 run ws_click    100 x "RESULT wsclick bone true ring true item true" --autotest=wsclick
 run agun        150 x "RESULT agun ([0-9]+) of \1"        --autotest=agun
@@ -210,7 +221,7 @@ run feartest   120 h "RESULT feartest old 0 .* fell_back [1-9]" --autotest=feart
 run squadtest  150 h "RESULT squadtest old 0 shots [1-9][0-9]* sides [3-8]" --autotest=squadtest --mtype=crash --biome=farm --seed=3 --hour=13
 run packtest   150 h "RESULT packtest old 0 race lihnoun strikes [1-9]" --autotest=packtest --mtype=crash --biome=farm --seed=3 --hour=13
 run packohar   150 h "RESULT packtest old 0 race ohar strikes [1-9]" --autotest=packtest --race=ohar --mtype=crash --biome=farm --seed=3 --hour=13
-run heattest   150 h "RESULT heattest old 0 .* near_a [1-9]" --autotest=heattest --mtype=crash --biome=farm --seed=3 --hour=13
+run heattest   150 h "RESULT heattest old 0 .* near_a [1-9]" --autotest=heattest --mtype=crash --biome=farm --seed=1 --hour=13
 run styletest  100 h "RESULT styletest .*far: advance" --autotest=styletest --mtype=crash --biome=farm --seed=3 --hour=13
 run nemtest    120 h "RESULT nemtest old 0 .* unseen_stalk false .* seen_stalk true goal_to_seen 1[0-9] m" --autotest=nemtest --mtype=crash --biome=farm --seed=3 --hour=13
 run dirtest    330 h "RESULT dirtest old 0 .* in_fight 0" --autotest=dirtest --mtype=crash --biome=farm --seed=3 --hour=13

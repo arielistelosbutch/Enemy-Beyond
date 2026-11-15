@@ -74,6 +74,7 @@ func _process(delta: float) -> void:
 		"ceiltest": CEIL.run(self, p)
 		"interiors": INTERIOR.run(self, p)
 		"spectate": preload("res://scripts/autotest_spectate.gd").run(self, p)
+		"dazetest", "dazebase": preload("res://scripts/autotest_daze.gd").run(self, p)
 		"radartest": FL.radar(self, p)
 		"transport": FL.transport(self, p)
 		"echotest", "echobase": FL2.echo(self, p)
@@ -220,7 +221,7 @@ func _process(delta: float) -> void:
 		"rocktest": _rocktest(p)
 		"hitbox": _hitbox(p)
 		"ufohull", "hullhost", "hullclient": preload("res://scripts/autotest_hull.gd").run(self, p)
-		"leaktest", "leakhost", "leakclient": preload("res://scripts/autotest_leak.gd").run(self, p)
+		"leaktest", "leakmap", "leakhost", "leakclient": preload("res://scripts/autotest_leak.gd").run(self, p)
 		"pockettest": _pockettest(p)
 		"wedgetest": _wedgetest(p)
 		"leantest": _leantest(p)
@@ -1208,6 +1209,10 @@ func _sightshot(p: Node) -> void:
 	m().hud.inventory_open = false
 	p.global_position = m().map["ufo"] + Vector3(4, 0.3, 16)
 	_aim_at(p, m().map["ufo"] + Vector3(0, 1.0, 0))
+	if Game.cmd_arg("inside", "") != "":
+		# (a dark room: the glass of the sight must not show as a haze)
+		p.global_position = m().map["ufo"] + Vector3(0, 0.3, 0)
+		_aim_at(p, m().map["ufo"] + Vector3(6, 1.2, 0))
 	p.inv.erase("lh")
 	p.inv["rh"] = {"id": "rifle", "loaded": 30}
 	p.merc = p.merc.duplicate(true)      # (the test's parts never reach the saved soldier)
@@ -1232,6 +1237,11 @@ func _sightshot(p: Node) -> void:
 						get_viewport().get_texture().get_image().save_png("user://rise_%s_%d.png" % [setup[0], f / 3])
 		await get_tree().create_timer(1.6).timeout
 		get_viewport().get_texture().get_image().save_png("user://sight_%s.png" % setup[0])
+		for mi in p.gun.find_children("*", "MeshInstance3D", true, false):
+			for i in mi.get_surface_override_material_count():
+				var om = mi.get_surface_override_material(i)
+				if om == Game.glass_mat() or om == Game.sight_glass_mat():
+					out("[GLASS] %s %s/%s surf %d -> %s visible %s" % [setup[0], mi.get_parent().name, mi.name, i, "sight" if om == Game.sight_glass_mat() else "WINDOW", mi.is_visible_in_tree()])
 		if setup[0] == "dot":
 			# walking about with the red dot at the eye: the eye must stay on the sight
 			var doff := 0

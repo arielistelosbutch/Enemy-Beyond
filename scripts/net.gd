@@ -37,8 +37,12 @@ func _ready() -> void:
 		_watch_link()
 		var sc := get_tree().current_scene
 		if multiplayer.is_server() and is_online() and Campaign.active and sc and (sc.name != "Mission" or in_own_base()):
-			broadcast_team())
+			broadcast_team()
+		report_claim())
 	add_child(tm)
+	# (0.7x) the armory changed on the host (a purchase, a delivery, the workshop, the end of a mission):
+	# the others get it at once, not up to two seconds later
+	Campaign.changed.connect(_stock_dirty)
 	var lt := Timer.new()
 	lt.wait_time = 1.0
 	lt.autostart = true
@@ -161,6 +165,8 @@ func close() -> void:
 	link = {}
 	ready_peers = {}
 	ready_wait = ""
+	claims = {}
+	_claim_sent = {}
 	if Campaign.viewer:
 		Campaign.viewer = false
 		Campaign.data = {}
@@ -185,6 +191,8 @@ func _on_peer_connected(id: int) -> void:
 
 func _on_peer_disconnected(id: int) -> void:
 	_refused.erase(id)
+	if multiplayer.is_server() and claims.erase(id):
+		_claims.rpc(claims)
 	link.erase(id)
 	if multiplayer.is_server() and ready_peers.erase(id):
 		_ready_state.rpc(ready_peers, ready_wait)
@@ -216,11 +224,12 @@ func _register(merc: Dictionary) -> void:
 		return
 	var fresh := not roster.has(id)
 	if Campaign.active:
-		# the campaign's mercenaries are kept by the host: an older copy on the client is replaced
+		# the campaign's mercenaries are kept by the host: an older copy on the client is replaced,
+		# and his own locker is the one of this campaign (Game.gear_to)
 		var kept := Campaign.keep_merc(merc)
 		if kept != merc:
+			_adopt_merc.rpc_id(id, kept, adopt_why(merc, kept))
 			merc = kept
-			_adopt_merc.rpc_id(id, merc)
 	roster[id] = {"name": str(merc.get("name", "Voják")), "merc": merc}
 	if fresh:
 		_note.rpc("%s se připojil ke hře (%d/%d)." % [roster[id]["name"], roster.size(), MAX_PLAYERS])
@@ -229,12 +238,43 @@ func _register(merc: Dictionary) -> void:
 	roster_changed.emit()
 	broadcast_team()
 
+## What the client is told when the host's record of his soldier differs from his own copy.
+static func adopt_why(mine: Dictionary, kept: Dictionary) -> String:
+	var who := str(kept.get("name", "?"))
+	if int(mine.get("missions", 0)) != int(kept.get("missions", 0)) or int(mine.get("xp", 0)) != int(kept.get("xp", 0)):
+		return "Hostitel má v kampani novější záznam o vojákovi %s - používáš ten." % who
+	if mine.get("locker", {}) != kept.get("locker", {}):
+		return "Osobní sklad vojáka %s patří ke kampani: tady má jen věci koupené v této kampani, ostatní na něj čekají v jeho kampaních." % who
+	return ""
+
 ## Client: the host's campaign has a newer record of this mercenary - play that one.
 @rpc("authority", "reliable")
-func _adopt_merc(m: Dictionary) -> void:
+func _adopt_merc(m: Dictionary, why := "") -> void:
+	m["money"] = int(Game.merc.get("money", m.get("money", 0)))    # (the purse stays ours)
 	Game.merc = m
 	Game.save_merc()
-	note.emit("Hostitel má v kampani novější záznam o vojákovi %s - používáš ten." % str(m.get("name", "?")))
+	if why != "":
+		note.emit(why)
+
+## (0.7x) Host: the campaign has just been loaded or founded while friends are connected (they joined
+## before it ran - their own copies were taken as they were): check every soldier against the record now.
+func recheck_mercs() -> void:
+	if not multiplayer.is_server() or not Campaign.active or not is_online():
+		return
+	for id in roster.keys():
+		if id == 1:
+			continue
+		var m: Dictionary = roster[id].get("merc", {})
+		if m.is_empty():
+			continue
+		var kept := Campaign.keep_merc(m)
+		if kept != m:
+			roster[id]["merc"] = kept
+			_adopt_merc.rpc_id(id, kept, adopt_why(m, kept))
+	if roster.has(1):
+		roster[1] = {"name": Game.merc["name"], "merc": Game.merc}
+		Campaign.keep_merc(Game.merc)
+	_set_roster.rpc(roster)
 
 @rpc("authority", "call_local", "reliable")
 func _set_roster(r: Dictionary) -> void:
@@ -265,6 +305,9 @@ var friendly_fire := true
 @rpc("authority", "call_local", "reliable")
 func _start(s: int, diff := "normal", params := {}, ff := true) -> void:
 	_ready_reset()
+	if not params.has("local") and String(params.get("type", "")) != "home":
+		claims = {}
+		_claim_sent = {}
 	if Game.autotest() != "": print("[NET] _start received (server %s)" % multiplayer.is_server())
 	friendly_fire = ff
 	mission_seed = s
@@ -393,6 +436,106 @@ func broadcast_team() -> void:
 	_wallets.rpc(wallets)
 	if Campaign.active:
 		_base_snapshot.rpc(Campaign.data)
+		_claims.rpc(claims)
+	_stock_push = false
+
+# ---- (0.7x) one armory for the whole team, seen the same by everybody --------------------------
+## Ari: "občas jsme neviděli to co je ve skutečnosti na skladu a obráceně". The armory is one, but
+## everybody picked his kit against the whole stock (two players each saw the same 6 magazines and
+## at the start of the mission one of them lost his), and the stock reached the others only every
+## two seconds, the open screens never redrew. Now: each player's planned kit claims what it takes
+## from the armory (beyond the free allotment and his own locker), the host keeps the claims and
+## sends them with the snapshot, and Game.stash_for leaves out what the others have claimed.
+var claims := {}            # peer -> {item: n} taken from the base armory by his planned kit
+var _claim_sent := {}
+var _stock_push := false
+signal stock_changed
+
+func _stock_dirty() -> void:
+	if not multiplayer.is_server() or not is_online() or not Campaign.active or _stock_push:
+		return
+	_stock_push = true
+	await get_tree().create_timer(0.25).timeout      # (a batch of changes goes in one snapshot)
+	if not _stock_push:
+		return
+	var sc := get_tree().current_scene
+	if sc and (sc.name != "Mission" or in_own_base()):
+		broadcast_team()
+	_stock_push = false
+
+## What my planned kit takes from the base armory (after the free allotment and my own locker).
+func my_claim() -> Dictionary:
+	if not (Campaign.active or Campaign.viewer) or Campaign.data.is_empty() or Game.skirmish:
+		return {}
+	var cnt := {}
+	for slot in Game.loadout:
+		var id := String(Game.loadout[slot])
+		if id != "" and Game.ITEMS.has(id):
+			cnt[id] = int(cnt.get(id, 0)) + 1
+	var allot: Dictionary = Campaign.allot()
+	var lk: Dictionary = Game.merc.get("locker", {})
+	var out := {}
+	for id in cnt:
+		var n := int(cnt[id]) - int(allot.get(id, 0)) - int(lk.get(id, 0))
+		if n > 0:
+			out[id] = n
+	return out
+
+## Tell the host what my kit takes (only when it changed). Not in a mission: there report_kit decides.
+func report_claim() -> void:
+	if not is_online() or not (Campaign.active or Campaign.viewer) or mission_params.has("stash"):
+		return
+	var c := my_claim()
+	if c == _claim_sent:
+		return
+	_claim_sent = c.duplicate()
+	if multiplayer.is_server():
+		_set_claim(c)
+	else:
+		_req_claim.rpc_id(1, c)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _req_claim(c: Dictionary) -> void:
+	if multiplayer.is_server():
+		_set_claim(c, multiplayer.get_remote_sender_id())
+
+func _set_claim(c: Dictionary, id := 1) -> void:
+	var clean := {}
+	for k in c:
+		if Game.ITEMS.has(String(k)) and int(c[k]) > 0:
+			clean[String(k)] = clampi(int(c[k]), 0, 99)
+	if clean.is_empty():
+		claims.erase(id)
+	else:
+		claims[id] = clean
+	_claims.rpc(claims)
+	stock_changed.emit()
+
+@rpc("authority", "call_remote", "reliable")
+func _claims(c: Dictionary) -> void:
+	claims = c
+	stock_changed.emit()
+
+## The others' claims together (what I cannot take any more).
+func others_claim() -> Dictionary:
+	var me := my_id()
+	var out := {}
+	for peer in claims:
+		if int(peer) == me:
+			continue
+		for k in claims[peer]:
+			out[k] = int(out.get(k, 0)) + int(claims[peer][k])
+	return out
+
+## Who has claimed this item (for the screens): "Petr 2, Jana 1".
+func claim_names(item: String) -> String:
+	var me := my_id()
+	var l := []
+	for peer in claims:
+		if int(peer) == me or int(claims[peer].get(item, 0)) <= 0:
+			continue
+		l.append("%s %d" % [roster.get(int(peer), {}).get("name", "?"), int(claims[peer][item])])
+	return ", ".join(l)
 
 @rpc("authority", "call_local", "reliable")
 func _wallets(w: Dictionary) -> void:
@@ -401,6 +544,7 @@ func _wallets(w: Dictionary) -> void:
 	if not multiplayer.is_server() and wallets.has(me):
 		Game.merc["money"] = int(wallets[me])
 		Game.save_merc()
+	stock_changed.emit()
 	wallets_changed.emit()
 
 ## Host on the globe: four times a second the moving parts (clock, UFOs, our crafts, reports)
@@ -434,6 +578,7 @@ func _base_snapshot(d: Dictionary) -> void:
 		Game.save_merc()
 		reregister()
 	base_changed.emit()
+	stock_changed.emit()
 
 func give_money(to: int, amount: int) -> void:
 	_req_give.rpc_id(1, to, amount)
@@ -475,6 +620,45 @@ func _req_buy(item: String) -> void:
 	Campaign.save()
 	Campaign.changed.emit()
 	_note.rpc("%s koupil pro základnu: %s." % [roster.get(from, {}).get("name", "?"), Game.ITEMS[item]["name"]])
+	broadcast_team()
+
+## (0.7x) The armory basket: a client buys several things for the host's base with his own money,
+## one request and one note for everyone (not one per piece).
+func buy_cart_for_base(cart: Dictionary) -> void:
+	if is_online() and not multiplayer.is_server():
+		_req_buy_cart.rpc_id(1, cart)
+	else:
+		Campaign.buy_many(cart)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _req_buy_cart(cart: Dictionary) -> void:
+	if not multiplayer.is_server() or not Campaign.active:
+		return
+	var from := multiplayer.get_remote_sender_id()
+	if from <= 1:
+		return
+	var got := {}
+	var spent := 0
+	for item in cart:
+		var it := String(item)
+		if not Campaign.SHOP.has(it) or not Game.ITEMS.has(it) or not Campaign.unlocked(it) or Campaign.workshop_item(it):
+			continue
+		for i in clampi(int(cart[item]), 0, 99):
+			var price: int = Campaign.price(it)
+			if int(wallets.get(from, 0)) < price:
+				break
+			_add_money(from, -price)
+			spent += price
+			Campaign.order(it)
+			got[it] = int(got.get(it, 0)) + 1
+	if got.is_empty():
+		return
+	Campaign.save()
+	Campaign.changed.emit()
+	var names := []
+	for it in got:
+		names.append("%d× %s" % [int(got[it]), Game.ITEMS[it]["short"]])
+	_note.rpc("%s koupil pro základnu (%d kr): %s." % [roster.get(from, {}).get("name", "?"), spent, ", ".join(names)])
 	broadcast_team()
 
 ## (0.7x) Anyone (the host too) buys a Sokol for the hangar from his own money.

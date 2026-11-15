@@ -1677,7 +1677,7 @@ func _house(o: Vector3) -> void:
 	_kitchen(c + Vector3(0.45, 0.1, 4.4), false, 1.2)
 	# the yard: a well, firewood, washing on the line or the hen house
 	_prop("well", o + Vector3(1.0, 0, 10.9), rng.randf() * TAU)
-	_prop("woodpile", o + Vector3(11.2, 0, 6.0), PI / 2)
+	_prop("woodpile", o + Vector3(11.2, 0, 3.9), PI / 2)     # (0.70: off the middle - it is solid now and stood in the next house's side door)
 	if rng.randf() < 0.5:
 		_prop("laundry", o + Vector3(6.5, 0, 10.9), 0.0, false)
 	else:
@@ -1830,10 +1830,10 @@ func _forklift(fp: Vector3, yaw: float) -> void:
 	var grey := Game.color_mat(Color(0.3, 0.3, 0.32))
 	var at := func(off: Vector3) -> Vector3: return fp + off.rotated(Vector3.UP, yaw)
 	box(at.call(Vector3(0, 0.62, 0.15)), Vector3(1.1, 0.7, 1.7), yel, true, yaw)            # body
-	box(at.call(Vector3(0, 0.95, 0.85)), Vector3(1.1, 0.5, 0.45), yel, false, yaw)          # counterweight at the back
+	box(at.call(Vector3(0, 0.95, 0.85)), Vector3(1.1, 0.5, 0.45), yel, true, yaw)           # counterweight at the back
 	for wx in [-0.56, 0.56]:
 		for wz in [-0.45, 0.75]:
-			box(at.call(Vector3(wx, 0.3, wz)), Vector3(0.22, 0.6, 0.6), blk, false, yaw)     # wheels
+			box(at.call(Vector3(wx, 0.3, wz)), Vector3(0.22, 0.6, 0.6), blk, true, yaw)      # wheels
 	box(at.call(Vector3(0, 1.1, 0.25)), Vector3(0.5, 0.12, 0.5), blk, false, yaw)            # seat
 	for cx in [-0.5, 0.5]:
 		for cz in [-0.3, 0.75]:
@@ -1934,7 +1934,7 @@ func _house2(o: Vector3) -> void:
 	_kitchen(c + Vector3(0.45, 0.1, 5.0), false, 2.0)
 	_rug(c + Vector3(2.0, 0, 2.2), Vector2(2.6, 1.8), Color(0.25, 0.3, 0.5))
 	_rug(up + Vector3(3.0, 0.0, 5.8), Vector2(2.0, 1.4), Color(0.5, 0.35, 0.2))
-	_prop("woodpile", o + Vector3(11.2, 0, 6.0), PI / 2)
+	_prop("woodpile", o + Vector3(11.2, 0, 3.9), PI / 2)     # (0.70: off the middle - it is solid now and stood in the next house's side door)
 	_cover(c + Vector3(3.6, 0, -1.0)); _cover(c + Vector3(1.0, 0, 1.0)); _cover(up + Vector3(2.0, 0.1, 1.0)); _cover(up + Vector3(6.0, 0.1, 5.5))
 	info["waypoints"].append(c + Vector3(2, 0, 3))
 	info["waypoints"].append(up + Vector3(3, 0.1, 5.5))
@@ -2221,7 +2221,7 @@ func _containers(o: Vector3) -> void:
 			box(p + Vector3(0, 2.55, 3.0), Vector3(2.5, 0.1, 6.0), m)
 			box(p + Vector3(0, 1.3, 6.0), Vector3(2.5, 2.6, 0.1), m)
 			box(p + Vector3(0, 0.05, 3.0), Vector3(2.4, 0.1, 6.0), Game.mat("planks", 1.0), false)
-			box(p + Vector3(-1.6, 1.3, -0.3), Vector3(0.08, 2.5, 1.1), m, false, 0.6)
+			box(p + Vector3(-1.6, 1.3, -0.3), Vector3(0.08, 2.5, 1.1), m, true, 0.6)     # (the open door: steel, 0.70 solid)
 			_crate(p + Vector3(0.3, 0, 4.6), 0.9)
 			info["waypoints"].append(p + Vector3(0, 0, 3.0))
 		else:
@@ -2399,6 +2399,7 @@ func _hangar(o: Vector3) -> void:
 	root.add_child(jet)
 	jet.position = c + Vector3(w / 2, 1.0, d / 2 + 0.5)
 	jet.rotation.y = PI
+	_solid_mesh(jet)       # 0.70: you walked through its wings and tail
 	box(c + Vector3(w / 2, 0.5, d / 2 + 0.5), Vector3(2.2, 1.0, 5.5), Game.mat("metal", 0.5))   # the stand (cover)
 	for i in 3:
 		_prop("workbench", c + Vector3(0.75, 0, 2.5 + i * 2.4), -PI / 2, false)
@@ -2499,7 +2500,7 @@ func _sofa(p: Vector3, yaw: float, col: Color) -> void:
 	for sx in [-0.43, 0.43]:
 		box(_at(p, yaw, Vector3(sx, 0.45, -0.07)), Vector3(0.84, 0.15, 0.64), m2, false, yaw)    # seat cushions
 		box(_at(p, yaw, Vector3(sx, 0.68, 0.2)), Vector3(0.82, 0.42, 0.16), m2, false, yaw)      # back cushions
-	box(_at(p, yaw, Vector3(0, 0.62, 0.35)), Vector3(1.96, 0.5, 0.16), m, false, yaw)          # the back
+	box(_at(p, yaw, Vector3(0, 0.62, 0.35)), Vector3(1.96, 0.5, 0.16), m, true, yaw)           # the back (0.70: solid)
 	for sx in [-0.9, 0.9]:
 		box(_at(p, yaw, Vector3(sx, 0.55, 0)), Vector3(0.16, 0.36, 0.86), m, false, yaw)        # arms
 
@@ -2511,7 +2512,7 @@ func _tv_unit(p: Vector3, yaw: float) -> void:
 	box(_at(p, yaw, Vector3(0, 0.3, -0.226)), Vector3(0.012, 0.5, 0.01), dark, false, yaw)
 	for sx in [-0.08, 0.08]:
 		box(_at(p, yaw, Vector3(sx, 0.42, -0.235)), Vector3(0.03, 0.08, 0.03), Game.color_mat(Color(0.7, 0.65, 0.5), false, 0.6, 0.4), false, yaw)
-	box(_at(p, yaw, Vector3(0.15, 0.85, 0.02)), Vector3(0.66, 0.5, 0.42), Game.color_mat(Color(0.16, 0.15, 0.14)), false, yaw)     # the set
+	box(_at(p, yaw, Vector3(0.15, 0.85, 0.02)), Vector3(0.66, 0.5, 0.42), Game.color_mat(Color(0.16, 0.15, 0.14)), true, yaw)      # the set
 	var tv := box(_at(p, yaw, Vector3(0.12, 0.86, -0.195)), Vector3(0.5, 0.38, 0.02), Game.color_mat(Color(0.05, 0.08, 0.1)), false, yaw)
 	tv.set_meta("screen", true)
 	box(_at(p, yaw, Vector3(0.4, 0.75, -0.195)), Vector3(0.06, 0.18, 0.02), Game.color_mat(Color(0.3, 0.3, 0.3)), false, yaw)     # knobs
@@ -2600,7 +2601,7 @@ func _house_chair(p: Vector3, yaw := 0.0, mat: Material = null) -> void:
 	for sx in [-0.18, 0.18]:
 		for sz in [-0.18, 0.18]:
 			box(_at(p, yaw, Vector3(sx, 0.21, sz)), Vector3(0.04, 0.42, 0.04), m, false, yaw)
-	box(_at(p, yaw, Vector3(0, 0.72, 0.19)), Vector3(0.42, 0.5, 0.04), m, false, yaw)
+	box(_at(p, yaw, Vector3(0, 0.72, 0.19)), Vector3(0.42, 0.5, 0.04), m, true, yaw)
 
 ## A bed: the frame, the mattress, a pillow, a blanket over two thirds, the headboard.
 func _bed(p: Vector3, yaw: float, col: Color, single := true) -> void:
@@ -2661,7 +2662,7 @@ func _shop(o: Vector3) -> void:
 		box(ax + Vector3(0, 0.8, 0), Vector3(0.36, 1.6, 3.1), Game.mat("metal", 0.5))          # the back panel (solid)
 		box(ax + Vector3(0, 0.06, 0), Vector3(0.72, 0.12, 3.1), Game.color_mat(Color(0.2, 0.2, 0.22)), false)
 		for zz in [-1.58, 1.58]:
-			box(ax + Vector3(0, 0.82, zz), Vector3(0.76, 1.64, 0.04), shelf_m, false)        # the ends
+			box(ax + Vector3(0, 0.82, zz), Vector3(0.76, 1.64, 0.04), shelf_m, true)         # the ends (0.70: solid)
 		for lv in 4:
 			var ly := 0.14 + lv * 0.44
 			box(ax + Vector3(0, ly, 0), Vector3(0.74, 0.025, 3.12), shelf_m, false)
@@ -2903,6 +2904,8 @@ func _skyranger(o: Vector3) -> void:
 		if r:
 			var tw := (Engine.get_main_loop() as SceneTree).create_tween().bind_node(r).set_loops()
 			tw.tween_property(r, "rotation:y", TAU if rn != "PropL" else -TAU, 2.6 if rn in ["RotorF", "PropL"] else 2.9).as_relative()
+	if not heli:
+		_ship_shell(ship)
 	var first := root.get_child_count()
 	# fuselage pointing away from the map (nose at -z), ramp open towards +z
 	box(c + Vector3(-1.6, 1.4, 0), Vector3(0.3, 2.8, 8), m)
@@ -2926,6 +2929,48 @@ func _skyranger(o: Vector3) -> void:
 	info["door"] = c + Vector3(0, 0.15, 4.0)      # hinge of the rear ramp (closed until the prep is over)
 	for i in 4:
 		info["player_spawns"].append(c + Vector3(-0.8 + (i % 2) * 1.6, 0.3, 1.5 + (i / 2) * 1.6))
+
+## 0.70: solid exactly as you see it, from both sides (the Mars HQ, the jet in the hangar).
+func _solid_mesh(n: Node3D) -> void:
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		if not (mi as MeshInstance3D).visible or (mi as MeshInstance3D).mesh == null:
+			continue
+		(mi as MeshInstance3D).create_trimesh_collision()
+		for cs in (mi as Node).find_children("*", "CollisionShape3D", true, false):
+			if (cs as CollisionShape3D).shape is ConcavePolygonShape3D:
+				((cs as CollisionShape3D).shape as ConcavePolygonShape3D).backface_collision = true
+
+## 0.70 (Ari: „protékají dílky“): the transport's outside is solid as you see it - the boxes only
+## made the cabin, you walked into the nose, the wings' roots and the engine pods. Every
+## triangle of the hull except those of the cabin (the boxes and the open ramp side stay as they
+## were, so the team still stands and spawns inside), one concave shape, hit from both sides.
+func _ship_shell(ship: Node3D) -> void:
+	var cabin := AABB(Vector3(-1.75, -0.3, -4.2), Vector3(3.5, 3.4, 11.5))
+	for nm in ["Kondor", "Pelikan"]:
+		var mi := ship.find_child(nm, true, false) as MeshInstance3D
+		if mi == null or mi.mesh == null:
+			continue
+		var xf: Transform3D = FitCollision.rel(mi, ship)
+		var faces := PackedVector3Array()
+		var tri := mi.mesh.get_faces()
+		for t in range(0, tri.size() - 2, 3):
+			var a: Vector3 = xf * tri[t]
+			var b: Vector3 = xf * tri[t + 1]
+			var cc: Vector3 = xf * tri[t + 2]
+			if cabin.has_point((a + b + cc) / 3.0):
+				continue
+			faces.append_array([a, b, cc])
+		if faces.is_empty():
+			continue
+		var sh := ConcavePolygonShape3D.new()
+		sh.set_faces(faces)
+		sh.backface_collision = true
+		var sb := StaticBody3D.new()
+		sb.name = "Shell"
+		var cs := CollisionShape3D.new()
+		cs.shape = sh
+		sb.add_child(cs)
+		ship.add_child(sb)
 
 func _ufo(center: Vector3) -> void:
 	info["ufo"] = center
@@ -3482,6 +3527,7 @@ func _mars() -> void:
 	root.add_child(hq)
 	hq.position = center
 	hq.rotation.y = PI            # the tunnel faces the landing site (-Z)
+	_solid_mesh(hq)     # 0.70: the dome's sloping foot ran 4 m outside the wall boxes
 	info["ufo"] = center
 	info["pylons"] = []
 	var xf: Transform3D = hq.transform

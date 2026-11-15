@@ -61,6 +61,8 @@ func _ready() -> void:
 	_toast.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
 	add_child(_toast)
 	Net.note.connect(_on_note)
+	Net.stock_changed.connect(_live_dirty)
+	Campaign.changed.connect(_live_dirty)
 	Campaign.mission_found.connect(func(m): Game.play_ui(self, "radar_alert", -4); _alert("RADAR: %s\n%s\n%s" % [Campaign.MTYPES[m["type"]]["name"], m["place"], Campaign.MTYPES[m["type"]]["text"]]); selected = int(m["id"]); _focus(m))
 	Campaign.flight_found.connect(func(f): Game.play_ui(self, "radar_ping", -4); _alert("RADAR: UFO V LETU\n%s nad oblastí %s.\nVyber ho na glóbu a vyšli stíhačky, než zmizí." % [Campaign.UFO_NAMES[f["kind"]], Campaign.nearest_place(float(f["lat"]), float(f["lon"]))]); selected = int(f["id"]); _focus(f))
 	Campaign.research_done.connect(func(id):
@@ -70,7 +72,16 @@ func _ready() -> void:
 		if ent != "" and popup:
 			var box: VBoxContainer = popup.get_child(0)
 			_btn(box, "Otevřít v encyklopedii", func(): _show_archive(ent), 9))
-	Campaign.report.connect(func(txt): Game.play_ui(self, "warning_alarm" if String(txt).begins_with("KONEC") or "MÍNUSU" in String(txt) else "money", -6); _alert(txt))
+	Campaign.report.connect(func(txt):
+		Game.play_ui(self, "warning_alarm" if String(txt).begins_with("KONEC") or "MÍNUSU" in String(txt) else "money", -6)
+		if String(txt).begins_with("KONEC") and Campaign.is_over():
+			_show_end()          # (0.7x: the end of the campaign has its own screen)
+		else:
+			_alert(txt))
+	Net.base_changed.connect(func():
+		# a co-op mate: the host's campaign ended while we look at his globe
+		if Campaign.viewer and Campaign.is_over() and _end_screen == null:
+			_show_end())
 	# the hum of the control room under everything
 	var hum := AudioStreamPlayer.new()
 	hum.stream = Game.loop_stream("geoscape_hum")
@@ -93,18 +104,18 @@ func _ready() -> void:
 		var lr := Net.last_result
 		if lr.begins_with("KONEC"):
 			Game.play_ui(self, "warning_alarm", -6)      # (the base fell: the campaign is over)
-			_alert(lr)
+			_show_end.call_deferred()
 		else:
 			_alert("NÁVRAT Z MISE\n" + lr)
 		Net.last_result = ""
-	elif Campaign.data.get("lost", false):
-		# a lost campaign (also a co-op mate back from the fallen base): say why the clock stands
-		var lg: Array = Campaign.data.get("log", [])
-		_alert("KONEC\n" + (String(lg[-1]) if not lg.is_empty() else "Projekt X skončil."))
-	if Campaign.won() and not Campaign.data.get("won_shown", false):
+	elif Campaign.is_over():
+		# a lost campaign (also a co-op mate back from the fallen base): the end screen
+		_show_end.call_deferred()
+	if Campaign.won() and not Campaign.data.get("won_shown", false) and not Campaign.is_over():
 		Campaign.data["won_shown"] = true
 		Campaign.save()
 		Game.play_music("victory", false)
+		_show_end.call_deferred()
 		_alert("VÍTĚZSTVÍ\nVelký mozek je mrtvý a velín na Marsu utichl. UFO padají z nebe jako mrtví ptáci, Šediváci v lesích jen stojí a dívají se do tmy.\nVojáci přežili noc, která neměla konec.\n\nOPERACE X - ENEMY BEYOND\nPocta UFO: Enemy Unknown - fanouškovská hra, ne na prodej.\nNápad a hra: Ari (Ivo Arielistelos Florek).\nKampaň můžeš hrát dál.")
 	_autotest.call_deferred()
 
@@ -1193,6 +1204,85 @@ func _begin_escort(c: Dictionary) -> void:
 		Net.mission_params = ep
 		Game.load_scene("res://scenes/Escort.tscn")
 
+## (0.7x, Ari 2026-11-15) The end of the campaign: a screen with the war in numbers. Lost: the host /
+## solo player's save is deleted right here (Campaign.close_campaign - hardcore, no way back) and the
+## co-op mates see the same screen; the only way on is back to the menu (the lobby stays in co-op).
+## Won: the same screen, then the campaign goes on.
+var _end_screen: Control
+func _show_end() -> void:
+	if _end_screen != null:
+		return
+	var s: Dictionary = Campaign.close_campaign()
+	if not s["won"]:
+		_close_popup()       # (the win keeps its alert under the screen - it shows after "Pokračovat")
+	var acts := []
+	if s["won"]:
+		acts.append(["Pokračovat v kampani", func(): _end_screen.queue_free(); _end_screen = null])
+	else:
+		Game.play_music("game_over")
+		if Campaign.viewer:
+			acts.append(["Zpět do lobby", func(): get_tree().change_scene_to_file("res://scenes/Main.tscn")])
+		else:
+			acts.append(["Do hlavního menu" if not Net.is_online() else "Zpět do lobby", _end_leave])
+	_end_screen = preload("res://scripts/campaign_end.gd").new()
+	_end_screen.setup(s, acts)
+	add_child(_end_screen)
+	if Game.autotest() != "": print("[END] screen won %s why %s missions %d kills %d fallen %d save %s" % [s["won"], s["why"], s["missions"], s["kills"], s["fallen"], Campaign.has_save()])
+
+## --autotest=gameover: a long lost campaign (stats, kills by race, the fallen, an air fight), the
+## base falls (the real report path) -> the end screen, the save deleted, nothing writes it back,
+## the record of ended campaigns; then a won campaign: the same screen, the save stays.
+## Snapshots gameover_lost.png / gameover_won.png; a UI audit of the screen (also with long names).
+func _test_gameover() -> void:
+	Campaign.data["base_pick"] = false
+	var st: Dictionary = Campaign.data["stats"]
+	st["missions"] = 23; st["won"] = 17; st["kills"] = 141; st["captures"] = 6
+	st["civ_saved"] = 38; st["civ_dead"] = 11; st["earned"] = 18450
+	Campaign.count_kills({"grey": 61, "grey_velitel": 4, "levit": 22, "jestetan": 31, "bijec": 9, "diskoll": 7})
+	var fl := []
+	for i in 15:
+		fl.append({"n": "Vojín Maxmilián Dlouhojmenný-Novotný %d" % i if i == 0 else "Voják %d" % i, "f": "cz", "m": "Havárie UFO - Jižní Morava", "k": i % 5, "mia": i % 4 == 0})
+	Campaign.add_fallen(fl)
+	Campaign.data["mercs"] = {"Ari": {"name": "Ari", "kills": 52, "missions": 21}, "Voják 3": {"name": "Voják 3", "kills": 12, "missions": 9}}
+	Campaign.data["day"] = 97.4
+	var f := {"id": 999, "kind": "raider", "lat": 49.0, "lon": 15.0}
+	Campaign.data["flights"].append(f)
+	Campaign.intercept_done(999, "crashed", "raider", 80.0)
+	await get_tree().create_timer(0.3).timeout
+	var had := Campaign.has_save()
+	Campaign.report.emit(Campaign._base_fell("Obrana selhala."))
+	await get_tree().create_timer(0.6).timeout
+	var shown := _end_screen != null
+	Campaign.save()
+	var gone := not Campaign.has_save()
+	var past := Campaign.past_campaigns()
+	var bad := preload("res://scripts/autotest_facelift.gd").fit(_end_screen, "gameover_lost") if shown else -1
+	if DisplayServer.get_name() != "headless":
+		get_viewport().get_texture().get_image().save_png("user://gameover_lost.png")
+	var s0: Dictionary = past[0] if not past.is_empty() else {}
+	print("RESULT gameover shown %s had_save %s save_gone %s closed %s archived %d ufo %d races %d fallen %d why %s bad %d" % [shown, had, gone,
+		Campaign.data.get("closed", false), past.size(), int(s0.get("ufo_down", -1)), (s0.get("races", []) as Array).size(), int(s0.get("fallen", 0)), Campaign.data.get("end_why", ""), bad])
+	# the win: same screen, the campaign goes on
+	_end_screen.queue_free()
+	_end_screen = null
+	Campaign.new_campaign("normal")
+	Campaign.data["base_pick"] = false
+	Campaign.data["won"] = true
+	Campaign.data["stats"]["missions"] = 3
+	_show_end()
+	await get_tree().create_timer(0.5).timeout
+	var wb := preload("res://scripts/autotest_facelift.gd").fit(_end_screen, "gameover_won")
+	if DisplayServer.get_name() != "headless":
+		get_viewport().get_texture().get_image().save_png("user://gameover_won.png")
+	print("RESULT gamewon shown %s save %s won %s bad %d" % [_end_screen != null, Campaign.has_save(), Campaign.summary()["won"], wb])
+
+func _end_leave() -> void:
+	Campaign.active = false
+	Campaign.data = {}
+	if Net.is_online():
+		Game.open_screen = "lobby"      # (the friends stay connected - a new campaign together)
+	get_tree().change_scene_to_file("res://scenes/Main.tscn")
+
 func _host() -> void:
 	if Net.is_online():
 		_alert("Co-op už běží. Kamarádi se připojí přes 'Připojit ke hře' na tvou IP.\nPřipojeno: %d" % Net.roster.size())
@@ -1213,6 +1303,7 @@ func _menu_screen(which: String) -> void:
 # ---- overlays ---------------------------------------------------------------------------------------
 func _overlay(title: String, w := 400.0) -> VBoxContainer:
 	_close_popup()
+	_live_kind = ""
 	popup = PanelContainer.new()
 	_style(popup, Color(0.04, 0.07, 0.15, 0.98))
 	popup.position = Vector2((640 - w) / 2, 14)
@@ -1239,6 +1330,7 @@ func _scroll(box: VBoxContainer, h := 280.0) -> VBoxContainer:
 	return inner
 
 func _close_popup() -> void:
+	_live_kind = ""
 	if popup:
 		popup.queue_free()
 		popup = null
@@ -1307,56 +1399,300 @@ func _show_research() -> void:
 	rs.on_changed = func(): _update_text()
 	rs.on_close = func(): _update_text()
 
-func _show_armory() -> void:
-	var box := _overlay("ZBROJNICE - NÁKUP", 500)
-	var base_pay := "ze svých peněz" if Campaign.viewer else "z rozpočtu základny (%d kr)" % int(Campaign.data["credits"])
-	_lbl(box, "Běžná výbava od dodavatelů, ve skladu je druhý den. DO SKLADU = pro celý tým natrvalo, platí se %s. SOBĚ = jen do tvé skříňky, ze tvých peněz (%d kr). Co jsme vyzkoumali, nikdo neprodá - to vyrábí dílna." % [base_pay, Net.my_money()], FRAME, 8).custom_minimum_size = Vector2(480, 0)
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 8)
-	_scroll(box, 215).add_child(grid)
-	var locker: Dictionary = Game.merc.get("locker", {})
+## (0.7x) The armory shop with a basket: pick what you want (to the base store or for yourself),
+## see the totals, then one "Potvrdit nákup". The basket stays while the game runs, until bought or emptied.
+## Co-op: a client pays both parts from his own money; the base part goes to the host in one request
+## (Net.buy_cart_for_base), the host buys what the wallet covers and tells everyone once.
+var _cart := {"base": {}, "me": {}}
+var _cart_cat := "all"
+var _cart_box: VBoxContainer
+var _arm_list: VBoxContainer
+var _arm_scroll := 0
+var _arm_rows := {}      # item -> [button, base text] (the goods list marks what is in the basket)
+
+const ARM_CATS := [["all", "Vše"], ["ammo", "Munice"], ["weapon", "Zbraně"], ["grenade", "Granáty"], ["gear", "Výstroj"]]
+
+static func _arm_cat(id: String) -> String:
+	var ty := String(Game.ITEMS.get(id, {}).get("type", ""))
+	match ty:
+		"ammo": return "ammo"
+		"weapon", "melee": return "weapon"
+		"grenade", "flare": return "grenade"
+	return "gear"
+
+## What the shop sells right now (research and the workshop decide).
+func _arm_items() -> Array:
+	var out := []
 	for id in Campaign.SHOP:
-		if not Game.ITEMS.has(id) or Campaign.workshop_item(id):
+		if Game.ITEMS.has(id) and not Campaign.workshop_item(id) and Campaign.unlocked(id):
+			out.append(String(id))
+	return out
+
+func _cart_clean() -> void:
+	var ok := _arm_items()
+	for side_k in _cart:
+		var c: Dictionary = _cart[side_k]
+		for id in c.keys():
+			if not id in ok or int(c[id]) <= 0:
+				c.erase(id)
+
+func _cart_sum(side_k: String) -> int:
+	var s := 0
+	for id in _cart[side_k]:
+		s += Campaign.price(id) * int(_cart[side_k][id])
+	return s
+
+func _cart_count() -> int:
+	var n := 0
+	for side_k in _cart:
+		for id in _cart[side_k]:
+			n += int(_cart[side_k][id])
+	return n
+
+func _cart_add(side_k: String, id: String, n: int) -> void:
+	var c: Dictionary = _cart[side_k]
+	c[id] = clampi(int(c.get(id, 0)) + n, 0, 99)
+	if int(c[id]) <= 0:
+		c.erase(id)
+	Game.play_ui(self, "ui_click", -14)
+	_cart_draw()
+
+## Open stock screens redraw by themselves when the store changes (a teammate bought,
+## the workshop finished, the host's snapshot came, someone packed kit for the mission),
+## so nobody looks at numbers that are no longer true.
+var _live_kind := ""
+var _live_sig := ""
+var _live_wait := false
+
+func _stock_sig() -> String:
+	var d: Dictionary = Campaign.data
+	return str([d.get("armory", {}), d.get("orders", []), int(d.get("credits", 0)), d.get("found", {}), d.get("moskovium", 0), Net.claims, int(Game.merc.get("money", 0)), Game.merc.get("locker", {})])
+
+func _live_mark(kind: String) -> void:
+	_live_kind = kind
+	_live_sig = _stock_sig()
+
+func _live_dirty(_a = null) -> void:
+	if _live_kind == "" or _live_wait:
+		return
+	_live_wait = true
+	await get_tree().create_timer(0.15).timeout
+	_live_wait = false
+	if _live_kind == "" or not is_instance_valid(popup) or _stock_sig() == _live_sig:
+		return
+	match _live_kind:
+		"armory": _show_armory()
+		"workshop": _show_workshop()
+		"sell": _show_sell()
+
+func _show_armory() -> void:
+	_cart_clean()
+	var box := _overlay("ZBROJNICE - NÁKUP", 612)
+	_live_mark("armory")
+	popup.position.y = 6
+	var base_pay := "ze svých peněz" if Campaign.viewer else "z rozpočtu základny"
+	_lbl(box, "Vyber do košíku, pak potvrď. DO SKLADU = pro celý tým natrvalo (platí se %s), SOBĚ = jen do tvé skříňky z tvých peněz. Ve skladu je to druhý den. Shift + klik = 5 kusů. Vyzkoumané věci vyrábí dílna." % base_pay, FRAME, 7).custom_minimum_size = Vector2(596, 0)
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 3)
+	box.add_child(tabs)
+	for c in ARM_CATS:
+		var ck: String = c[0]
+		var tb := _btn(tabs, c[1], func():
+			_cart_cat = ck
+			_arm_scroll = 0
+			_show_armory(), 8)
+		tb.custom_minimum_size = Vector2(58, 18)
+		if ck == _cart_cat:
+			tb.add_theme_color_override("font_color", ACCENT)
+			tb.add_theme_color_override("font_hover_color", ACCENT)
+			tb.text = "[%s]" % c[1]
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 6)
+	box.add_child(cols)
+	# left: the goods
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(340, 236)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	cols.add_child(sc)
+	_arm_list = VBoxContainer.new()
+	_arm_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_arm_list.add_theme_constant_override("separation", 2)
+	sc.add_child(_arm_list)
+	sc.get_v_scroll_bar().value_changed.connect(func(v): _arm_scroll = int(v))
+	var locker: Dictionary = Game.merc.get("locker", {})
+	var shown := 0
+	_arm_rows = {}
+	for id in _arm_items():
+		if _cart_cat != "all" and _arm_cat(id) != _cart_cat:
 			continue
+		shown += 1
 		var key: String = id
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 2)
-		grid.add_child(row)
+		_arm_list.add_child(row)
 		var arm_n := int(Campaign.data["armory"].get(id, 0))
 		var ord_n := Campaign.on_order(id)
-		var name_b := _btn(row, "%s  %d kr\nsklad %d%s, tvoje %d" % [Game.ITEMS[id]["short"], Campaign.price(id), arm_n, (" +%d zítra" % ord_n) if ord_n > 0 else "", int(locker.get(id, 0))], func(): pass, 8)
-		name_b.custom_minimum_size = Vector2(150, 24)
+		var taken := Net.claim_names(key)
+		var name_b := _btn(row, "%s  %d kr\nsklad %d%s, tvoje %d%s" % [Game.ITEMS[id]["short"], Campaign.price(id), arm_n, (" +%d zítra" % ord_n) if ord_n > 0 else "", int(locker.get(id, 0)), ("  (bere si: %s)" % taken) if taken != "" else ""], func(): pass, 8)
+		name_b.custom_minimum_size = Vector2(228, 24)
+		name_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		name_b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		name_b.clip_text = true
 		UiSkin.item_icon(name_b, key, 30)
-		var bb := _btn(row, "Sklad", func():
-			if Campaign.viewer:
-				if Net.my_money() < Campaign.price(key):
-					_alert("Nelze koupit\nNemáš dost peněz.")
-					return
-				Net.buy_for_base(key)
-				await get_tree().create_timer(0.5).timeout
-				_show_armory()
-			elif Campaign.buy(key):
-				Game.play_ui(self, "money", -10)
-				_show_armory()
-			else: _alert("Nelze koupit\nV rozpočtu základny není dost kreditů."), 8)
-		bb.custom_minimum_size = Vector2(38, 24)
-		var mb := _btn(row, "Sobě", func():
-			if Game.buy_for_me(key): Game.play_ui(self, "money", -10); _show_armory()
-			else: _alert("Nelze koupit\nNemáš dost vlastních peněz."), 8)
-		mb.custom_minimum_size = Vector2(38, 24)
+		_arm_rows[key] = [name_b, name_b.text]
+		var bb := _btn(row, "+ Sklad", func(): _cart_add("base", key, 5 if Input.is_key_pressed(KEY_SHIFT) else 1), 8)
+		bb.custom_minimum_size = Vector2(48, 24)
+		var mb := _btn(row, "+ Sobě", func(): _cart_add("me", key, 5 if Input.is_key_pressed(KEY_SHIFT) else 1), 8)
+		mb.custom_minimum_size = Vector2(48, 24)
+	if shown == 0:
+		_lbl(_arm_list, "V této skupině teď nic neprodávají.", FRAME, 8)
+	# right: the basket
+	var cp := PanelContainer.new()
+	_style(cp, Color(0.03, 0.05, 0.10, 0.95))
+	cp.custom_minimum_size = Vector2(250, 236)
+	cols.add_child(cp)
+	_cart_box = VBoxContainer.new()
+	_cart_box.add_theme_constant_override("separation", 2)
+	cp.add_child(_cart_box)
+	_cart_draw()
 	var foot := HBoxContainer.new()
 	foot.add_theme_constant_override("separation", 6)
 	box.add_child(foot)
 	_btn(foot, "Dílna - výroba...", _show_workshop, 9)
 	_btn(foot, "Prodat ze skladu a kořisti...", _show_sell, 9)
-	_btn(box, "Zavřít", _close_popup)
+	var sp := Control.new()
+	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	foot.add_child(sp)
+	_btn(foot, "Zavřít", _close_popup, 9)
+	# keep the list where it was (rebuilt after a tab change or a purchase)
+	var want := _arm_scroll
+	await get_tree().process_frame
+	if is_instance_valid(sc):
+		sc.scroll_vertical = want
+
+## Only the basket panel is redrawn on +/-, so the goods list keeps its scroll.
+func _cart_draw() -> void:
+	if not is_instance_valid(_cart_box):
+		return
+	for ch in _cart_box.get_children():
+		ch.queue_free()
+	for id in _arm_rows:
+		var r: Array = _arm_rows[id]
+		if not is_instance_valid(r[0]):
+			continue
+		var inn := int(_cart["base"].get(id, 0)) + int(_cart["me"].get(id, 0))
+		(r[0] as Button).text = String(r[1]) + (("  [v košíku %d]" % inn) if inn > 0 else "")
+		if inn > 0: (r[0] as Button).add_theme_color_override("font_color", ACCENT)
+		else: (r[0] as Button).remove_theme_color_override("font_color")
+	var head := _lbl(_cart_box, "KOŠÍK (%d ks)" % _cart_count(), ACCENT, 9)
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(0, 128)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_cart_box.add_child(sc)
+	var lines := VBoxContainer.new()
+	lines.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lines.add_theme_constant_override("separation", 1)
+	sc.add_child(lines)
+	if _cart_count() == 0:
+		_lbl(lines, "Prázdný. Přidej věci tlačítky + Sklad / + Sobě.", FRAME, 7).custom_minimum_size = Vector2(230, 0)
+	for side_k in ["base", "me"]:
+		var c: Dictionary = _cart[side_k]
+		if c.is_empty():
+			continue
+		_lbl(lines, "DO SKLADU" if side_k == "base" else "SOBĚ", FRAME, 7)
+		for id in c:
+			var key: String = id
+			var sk: String = side_k
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 1)
+			lines.add_child(row)
+			var l := _lbl(row, "%d× %s  %d kr" % [int(c[id]), Game.ITEMS[id]["short"], Campaign.price(id) * int(c[id])], TEXT, 7)
+			l.autowrap_mode = TextServer.AUTOWRAP_OFF
+			l.clip_text = true
+			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			l.custom_minimum_size = Vector2(150, 0)
+			for e in [["-", -1], ["+", 1]]:
+				var d: int = e[1]
+				_btn(row, e[0], func(): _cart_add(sk, key, d * (5 if Input.is_key_pressed(KEY_SHIFT) else 1)), 7).custom_minimum_size = Vector2(18, 16)
+			_btn(row, "x", func(): _cart_add(sk, key, -999), 7).custom_minimum_size = Vector2(18, 16)
+	# totals against the money
+	var sb := _cart_sum("base")
+	var sm := _cart_sum("me")
+	var mine := Net.my_money()
+	if Campaign.viewer:
+		var all := sb + sm
+		_lbl(_cart_box, "Do skladu %d kr + sobě %d kr" % [sb, sm], TEXT, 7)
+		_lbl(_cart_box, "Celkem %d kr, máš %d kr" % [all, mine], RED if all > mine else ACCENT, 8)
+	else:
+		var cr := int(Campaign.data["credits"])
+		_lbl(_cart_box, "Do skladu %d kr (rozpočet %d kr)" % [sb, cr], RED if sb > cr else TEXT, 7)
+		_lbl(_cart_box, "Sobě %d kr (tvoje peníze %d kr)" % [sm, mine], RED if sm > mine else TEXT, 7)
+		_lbl(_cart_box, "Celkem %d kr" % (sb + sm), ACCENT, 8)
+	var row2 := HBoxContainer.new()
+	row2.add_theme_constant_override("separation", 3)
+	_cart_box.add_child(row2)
+	var ok := _btn(row2, "Potvrdit nákup", _cart_buy, 9)
+	ok.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ok.disabled = _cart_count() == 0 or _cart_short() != ""
+	var clr := _btn(row2, "Vyprázdnit", func():
+		_cart = {"base": {}, "me": {}}
+		_cart_draw(), 8)
+	clr.disabled = _cart_count() == 0
+
+## "" when the basket can be paid, otherwise why not.
+func _cart_short() -> String:
+	var sb := _cart_sum("base")
+	var sm := _cart_sum("me")
+	if Campaign.viewer:
+		return "" if sb + sm <= Net.my_money() else "Nemáš dost peněz (chybí %d kr)." % (sb + sm - Net.my_money())
+	if sb > int(Campaign.data["credits"]):
+		return "V rozpočtu základny chybí %d kr." % (sb - int(Campaign.data["credits"]))
+	if sm > Net.my_money():
+		return "Na nákup pro sebe ti chybí %d kr." % (sm - Net.my_money())
+	return ""
+
+func _cart_buy() -> void:
+	_cart_clean()
+	var why := _cart_short()
+	if why != "":
+		_alert("Nelze koupit\n" + why)
+		return
+	if _cart_count() == 0:
+		return
+	var base: Dictionary = _cart["base"].duplicate()
+	var me: Dictionary = _cart["me"].duplicate()
+	# for oneself first (own money, checked above), then the base
+	if not me.is_empty() and not Game.buy_many_for_me(me):
+		_alert("Nelze koupit\nNemáš dost vlastních peněz.")
+		return
+	_cart["me"] = {}
+	if not base.is_empty():
+		if Campaign.viewer:
+			Net.buy_cart_for_base(base)
+		else:
+			var got := Campaign.buy_many(base)
+			if got.size() < base.size() or _cart_n(got) < _cart_n(base):
+				_alert("Koupeno jen zčásti\nV rozpočtu základny nezbylo na všechno.")
+	_cart["base"] = {}
+	Game.play_ui(self, "money", -10)
+	if Campaign.viewer:
+		await get_tree().create_timer(0.5).timeout
+		if not is_instance_valid(_cart_box):
+			return      # (closed meanwhile)
+	_show_armory()
+
+static func _cart_n(d: Dictionary) -> int:
+	var n := 0
+	for k in d:
+		n += int(d[k])
+	return n
 
 ## The workshop: what research opened is made here - credits, alloys from the wrecks,
 ## Moskovium, and days on a line. Only the host orders it (it is his base).
 func _show_workshop() -> void:
 	var box := _overlay("DÍLNA - VÝROBA", 500)
+	_live_mark("workshop")
 	var lines := Campaign.workshop_lines()
 	_lbl(box, "Dílny: %d (tempo %d %%). Kredity základny: %d   Slitiny: %d ks   Moskovium 115: %d g" % [lines, int(round(Campaign.workshop_rate() * 100.0)), int(Campaign.data["credits"]), Campaign.alloys(), Campaign.moskovium()], FRAME, 8).custom_minimum_size = Vector2(480, 0)
 	if lines == 0:
@@ -1444,6 +1780,7 @@ func _span(d: float) -> String:
 ## The black market: spare gear from the armory (40 % of the price) and alien loot.
 func _show_sell() -> void:
 	var box := _overlay("PRODEJ", 500)
+	_live_mark("sell")
 	_lbl(box, "Co se prodá, je pryč. Výbava ze skladu za 40 % ceny, mimozemská kořist na černém trhu. Kredity základny: %d." % int(Campaign.data["credits"]), FRAME, 8).custom_minimum_size = Vector2(480, 0)
 	var grid := GridContainer.new()
 	grid.columns = 2
@@ -1495,6 +1832,25 @@ func _ui_check(tag: String) -> void:
 		get_viewport().get_texture().get_image().save_png("user://ui_%s.png" % tag)
 
 func _autotest() -> void:
+	if Game.autotest() == "gohost":
+		# (0.7x) co-op: the host's base falls - his screen, his save gone, and the client must see it too
+		await get_tree().create_timer(2.0).timeout
+		Campaign.data["stats"]["kills"] = 77
+		Campaign.count_kills({"grey": 77})
+		Campaign.report.emit(Campaign._base_fell("Obrana selhala."))
+		await get_tree().create_timer(4.0).timeout
+		print("RESULT gohost shown %s save_gone %s online %s" % [_end_screen != null, not Campaign.has_save(), Net.is_online()])
+		get_tree().create_timer(2.0).timeout.connect(get_tree().quit)     # (this scene is gone by then)
+		_end_leave()
+		return
+	if Game.autotest() == "goclient":
+		var t3 := Time.get_ticks_msec()
+		while _end_screen == null and Time.get_ticks_msec() - t3 < 20000:
+			await get_tree().create_timer(0.1).timeout
+		var sm := Campaign.summary()
+		print("RESULT goclient shown %s kills %d races %d closed %s" % [_end_screen != null, int(sm["kills"]), (sm["races"] as Array).size(), Campaign.data.get("closed", false)])
+		get_tree().quit()
+		return
 	if Game.autotest() == "readyhost":
 		# (0.7x) the host's start waits for the client's PŘIPRAVEN
 		await get_tree().create_timer(1.0).timeout
@@ -1557,6 +1913,77 @@ func _autotest() -> void:
 		var mk1: Vector3 = markers[900000 + int(c0["id"])].position if markers.has(900000 + int(c0["id"])) else Vector3.ZERO
 		var moved := Vector2(float(c1["lat"]) - float(c0["lat"]), float(c1["lon"]) - float(c0["lon"])).length()
 		print("RESULT geolive day +%.4f craft moved %.3f deg marker moved %.4f speed %.4f" % [float(Campaign.data["day"]) - d0, moved, mk0.distance_to(mk1), Net.geo_speed])
+		get_tree().quit()
+		return
+	if Game.autotest() == "carttest":
+		# (0.7x) the armory basket solo: base part from the budget, own part from own money, all-or-nothing checks
+		await get_tree().create_timer(0.5).timeout
+		Campaign.data["credits"] = 1000
+		Game.merc["money"] = 300
+		var lk0 := int(Game.merc.get("locker", {}).get("flare", 0))
+		_cart = {"base": {"rifle_clip": 2, "grenade": 1}, "me": {"flare": 3}}
+		_show_armory()
+		await _ui_check("cart_full")
+		var cost_b := Campaign.price("rifle_clip") * 2 + Campaign.price("grenade")
+		var cost_m := Campaign.price("flare") * 3
+		await _cart_buy()
+		var r1 := [1000 - int(Campaign.data["credits"]) == cost_b, 300 - int(Game.merc["money"]) == cost_m,
+			Campaign.on_order("rifle_clip"), Campaign.on_order("grenade"), int(Game.merc["locker"].get("flare", 0)) - lk0, _cart_count()]
+		# too expensive: nothing at all is bought
+		var cr := int(Campaign.data["credits"])
+		var mo := int(Game.merc["money"])
+		_cart = {"base": {"rifle_clip": 50}, "me": {"flare": 1}}
+		var why := _cart_short()
+		await _cart_buy()
+		var r2 := [why != "", cr == int(Campaign.data["credits"]), mo == int(Game.merc["money"]), _cart_count()]
+		_close_popup()
+		await get_tree().process_frame
+		_cart = {"base": {"rifle_clip": 1}, "me": {}}
+		_show_armory()
+		await _ui_check("cart_alert")
+		print("RESULT carttest paid %s kept %s" % [r1, r2])
+		get_tree().quit()
+		return
+	if Game.autotest() == "stockhost":
+		# 1. the client packs the only shotgun for the mission -> my stock shows 0
+		var t0 := Time.get_ticks_msec()
+		while int(Net.others_claim().get("shotgun", 0)) == 0 and Time.get_ticks_msec() - t0 < 15000:
+			await get_tree().create_timer(0.1).timeout
+		var claim_ms := Time.get_ticks_msec() - t0
+		var mine := int(Game.stash_for(false).get("shotgun", 0))
+		var names := Net.claim_names("shotgun")
+		await get_tree().create_timer(1.0).timeout
+		# 2. the workshop/store adds 5 grenades -> the client must see it without reopening anything
+		Campaign.data["armory"]["grenade"] = int(Campaign.data["armory"].get("grenade", 0)) + 5
+		Campaign.changed.emit()
+		# 3. the client puts the shotgun back -> mine again
+		t0 = Time.get_ticks_msec()
+		while int(Net.others_claim().get("shotgun", 0)) > 0 and Time.get_ticks_msec() - t0 < 15000:
+			await get_tree().create_timer(0.1).timeout
+		var back := int(Game.stash_for(false).get("shotgun", 0))
+		print("RESULT stockhost claim %s mine %d names '%s' back %d" % [claim_ms < 4000, mine, names, back])
+		await get_tree().create_timer(1.5).timeout
+		get_tree().quit()
+		return
+	if Game.autotest() == "stockclient":
+		await get_tree().create_timer(1.0).timeout
+		_show_armory()
+		var g0 := int(Campaign.data["armory"].get("grenade", 0))
+		Game.loadout = {"p": "shotgun"}
+		Net.report_claim()
+		var t0 := Time.get_ticks_msec()
+		while int(Campaign.data["armory"].get("grenade", 0)) == g0 and Time.get_ticks_msec() - t0 < 15000:
+			await get_tree().create_timer(0.05).timeout
+		var seen_ms := Time.get_ticks_msec() - t0
+		await get_tree().create_timer(0.4).timeout
+		var row := ""
+		if _arm_rows.has("grenade") and is_instance_valid(_arm_rows["grenade"][0]):
+			row = String(_arm_rows["grenade"][0].text).replace("\n", " ")
+		var redrawn := ("sklad %d" % (g0 + 5)) in row
+		Game.loadout = {}
+		Net.report_claim()
+		print("RESULT stockclient grenades %d -> %d fast %s redrawn %s" % [g0, int(Campaign.data["armory"].get("grenade", 0)), seen_ms < 1500, redrawn])
+		await get_tree().create_timer(3.0).timeout
 		get_tree().quit()
 		return
 	if Game.autotest() == "econhost":
@@ -1629,6 +2056,10 @@ func _autotest() -> void:
 			await get_tree().create_timer(0.4).timeout
 			get_viewport().get_texture().get_image().save_png("user://ency_%s_%d.png" % [id, page])
 		print("RESULT encyshot ", id)
+		get_tree().quit()
+		return
+	if Game.autotest() == "gameover":
+		await _test_gameover()
 		get_tree().quit()
 		return
 	if Game.autotest() == "basepick":
@@ -1765,7 +2196,10 @@ func _autotest() -> void:
 		_focus(Campaign.data["flights"][0])
 		await get_tree().create_timer(0.6).timeout
 		await _ui_check("geo_flight")
-		for e in [["geo_research", _show_research], ["geo_base", _show_base], ["geo_armory", _show_armory], ["geo_workshop", func():
+		for e in [["geo_research", _show_research], ["geo_base", _show_base], ["geo_armory", _show_armory], ["geo_cart", func():
+					_cart = {"base": {"rifle_clip": 12, "grenade": 4, "medkit": 2, "minigun_belt": 3, "smoke_grenade": 1}, "me": {"rifle": 1, "shells": 5, "flare": 20}}
+					_cart_cat = "ammo"
+					_show_armory()], ["geo_workshop", func():
 					for rid in ["laser", "laser_puska", "rozbor_plazma", "slitiny", "vesta", "tezke", "zenijni"]:
 						if not rid in Campaign.data["research"]["done"]: Campaign.data["research"]["done"].append(rid)
 					var fd: Dictionary = Campaign.data.get("found", {})

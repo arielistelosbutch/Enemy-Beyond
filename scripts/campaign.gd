@@ -503,6 +503,7 @@ func new_campaign(diff := "") -> void:
 	if diff == "":
 		diff = Game.difficulty
 	Game.difficulty = diff
+	closed = false
 	data = {
 		"difficulty": diff, "mercs": {},
 		"day": 0.0, "credits": {"easy": 1500, "normal": 1200, "veteran": 1000}.get(diff, 1200), "trust": 60, "month": 0,
@@ -524,12 +525,14 @@ func new_campaign(diff := "") -> void:
 	data["base"] = b
 	active = true
 	save()
+	_claim_mercs()
 
 func load_campaign() -> bool:
 	var cf := ConfigFile.new()
 	if cf.load("user://campaign.cfg") != OK:
 		return false
 	data = cf.get_value("campaign", "data", {})
+	closed = false
 	if not data.is_empty() and not data.has("cid"):
 		data["cid"] = str(randi())
 	if not data.is_empty() and not data.has("bodies_v34"):
@@ -567,6 +570,8 @@ func load_campaign() -> bool:
 		data.erase("in_mission")
 		_log("Spojení s výsadkem se přerušilo uprostřed mise. Mise se počítá jako neúspěch.")
 		mission_done(mid, false, 0, 0, 0)
+	if active:
+		_claim_mercs()
 	return active
 
 ## (0.57) Host: a mission has begun - remembered in the save until mission_done closes it.
@@ -576,24 +581,74 @@ func mission_begun(id: int) -> void:
 	data["in_mission"] = id
 	save()
 
-## The host keeps every campaign mercenary (his own and the players'): name -> record.
-## Returns the record to play with: the kept one when it is further along, else the given one (stored).
+## The host keeps every campaign mercenary (his own and the players'): uid -> record.
+## Returns the record to play with: the kept one when it is further along, else the given one
+## (stored), with his own locker of THIS campaign (Game.gear_to) and the player's purse.
+## (0.7x) Keyed by the soldier's id (Game.new_uid), not by his name; a fallen soldier's record is
+## marked "gone" (merc_gone) and never handed out again.
 func keep_merc(m: Dictionary) -> Dictionary:
 	if data.is_empty():
 		return m
-	var key := str(m.get("name", ""))
+	var nm := str(m.get("name", ""))
+	var key := str(m.get("uid", ""))
+	if key == "":
+		key = nm
 	if key == "":
 		return m
 	var mercs: Dictionary = data.get("mercs", {})
 	var old: Dictionary = mercs.get(key, {})
-	if not old.is_empty() and (int(old.get("missions", 0)) > int(m.get("missions", 0)) or (int(old.get("missions", 0)) == int(m.get("missions", 0)) and int(old.get("xp", 0)) > int(m.get("xp", 0)))):
-		return old
-	mercs[key] = m.duplicate(true)
+	if old.is_empty() and key != nm and mercs.has(nm):
+		# a record from before the ids (kept by the name): the same soldier, unless that one fell
+		var legacy: Dictionary = mercs[nm]
+		if not legacy.has("uid") and not legacy.get("gone", false):
+			old = legacy
+			mercs.erase(nm)
+	if old.get("gone", false):
+		old = {}
+	var further := not old.is_empty() and (int(old.get("missions", 0)) > int(m.get("missions", 0)) or (int(old.get("missions", 0)) == int(m.get("missions", 0)) and int(old.get("xp", 0)) > int(m.get("xp", 0))))
+	var out: Dictionary = (old if further else m).duplicate(true)
+	out["uid"] = str(m.get("uid", out.get("uid", "")))
+	if m.has("money"):
+		out["money"] = m["money"]      # (the purse is the player's, not the record's)
+	Game.gear_to(out, str(data.get("cid", "")))
+	out.erase("gone")
+	mercs[key] = out.duplicate(true)
 	data["mercs"] = mercs
 	save()
-	return m
+	return out
+
+## (0.7x) Host, end of a campaign mission: who stayed there (fallen, missing) is gone from the record.
+func merc_gone(m: Dictionary) -> void:
+	if data.is_empty():
+		return
+	var key := str(m.get("uid", ""))
+	if key == "":
+		key = str(m.get("name", ""))
+	if key == "":
+		return
+	var mercs: Dictionary = data.get("mercs", {})
+	var rec: Dictionary = mercs.get(key, m.duplicate(true))
+	rec["gone"] = true
+	mercs[key] = rec
+	data["mercs"] = mercs
+
+## (0.7x) The campaign has just been loaded or founded: our soldiers' lockers of this campaign,
+## and in co-op the friends' soldiers checked against the record (Net.recheck_mercs).
+func _claim_mercs() -> void:
+	var cid := str(data.get("cid", ""))
+	var changed := false
+	for m in Game.mercs:
+		if Game.gear_to(m, cid):
+			changed = true
+	if changed:
+		Game.merc = Game.mercs[Game.active]
+		Game.save_merc()
+	if Net.is_online() and multiplayer.is_server():
+		Net.recheck_mercs()
 
 func save() -> void:
+	if closed:
+		return          # (the campaign is over and its save deleted - nothing brings it back)
 	var cf := ConfigFile.new()
 	cf.set_value("campaign", "data", data)
 	cf.save("user://campaign.cfg")
@@ -858,7 +913,7 @@ func advance(days: float) -> bool:
 			data["debt_months"] = int(data.get("debt_months", 0)) + 1
 			txt += "\nROZPOČET JE V MÍNUSU (%d. měsíc). Dva měsíce v mínusu = projekt zkrachuje. Přispějte z vlastních peněz!" % int(data["debt_months"])
 			if int(data["debt_months"]) >= 2:
-				data["lost"] = true
+				_game_over("debt")
 				txt = "KONEC\nProjekt zkrachoval. Základna se zavírá, vojáci jdou domů."
 		else:
 			data["debt_months"] = 0
@@ -866,7 +921,7 @@ func advance(days: float) -> bool:
 		report.emit(txt)
 		stop = true
 	if int(data["trust"]) <= 0:
-		data["lost"] = true
+		_game_over("trust")
 		report.emit("KONEC\nSponzoři stáhli peníze. Základna se zavírá.")
 		stop = true
 	changed.emit()
@@ -930,7 +985,7 @@ func _strike_tick(days: float) -> bool:
 				data["missions"].append(m)
 				mission_found.emit(m)
 			else:
-				data["lost"] = true
+				_game_over("battleship")
 				_log("Bitevní loď vystřelila. Základna zničena.")
 				report.emit("KONEC\nBitevní loď se zastavila nad základnou (" + base_place() + "). Spodek trupu se rozsvítil - a pak už nic. Z podzemní základny zbyl kráter. Projekt X skončil.")
 	return stop
@@ -1304,6 +1359,11 @@ func intercept_done(id: int, outcome: String, kind: String, jet_hp: float, lost 
 		_repair_jet(5.0)
 	for i in damaged:
 		_repair_jet(1.5)
+	var ast: Dictionary = data.get_or_add("stats", {})
+	ast["jets_lost"] = int(ast.get("jets_lost", 0)) + lost
+	ast["air_fights"] = int(ast.get("air_fights", 0)) + 1
+	if outcome in ["crashed", "destroyed"]:
+		ast["ufo_down"] = int(ast.get("ufo_down", 0)) + 1
 	if lost > 0:
 		txt += " Ztraceno stíhaček: %d (nová za 5 dní)." % lost
 	if damaged > 0:
@@ -1548,7 +1608,7 @@ func mission_params(m: Dictionary) -> Dictionary:
 ## (Ari 2026-11-13: "pokud to hráči nedají, konec hry"). Returns the KONEC text for the report.
 const BASE_RAID_FROM := 30.0
 func _base_fell(why: String) -> String:
-	data["lost"] = true
+	_game_over("base")
 	_log("Základna (%s) padla. %s Projekt X skončil." % [base_place(), why])
 	return "KONEC\nVetřelci obsadili základnu (%s). %s Velín mlčí, hangár hoří, ze sklepů se ozývají jen jejich hlasy.\nProjekt X skončil." % [base_place(), why]
 
@@ -1701,6 +1761,7 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 	if m["type"] == "mars":
 		if success:
 			data["won"] = true
+			data["end_day"] = float(data["day"])
 			_log("VÍTĚZSTVÍ. Velký mozek je mrtvý, velín na Marsu zničen.")
 		else:
 			data["missions"].append(m)       # the Orel can fly again
@@ -1717,6 +1778,11 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 	st["missions"] = int(st["missions"]) + 1
 	if success:
 		st["won"] = int(st["won"]) + 1
+	# (0.7x) for the end-of-campaign screen
+	st["civ_saved"] = int(st.get("civ_saved", 0)) + civ_saved
+	st["civ_dead"] = int(st.get("civ_dead", 0)) + civ_dead
+	st["mercs_lost"] = int(st.get("mercs_lost", 0)) + lost_mercs
+	st["earned"] = int(st.get("earned", 0)) + money
 	data["day"] = float(data["day"]) + 0.12   # flight home
 	var txt := "%s (%s): %s. Do rozpočtu základny +%d kr, důvěra %+d." % [info["name"], m["place"], "úspěch" if success else "neúspěch", money, dt]
 	if lost_mercs > 0:
@@ -1954,6 +2020,22 @@ func buy(item: String) -> bool:
 	save()
 	changed.emit()
 	return true
+
+## (0.7x) The armory basket: buys {item: count} for the base in one go, as far as the budget goes
+## (in the basket's order). Returns what was bought.
+func buy_many(cart: Dictionary) -> Dictionary:
+	var got := {}
+	for item in cart:
+		for i in int(cart[item]):
+			if workshop_item(item) or not unlocked(item) or int(data["credits"]) < price(item):
+				break
+			data["credits"] = int(data["credits"]) - price(item)
+			order(item)
+			got[item] = int(got.get(item, 0)) + 1
+	if not got.is_empty():
+		save()
+		changed.emit()
+	return got
 
 # ---- the workshop: what research opened is not bought, it is made here ----------------------------
 ## Everything a research unlocks (our own heavy guns too) - nobody sells it, the workshop makes it.
@@ -2278,3 +2360,134 @@ func stash() -> Dictionary:
 		if unlocked(k):
 			out[k] = int(out.get(k, 0)) + int(data["armory"][k])
 	return out
+
+# ---- the end of the campaign (0.7x, Ari: "Game over obrazovka chybí se statistikou") --------------
+## How a campaign ends: the base falls (lost or unanswered defence), bankruptcy (two months in the
+## red), the states lose all trust, the battleship over the base - or the win on Mars. A lost campaign
+## is over for good (hardcore, Ari 2026-11-15: "smazat pozici, i pro co-op hráče"): the host's screen
+## shows the summary, the save is deleted and the co-op mates (they only ever had a copy of the host's
+## campaign) see the same screen. What is left is a line in the record of ended campaigns (END_FILE).
+const END_WHY := {
+	"base": "Vetřelci obsadili základnu.",
+	"debt": "Projekt zkrachoval - dva měsíce v mínusu.",
+	"trust": "Státy ztratily důvěru a stáhly peníze.",
+	"battleship": "Bitevní loď zničila základnu.",
+	"won": "Velký mozek je mrtvý, velín na Marsu zničen.",
+}
+const END_FILE := "user://konec_kampani.cfg"
+const END_KEEP := 20
+var closed := false       # the campaign ended and its save is gone: save() writes nothing again
+
+func _game_over(why: String) -> void:
+	data["lost"] = true
+	if not data.has("end_why"):
+		data["end_why"] = why
+		data["end_day"] = float(data["day"])
+
+## Host, end of a mission: the aliens put down, by race (only races the team has fought - the
+## names are those the archive already gives them, no hidden numbers).
+func count_kills(by: Dictionary) -> void:
+	if by.is_empty():
+		return
+	var st: Dictionary = data.get_or_add("stats", {})
+	var kb: Dictionary = st.get_or_add("kills_by", {})
+	for r in by:
+		kb[r] = int(kb.get(r, 0)) + int(by[r])
+
+func is_over() -> bool:
+	return bool(data.get("lost", false)) or bool(data.get("closed", false))
+
+## Everything the end screen shows. A number the campaign did not keep yet (saves older than 0.7x)
+## is -1 (the screen writes a dash).
+func summary() -> Dictionary:
+	var st: Dictionary = data.get("stats", {})
+	var fallen: Array = data.get("fallen", [])
+	var mia := 0
+	var names := []
+	for i in range(fallen.size() - 1, -1, -1):
+		var f: Dictionary = fallen[i]
+		if f.get("mia", false):
+			mia += 1
+		if names.size() < 12:
+			names.append([String(f.get("n", "?")), String(f.get("m", "")), int(f.get("k", 0)), bool(f.get("mia", false)), String(f.get("d", ""))])
+	var races := []
+	var kb: Dictionary = st.get("kills_by", {})
+	for r in kb:
+		races.append([race_name(String(r)), int(kb[r])])
+	races.sort_custom(func(a, b): return a[1] > b[1])
+	var dead_names := {}
+	for f in fallen:
+		dead_names[String(f.get("n", ""))] = true
+	var best := []
+	var ms: Dictionary = data.get("mercs", {})
+	for k in ms:
+		var m: Dictionary = ms[k]
+		best.append([String(m.get("name", k)), int(m.get("kills", 0)), int(m.get("missions", 0)), dead_names.has(String(m.get("name", k)))])
+	best.sort_custom(func(a, b): return a[1] > b[1] or (a[1] == b[1] and a[2] > b[2]))
+	best = best.slice(0, 5)
+	var day := float(data.get("end_day", data.get("day", 0.0)))
+	var keep := float(data.get("day", 0.0))
+	data["day"] = day
+	var end := date_text().split("  ")[0]
+	data["day"] = keep
+	var done: Array = data.get("research", {}).get("done", [])
+	var why := String(data.get("end_why", "won" if won() else ""))
+	var n := func(k: String) -> int: return int(st.get(k, -1))
+	return {
+		"won": won() and not bool(data.get("lost", false)),
+		"why": String(END_WHY.get(why, "Projekt X skončil.")),
+		"diff": difficulty(), "place": base_place(), "bloc": String(BLOCS.get(base_bloc(), {}).get("name", "")),
+		"start": "24. dubna 1990", "end": end, "days": int(day),
+		"missions": int(st.get("missions", 0)), "won_missions": int(st.get("won", 0)),
+		"kills": int(st.get("kills", 0)), "captures": int(st.get("captures", 0)),
+		"civ_saved": n.call("civ_saved"), "civ_dead": n.call("civ_dead"),
+		"ufo_down": n.call("ufo_down"), "air_fights": n.call("air_fights"), "jets_lost": n.call("jets_lost"),
+		"earned": n.call("earned"),
+		"fallen": fallen.size(), "mia": mia, "fallen_list": names,
+		"research": done.size(), "credits": int(data.get("credits", 0)), "trust": int(data.get("trust", 0)),
+		"moskovium": moskovium(), "races": races, "best": best,
+		"cid": str(data.get("cid", "")),
+	}
+
+## Host / solo, when the end screen comes up: the summary goes into the record of ended campaigns.
+## A lost campaign is closed for good: the co-op mates get its last state (they show the same screen),
+## then the save file is deleted. The win only goes into the record (the campaign can go on).
+func close_campaign() -> Dictionary:
+	var s := summary()
+	if viewer or not active:
+		return s
+	_archive(s)
+	if s["won"] or closed:
+		return s
+	data["closed"] = true
+	_log("Kampaň skončila, uložená pozice smazána.")
+	Net.broadcast_team()
+	closed = true
+	# (the other autotests never delete a save; only the end-screen tests do)
+	if FileAccess.file_exists("user://campaign.cfg") and (Game.autotest() == "" or Game.autotest() in ["gameover", "gohost"]):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://campaign.cfg"))
+	return s
+
+func _archive(s: Dictionary) -> void:
+	if Game.autotest() != "" and not Game.autotest() in ["gameover", "gohost"]:
+		return
+	var cf := ConfigFile.new()
+	cf.load(END_FILE)
+	var list: Array = cf.get_value("konec", "list", [])
+	for i in range(list.size() - 1, -1, -1):
+		if String(list[i].get("cid", "")) == String(s["cid"]):
+			list.remove_at(i)         # (the win shown again later: one line per campaign)
+	list.append(s)
+	while list.size() > END_KEEP:
+		list.pop_front()
+	cf.set_value("konec", "list", list)
+	cf.save(END_FILE)
+
+## The record of ended campaigns, newest first (the main menu shows it).
+func past_campaigns() -> Array:
+	var cf := ConfigFile.new()
+	if cf.load(END_FILE) != OK:
+		return []
+	var l: Array = cf.get_value("konec", "list", [])
+	l.reverse()
+	return l

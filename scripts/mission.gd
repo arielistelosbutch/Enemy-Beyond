@@ -2599,7 +2599,15 @@ func _end(success: bool, why: String, airlift := false, abandoned := false) -> v
 			Campaign.mark_nemesis(officer_killers)
 		var gl := gear_lost(success)
 		Campaign.add_fallen(fallen_list())       # (0.70: the wall of the fallen; before mission_done saves)
+		for p in players():
+			if left_behind(p) and p.get("merc") is Dictionary:
+				Campaign.merc_gone(p.merc)       # (0.7x: his record is never handed out again)
 		Campaign.learn_styles(AD.style_out(self), lost, players().size())     # (0.64: before mission_done saves)
+		var kb := {}       # (0.7x: the end-of-campaign screen counts the dead aliens by race)
+		for a in aliens():
+			if a.dead and not a.captured:
+				kb[a.race] = int(kb.get(a.race, 0)) + 1
+		Campaign.count_kills(kb)
 		camp = Campaign.mission_done(int(Net.mission_params.get("id", -1)), success, tk, tc, lost, civ_saved, civ_dead, crew_names, _loot(success), lost >= players().size() + _deserters and not _abandoned, kits, q, gl, kits_locker)
 		# what came out of their own lockers: each one crosses it off his own list
 		for peer in gl:

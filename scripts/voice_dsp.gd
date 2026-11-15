@@ -20,6 +20,8 @@ const PRE_ROLL := 0.2
 const PTT_TAIL := 0.3
 const VAD_HOLD := 0.6
 const TARGET := 0.12               # speech RMS after the automatic level
+const KNEE := 0.5                  # the limiter starts here (speech peaks are ~0.4-0.6)
+const UP := 3                      # (0.71) playback at 48 kHz: we upsample ourselves (Up)
 
 ## Mic bus: high-pass, low-pass, capture (all native). Returns the capture effect.
 static func mic_bus() -> AudioEffectCapture:
@@ -46,6 +48,12 @@ static func mic_bus() -> AudioEffectCapture:
 		lp.cutoff_hz = 7000.0
 		lp.db = AudioEffectFilter.FILTER_24DB
 		AudioServer.add_bus_effect(i, lp, 1)
+		# (0.71) a second 24 dB stage: hiss above 8 kHz used to fold back into the voice at -27 dB
+		# when resampling to 16 kHz, now at about -47 dB
+		var lp2 := AudioEffectLowPassFilter.new()
+		lp2.cutoff_hz = 7000.0
+		lp2.db = AudioEffectFilter.FILTER_24DB
+		AudioServer.add_bus_effect(i, lp2, 2)
 	if cap == null:
 		cap = AudioEffectCapture.new()
 		cap.buffer_length = 0.6      # a slow frame (map loading) must not lose speech
@@ -123,7 +131,11 @@ func _frames(clean: bool, gate: float) -> PackedFloat32Array:
 		_gain = lerpf(_gain, g, 0.7 if g > _gain else 0.12)     # opens in ~10 ms, closes in ~80 ms
 		for k in FRAME:
 			var x := _pend[o + k] * agc * lerpf(g0, _gain, float(k) / FRAME)
-			x = x / (1.0 + absf(x) * 0.6)                       # soft limiter
+			# (0.71) limiter only on the peaks: the old x / (1 + 0.6|x|) bent every sample and
+			# distorted all speech (signal to distortion 22 dB -> now 42 dB, see autotest voiceq)
+			var ax := absf(x)
+			if ax > KNEE:
+				x = signf(x) * (KNEE + (1.0 - KNEE) * tanh((ax - KNEE) / (1.0 - KNEE)) * 0.98)
 			out[o + k] = x
 			e_out += x * x
 	if nf > 0:
@@ -187,7 +199,7 @@ static func encode(smp: PackedFloat32Array) -> PackedByteArray:
 	out.resize(smp.size())
 	var k := 127.0 / log(256.0)
 	for i in smp.size():
-		var x := clampf(smp[i] * 1.2, -1.0, 1.0)
+		var x := clampf(smp[i], -1.0, 1.0)      # (0.71: no extra 1.2 gain - it clipped the peaks)
 		var b := mini(127, int(log(1.0 + 255.0 * absf(x)) * k + 0.5))
 		if x < 0:
 			b |= 128
@@ -244,9 +256,16 @@ class Rx:
 	var underruns := 0
 	var received := 0
 
-	func _init(playback, frames: int) -> void:
+	var up := 1                           # playback samples per voice sample (UP for real players)
+	var _up: Up = null
+
+	## frames = the playback's buffer in ITS samples; up = UP when it runs at 48 kHz.
+	func _init(playback, frames: int, upsample: int = 1) -> void:
 		pb = playback
-		cap = frames
+		up = upsample
+		cap = frames / up
+		if up > 1:
+			_up = Up.new()
 		_tail.resize(XF)
 
 	## 2.5 while somebody is heard (their voice from my speakers must not open my microphone).
@@ -257,7 +276,7 @@ class Rx:
 		return ((a - b + 128) & 255) - 128
 
 	func fill() -> int:
-		return cap - int(pb.get_frames_available())
+		return cap - int(pb.get_frames_available()) / up
 
 	func target() -> float:
 		return clampf(0.04 + jitter * 3.0 + boost, 0.06, 0.32)
@@ -417,9 +436,65 @@ class Rx:
 			_first_ms = Time.get_ticks_msec()
 
 	func _put(smp: PackedFloat32Array) -> void:
-		var fr := PackedVector2Array()
-		fr.resize(smp.size())
-		for i in smp.size():
-			fr[i] = Vector2(smp[i], smp[i])
+		var fr: PackedVector2Array
+		if _up:
+			fr = _up.run(smp)
+		else:
+			fr = PackedVector2Array()
+			fr.resize(smp.size())
+			for i in smp.size():
+				fr[i] = Vector2(smp[i], smp[i])
 		if pb.can_push_buffer(fr.size()):
 			pb.push_buffer(fr)
+
+## (0.71) A playback at 48 kHz fed by us. Godot's own 16 -> 48 kHz resampling (cubic) leaves mirror
+## images of the voice at 8-16 kHz only ~28 dB down - a hard, fizzy edge on every "s" and "c".
+## Here: 3x polyphase windowed-sinc interpolation, images about 50 dB down.
+static func generator() -> AudioStreamGenerator:
+	var g := AudioStreamGenerator.new()
+	g.mix_rate = RATE * UP
+	g.buffer_length = 0.5
+	return g
+
+class Up:
+	extends RefCounted
+	const TAPS := 10                      # per phase
+	static var _h := PackedFloat32Array() # [phase * TAPS + k]
+	var _x := PackedFloat32Array()        # the last TAPS input samples, newest first
+
+	func _init() -> void:
+		_x.resize(TAPS)
+		if _h.is_empty():
+			var n := TAPS * UP
+			var full := PackedFloat32Array()
+			full.resize(n)
+			var fc := 6800.0 / (RATE * UP)
+			for i in n:
+				var t := i - (n - 1) / 2.0
+				var sinc := 2.0 * fc if absf(t) < 0.0001 else sin(TAU * fc * t) / (PI * t)
+				var win := 0.54 - 0.46 * cos(TAU * i / (n - 1))
+				full[i] = sinc * win * UP
+			_h.resize(n)
+			for p in UP:
+				for k in TAPS:
+					_h[p * TAPS + k] = full[k * UP + p]
+
+	func run(smp: PackedFloat32Array) -> PackedVector2Array:
+		var out := PackedVector2Array()
+		out.resize(smp.size() * UP)
+		var x := _x
+		var h := _h
+		var o := 0
+		for v in smp:
+			for k in range(TAPS - 1, 0, -1):
+				x[k] = x[k - 1]
+			x[0] = v
+			for p in UP:
+				var acc := 0.0
+				var b := p * TAPS
+				for k in TAPS:
+					acc += h[b + k] * x[k]
+				out[o] = Vector2(acc, acc)
+				o += 1
+		_x = x
+		return out

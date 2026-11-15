@@ -421,6 +421,8 @@ static func make(mg, e: Dictionary, o: Vector3, els := []) -> Node3D:
 					mg._solid_stone(n)
 				elif nm.begins_with("mars_"):
 					preload("res://scripts/fit_collision.gd").fit(n)
+				elif nm == "sokol":
+					mg._solid_mesh(n)       # 0.70: the jet in the hangar (you walked through its wings)
 				if bool(e.get("volne", false)):
 					mg._loose.append(n)
 			n.rotation_degrees = r
