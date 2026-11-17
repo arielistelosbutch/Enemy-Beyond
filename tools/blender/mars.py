@@ -208,14 +208,18 @@ def pylon():
     export_glb(os.path.join(OUTDIR, "pylon.glb"), [o])
 
 def rocks():
+    """(0.72) Martian boulders: chiselled stones (kit.stone) with dark clefts and smaller stones round."""
     rr = random.Random(3)
     for k in range(3):
         reset(); m = MM(); p = []
-        p.append(rocky(m["rock"], (0, 0, 0.55 + k * 0.1), 1.2, (1.2 + k * 0.3, 1.0, 0.7 + k * 0.2), 30 + k, sub=3))
-        for j in range(4 + k):                                    # strata and smaller stones around it
+        p.append(stone(m["rock"], 1.2, (1.2 + k * 0.3, 1.0, 0.7 + k * 0.2), 30 + k, 13, 4, None, m["rock2"]))
+        for j in range(4 + k):                                    # smaller stones around it
             a = rr.uniform(0, TAU)
             d = rr.uniform(1.1, 1.6) + k * 0.25
-            p.append(rocky(m["rock2"], (math.cos(a) * d, math.sin(a) * d * 0.8, 0.12), rr.uniform(0.15, 0.35), (1.2, 1, 0.7), 50 + j + k * 10, sub=1))
+            st = stone(m["rock2"], rr.uniform(0.15, 0.35), (1.2, 1, 0.7), 50 + j + k * 10, 7, 2)
+            st.location = (math.cos(a) * d, math.sin(a) * d * 0.8, -0.02)
+            apply_xf(st)
+            p.append(st)
         s = join(p, "Rock")
         c = box(mat("Col", (1, 0, 1)), (0, 0, 0.6), (2.2 + k * 0.6, 1.8, 1.2 + k * 0.3)); c.name = "Rock-colonly"
         export_glb(os.path.join(OUTDIR, "mars_rock%d.glb" % k), [s, c])
@@ -233,7 +237,7 @@ def rocks():
     for k, z in enumerate((0.8, 2.0, 3.2)):
         rad = 0.6 * (1 - z / 6) ** 1.3 + 0.03
         p.append(torus(m["vein"], (0.05 * z * z / 6, 0, z), rad, 0.03 + 0.02 * (k == 0), seg=12))
-    p.append(rocky(m["rock"], (0, 0, 0.1), 0.8, (1.2, 1.2, 0.5), 77))
+    p.append(stone(m["rock"], 0.8, (1.2, 1.2, 0.5), 77, 9, 3, None, m["rock2"]))
     c = box(mat("Col", (1, 0, 1)), (0, 0, 2.0), (0.9, 0.9, 4.0)); c.name = "Spire-colonly"
     export_glb(os.path.join(OUTDIR, "mars_spire.glb"), [join(p, "Spire"), c])
 

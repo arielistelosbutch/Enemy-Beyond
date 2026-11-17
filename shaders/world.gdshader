@@ -13,6 +13,7 @@ uniform float jitter = 1.0;          // 0 = off
 uniform vec2 snap_res = vec2(320.0, 180.0);
 uniform float wind = 0.0;            // >0: top of the mesh sways (trees, wheat)
 global uniform float wind_strength;  // set by the mission (storm = stronger)
+uniform float wet = 0.0;             // (2026-11-17) after rain: the ground facing the sky darkens (WeatherFx)
 
 varying vec3 w_pos;
 varying vec3 w_nrm;
@@ -50,6 +51,9 @@ void fragment() {
 		vec3 ty = texture(tex, p.xz).rgb;
 		vec3 tz = texture(tex, p.xy).rgb;
 		c *= tx * b.x + ty * b.y + tz * b.z;
+	}
+	if (wet > 0.0) {
+		c *= mix(1.0, 0.55, clamp(wet, 0.0, 1.0) * smoothstep(0.6, 0.95, w_nrm.y));
 	}
 	ALBEDO = c;
 	ROUGHNESS = 1.0;

@@ -2277,6 +2277,8 @@ func _physics_process(delta: float) -> void:
 			step_t = 1.6
 			var quiet := 0.5 if Game.has_talent(merc, "kocici_krok") else 1.0
 			var surf := Game.surface_at(self, global_position, mission.map)
+			if "wx" in mission and mission.wx and mission.wx.puddle_at(global_position):
+				surf = "water"       # (2026-11-17) a splash in a puddle
 			Game.play_at(self, "step_%s%d" % [surf, randi() % 4], global_position, (-24 if prone else (-19 if crouching else (-7 if sprint else -13))) + float(Game.STEP_DB.get(surf, 0.0)))
 			if sprint and randf() < 0.5:
 				Game.play_at(self, "gear", global_position + Vector3.UP, -12)   # the kit rattles when you run
@@ -2332,8 +2334,13 @@ func _physics_process(delta: float) -> void:
 			semi = not semi
 			Game.play_ui(self, "clink", -6)
 			mission.hud.message("Jednotlivé rány." if semi else "Dávky.", 1.2)
+	_nvg_battery(delta)
 	if Input.is_action_just_pressed("nvg") and not inv_open:
-		if find_item(func(it): return it["id"] == "nvg") != "":
+		var nv := find_item(func(it): return it["id"] == "nvg")
+		if nv != "" and float(item_in(nv).get("batt", NVG_BATT)) <= 0.0 and not mission.nvg_on:
+			mission.hud.message("Noktovizor nejde zapnout, baterie je vybitá.", 2.0)
+			Game.play_ui(self, "clink", -8)
+		elif nv != "":
 			# up -> down (passive, it needs a little light) -> down with the IR illuminator -> up
 			if not mission.nvg_on:
 				ir_on = false
@@ -2601,6 +2608,7 @@ var _shield_knock := 0.0     # knocked aside by a blow: it cannot come back up f
 const SHIELD_HP := 420.0
 func _actions(delta: float) -> void:
 	radio_button = false
+	_talk_tick(delta)
 	var rh := item_in("rh")
 	var lh := item_in("lh")
 	var two := not rh.is_empty() and Game.two_handed(rh["id"])
@@ -2990,7 +2998,7 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 		var dir := aim_dir.rotated(basis_.x, sin(a1) * r1).rotated(basis_.y, cos(a1) * r1).normalized() if pellets > 1 \
 			else aim_dir.rotated(basis_.x, randf_range(-spread, spread)).rotated(basis_.y, randf_range(-spread, spread)).normalized()
 		# friendly fire (host's setting): your bullets do not know who is who
-		var q := PhysicsRayQueryParameters3D.create(from, from + dir * 120.0, (Game.WORLD | Game.GLASS | 4 | 2 | 8) if (Net.friendly_fire or Game.veteran()) else (Game.WORLD | Game.GLASS | 4))
+		var q := PhysicsRayQueryParameters3D.create(from, from + dir * 120.0, ((Game.WORLD | Game.GLASS | 4 | 2 | 8) if (Net.friendly_fire or Game.veteran()) else (Game.WORLD | Game.GLASS | 4)) | (8 if mission.mtype() == "quarantine" else 0))   # (Karanténa: people can be shot)
 		q.exclude = [get_rid()]
 		var hit := get_world_3d().direct_space_state.intersect_ray(q)
 		var to := from + dir * 120.0
@@ -3588,6 +3596,8 @@ func _hit_alien(alien_name: String, dmg: float, kind := "bullet", weak := false,
 func _shot_fx(from: Vector3, to: Vector3, snd: String) -> void:
 	_fired_at = Time.get_ticks_msec() / 1000.0      # (every machine: the body's firing movement)
 	var green := snd.begins_with("plasma")      # plasma, plasma_p, plasma_mg, plasma_cannon, plasma_heavy
+	if mission and mission.nvg_on:
+		mission.nvg_flash(from, 0.15 if is_multiplayer_authority() else 0.35)    # (0.72) a muzzle flash in the tube
 	if snd == "laser_cannon":
 		_lc_fx(from, to)
 		return
@@ -5214,14 +5224,86 @@ func radio_tx() -> bool:
 			return true
 	return false
 
-## E next to a frightened civilian: "come with me" - he follows you to the Kondor.
+## (0.72, Ari) NVG-01 runs on its battery: about 20 minutes (Ari: keep the balance - it should rarely bite) with the tube down, the IR illuminator
+## eats it half as fast again. It is charged at the base before every mission (the count starts with
+## this soldier in this mission); a dropped one keeps what it has left. Near the end the picture dims
+## and stutters; then it goes dark and stays dark.
+const NVG_BATT := 1200.0
+const NVG_LOW := 75.0
+var _nvg_fresh := false
+func _nvg_battery(delta: float) -> void:
+	if not _nvg_fresh:
+		_nvg_fresh = true
+		for s in inv:
+			if item_in(s).get("id", "") == "nvg":
+				item_in(s)["batt"] = NVG_BATT
+	if not mission.nvg_on:
+		mission.nvg_flick = 1.0
+		return
+	var nv := find_item(func(it): return it["id"] == "nvg")
+	if nv == "":
+		return
+	var it := item_in(nv)
+	var left := float(it.get("batt", NVG_BATT)) - delta * (1.5 if ir_on else 1.0)
+	it["batt"] = left
+	if left <= 0.0:
+		it["batt"] = 0.0
+		mission.set_nvg(false)
+		ir_on = false
+		mission.nvg_flick = 1.0
+		mission.hud.message("Noktovizor zhasl. Baterie je vybitá.", 2.5)
+		Game.play_ui(self, "clink", -8)
+	elif left < NVG_LOW:
+		var k := left / NVG_LOW
+		var stutter := 0.35 if randf() < (1.0 - k) * 0.08 else 1.0
+		mission.nvg_flick = lerpf(mission.nvg_flick, (0.55 + 0.45 * k) * stutter, 0.5)
+	else:
+		mission.nvg_flick = 1.0
+
+## E next to a frightened civilian: "come with me" - he follows you to the Kondor. (0.72) One out of
+## his mind with fear has to be talked round first: hold E by him (the more scared, the longer;
+## let go or step away and you start again). Whether he goes at last is the host's word.
 func _use_civilian() -> bool:
 	for c in mission.civilians():
 		if not c.dead and not c.saved and c.global_position.distance_to(global_position) < 2.4:
-			mission.calm_civ.rpc_id(1, c.name, name)
-			mission.hud.message("\"Pojďte za mnou, dovedu vás k lodi.\"", 2.5)
+			var lq := PhysicsRayQueryParameters3D.create(global_position + Vector3(0, 1.2, 0), c.global_position + Vector3(0, 0.9, 0), Game.WORLD | 64)
+			if not get_world_3d().direct_space_state.intersect_ray(lq).is_empty():
+				continue            # (through a wall or a locked door: knock first)
+			var need: float = c.talk_time() if c.has_method("talk_time") else 0.0
+			if need <= 0.0:
+				mission.calm_civ.rpc_id(1, c.name, name)
+				mission.hud.message("\"Pojďte za mnou, dovedu vás k lodi.\"", 2.5)
+			else:
+				_talk_civ = c
+				_talk_t = 0.0
+				_talk_need = need
+				mission.hud.message(TALK_LINES[0], 1.6)
 			return true
 	return false
+
+const TALK_LINES := ["\"Klid, jsme vojáci. Jste v pořádku?\"", "\"Dívejte se na mě. Dýchejte.\"",
+	"\"Nic se vám nestane, půjdete hned za mnou.\"", "\"Pojďte, dovedu vás k lodi.\""]
+var _talk_civ: Node = null
+var _talk_t := 0.0
+var _talk_need := 0.0
+func _talk_tick(delta: float) -> void:
+	if _talk_civ == null:
+		return
+	if not is_instance_valid(_talk_civ) or _talk_civ.dead or _talk_civ.saved or downed or dead \
+			or not Input.is_action_pressed("use") or _talk_civ.global_position.distance_to(global_position) > 2.9:
+		if is_instance_valid(_talk_civ) and not _talk_civ.dead and not _talk_civ.saved and _talk_t > 0.4:
+			mission.hud.message("Civilista se zase schoulil.", 1.5)
+		_talk_civ = null
+		return
+	var before := int(_talk_t / _talk_need * 3.0)
+	_talk_t += delta
+	var now := int(_talk_t / _talk_need * 3.0)
+	if _talk_t >= _talk_need:
+		mission.calm_civ.rpc_id(1, _talk_civ.name, name)
+		mission.hud.message(TALK_LINES[3], 2.5)
+		_talk_civ = null
+	elif now != before:
+		mission.hud.message(TALK_LINES[clampi(now, 0, 2)], 1.6)
 
 ## A Líhavec's claw leaves something inside (only matters once you are down).
 @rpc("any_peer", "call_local", "reliable")
@@ -5711,6 +5793,8 @@ func _remote_steps() -> void:
 	if _rs_acc >= stride:
 		_rs_acc = 0.0
 		var surf := Game.surface_at(self, global_position, mission.map)
+		if "wx" in mission and mission.wx and mission.wx.puddle_at(global_position):
+			surf = "water"
 		Game.play_at(self, "step_%s%d" % [surf, randi() % 4], global_position, (-24 if prone else (-19 if crouching else -12)) + float(Game.STEP_DB.get(surf, 0.0)))
 
 var _act_seen := 0

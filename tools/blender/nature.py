@@ -1,4 +1,4 @@
-"""Enemy Beyond 0.56 - nature for the maps (own designs): trees, bushes, rocks, stumps, fallen logs,
+"""Enemy Beyond 0.56 (0.72: smooth noise crowns, root flares, chiselled stones) - nature for the maps (own designs): trees, bushes, rocks, stumps, fallen logs,
 reeds, ice shards. Low-poly with flat facets like the village props; the colours stay (the game restyles
 by base colour). Material names the map uses for snow: VNeedles, VLeaves, VLeavesDark, VBush, VRock*.
 Front = +Y (Godot -Z). Origin on the ground in the middle.
@@ -97,6 +97,8 @@ def cone_skirt(m, z, r, h, seed, verts=9, droop=0.25):
     _fix_normals(o)
     return _finish(o, m, (0, 0, 0), (0, 0, 0), (1, 1, 1))
 
+from kit import _nz, _shade, _two_tone, lump, bark_tube, _path, branch, stone   # (0.72 organic helpers live in kit.py)
+
 # ---- trees ---------------------------------------------------------------------------------------------
 def spruce(fname="tree_spruce", h=7.5, seed=1):
     """A dark spruce: a straight trunk under layer on layer of hanging branches, narrowing to a spike."""
@@ -113,167 +115,215 @@ def spruce(fname="tree_spruce", h=7.5, seed=1):
     save("Spruce", vis, col, fname)
 
 def pine(fname="tree_pine", h=9.0, seed=2):
-    """A tall pine: a long reddish trunk bare to two thirds, a flat irregular crown in clumps."""
+    """A tall pine: a long reddish trunk bare to two thirds, crooked boughs, flat soft clumps."""
     reset(); m = M(); vis = []; col = []
-    vis.append(trunk(mat2("VBarkRed", (0.32, 0.17, 0.1), 0.95), (0, 0, -0.1), (0.2, 0.1, h * 0.9), 0.24, 0.08, 7, seed, 0.25))
+    red = mat2("VBarkRed", (0.32, 0.17, 0.1), 0.95)
+    pts = [(0, 0, -0.15), (0.02, 0, 0.35), (0.08, 0.04, h * 0.35), (0.16, 0.08, h * 0.62), (0.2, 0.1, h * 0.9)]
+    vis.append(bark_tube(red, pts, [0.32, 0.23, 0.2, 0.14, 0.06], 10, seed, 0.08, 0.4))
     rr = random.Random(seed)
-    top = Vector((0.2, 0.1, h * 0.75))
-    for k in range(4):
-        ang = k / 4 * math.tau + rr.uniform(-0.3, 0.3)
-        tip = top + Vector((math.cos(ang) * 1.2, math.sin(ang) * 1.2, rr.uniform(-0.6, 0.4)))
-        vis.append(beam(m["bark"], top + Vector((0, 0, rr.uniform(-0.8, 0.4))), tip, 0.08, 0.08))
-        vis.append(blob(m["needles"] if k % 2 else m["needles2"], tip + Vector((0, 0, 0.3)), 0.95, (1.5, 1.5, 0.6), seed * 10 + k, 0.2))
-    vis.append(blob(m["needles"], top + Vector((0, 0, 1.2)), 1.1, (1.6, 1.6, 0.7), seed * 10 + 9, 0.2))
+    top = Vector((0.18, 0.09, h * 0.74))
+    for k in range(5):
+        ang = k / 5 * TAU + rr.uniform(-0.3, 0.3)
+        a = top + Vector((0, 0, rr.uniform(-0.9, 0.6)))
+        tip = a + Vector((math.cos(ang) * 1.4, math.sin(ang) * 1.4, rr.uniform(0.0, 0.6)))
+        vis.append(branch(red, a, tip, 0.09, 0.04, seed + k, 6, 3, 0.15))
+        vis.append(lump(m["needles"] if k % 2 else m["needles2"], tip + Vector((0, 0, 0.25)), 0.95, (1.45, 1.45, 0.55), seed * 10 + k, 0.2, 3, under=m["needles2"]))
+    vis.append(lump(m["needles"], top + Vector((0, 0, 1.25)), 1.05, (1.55, 1.55, 0.62), seed * 10 + 9, 0.2, 3, under=m["needles2"]))
     col.append(colbox("Trunk", (0.1, 0.05, h * 0.4), (0.48, 0.48, h * 0.8)))
     save("Pine", vis, col, fname)
 
 def oak(fname="tree_oak", h=6.5, seed=3, mats=("leaves", "leaves2")):
-    """A broad leafy tree: a thick crooked trunk that forks, a big round crown of lumps."""
+    """A broad leafy tree: a thick trunk with root flares that forks into boughs, a big soft crown."""
     reset(); m = M(); vis = []; col = []
-    vis.append(trunk(m["bark2"], (0, 0, -0.1), (0.1, 0, h * 0.45), 0.38, 0.26, 8, seed, 0.15))
+    pts = [(0, 0, -0.15), (0.02, 0, 0.3), (0.06, 0.02, h * 0.22), (0.1, 0, h * 0.45)]
+    vis.append(bark_tube(m["bark2"], pts, [0.55, 0.4, 0.34, 0.27], 12, seed, 0.12, 0.45))
     rr = random.Random(seed)
-    fork = Vector((0.1, 0, h * 0.45))
+    fork = Vector((0.1, 0, h * 0.42))
     tips = []
-    for k in range(3):
-        ang = k / 3 * math.tau + rr.uniform(-0.4, 0.4)
-        tip = fork + Vector((math.cos(ang) * 1.3, math.sin(ang) * 1.3, h * 0.25))
-        vis.append(trunk(m["bark2"], fork - Vector((0, 0, 0.3)), tip, 0.22, 0.1, 6, seed + k))
+    for k in range(4):
+        ang = k / 4 * TAU + rr.uniform(-0.4, 0.4)
+        tip = fork + Vector((math.cos(ang) * 1.45, math.sin(ang) * 1.45, h * rr.uniform(0.22, 0.3)))
+        vis.append(branch(m["bark2"], fork - Vector((0, 0, 0.25)), tip, 0.2, 0.07, seed + k, 7, 4, 0.2))
         tips.append(tip)
     cz = h * 0.72
-    vis.append(blob(m[mats[0]], (0, 0, cz), 2.0, (1.15, 1.15, 0.85), seed * 10, 0.16, 2))
+    under = m["leaves2"]
+    vis.append(lump(m[mats[0]], (0, 0, cz), 2.0, (1.15, 1.15, 0.82), seed * 10, 0.2, 3, under=under))
     for k, tp in enumerate(tips):
-        vis.append(blob(m[mats[k % 2]], (tp.x * 1.1, tp.y * 1.1, cz + rr.uniform(-0.4, 0.5)), 1.5, (1, 1, 0.85), seed * 10 + k + 1, 0.22))
-    vis.append(blob(m[mats[1]], (0, 0, cz + 1.4), 1.3, (1, 1, 0.8), seed * 10 + 7, 0.22))
+        vis.append(lump(m[mats[k % 2]], (tp.x * 1.1, tp.y * 1.1, cz + rr.uniform(-0.45, 0.45)), 1.35, (1, 1, 0.82), seed * 10 + k + 1, 0.24, 3, under=under))
+    vis.append(lump(m[mats[1]], (0.2, -0.1, cz + 1.35), 1.25, (1, 1, 0.8), seed * 10 + 7, 0.22, 3, under=under))
     col.append(colbox("Trunk", (0.05, 0, h * 0.3), (0.75, 0.75, h * 0.6)))
     save("Oak", vis, col, fname)
 
 def birch(fname="tree_birch", h=7.0, seed=4):
-    """A slender white birch with black marks, a light, loose crown."""
+    """A slender white birch with black marks round the trunk, a light, hanging crown."""
     reset(); m = M(); vis = []; col = []
-    vis.append(trunk(m["birch"], (0, 0, -0.1), (0.15, 0.05, h * 0.92), 0.16, 0.05, 7, seed, 0.2))
+    pts = _path((0, 0, -0.15), (0.15, 0.05, h * 0.92), 5, seed, 0.18)
+    vis.append(bark_tube(m["birch"], pts, [0.22, 0.15, 0.13, 0.1, 0.07, 0.04], 9, seed, 0.04, 0.3))
     rr = random.Random(seed)
-    for k in range(7):
-        z = 0.6 + k * h * 0.11
-        ang = rr.uniform(0, math.tau)
-        vis.append(bx(m["birchm"], (math.cos(ang) * 0.13, math.sin(ang) * 0.13, z), (0.06, 0.06, rr.uniform(0.05, 0.12)), 0.0))
+    for k in range(10):
+        t = 0.06 + k * 0.075
+        p = pts[0].lerp(pts[-1], t)
+        r = 0.16 - 0.1 * t
+        ang = rr.uniform(0, TAU)
+        mk = disc(m["birchm"], (0, 0, 0), r * 1.03, rr.uniform(0.03, 0.08), verts=9)
+        for v in mk.data.vertices:          # only a part of the ring is black
+            a = math.atan2(v.co.y, v.co.x)
+            if math.cos(a - ang) < -0.2:
+                v.co.x *= 0.85; v.co.y *= 0.85
+        mk.location = p
+        apply_xf(mk)
+        vis.append(mk)
     for k in range(4):
-        z = h * (0.55 + k * 0.12)
+        z = h * (0.5 + k * 0.12)
         ang = k * 1.9 + rr.uniform(-0.3, 0.3)
-        c = (0.12 + math.cos(ang) * 0.7, 0.05 + math.sin(ang) * 0.7, z)
-        vis.append(blob(m["leaves"] if k % 2 else m["leavesy"] if seed % 3 == 0 else m["leaves2"], c, 0.9, (1, 1, 1.25), seed * 10 + k, 0.25))
+        a = Vector((0.12, 0.04, z - 0.6))
+        c = Vector((0.12 + math.cos(ang) * 0.75, 0.05 + math.sin(ang) * 0.75, z))
+        vis.append(branch(m["birch"], a, c, 0.05, 0.02, seed + k, 5, 2, 0.1))
+        vis.append(lump(m["leaves"] if k % 2 else m["leavesy"] if seed % 3 == 0 else m["leaves2"], c, 0.88, (1, 1, 1.3),
+                        seed * 10 + k, 0.28, 3, bumps=0.1, under=m["leaves2"]))
     col.append(colbox("Trunk", (0.07, 0.02, h * 0.4), (0.35, 0.35, h * 0.8)))
     save("Birch", vis, col, fname)
 
 def bush(fname="bush", seed=5, r=0.8):
-    """A low bush of a few lumps (no collision: you can push through, it hides you)."""
+    """A low bush of soft clumps over a few twigs (no collision: you can push through, it hides you)."""
     reset(); m = M(); vis = []
     rr = random.Random(seed)
-    for k in range(4):
-        ang = k / 4 * math.tau + rr.uniform(-0.5, 0.5)
+    for k in range(3):
+        ang = k / 3 * TAU + rr.uniform(-0.5, 0.5)
         d = r * 0.5
-        vis.append(blob(m["bush"] if k % 2 else m["leaves2"], (math.cos(ang) * d, math.sin(ang) * d, r * 0.55), r * rr.uniform(0.7, 0.9), (1, 1, 0.8), seed * 10 + k, 0.25))
-    vis.append(blob(m["bush"], (0, 0, r * 0.95), r * 0.75, (1, 1, 0.8), seed * 10 + 9, 0.25))
+        vis.append(lump(m["bush"] if k % 2 else m["leaves2"], (math.cos(ang) * d, math.sin(ang) * d, r * 0.5),
+                        r * rr.uniform(0.62, 0.8), (1, 1, 0.82), seed * 10 + k, 0.26, 3, bumps=0.1, under=m["leaves2"]))
+    vis.append(lump(m["bush"], (0, 0, r * 0.92), r * 0.72, (1, 1, 0.82), seed * 10 + 9, 0.26, 3, bumps=0.1, under=m["leaves2"]))
+    for k in range(3):
+        ang = k / 3 * TAU + 0.5
+        vis.append(branch(m["bark2"], (0, 0, -0.05), (math.cos(ang) * r * 0.55, math.sin(ang) * r * 0.55, r * 0.45), 0.035, 0.015, seed + k, 5, 2, 0.08))
     save("Bush", vis, [], fname)
 
 def rock(fname, r, scale, seed, moss=True):
-    """A weathered boulder, half sunk into the ground, a patch of moss on top."""
+    """A weathered boulder, half sunk into the ground, moss on the top faces."""
     reset(); m = M(); vis = []; col = []
     rr = random.Random(seed)
-    o = blob(m["rock"], (0, 0, r * scale[2] * 0.45), r, scale, seed, 0.28, 1)
+    vis.append(stone(m["rock"], r, scale, seed, 13, 4 if r > 0.5 else 3, m["moss"] if moss else None, m["rock2"]))
+    o = stone(m["rock2"], r * 0.42, (1.2, 1, 0.75), seed + 50, 7, 2, None, None)
+    o.location = (r * scale[0] * 0.62, rr.uniform(-0.3, 0.3) * r, -r * 0.08)
+    apply_xf(o)
     vis.append(o)
-    vis.append(blob(m["rock2"], (r * scale[0] * 0.55, rr.uniform(-0.3, 0.3) * r, r * 0.25), r * 0.45, (1.2, 1, 0.7), seed + 50, 0.3, 1))
-    if moss:
-        vis.append(blob(m["moss"], (rr.uniform(-0.2, 0.2) * r, 0, r * scale[2] * 1.25), r * 0.45, (1.6, 1.3, 0.25), seed + 70, 0.2, 1))
     col.append(colbox("Rock", (0, 0, r * scale[2] * 0.6), (r * 1.6 * scale[0], r * 1.6 * scale[1], r * 1.2 * scale[2])))
     save("Rock", vis, col, fname)
 
 def stump(fname="stump", seed=6):
+    """A sawn stump with root flares, rings on the cut, a little moss."""
     reset(); m = M(); vis = []; col = []
-    vis.append(trunk(m["bark2"], (0, 0, -0.05), (0, 0, 0.55), 0.42, 0.36, 9, seed))
-    vis.append(disc(m["wood"], (0, 0, 0.56), 0.34, 0.03, verts=9))
-    for k in range(4):
-        ang = k / 4 * math.tau + 0.4
-        vis.append(beam(m["bark2"], (math.cos(ang) * 0.3, math.sin(ang) * 0.3, 0.15), (math.cos(ang) * 0.75, math.sin(ang) * 0.75, -0.05), 0.12, 0.1))
+    vis.append(bark_tube(m["bark2"], [(0, 0, -0.1), (0, 0, 0.12), (0, 0, 0.35), (0, 0, 0.55)], [0.5, 0.42, 0.37, 0.35], 14, seed, 0.1, 0.7))
+    vis.append(disc(m["wood"], (0, 0, 0.555), 0.32, 0.02, verts=14))
+    for k, rr_ in enumerate((0.24, 0.16, 0.08)):
+        vis.append(torus(m["bark"], (0, 0, 0.566), rr_, 0.006, seg=18, mseg=4))
+    for k in range(5):
+        ang = k / 5 * TAU + 0.4
+        vis.append(branch(m["bark2"], (math.cos(ang) * 0.28, math.sin(ang) * 0.28, 0.18), (math.cos(ang) * 0.85, math.sin(ang) * 0.85, -0.08), 0.12, 0.04, seed + k, 7, 3, 0.05))
+    vis.append(lump(m["moss"], (-0.28, 0.1, 0.32), 0.18, (1.2, 0.8, 0.9), seed + 30, 0.2, 1))
     col.append(colbox("Stump", (0, 0, 0.3), (0.8, 0.8, 0.6)))
     save("Stump", vis, col, fname)
 
 def log(fname="log", seed=7):
     """A fallen trunk with a broken branch, moss along the top - knee-high cover."""
     reset(); m = M(); vis = []; col = []
-    vis.append(trunk(m["bark2"], (-2.2, 0, 0.32), (2.2, 0.15, 0.28), 0.34, 0.24, 8, seed, 0.1))
-    vis.append(disc(m["wood"], (-2.21, 0, 0.32), 0.3, 0.02, axis='x', verts=8))
-    vis.append(beam(m["bark2"], (0.6, 0.05, 0.5), (1.2, 0.5, 1.0), 0.09, 0.09))
-    vis.append(blob(m["moss"], (-0.8, 0, 0.62), 0.35, (2.6, 0.8, 0.25), seed + 3, 0.2))
+    pts = _path((-2.2, 0, 0.32), (2.2, 0.15, 0.28), 6, seed, 0.06)
+    vis.append(bark_tube(m["bark2"], pts, [0.34, 0.33, 0.31, 0.3, 0.28, 0.26, 0.24], 12, seed, 0.12))
+    vis.append(disc(m["wood"], (-2.205, 0, 0.32), 0.3, 0.02, axis='x', verts=12))
+    for rr_ in (0.22, 0.13):
+        vis.append(torus(m["bark"], (-2.215, 0, 0.32), rr_, 0.006, rot=(0, PI2, 0), seg=16, mseg=4))
+    vis.append(branch(m["bark2"], (0.6, 0.05, 0.5), (1.25, 0.55, 1.05), 0.09, 0.04, seed + 2, 6, 2, 0.05))
+    vis.append(branch(m["bark2"], (-0.9, -0.1, 0.45), (-1.3, -0.7, 0.75), 0.07, 0.03, seed + 3, 6, 2, 0.05))
+    vis.append(lump(m["moss"], (-0.8, 0.02, 0.6), 0.3, (2.8, 0.75, 0.22), seed + 3, 0.18, 3))
     col.append(colbox("Log", (0, 0.07, 0.3), (4.4, 0.62, 0.6)))
     save("Log", vis, col, fname)
 
 def reeds(fname="reeds", seed=8):
-    """A tuft of reeds and bulrushes for the bank of a stream (no collision)."""
+    """A tuft of reeds and bulrushes for the bank of a stream: curving blades and brown spikes (no collision)."""
     reset(); m = M(); vis = []
     rr = random.Random(seed)
-    for k in range(16):
+    for k in range(26):
         x, y = rr.uniform(-0.6, 0.6), rr.uniform(-0.5, 0.5)
         hh = rr.uniform(0.8, 1.6)
-        lean = Vector((rr.uniform(-0.25, 0.25), rr.uniform(-0.25, 0.25), 0))
-        vis.append(beam(m["reed"], (x, y, -0.05), Vector((x, y, hh)) + lean, 0.025, 0.04))
+        lean = Vector((rr.uniform(-0.35, 0.35), rr.uniform(-0.35, 0.35), 0))
+        pts = [Vector((x, y, -0.05)) + lean * (t * t) + Vector((0, 0, hh * t)) for t in (0, 0.35, 0.7, 1.0)]
+        vis.append(bark_tube(m["reed"], pts, [0.022, 0.018, 0.012, 0.002], 4, seed + k, 0.0))
         if k % 4 == 0:
-            vis.append(tb(m["reedtop"], Vector((x, y, hh - 0.25)) + lean * 0.8, Vector((x, y, hh - 0.02)) + lean, 0.035, 6))
+            tp = pts[-1] - Vector((0, 0, 0.05))
+            vis.append(tb(m["reedtop"], tp - Vector((0, 0, 0.22)) - lean * 0.08, tp, 0.035, 8))
     save("Reeds", vis, [], fname)
+
+def crystal(m, base, tipv, r, seed):
+    """One hexagonal ice crystal from base to tip, a faceted point."""
+    d = (tipv - base)
+    L = d.length
+    o = lathe(m, [(0.0, 0.0), (r, 0.0), (r * 0.92, L * 0.72), (0.0, L)], verts=6, sm=False)
+    q = Vector((0, 0, 1)).rotation_difference(d.normalized())
+    for v in o.data.vertices:
+        v.co = q @ v.co + base
+    return o
 
 def ice_shard(fname="ice_shard", seed=9):
     """A cluster of blue ice crystals leaning out of the snow."""
     reset(); m = M(); vis = []; col = []
     rr = random.Random(seed)
-    for k in range(5):
-        hh = rr.uniform(1.4, 3.6)
-        ang = rr.uniform(0, math.tau)
-        base = Vector((math.cos(ang) * rr.uniform(0, 0.6), math.sin(ang) * rr.uniform(0, 0.6), -0.1))
+    for k in range(9):
+        hh = rr.uniform(0.9, 3.6) if k < 5 else rr.uniform(0.4, 1.1)
+        ang = rr.uniform(0, TAU)
+        base = Vector((math.cos(ang) * rr.uniform(0, 0.6), math.sin(ang) * rr.uniform(0, 0.6), -0.15))
         tipv = base + Vector((rr.uniform(-0.6, 0.6), rr.uniform(-0.6, 0.6), hh))
-        o = cyl(m["ice"] if k % 2 else m["ice2"], (0, 0, 0), rr.uniform(0.2, 0.42), hh, 5, r2=0.0)
-        # tilt it from base towards the tip
-        d = (tipv - base).normalized()
-        q = Vector((0, 0, 1)).rotation_difference(d)
-        o.rotation_mode = 'QUATERNION'
-        o.rotation_quaternion = q
-        o.location = base + d * hh / 2
-        apply_xf(o)
-        vis.append(o)
+        vis.append(crystal(m["ice"] if k % 2 else m["ice2"], base, tipv, rr.uniform(0.18, 0.4) * (1 if k < 5 else 0.6), seed + k))
+    vis.append(stone(mat2("VIceSnow", (0.86, 0.9, 0.95), 0.8), 0.7, (1.4, 1.3, 0.35), seed + 40, 6, 2))
     col.append(colbox("Ice", (0, 0, 1.0), (1.4, 1.4, 2.0)))
     save("Ice", vis, col, fname)
 
 def fruit_tree(fname="tree_fruit", seed=30):
-    """A small old apple tree of the orchard: a short leaning trunk, a low wide crown, red apples."""
+    """A small old apple tree of the orchard: a short leaning trunk, a low wide soft crown, red apples."""
     reset(); m = M(); vis = []; col = []
-    vis.append(trunk(m["bark2"], (0, 0, -0.1), (0.25, 0.1, 1.5), 0.2, 0.13, 7, seed, 0.12))
+    vis.append(bark_tube(m["bark2"], _path((0, 0, -0.12), (0.25, 0.1, 1.5), 4, seed, 0.12), [0.26, 0.2, 0.18, 0.16, 0.13], 10, seed, 0.12, 0.35))
     rr = random.Random(seed)
-    for k in range(3):
-        ang = k / 3 * math.tau + rr.uniform(-0.4, 0.4)
-        vis.append(trunk(m["bark2"], (0.25, 0.1, 1.3), (0.25 + math.cos(ang) * 0.9, 0.1 + math.sin(ang) * 0.9, 2.1), 0.1, 0.05, 5, seed + k))
-    vis.append(blob(m["leaves"], (0.25, 0.1, 2.4), 1.35, (1.25, 1.25, 0.8), seed, 0.18, 2))
-    vis.append(blob(m["leaves2"], (0.9, 0.3, 2.2), 0.8, (1, 1, 0.8), seed + 1, 0.2))
-    vis.append(blob(m["leaves2"], (-0.4, -0.3, 2.3), 0.8, (1, 1, 0.8), seed + 2, 0.2))
-    apple = mat2("VApple", (0.55, 0.08, 0.05), 0.6)
-    for k in range(9):
-        ang = rr.uniform(0, math.tau)
-        rad = rr.uniform(1.2, 1.55)
-        z = 2.4 + rr.uniform(-0.6, 0.3)
-        vis.append(ball(apple, (0.25 + math.cos(ang) * rad, 0.1 + math.sin(ang) * rad, z), 0.08, seg=6, rings=4))
-    for k in range(3):
-        vis.append(ball(apple, (rr.uniform(-1.2, 1.2), rr.uniform(-1.2, 1.2), 0.05), 0.08, seg=6, rings=4))    # fallen ones
+    for k in range(4):
+        ang = k / 4 * TAU + rr.uniform(-0.4, 0.4)
+        vis.append(branch(m["bark2"], (0.25, 0.1, 1.3), (0.25 + math.cos(ang) * 1.0, 0.1 + math.sin(ang) * 1.0, 2.1), 0.1, 0.04, seed + k, 6, 3, 0.15))
+    under = m["leaves2"]
+    vis.append(lump(m["leaves"], (0.25, 0.1, 2.4), 1.35, (1.25, 1.25, 0.78), seed, 0.2, 3, under=under))
+    vis.append(lump(m["leaves2"], (0.95, 0.3, 2.2), 0.8, (1, 1, 0.8), seed + 1, 0.22, 3, under=under))
+    vis.append(lump(m["leaves2"], (-0.45, -0.3, 2.3), 0.8, (1, 1, 0.8), seed + 2, 0.22, 3, under=under))
+    apple = mat2("VApple", (0.55, 0.08, 0.05), 0.45)
+    for k in range(12):
+        ang = rr.uniform(0, TAU)
+        rad = rr.uniform(1.25, 1.55)
+        z = 2.35 + rr.uniform(-0.6, 0.3)
+        vis.append(ball(apple, (0.25 + math.cos(ang) * rad, 0.1 + math.sin(ang) * rad, z), 0.075, seg=8, rings=6))
+    for k in range(4):
+        vis.append(ball(apple, (rr.uniform(-1.2, 1.2), rr.uniform(-1.2, 1.2), 0.05), 0.075, seg=8, rings=6))    # fallen ones
     col.append(colbox("Trunk", (0.12, 0.05, 0.8), (0.4, 0.4, 1.6)))
     save("FruitTree", vis, col, fname)
 
 def hay_bale(fname="hay_bale", seed=31):
-    """A round bale lying on its side, the end showing the rolled spiral, a strap round it."""
+    """A round bale lying on its side, the end showing the rolled spiral, two net straps round it."""
     reset(); m = M(); vis = []; col = []
     straw = mat2("VStraw", (0.6, 0.48, 0.2), 0.95)
     straw2 = mat2("VStrawDark", (0.45, 0.35, 0.14), 0.95)
-    o = disc(straw, (0, 0, 0.62), 0.62, 1.2, axis='x', verts=14)
-    vis.append(jitter(o, 0.02, seed))
-    for sx in (-0.61, 0.61):
-        for k in range(3):
-            vis.append(disc(straw2, (sx * (1.0 + 0.002 * k), 0, 0.62), 0.5 - k * 0.15, 0.012, axis='x', verts=12))
-    vis.append(disc(mat2("VStrap", (0.15, 0.2, 0.35), 0.6), (0.3, 0, 0.62), 0.635, 0.05, axis='x', verts=14))
+    prof = [(0.0, -0.6), (0.5, -0.605), (0.6, -0.585), (0.625, -0.53), (0.63, 0.0), (0.625, 0.53), (0.6, 0.585), (0.5, 0.605), (0.0, 0.6)]
+    o = lathe(straw, prof, verts=28)
+    for v in o.data.vertices:
+        v.co.z, v.co.x = v.co.x, v.co.z           # lie on the side (axis along x)
+        v.co.z += 0.62
+        d = Vector((0, v.co.y, v.co.z - 0.62))
+        if d.length > 0.3:
+            v.co += d.normalized() * 0.012 * _nz.noise(v.co * 6.0 + Vector((seed, 0, 0)))
+    _fix_normals(o)
+    vis.append(o)
+    for sx in (-1, 1):
+        for k in range(4):
+            r = 0.52 - k * 0.12
+            t = torus(straw2, (sx * 0.603, 0, 0.62), r, 0.012, rot=(0, PI2, 0), seg=24, mseg=4)
+            vis.append(t)
+    strap = mat2("VStrap", (0.15, 0.2, 0.35), 0.6)
+    for x in (-0.3, 0.3):
+        vis.append(torus(strap, (x, 0, 0.62), 0.633, 0.012, rot=(0, PI2, 0), seg=28, mseg=4))
     col.append(colbox("Bale", (0, 0, 0.6), (1.2, 1.2, 1.2)))
     save("HayBale", vis, col, fname)
 
@@ -301,7 +351,7 @@ ALL = dict(
     tree_oak2=lambda: oak("tree_oak2", 5.2, 13, ("leaves2", "leavesy")), tree_birch=lambda: birch("tree_birch", 7.0, 4),
     bush=lambda: bush("bush", 5, 0.8), bush2=lambda: bush("bush2", 15, 0.55),
     rock_a=lambda: rock("rock_a", 1.0, (1.3, 1.0, 0.8), 21), rock_b=lambda: rock("rock_b", 0.7, (1.0, 1.2, 1.1), 22),
-    rock_c=lambda: rock("rock_c", 1.6, (1.4, 1.1, 0.95), 23), rock_d=lambda: rock("rock_d", 0.45, (1.2, 1.0, 0.7), 24, False),
+    rock_c=lambda: rock("rock_c", 1.6, (1.4, 1.1, 0.95), 23), rock_d=lambda: rock("rock_d", 0.45, (1.2, 1.0, 1.15), 24, False),
     stump=stump, log=log, reeds=reeds, ice_shard=ice_shard, tree_fruit=fruit_tree, hay_bale=hay_bale, dune=dune,
 )
 for k, f in ALL.items():

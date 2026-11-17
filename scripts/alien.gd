@@ -1978,6 +1978,8 @@ func _footsteps(_delta: float) -> void:
 	if _step_d < stride:
 		return
 	_step_d = fmod(_step_d, stride)
+	if "wx" in mission and mission.wx:
+		mission.wx.track(self, pos, float(R.get("scale", 1.0)))     # (2026-11-17) a print in mud or snow
 	var me: Node3D = mission.local_player()
 	if me == null or me.global_position.distance_to(pos) > 40.0:
 		return
@@ -4263,15 +4265,19 @@ func _act_sounds(act: String, delta: float) -> void:
 
 ## The Líhavec's meal: what is left of somebody, lying in front of it (every machine makes its own).
 func _lay_corpse() -> void:
-	_corpse = Game.model("civ_b" if absi(hash(String(name))) % 2 == 0 else "civ_a")
+	# (0.72.1) one of the civilians of this place: the soldier's model in everyday clothes
+	var CL := preload("res://scripts/civ_look.gd")
+	_corpse = Node3D.new()
+	var cm_: Node3D = Game.model("merc")
+	cm_.scale = Vector3(-1, 1, 1)
+	_corpse.add_child(cm_)
+	CL.dress(cm_, CL.make(CL.place_of(String(Net.mission_params.get("biome", "farm"))), absi(hash(String(name)))))
 	mission.add_child(_corpse)
 	var fwd := -global_transform.basis.z
 	fwd.y = 0
-	_corpse.global_position = global_position + fwd.normalized() * 0.9 + Vector3(0, 0.12, 0)
-	_corpse.rotation = Vector3(-PI / 2, rotation.y + 1.2, 0)
-	var ap: AnimationPlayer = _corpse.find_child("AnimationPlayer", true, false)
-	if ap:
-		ap.stop()
+	_corpse.global_position = global_position + fwd.normalized() * 0.9 + Vector3(0, 0.02, 0)
+	_corpse.rotation = Vector3(0, rotation.y + 1.2, 0)
+	CL.lie_dead(cm_, absi(hash(String(name))))
 	var pool := MeshInstance3D.new()
 	var cm := CylinderMesh.new()
 	cm.top_radius = 0.75

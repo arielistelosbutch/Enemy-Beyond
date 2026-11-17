@@ -231,6 +231,9 @@ const QUICK := [
 	["Obrana základny (Bijci, vlny)", {"group": "bijci", "type": "base", "type_name": "Útok na základnu", "biome": "base", "place": "Základna - Vysočina", "extra_aliens": 2, "size": "medium"}],
 	["Polární stanice (Šediváci, led)", {"group": "sedaci", "type": "sabotage", "type_name": "Sabotáž", "biome": "polar", "place": "Špicberky", "extra_aliens": 1, "terrain": "snow", "size": "large"}],
 	["Teror v průmyslu (Ještěřani)", {"group": "jestetani", "type": "terror", "type_name": "Teror", "biome": "industrial", "place": "Ostrava - Vítkovice", "extra_aliens": 2, "size": "huge"}],
+	["Karanténa (Nakažení, městečko)", {"group": "bijci", "type": "quarantine", "type_name": "Karanténa", "biome": "town", "place": "Slavonice", "extra_aliens": 1, "size": "large"}],
+	["Štěnice na lodi (Šediváci, les, zkušební)", {"group": "sedaci", "type": "bug", "type_name": "Štěnice na lodi", "biome": "forest", "place": "Lesy u Telče", "extra_aliens": 1, "size": "medium", "crew_of": "raider", "ufo": "raider"}],
+	["Uvízlý konvoj (Šediváci, les)", {"group": "sedaci", "type": "convoy", "type_name": "Uvízlý konvoj", "biome": "forest", "place": "Silnice u Jindřichova Hradce", "extra_aliens": 1, "size": "medium"}],
 	["Poslední mise: Velín na Marsu (Velký mozek)", {"group": "myslodejove", "type": "mars", "type_name": "Velín na Marsu", "biome": "mars", "terrain": "mars", "place": "Mars - rudá pláň", "extra_aliens": 3, "size": "large"}],
 	["Náhodná mise", {}],
 ]
@@ -2209,7 +2212,7 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "shouldershot", "radiosprint", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "rooftest", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "leaktest", "leakmap", "ufohull", "wedgetest", "leantest", "pockettest", "leaveany", "safeend", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "reinfcap", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "ceiltest", "rainshot", "interiors", "spectate", "dazetest", "chaintest", "echotest", "dirtshot", "flaretest", "fragtest":
+		"town", "zoo", "terror", "shouldershot", "radiosprint", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "rooftest", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "leaktest", "leakmap", "ufohull", "wedgetest", "leantest", "pockettest", "leaveany", "safeend", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "reinfcap", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "ceiltest", "rainshot", "lamptest", "wxtest", "wxshot", "tracktest", "lensshot", "interiors", "spectate", "dazetest", "chaintest", "echotest", "dirtshot", "flaretest", "civpanic", "nvgtest", "civstuck", "civlooks", "fragtest", "convoytest", "bugtest", "quartest":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
@@ -2660,7 +2663,16 @@ func _autotest() -> void:
 				b[k] = {"type": {0: "velin", 1: "hangar", 6: "ubikace", 7: "laborator", 2: "dilna"}[k], "days": 0.0}
 			Net.start_mission({"type": "home", "type_name": "Základna", "base": b, "grid_w": 6, "grid_h": 4, "transport": "heli",
 				"live": [], "research": [], "night": false, "hour": 12.0, "blips": []})
-		"nadeclient", "flareclient":
+		"nmradarhost", "nmbughost":
+			# (0.7x nové mise) the host's objectives reach the client (rpc _power_on / _bug_placed / _bug_lift)
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			while Net.roster.size() < 2:
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(0.5).timeout
+			var rad := Game.autotest() == "nmradarhost"
+			Net.start_mission({"type": "radar" if rad else "bug", "type_name": "Test", "place": "Test", "biome": "base" if rad else "forest", "size": "large" if rad else "medium",
+				"ufo": "raider", "crew_of": "raider", "extra_aliens": 1, "id": -1, "night": true, "hour": 23.0})
+		"nadeclient", "flareclient", "nmradarclient", "nmbugclient":
 			Game.merc["name"] = "Klient"
 			await get_tree().create_timer(1.0).timeout
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))

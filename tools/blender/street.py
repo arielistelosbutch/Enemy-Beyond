@@ -137,29 +137,52 @@ def wire_fence():
     save("WireFence", vis, col, "wire_fence")
 
 def workbench():
-    """A steel workbench: a thick wooden top, a vice, a tool board with spanners, a drawer block."""
+    """(0.72) A steel workbench: a thick plank top with an edge, braced legs, a red drawer block with
+    handles, a cast vice with a screw and handle, a pegboard of spanners, a hammer and a tin of screws."""
     reset(); m = M(); vis = []; col = []
-    vis.append(bx(m["wood"], (0, 0, 0.88), (1.8, 0.75, 0.06), 0.01))
+    for k in range(4):                                                              # plank top
+        vis.append(bx(m["wood"] if k % 2 else m["dwood"], (0, -0.28 + k * 0.187, 0.88), (1.8, 0.185, 0.06), 0.008))
     for sx in (-0.85, 0.85):
         for sy in (-0.33, 0.33):
-            vis.append(bx(m["metal"], (sx, sy, 0.43), (0.05, 0.05, 0.86), 0.0))
-    vis.append(bx(m["metal"], (0, 0, 0.18), (1.7, 0.65, 0.03), 0.0))
-    vis.append(bx(m["red"], (0.55, 0, 0.6), (0.5, 0.6, 0.45), 0.01))
+            vis.append(bx(m["metal"], (sx, sy, 0.43), (0.05, 0.05, 0.86), 0.006))
+            vis.append(bx(m["dmetal"], (sx, sy, 0.01), (0.09, 0.09, 0.02), 0.004))
+        vis.append(beam(m["metal"], (sx, -0.33, 0.25), (sx, 0.33, 0.7), 0.03, 0.03))     # cross brace
+    vis.append(bx(m["metal"], (0, 0, 0.18), (1.7, 0.65, 0.03), 0.006))               # shelf
+    vis.append(bx(m["red"], (0.55, 0, 0.6), (0.5, 0.6, 0.45), 0.012, seg=2))
     for k in range(3):
-        vis.append(bx(m["dmetal"], (0.55, 0.31, 0.45 + k * 0.14), (0.3, 0.01, 0.02), 0.0))
-    vis.append(bx(m["dmetal"], (-0.7, 0.3, 0.97), (0.2, 0.14, 0.12), 0.01))     # the vice
-    vis.append(bx(m["dwood"], (0, -0.36, 1.35), (1.7, 0.03, 0.85), 0.0))          # tool board
+        vis.append(bx(m["dmetal"], (0.55, 0.302, 0.45 + k * 0.14), (0.46, 0.006, 0.004), 0.0))
+        vis.append(bx(m["metal"], (0.55, 0.315, 0.5 + k * 0.14), (0.14, 0.02, 0.02), 0.004))
+    vis.append(bx(m["dmetal"], (-0.7, 0.3, 0.95), (0.22, 0.14, 0.08), 0.012, seg=2))       # the vice
+    vis.append(bx(m["dmetal"], (-0.7, 0.36, 1.03), (0.2, 0.04, 0.09), 0.01))
+    vis.append(bx(m["dmetal"], (-0.7, 0.26, 1.03), (0.2, 0.04, 0.09), 0.01))
+    vis.append(tb(m["metal"], (-0.7, 0.38, 1.0), (-0.7, 0.55, 1.0), 0.012, 10))
+    vis.append(tb(m["metal"], (-0.78, 0.55, 1.0), (-0.62, 0.55, 1.0), 0.008, 8))
+    vis.append(bx(m["dwood"], (0, -0.36, 1.35), (1.7, 0.03, 0.85), 0.006))            # pegboard
+    vis.append(bx(m["wood"], (0, -0.345, 1.79), (1.74, 0.05, 0.04), 0.006))
     rr = random.Random(3)
-    for k in range(7):
-        vis.append(bx(m["metal"], (-0.7 + k * 0.23, -0.34, 1.35 + rr.uniform(-0.2, 0.2)), (0.04, 0.015, rr.uniform(0.18, 0.32)), 0.0))
+    for k in range(7):                                                              # spanners on pegs
+        h = rr.uniform(0.18, 0.3); z = 1.35 + rr.uniform(-0.18, 0.18); x = -0.7 + k * 0.23
+        vis.append(bx(m["metal"], (x, -0.335, z), (0.025, 0.012, h), 0.004))
+        vis.append(torus(m["metal"], (x, -0.335, z + h / 2 + 0.02), 0.022, 0.006, rot=(PI2, 0, 0), seg=10, mseg=4))
+        vis.append(tb(m["dmetal"], (x, -0.345, z + h / 2 + 0.05), (x, -0.31, z + h / 2 + 0.05), 0.004, 6))
+    vis.append(tb(m["dwood"], (0.1, 0.1, 0.925), (0.38, 0.18, 0.925), 0.014, 10))       # a hammer
+    vis.append(bx(m["dmetal"], (0.4, 0.185, 0.93), (0.04, 0.1, 0.03), 0.005, rot=(0, 0, 0.28)))
+    vis.append(disc(m["metal"], (-0.2, -0.1, 0.95), 0.05, 0.08, verts=16))              # a tin of screws
     col.append(colbox("Bench", (0, 0, 0.46), (1.8, 0.75, 0.92)))
     save("Workbench", vis, col, "workbench")
 
 def litter_bin():
+    """(0.72) A park litter bin: a perforated green tub with a rolled rim and a lid on a post."""
     reset(); m = M(); vis = []; col = []
-    vis.append(tb(m["iron"], (0, 0, 0), (0, 0, 0.9), 0.04, 6))
-    vis.append(disc(m["green"], (0, -0.12, 0.62), 0.2, 0.5, verts=12))
-    vis.append(disc(m["dmetal"], (0, -0.12, 0.88), 0.21, 0.03, verts=12))
+    vis.append(tb(m["iron"], (0, 0, -0.05), (0, 0, 0.95), 0.035, 12))
+    vis.append(disc(m["iron"], (0, 0, 0.955), 0.04, 0.02, verts=12))
+    vis.append(bx(m["iron"], (0, -0.06, 0.62), (0.05, 0.08, 0.1), 0.006))
+    vis.append(lathe(m["green"], [(0.0, 0.38), (0.17, 0.38), (0.2, 0.44), (0.2, 0.85), (0.185, 0.85), (0.185, 0.45), (0.0, 0.45)], 24, 0.0, -0.12))
+    vis.append(torus(m["green"], (0, -0.12, 0.86), 0.2, 0.014, seg=24, mseg=6))
+    for k in range(10):                                                              # perforation slots
+        a = k / 10 * TAU
+        vis.append(bx(m["dmetal"], (math.cos(a) * 0.201, -0.12 + math.sin(a) * 0.201, 0.64), (0.012, 0.012, 0.28), 0.003, rot=(0, 0, a)))
+    vis.append(disc(m["dmetal"], (0, -0.12, 0.89), 0.205, 0.025, verts=24, b=0.006))
     save("LitterBin", vis, [], "litter_bin")
 
 ALL = dict(sandbags=sandbags, bench=bench, flower_bed=flower_bed, drum_red=lambda: drum("drum_red", "red"),
