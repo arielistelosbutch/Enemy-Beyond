@@ -60,6 +60,7 @@ var _frames_after := 0
 # on its own canvas item: inside a map being built nothing deferred runs (a Label or a ProgressBar would
 # not redraw), only direct drawing reaches the frame Game.load_step forces.
 var _bar_slot: Control
+var _pct: Label
 var _bar_ci := RID()
 var _target := 0.0
 var _shown := 0.0
@@ -112,45 +113,58 @@ func setup(what: String, mission: bool) -> void:
 		_pics.append(tr)
 	_pics[0].texture = _tex[0]
 	_pics[0].modulate.a = 1.0
-	# a dark band at the bottom: what is loading (with the blinking terminal dots inside its plate), one
-	# line under it. (Ari: "text občas mimo tabulku" - the dots used to blink right of the plate and the
-	# line had a fixed box.) Now everything sits in containers and the band grows up to fit what it holds.
-	var band := PanelContainer.new()
-	band.add_theme_stylebox_override("panel", UiSkin.panel())
+	# 0.72 (návrh A): no plate - the picture darkens toward the bottom, the text sits bottom left
+	# (gold eyebrow with the percent, the headline, one line) and a thin gold line runs along the bottom.
+	var shade := TextureRect.new()
+	var gt := GradientTexture2D.new()
+	var gr := Gradient.new()
+	gr.set_color(0, Color(UiSkin.BG, 0.0))
+	gr.set_color(1, Color(UiSkin.BG, 0.92))
+	gt.gradient = gr
+	gt.fill_from = Vector2(0, 0)
+	gt.fill_to = Vector2(0, 1)
+	gt.width = 4
+	gt.height = 64
+	shade.texture = gt
+	shade.stretch_mode = TextureRect.STRETCH_SCALE
+	shade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	shade.anchor_left = 0.0
+	shade.anchor_right = 1.0
+	shade.anchor_top = 0.55
+	shade.anchor_bottom = 1.0
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(shade)
+	var band := MarginContainer.new()
 	band.anchor_left = 0.0
 	band.anchor_right = 1.0
 	band.anchor_top = 1.0
 	band.anchor_bottom = 1.0
-	band.offset_left = 18
-	band.offset_right = -18
-	band.offset_top = -12
-	band.offset_bottom = -12
+	band.offset_left = 0
+	band.offset_right = 0
+	band.offset_top = -10
+	band.offset_bottom = -10
 	band.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	band.add_theme_constant_override("margin_left", 28)
+	band.add_theme_constant_override("margin_right", 200)
 	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(band)
-	var mc := MarginContainer.new()
-	for side in ["left", "right"]:
-		mc.add_theme_constant_override("margin_" + side, 8)
-	mc.add_theme_constant_override("margin_top", 3)
-	mc.add_theme_constant_override("margin_bottom", 3)
-	mc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	band.add_child(mc)
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 3)
+	col.add_theme_constant_override("separation", 1)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	mc.add_child(col)
-	var row := HBoxContainer.new()
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(row)
+	band.add_child(col)
+	_pct = Label.new()
+	_pct.text = "Načítání"
+	UiSkin.eyebrow(_pct, UiSkin.ACC, 7)
+	col.add_child(_pct)
 	_what = Label.new()
 	_what.set_meta("what", what.to_upper())
-	UiSkin.title(_what, 11)
+	UiSkin.headline(_what, 16)
 	_what.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_what.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	row.add_child(_what)
+	col.add_child(_what)
 	set_what(what)
 	_line = Label.new()
-	_line.add_theme_font_size_override("font_size", 9)
+	_line.add_theme_font_size_override("font_size", 8)
 	_line.add_theme_color_override("font_color", Color(0.80, 0.83, 0.86))
 	_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -158,10 +172,13 @@ func setup(what: String, mission: bool) -> void:
 	col.add_child(_line)
 	_line.text = line()
 	_bar_slot = Control.new()
-	_bar_slot.custom_minimum_size = Vector2(120, 9)
-	_bar_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_bar_slot.anchor_left = 0.0
+	_bar_slot.anchor_right = 1.0
+	_bar_slot.anchor_top = 1.0
+	_bar_slot.anchor_bottom = 1.0
+	_bar_slot.offset_top = -2
 	_bar_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(_bar_slot)
+	_root.add_child(_bar_slot)
 	_bar_ci = RenderingServer.canvas_item_create()
 	RenderingServer.canvas_item_set_parent(_bar_ci, _bar_slot.get_canvas_item())
 	_root.modulate.a = 0.0
@@ -175,7 +192,9 @@ func set_what(what: String) -> void:
 	_what.custom_minimum_size.x = _what.get_minimum_size().x
 
 func _set_dots(n: int) -> void:
-	_what.text = String(_what.get_meta("what", "")) + " " + ".".repeat(n) + " ".repeat(3 - n)
+	# 0.72: a headline, no blinking dots ("STÍHAČKA STARTUJE" -> "Stíhačka startuje")
+	var w := String(_what.get_meta("what", ""))
+	_what.text = w.substr(0, 1) + w.substr(1).to_lower()
 
 ## The line under the picture: a tip (easy, normal) or only the mood (hardcore - no hints there).
 static func line() -> String:
@@ -210,15 +229,10 @@ func _draw_bar() -> void:
 	if w < 10.0:
 		return
 	RenderingServer.canvas_item_clear(_bar_ci)
-	var h := 4.0
-	var y := 3.0
-	var tw := 34.0                      # room for "100 %" on the right
-	var bw := maxf(10.0, w - tw)
-	RenderingServer.canvas_item_add_rect(_bar_ci, Rect2(0, y, bw, h), Color(0.08, 0.11, 0.14, 0.9))
-	RenderingServer.canvas_item_add_rect(_bar_ci, Rect2(0, y, bw * _shown, h), Color(0.45, 0.78, 1.0))
-	var f: Font = UiSkin.font()
-	if f:
-		f.draw_string(_bar_ci, Vector2(bw + 4.0, y + h + 2.0), "%d %%" % int(round(_shown * 100.0)), HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color(0.80, 0.83, 0.86))
+	RenderingServer.canvas_item_add_rect(_bar_ci, Rect2(0, 0, w, 2), Color(1, 1, 1, 0.08))
+	RenderingServer.canvas_item_add_rect(_bar_ci, Rect2(0, 0, w * _shown, 2), UiSkin.ACC)
+	if _pct:
+		_pct.text = ("Načítání · %d %%" % int(round(_shown * 100.0))).to_upper()
 
 func busy() -> bool:
 	return _fade_out < 0.0 or _fade_out < FADE_OUT * 0.5

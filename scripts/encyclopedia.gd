@@ -24,6 +24,9 @@ var plate: Control
 var _spin := 0.0
 var _view := "stand"
 var on_close: Callable
+var _crumb: RichTextLabel
+var _eyebrow: Label
+var _vh := Vector2(158, 258)
 
 static func open(parent: Node, entry_id := "") -> Encyclopedia:
 	var e := Encyclopedia.new()
@@ -35,105 +38,84 @@ static func open(parent: Node, entry_id := "") -> Encyclopedia:
 func build() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	var bg := TextureRect.new()
-	bg.texture = UiSkin.backdrop()
-	bg.stretch_mode = TextureRect.STRETCH_SCALE
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
 	all = EncyData.entries()
-	var root := HBoxContainer.new()
-	root.position = Vector2(6, 6)
-	root.size = Vector2(628, 348)
-	root.add_theme_constant_override("separation", 6)
-	add_child(root)
-	# left: categories and the list
-	var left := PanelContainer.new()
-	left.add_theme_stylebox_override("panel", UiSkin.panel(6))
-	left.custom_minimum_size = Vector2(178, 348)
-	root.add_child(left)
-	var lv := VBoxContainer.new()
-	lv.add_theme_constant_override("separation", 2)
-	left.add_child(lv)
-	var t := Label.new()
-	t.text = "ENCYKLOPEDIE"
-	lv.add_child(t)
-	UiSkin.title(t, 12)
-	var cats := GridContainer.new()
-	cats.columns = 2
-	lv.add_child(cats)
+	# 0.72 (návrh A): a full screen - categories as tabs, the list, the model, the record
+	var sc0 := UiSkin.screen(self, ["Encyklopedie"], "", [["← →", "předchozí / další"], ["LTM", "vybrat záznam"], ["Esc", "zpět"]], 1.0)
+	_crumb = (sc0["panel"] as Control).find_child("Crumb", true, false)
+	var body: VBoxContainer = sc0["body"]
+	cat_box = HBoxContainer.new()
+	cat_box.add_theme_constant_override("separation", 1)
+	body.add_child(cat_box)
 	for c in EncyData.CATS:
 		var cc: String = c
-		var b := _btn(cats, c, func(): _set_cat(cc), 7)
-		b.custom_minimum_size = Vector2(80, 14)
+		var b := Button.new()
+		b.text = c
+		b.focus_mode = Control.FOCUS_NONE
 		b.set_meta("cat", c)
+		UiSkin.tab(b, false)
+		b.pressed.connect(func(): _set_cat(cc))
+		cat_box.add_child(b)
+	var root := HBoxContainer.new()
+	root.add_theme_constant_override("separation", 12)
+	root.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_child(root)
+	# left: the list
 	var sc := ScrollContainer.new()
-	sc.custom_minimum_size = Vector2(0, 246)
+	sc.custom_minimum_size = Vector2(150, 0)
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	lv.add_child(sc)
+	root.add_child(sc)
 	list_box = VBoxContainer.new()
 	list_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list_box.add_theme_constant_override("separation", 1)
+	list_box.add_theme_constant_override("separation", 0)
 	sc.add_child(list_box)
-	# right: the entry
-	var right := PanelContainer.new()
-	right.add_theme_stylebox_override("panel", UiSkin.panel(8))
-	right.custom_minimum_size = Vector2(444, 348)
-	root.add_child(right)
-	var rv := VBoxContainer.new()
-	rv.add_theme_constant_override("separation", 4)
-	right.add_child(rv)
-	var nav := HBoxContainer.new()
-	rv.add_child(nav)
-	_btn(nav, "OK", close, 9).custom_minimum_size = Vector2(46, 16)
-	_btn(nav, "<<", func(): _step(-1), 9).custom_minimum_size = Vector2(46, 16)
-	_btn(nav, ">>", func(): _step(1), 9).custom_minimum_size = Vector2(46, 16)
-	var body := HBoxContainer.new()
-	body.add_theme_constant_override("separation", 8)
-	rv.add_child(body)
+	# middle: the plate with the model
+	plate = Plate.new()
+	plate.custom_minimum_size = Vector2(170, 270)
+	plate.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	root.add_child(plate)
+	var vhold := Control.new()
+	vhold.position = Vector2(6, 6)
+	vhold.size = Vector2(158, 258)
+	vhold.clip_contents = true
+	vhold.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	plate.add_child(vhold)
+	_vh = vhold.size
+	# right: the record
 	var tv := VBoxContainer.new()
-	tv.custom_minimum_size = Vector2(196, 300)
-	tv.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	body.add_child(tv)
+	tv.add_theme_constant_override("separation", 2)
+	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root.add_child(tv)
+	_eyebrow = Label.new()
+	UiSkin.eyebrow(_eyebrow, ACCENT, 7)
+	tv.add_child(_eyebrow)
 	title_lbl = Label.new()
-	title_lbl.add_theme_color_override("font_color", TITLE)
-	title_lbl.add_theme_font_override("font", UiSkin.font(true))
-	title_lbl.add_theme_font_size_override("font_size", 14)
+	UiSkin.headline(title_lbl, 14)
 	title_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	title_lbl.custom_minimum_size = Vector2(200, 0)
 	tv.add_child(title_lbl)
 	# 0.57: rich text - the database records get their headings, fields and the closing quote set apart
 	text_lbl = RichTextLabel.new()
 	text_lbl.bbcode_enabled = true
 	text_lbl.fit_content = true
 	text_lbl.scroll_active = false
-	text_lbl.add_theme_color_override("default_color", TEXT)
+	text_lbl.add_theme_color_override("default_color", Color(0.80, 0.83, 0.86))
 	for fs in ["normal_font_size", "bold_font_size", "italics_font_size", "bold_italics_font_size"]:
-		text_lbl.add_theme_font_size_override(fs, 9)
+		text_lbl.add_theme_font_size_override(fs, 8)
 	text_lbl.add_theme_font_override("bold_font", UiSkin.font(true))
 	var ital := FontVariation.new()
 	ital.base_font = UiSkin.font()
-	ital.variation_transform = Transform2D(Vector2(1, 0), Vector2(0.2, 1), Vector2.ZERO)     # slanted Chakra Petch
+	ital.variation_transform = Transform2D(Vector2(1, 0), Vector2(0.2, 1), Vector2.ZERO)     # slanted
 	text_lbl.add_theme_font_override("italics_font", ital)
 	text_lbl.add_theme_constant_override("paragraph_separation", 3)
 	text_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
-	text_lbl.custom_minimum_size = Vector2(186, 0)
+	text_lbl.custom_minimum_size = Vector2(190, 0)
 	text_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# long database texts scroll (the panel stays the same size)
 	var tsc := ScrollContainer.new()
-	tsc.custom_minimum_size = Vector2(196, 262)
 	tsc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	tsc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	tv.add_child(tsc)
 	tsc.add_child(text_lbl)
-	# the plate with the model
-	plate = Plate.new()
-	plate.custom_minimum_size = Vector2(222, 296)
-	body.add_child(plate)
-	var vhold := Control.new()
-	vhold.position = Vector2(10, 10)
-	vhold.size = Vector2(202, 276)
-	vhold.clip_contents = true
-	vhold.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	plate.add_child(vhold)
 	svc = SubViewportContainer.new()
 	svc.stretch = true
 	svc.size = vhold.size
@@ -184,6 +166,9 @@ func _unhandled_input(ev: InputEvent) -> void:
 	if ev is InputEventKey and ev.pressed and ev.keycode == KEY_ESCAPE:
 		get_viewport().set_input_as_handled()
 		close()
+	elif ev is InputEventKey and ev.pressed and ev.keycode in [KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN]:
+		get_viewport().set_input_as_handled()
+		_step(-1 if ev.keycode in [KEY_LEFT, KEY_UP] else 1)
 
 func show_entry(id: String) -> void:
 	var idx := -1
@@ -204,6 +189,13 @@ func show_entry(id: String) -> void:
 
 func _set_cat(c: String) -> void:
 	cat = c
+	for tb in cat_box.get_children():
+		UiSkin.tab(tb, String(tb.get_meta("cat", "")) == c)
+		tb.text = String(tb.get_meta("cat", "")).to_upper()
+	if _crumb:
+		var tmp := UiSkin.crumb(["Encyklopedie", c])
+		_crumb.text = (tmp.get_node("Crumb") as RichTextLabel).text
+		tmp.free()
 	for b in get_tree().get_nodes_in_group("_none"):
 		pass
 	for ch in list_box.get_children():
@@ -220,17 +212,16 @@ func _set_cat(c: String) -> void:
 		var b := Button.new()
 		b.text = String(e["title"])
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.add_theme_font_size_override("font_size", 8)
 		b.focus_mode = Control.FOCUS_NONE
-		UiSkin.button(b)
-		b.custom_minimum_size = Vector2(160, 18)
+		UiSkin.row(b, k == current)
+		b.add_theme_font_size_override("font_size", 8)
+		b.clip_text = true
+		b.custom_minimum_size = Vector2(140, 18)
 		var ic := String(e.get("icon", ""))
 		if ic != "" and UiSkin.icon(ic):
 			b.icon = UiSkin.icon(ic)
 			b.expand_icon = true
 			b.add_theme_constant_override("icon_max_width", 22)
-		if k == current:
-			b.add_theme_color_override("font_color", ACCENT)
 		b.pressed.connect(func(): _select(k))
 		list_box.add_child(b)
 	if unknown > 0:
@@ -248,6 +239,7 @@ func _select(i: int) -> void:
 	else:
 		_set_cat(cat)
 	title_lbl.text = String(e["title"])
+	_eyebrow.text = ("Vojenská databáze · " + String(e["cat"])).to_upper()
 	text_lbl.text = db_bbcode(hide_unknown(String(e["text"])))
 	(text_lbl.get_parent() as ScrollContainer).scroll_vertical = 0
 	Game.play_ui(self, "type", -14)
@@ -326,7 +318,7 @@ func _show_model(name: String, view: String) -> void:
 	# the view is taller than wide: the narrower (horizontal) angle decides, or a long gun
 	# turning on its stand pokes out of the picture
 	var vhalf := deg_to_rad(cam.fov * 0.5)
-	var hhalf := atan(tan(vhalf) * (202.0 / 276.0))
+	var hhalf := atan(tan(vhalf) * (_vh.x / _vh.y))
 	var dist := r / sin(minf(vhalf, hhalf)) * 1.05
 	match view:
 		"table":
@@ -432,21 +424,21 @@ class Plate extends Control:
 			var steps := 24
 			for i in steps:
 				var k := float(i) / steps
-				draw_rect(Rect2(0, r.size.y * k, r.size.x, r.size.y / steps + 1), Color(0.1, 0.06, 0.2).lerp(Color(0.55, 0.52, 0.66), k * k))
-			draw_rect(r, Color(0.5, 0.55, 0.65), false, 1.0)
+				draw_rect(Rect2(0, r.size.y * k, r.size.x, r.size.y / steps + 1), Color(0.05, 0.06, 0.08).lerp(Color(0.20, 0.21, 0.26), k * k))
+			draw_rect(r, UiSkin.LINE, false, 1.0)
 			return
 		var ch := 14.0
 		var pts := PackedVector2Array([Vector2(ch, 0), Vector2(r.size.x - ch, 0), Vector2(r.size.x, ch), Vector2(r.size.x, r.size.y - ch),
 			Vector2(r.size.x - ch, r.size.y), Vector2(ch, r.size.y), Vector2(0, r.size.y - ch), Vector2(0, ch)])
-		draw_colored_polygon(pts, Color(0.62, 0.64, 0.72))
+		draw_colored_polygon(pts, Color(0.16, 0.17, 0.21))
 		var inner := PackedVector2Array()
 		for p in pts:
 			inner.append(p.lerp(r.size / 2.0, 0.045))
-		draw_colored_polygon(inner, Color(0.74, 0.76, 0.84))
-		draw_polyline(pts + PackedVector2Array([pts[0]]), Color(0.9, 0.92, 0.98), 1.5)
+		draw_colored_polygon(inner, Color(0.21, 0.22, 0.27))
+		draw_polyline(pts + PackedVector2Array([pts[0]]), Color(1, 1, 1, 0.22), 1.0)
 		for y in range(26, int(r.size.y) - 20, 26):
 			for x in range(26, int(r.size.x) - 20, 30):
-				draw_rect(Rect2(x - 2, y - 2, 4, 4), Color(0.45, 0.47, 0.56))
+				draw_rect(Rect2(x - 1, y - 1, 2, 2), Color(0.34, 0.36, 0.42))
 
 ## A record as rich text. The Vojenská databáze records (Ari's): the header block one field per line,
 ## the CAPITAL section titles in amber, short sub-titles and "Key:" items picked out, the closing words

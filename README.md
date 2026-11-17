@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.72.1
+# Operace X - Enemy Beyond — prototyp 0.72.2
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,16 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.72.2
+- Celé rozhraní je v novém stylu Čistý taktický: nahoře drobečková navigace se stavem, dole lišta kláves, žádné krabice v krabicích a jedna zlatá barva.
+- Hlavní menu má vlevo pruh s logem a svislým seznamem (Kampaň, Rychlá mise, Co-op, Vojáci, Nastavení), okna se otevírají vpravo, novinky jsou na vlastní kartě.
+- Pauza ve hře je přes celou obrazovku: vlevo seznam (Pokračovat, Nastavení, Ovládání, Hlas a mikrofon, Opustit misi), vpravo stav týmu nebo vybrané nastavení.
+- Výstroj (I) je rozdělená: vlevo ruce, zbraně a opasek, vpravo batoh s ukazatelem váhy.
+- Briefing ukazuje místo a čas, úkol ve zlatém rámečku, údaje o mapě a počasí a mapku místa zásahu.
+- Výsledek mise má velká čísla (zabití, zajatí, civilisté), tabulku týmu se stavem každého vojáka a vpravo mého vojáka a hlášení.
+- Načítání má nápis vlevo dole a tenký zlatý pruh postupu přes celou šířku.
+- Na glóbu je herní menu podle nového vzhledu, zbrojnice, dílna a prodej jsou čisté tabulky se záložkami a košíkem, výzkum a encyklopedie mají stejnou hlavičku a záložky.
 
 ## Novinky 0.72.1
 - Pět nových misí: Konvoj (ubránit náklad ze sestřelené lodi, než ho odveze vrtulník), Sestřelený pilot (najít a zachránit pilota u vraku Sokola), Radarová stanice (zapnout rozvodny a rozsvítit základnu), Karanténa (zničit hnízdo v městečku a zachránit zdravé civilisty – někteří v sobě nosí Líhavce) a Štěnice (potichu připevnit sledovač na přistálou loď a najít tak základnu vetřelců).

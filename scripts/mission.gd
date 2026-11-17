@@ -3000,7 +3000,17 @@ func _end(success: bool, why: String, airlift := false, abandoned := false) -> v
 	if success and me and not left_behind(me) and not home() and not local() and (Game.autotest() == "" or Game.autotest() == "transport" or Game.autotest().begins_with("coopevac")):
 		_show_transport(me, campaign, q, my_pay, my_xp, fate, camp, civ_saved, civ_dead)
 		return
-	hud.show_result(("MISE SPLNĚNA" if success else ("ZÁKLADNA PADLA" if mtype() == "base" and campaign else "MISE NEÚSPĚŠNÁ")), why + "\n\n" + "\n".join(lines) + "\n\nTvůj voják: " + fate + xp_text + ("\n\n" + camp if camp != "" else ""))
+	# 0.72 (návrh A): the result screen gets the numbers apart, not only one long text
+	var team := []
+	var tk2 := 0
+	var tc2 := 0
+	for p in players():
+		tk2 += p.kills
+		tc2 += p.captures
+		team.append([String(p.display_name), p.kills, p.captures, "mrtev" if p.dead else ("v bezvědomí" if p.downed else ("zraněn" if p.wounded else "v pořádku"))])
+	var info := {"why": why, "team": team, "kills": tk2, "caps": tc2, "fate": fate, "more": xp_text.strip_edges(), "camp": camp,
+		"civ": [civ_saved, civ_dead] if civs_total > 0 else [], "quality": quality_name(q) if campaign else ""}
+	hud.show_result(("MISE SPLNĚNA" if success else ("ZÁKLADNA PADLA" if mtype() == "base" and campaign else "MISE NEÚSPĚŠNÁ")), why + "\n\n" + "\n".join(lines) + "\n\nTvůj voják: " + fate + xp_text + ("\n\n" + camp if camp != "" else ""), info)
 	if Game.autotest() != "": print("[END] result shown, leaving in a moment")
 	get_tree().create_timer(8.0 if Game.autotest() != "campaign" else 2.0).timeout.connect(func(): _leave(""))
 

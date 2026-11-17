@@ -292,42 +292,162 @@ func briefing(text: String) -> void:
 	back.modulate = Color(0.55, 0.55, 0.55)
 	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_brief_bg.add_child(back)
-	var frame := Panel.new()
-	frame.add_theme_stylebox_override("panel", UiSkin.panel())
-	frame.position = Vector2(40, 22)
-	frame.size = Vector2(560, 306)
-	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_brief_bg.add_child(frame)
-	var head := Label.new()
-	head.text = "Hlášení z velínu - " + String(Net.mission_params.get("type_name", "mise"))
-	UiSkin.title(head, 12)
-	head.position = Vector2(52, 30)
-	head.size = Vector2(536, 0)
-	_brief_bg.add_child(head)
-	_brief_lbl = Label.new()
-	_brief_lbl.text = Game.shipify(text)
-	_brief_lbl.position = Vector2(60, 70)
-	_brief_lbl.size = Vector2(520, 220)
-	_brief_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
-	_brief_lbl.add_theme_font_size_override("font_size", 10)
-	_brief_lbl.add_theme_color_override("font_color", Color(0.80, 0.83, 0.86))
+	# 0.72 (návrh A): the report split up - where and when on top, the story typed out, the task
+	# in a gold box, the facts as a table, the place on the map on the right
+	var parts := _brief_parts(Game.shipify(text))
+	var v := VBoxContainer.new()
+	v.position = Vector2.ZERO
+	v.size = Vector2(640, 360)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_theme_constant_override("separation", 0)
+	_brief_bg.add_child(v)
+	var mg := MarginContainer.new()
+	mg.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	mg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for k in [["left", 34], ["right", 28], ["top", 26], ["bottom", 8]]:
+		mg.add_theme_constant_override("margin_" + k[0], k[1])
+	v.add_child(mg)
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 22)
+	cols.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mg.add_child(cols)
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 4)
+	left.custom_minimum_size = Vector2(360, 0)
+	left.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cols.add_child(left)
+	var mp: Dictionary = Net.mission_params
+	var eb_parts: Array = ["Hlášení z velínu", String(mp.get("type_name", "mise"))]
+	if String(parts["time"]) != "":
+		eb_parts.append(String(parts["time"]))
+	var eb := _lbl(left, " · ".join(eb_parts), UiSkin.ACC, 7)
+	UiSkin.eyebrow(eb, UiSkin.ACC, 7)
+	var hl := _lbl(left, String(parts["place"]) if String(parts["place"]) != "" else String(mp.get("type_name", "Mise")), TEXT, 18)
+	UiSkin.headline(hl, 18)
+	hl.custom_minimum_size = Vector2(360, 0)
+	_brief_lbl = _lbl(left, String(parts["story"]), Color(0.80, 0.83, 0.86), 9)
+	_brief_lbl.custom_minimum_size = Vector2(360, 0)
 	_brief_lbl.visible_characters = 0
-	_brief_lbl.custom_minimum_size = Vector2(520, 0)
-	_brief_bg.add_child(_brief_lbl)
-	_brief_lbl.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_brief_lbl.position = Vector2(60, 58)
-	_brief_lbl.size = Vector2(520, 250)
-	var hint := Label.new()
-	hint.text = "Mezerník - přeskočit"
-	hint.position = Vector2(500, 334)
-	hint.add_theme_font_size_override("font_size", 8)
-	hint.add_theme_color_override("font_color", Color(0.4, 0.45, 0.4))
-	_brief_bg.add_child(hint)
-	_brief_len = text.length()
+	if String(parts["task"]) != "":
+		var tp := PanelContainer.new()
+		tp.add_theme_stylebox_override("panel", UiBox.make(Color(UiSkin.ACC.r, UiSkin.ACC.g, UiSkin.ACC.b, 0.08), Color(0, 0, 0, 0), 0, Vector4(8, 3, 6, 3)).with_bar(UiSkin.ACC, 0, 2.0))
+		left.add_child(tp)
+		var tl := _lbl(tp, String(parts["task"]), TEXT, 8)
+		tl.custom_minimum_size = Vector2(340, 0)
+	for kv in parts["facts"]:
+		_kv_row(left, kv[0], kv[1])
+	# the map: the place on the day side of the earth, a gold ring around it
+	if mp.has("lat") and mp.has("lon"):
+		var right := VBoxContainer.new()
+		right.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cols.add_child(right)
+		var ml := _lbl(right, "Místo zásahu", UiSkin.DIM, 7)
+		UiSkin.eyebrow(ml, UiSkin.DIM, 7)
+		right.add_child(_brief_map(float(mp["lat"]), float(mp["lon"])))
+	v.add_child(UiSkin.key_bar([["Mezerník", "přeskočit"], ["Enter", "v lodi: připraven"]]))
+	_brief_len = String(parts["story"]).length()
 	_brief_t = 0.0
 	var mt: String = Net.mission_params.get("type", "")
 	Game.play_music("final_mission" if mt == "mars" else ("terror_briefing" if mt == "terror" else "briefing"), mt == "mars")
 	inventory_open = true     # blocks the mercenary while the screen is black
+
+## The briefing text cut into its parts (the mission builds it as one text): the place and time,
+## the story, the task and the facts (map, terrain, weather, camouflage, difficulty).
+static func _brief_parts(text: String) -> Dictionary:
+	var out := {"place": "", "time": "", "story": "", "task": "", "facts": []}
+	var story := []
+	var task := []
+	for para in text.split("\n\n"):
+		var keep := []
+		for ln in para.split("\n"):
+			var l := ln.strip_edges()
+			if l == "":
+				continue
+			if l.begins_with("Oblast: "):
+				var rest := l.substr(8)
+				var i := rest.find(", místní čas ")
+				if i >= 0:
+					out["place"] = rest.substr(0, i)
+					var t := rest.substr(i + 13)
+					var j := t.find(", mapa ")
+					if j >= 0:
+						out["facts"].append(["Mapa", t.substr(j + 7)])
+						t = t.substr(0, j)
+					out["time"] = t.replace("(", "").replace(")", "")
+				else:
+					out["place"] = rest
+				continue
+			if l.begins_with("Terén: "):
+				out["facts"].append(["Terén", l.substr(7).trim_suffix(".")])
+				continue
+			if l.begins_with("Počasí: "):
+				out["facts"].append(["Počasí", l.substr(8).trim_suffix(".")])
+				continue
+			if l.begins_with("Maskáče: "):
+				out["facts"].append(["Maskáče", l.substr(9).trim_suffix(".")])
+				continue
+			if l == l.to_upper() and l.length() < 40 and story.is_empty() and task.is_empty() and keep.is_empty():
+				continue        # the mission type in capitals: it is in the eyebrow
+			if l.begins_with("ÚKOL:"):
+				task.append(l.substr(5).strip_edges())
+				continue
+			if not task.is_empty() and keep.is_empty() and story.size() > 0:
+				task.append(l)
+				continue
+			keep.append(l)
+		if not keep.is_empty():
+			story.append("\n".join(keep))
+	out["story"] = "\n\n".join(story)
+	out["task"] = "\n".join(task)
+	if out["task"] != "":
+		out["task"] = "Úkol: " + out["task"]
+	if not out["facts"].is_empty() or out["place"] != "":
+		out["facts"].append(["Obtížnost", String(Game.DIFF_NAMES.get(Game.difficulty, Game.difficulty))])
+	return out
+
+func _brief_map(lat: float, lon: float) -> Control:
+	var box := Control.new()
+	box.custom_minimum_size = Vector2(196, 196)
+	box.clip_contents = true
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tex: Texture2D = load("res://assets/textures/earth_day.png")
+	if tex:
+		var at := AtlasTexture.new()
+		at.atlas = tex
+		var w := float(tex.get_width())
+		var h := float(tex.get_height())
+		var span := 60.0          # degrees of longitude in view
+		var px := span / 360.0 * w
+		var cx := (lon + 180.0) / 360.0 * w
+		var cy := (90.0 - lat) / 180.0 * h
+		var rx := clampf(cx - px * 0.5, 0.0, w - px)
+		var ry := clampf(cy - px * 0.5, 0.0, h - px)
+		at.region = Rect2(rx, ry, px, px)
+		var tr := TextureRect.new()
+		tr.texture = at
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_SCALE
+		tr.size = Vector2(196, 196)
+		tr.modulate = Color(0.55, 0.6, 0.66)
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(tr)
+		var dot := Vector2((cx - rx) / px, (cy - ry) / px) * 196.0
+		var mark := Control.new()
+		mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mark.size = Vector2(196, 196)
+		mark.draw.connect(func():
+			mark.draw_arc(dot, 9.0, 0.0, TAU, 32, UiSkin.ACC, 1.0)
+			mark.draw_circle(dot, 2.0, UiSkin.ACC)
+			mark.draw_line(Vector2(dot.x, 0), Vector2(dot.x, dot.y - 12), Color(UiSkin.ACC, 0.35), 1.0)
+			mark.draw_line(Vector2(0, dot.y), Vector2(dot.x - 12, dot.y), Color(UiSkin.ACC, 0.35), 1.0))
+		box.add_child(mark)
+	var fr := Panel.new()
+	fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fr.size = Vector2(196, 196)
+	fr.add_theme_stylebox_override("panel", UiBox.make(Color(0, 0, 0, 0), UiSkin.LINE, 15))
+	box.add_child(fr)
+	return box
 
 var _ready_lbl: Label
 var _ready_sent := false
@@ -379,28 +499,138 @@ func brief_go() -> void:
 	else:
 		Game.play_music("tactical" if Game.tactical_music else "")
 
-func show_result(title: String, text: String) -> void:
+func show_result(title: String, text: String, info := {}) -> void:
 	Game.play_music("debriefing", false)
 	Game.play_ui(self, "mission_complete" if title.begins_with("MISE SPLN") else "mission_failed", -2)
 	_close_inventory()
 	pause_panel.visible = false
-	result_panel = _panel(title, Vector2(110, 12), Vector2(420, 0))
-	var outer: VBoxContainer = result_panel.get_child(0)
+	# 0.72 (návrh A): a full screen - the team's numbers on the left, the report on the right
+	result_panel = PanelContainer.new()
+	result_panel.name = "Result"
+	result_panel.add_theme_stylebox_override("panel", UiSkin.full(Vector4.ZERO))
+	result_panel.position = Vector2.ZERO
+	result_panel.size = Vector2(640, 360)
+	result_panel.custom_minimum_size = Vector2(640, 360)
+	add_child(result_panel)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 0)
+	result_panel.add_child(v)
+	var mg := MarginContainer.new()
+	mg.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	for k in [["left", 30], ["right", 24], ["top", 22], ["bottom", 8]]:
+		mg.add_theme_constant_override("margin_" + k[0], k[1])
+	v.add_child(mg)
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 22)
+	mg.add_child(cols)
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 3)
+	left.custom_minimum_size = Vector2(300, 0)
+	cols.add_child(left)
+	var eb := _lbl(left, "Cesta domů · " + String(Net.mission_params.get("type_name", "mise")), UiSkin.ACC, 7)
+	UiSkin.eyebrow(eb, UiSkin.ACC, 7)
+	var won := title.begins_with("MISE SPLN")
+	var hl := _lbl(left, title.substr(0, 1) + title.substr(1).to_lower(), TEXT, 18)
+	UiSkin.headline(hl, 18)
+	if not won:
+		hl.add_theme_color_override("font_color", UiSkin.BAD)
+	var right := VBoxContainer.new()
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.add_theme_constant_override("separation", 3)
+	cols.add_child(right)
+	if info.is_empty():
+		# no numbers given: the whole text in the report
+		var sc0 := _result_scroll(right)
+		var l0 := _lbl(sc0, text, TEXT, 8)
+		l0.custom_minimum_size = Vector2(220, 0)
+	else:
+		var lead := _lbl(left, String(info.get("why", "")), UiSkin.DIM, 8)
+		lead.custom_minimum_size = Vector2(300, 0)
+		# the big numbers
+		var big := HBoxContainer.new()
+		big.add_theme_constant_override("separation", 18)
+		left.add_child(big)
+		var nums := [[info.get("kills", 0), "zabití"], [info.get("caps", 0), "zajatí"]]
+		var cv: Array = info.get("civ", [])
+		if cv.size() == 2:
+			nums.append([cv[0], "civilistů zachráněno"])
+			nums.append([cv[1], "civilistů mrtvých"])
+		for n in nums:
+			var one := VBoxContainer.new()
+			one.add_theme_constant_override("separation", -2)
+			big.add_child(one)
+			var nl := _lbl(one, str(n[0]), TEXT, 20)
+			UiSkin.headline(nl, 20)
+			nl.autowrap_mode = TextServer.AUTOWRAP_OFF
+			var tl := _lbl(one, n[1], UiSkin.DIM, 6)
+			UiSkin.eyebrow(tl, UiSkin.DIM, 6)
+			tl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		# the team table
+		var th := _lbl(left, "Tým", UiSkin.DIM, 7)
+		UiSkin.eyebrow(th, UiSkin.DIM, 7)
+		var hdr := HBoxContainer.new()
+		left.add_child(hdr)
+		for c in [["Voják", 136], ["Zabití", 44], ["Zajato", 44], ["Stav", 70]]:
+			var cl := _lbl(hdr, c[0], UiSkin.DIM, 6)
+			UiSkin.eyebrow(cl, UiSkin.DIM, 6)
+			cl.autowrap_mode = TextServer.AUTOWRAP_OFF
+			cl.custom_minimum_size = Vector2(c[1], 0)
+		for r in info.get("team", []):
+			var row := PanelContainer.new()
+			row.add_theme_stylebox_override("panel", UiBox.make(Color(0, 0, 0, 0), UiSkin.LINE, 8, Vector4(0, 1, 0, 1)))
+			left.add_child(row)
+			var hb := HBoxContainer.new()
+			row.add_child(hb)
+			var bad: bool = String(r[3]) in ["mrtev", "v bezvědomí"]
+			for c in [[String(r[0]), 136, TEXT], [str(r[1]), 44, TEXT], [str(r[2]), 44, TEXT], [String(r[3]), 70, UiSkin.BAD if bad else UiSkin.OK]]:
+				var cl := _lbl(hb, c[0], c[2], 8)
+				cl.autowrap_mode = TextServer.AUTOWRAP_OFF
+				cl.clip_text = true
+				cl.custom_minimum_size = Vector2(c[1], 0)
+		if String(info.get("quality", "")) != "":
+			_kv_row(left, "Hodnocení mise", String(info["quality"]))
+		var rt := _lbl(right, "Tvůj voják", UiSkin.DIM, 7)
+		UiSkin.eyebrow(rt, UiSkin.DIM, 7)
+		var sc := _result_scroll(right)
+		var fl := _lbl(sc, String(info.get("fate", "")).substr(0, 1).to_upper() + String(info.get("fate", "")).substr(1), TEXT, 8)
+		fl.custom_minimum_size = Vector2(220, 0)
+		if String(info.get("more", "")) != "":
+			var ml := _lbl(sc, String(info["more"]), UiSkin.DIM, 8)
+			ml.custom_minimum_size = Vector2(220, 0)
+		if String(info.get("camp", "")) != "":
+			var sp := Control.new()
+			sp.custom_minimum_size = Vector2(0, 6)
+			sc.add_child(sp)
+			var ht := _lbl(sc, "Hlášení", UiSkin.DIM, 7)
+			UiSkin.eyebrow(ht, UiSkin.DIM, 7)
+			var cl2 := _lbl(sc, String(info["camp"]), TEXT, 8)
+			cl2.custom_minimum_size = Vector2(220, 0)
+	var keys := [["", "Návrat na základnu za chvíli..."]]
+	v.add_child(UiSkin.key_bar(keys + [["kolečko", "posouvat hlášení"]]))
+
+func _result_scroll(parent: Node) -> VBoxContainer:
 	var sc := ScrollContainer.new()
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	outer.add_child(sc)
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sc.custom_minimum_size = Vector2(220, 60)
+	parent.add_child(sc)
 	var box := VBoxContainer.new()
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", 3)
 	sc.add_child(box)
-	var l := _lbl(box, text, TEXT, 9)
-	l.custom_minimum_size = Vector2(400, 0)
-	# as tall as the text, but never past the bottom of the screen
-	var n_lines := 0
-	for ln in text.split("\n"):
-		n_lines += maxi(1, ceili(ln.length() / 72.0))
-	sc.custom_minimum_size = Vector2(404, minf(n_lines * 13.0 + 8.0, 280.0))
-	if Game.autotest() == "":
-		_lbl(outer, "Návrat na základnu za chvíli...", FRAME, 9)
+	return box
+
+func _kv_row(parent: Node, k: String, val: String, col := TEXT) -> void:
+	var row := PanelContainer.new()
+	row.add_theme_stylebox_override("panel", UiBox.make(Color(0, 0, 0, 0), UiSkin.LINE, 8, Vector4(0, 1, 0, 1)))
+	parent.add_child(row)
+	var hb := HBoxContainer.new()
+	row.add_child(hb)
+	var kl := _lbl(hb, k, UiSkin.DIM, 8)
+	kl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	kl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var vl := _lbl(hb, val, col, 8)
+	vl.autowrap_mode = TextServer.AUTOWRAP_OFF
 
 ## 0.72: a window is open over the game (pause, inventory, the result) - the HUD steps aside.
 func window_up() -> bool:
@@ -1198,46 +1428,118 @@ func _btn(parent: Node, s: String, cb: Callable, min_size := Vector2.ZERO) -> Bu
 var inv_keys: Label
 const SLOT_KEY := {"rh": "LTM", "lh": "štít", "back": "1", "side": "2", "b0": "3", "b1": "4", "b2": "5", "b3": "6"}
 func _build_inventory() -> void:
-	inv_panel = _panel("VÝSTROJ", Vector2(14, 8), Vector2(612, 0))
-	var box: VBoxContainer = inv_panel.get_child(0)
+	# 0.72 (návrh A): a full screen - hands, weapons and belt left, the backpack and the keys right
+	inv_panel = PanelContainer.new()
+	inv_panel.name = "Inventory"
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(UiSkin.BG.r, UiSkin.BG.g, UiSkin.BG.b, 0.84)
+	inv_panel.add_theme_stylebox_override("panel", sb)
+	inv_panel.position = Vector2.ZERO
+	inv_panel.size = Vector2(640, 360)
+	inv_panel.custom_minimum_size = Vector2(640, 360)
+	add_child(inv_panel)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 0)
+	inv_panel.add_child(v)
+	var cm := MarginContainer.new()
+	for k in [["left", 14], ["right", 14], ["top", 8], ["bottom", 6]]:
+		cm.add_theme_constant_override("margin_" + k[0], k[1])
+	v.add_child(cm)
+	var nm := "voják"
+	if me():
+		nm = String(me().display_name)
+	var cb := UiSkin.crumb(["Výstroj", nm], "")
+	_inv_status = cb.get_node("Status")
+	_inv_crumb = cb.get_node("Crumb")
+	cm.add_child(cb)
+	var mg := MarginContainer.new()
+	mg.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	for k in [["left", 14], ["right", 14], ["top", 2], ["bottom", 6]]:
+		mg.add_theme_constant_override("margin_" + k[0], k[1])
+	v.add_child(mg)
 	var cols := HBoxContainer.new()
-	cols.add_theme_constant_override("separation", 10)
-	box.add_child(cols)
+	cols.add_theme_constant_override("separation", 16)
+	mg.add_child(cols)
 	var left := VBoxContainer.new()
 	left.add_theme_constant_override("separation", 3)
+	left.custom_minimum_size = Vector2(296, 0)
 	cols.add_child(left)
-	var groups := [["V RUKOU a ŠTÍT  (LTM = použít / střílet, PTM = mířit)", ["rh", "lh"]],
-		["ZBRANĚ - 1 primární, 2 sekundární (jednoruční); kolečko myši = primární a zpět", ["back", "side"]],
-		["OPASEK - rychlý: klávesy 3 4 5 6 (do rukou, náboje nabijí)", ["b0", "b1", "b2", "b3"]],
-		["BATOH - pomalý: stojíš a hrabeš se (granáty, světlice... i odtud fungují svou klávesou)", Game.pack_slots()]]
+	_inv_left = left
+	var right := VBoxContainer.new()
+	right.add_theme_constant_override("separation", 3)
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cols.add_child(right)
+	_inv_right = right
+	var groups := [[left, "V rukou · LTM použít, PTM mířit", ["rh", "lh"], 2, Vector2(146, 46)],
+		[left, "Zbraně · kolečko přepíná", ["back", "side"], 2, Vector2(146, 36)],
+		[left, "Opasek · rychle (3 4 5 6)", ["b0", "b1", "b2", "b3"], 4, Vector2(71, 32)],
+		[right, "Batoh · pomalu, stojíš a hrabeš se", Game.pack_slots(), 3, Vector2(97, 30)]]
 	var names := {"rh": "v rukou - jedna věc, zbraň oběma rukama", "lh": "štít (jen s jednoruční zbraní)", "back": "primární zbraň (klávesa 1)", "side": "sekundární zbraň - pistole, revolver, nůž (klávesa 2)"}
 	for g in groups:
-		var gl := _lbl(left, g[0], FRAME, 8)
-		gl.custom_minimum_size = Vector2(360, 0)
+		var gl := _lbl(g[0], g[1], UiSkin.ACC if g[0] == left else UiSkin.DIM, 7)
+		UiSkin.eyebrow(gl, UiSkin.DIM, 7)
+		gl.autowrap_mode = TextServer.AUTOWRAP_OFF
 		var row := GridContainer.new()
-		row.columns = 4 if g[1].size() == 4 else (2 if g[1].size() == 2 else 3)
-		row.add_theme_constant_override("h_separation", 3)
-		row.add_theme_constant_override("v_separation", 3)
-		left.add_child(row)
-		for sl in g[1]:
+		row.columns = g[3]
+		row.add_theme_constant_override("h_separation", 4)
+		row.add_theme_constant_override("v_separation", 4)
+		g[0].add_child(row)
+		for sl in g[2]:
 			var slot: String = sl
-			inv_buttons[slot] = _btn(row, "", func(): _slot_clicked(slot), Vector2(86 if g[1].size() == 4 else (176 if g[1].size() == 2 else 116), 32 if g[1].size() < 9 else 24))
+			inv_buttons[slot] = _btn(row, "", func(): _slot_clicked(slot), g[4] if g[2].size() < 9 else Vector2(97, 26))
 			inv_buttons[slot].tooltip_text = names.get(slot, "")
-	inv_info = _lbl(left, "", TEXT, 9)
-	var hint := _lbl(left, "Přetáhni věc (nebo klikni na ni a pak na místo), kam ji dát. Přetažení mimo okno ji zahodí před tebe. Z batohu to trvá a stojíš. I zavře.", FRAME, 8)
-	_btn(left, "Zahodit vybranou věc (Backspace = zahodit z ruky)", func():
+		if g[0] == left:
+			var sp := Control.new()
+			sp.custom_minimum_size = Vector2(0, 3)
+			left.add_child(sp)
+	inv_info = _lbl(left, "", TEXT, 8)
+	inv_info.custom_minimum_size = Vector2(296, 0)
+	var db := _btn(left, "Zahodit věc z ruky", func():
 		var pp := me()
 		if pp and held_slot != "":
 			pp.drop_slot(held_slot)
-			held_slot = "", Vector2(360, 16))
-	hint.custom_minimum_size = Vector2(360, 0)
+			held_slot = "", Vector2(120, 16))
+	UiSkin.ghost(db)
+	db.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	# the weight under the backpack
+	var wr := HBoxContainer.new()
+	wr.add_theme_constant_override("separation", 6)
+	right.add_child(wr)
+	var wl := _lbl(wr, "Váha", UiSkin.DIM, 7)
+	UiSkin.eyebrow(wl, UiSkin.DIM, 7)
+	wl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_inv_wbar = ProgressBar.new()
+	_inv_wbar.show_percentage = false
+	_inv_wbar.custom_minimum_size = Vector2(0, 3)
+	_inv_wbar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_inv_wbar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(1, 1, 1, 0.08)
+	_inv_wbar.add_theme_stylebox_override("background", bg)
+	wr.add_child(_inv_wbar)
+	_inv_wnum = _lbl(wr, "", UiSkin.DIM, 7)
+	_inv_wnum.autowrap_mode = TextServer.AUTOWRAP_OFF
+	var hint := _lbl(right, "Přetáhni věc (nebo klikni na ni a pak na místo), kam ji dát. Puštěná mimo políčka spadne před tebe. Z batohu to trvá a stojíš.", UiSkin.DIM, 7)
+	hint.custom_minimum_size = Vector2(290, 0)
 	# right: every key and what it does with what you carry right now
-	var right := VBoxContainer.new()
-	cols.add_child(right)
-	_lbl(right, "KLÁVESY", ACCENT, 10)
-	inv_keys = _lbl(right, "", TEXT, 8)
-	inv_keys.custom_minimum_size = Vector2(220, 0)
+	var kh := _lbl(right, "Klávesy", UiSkin.DIM, 7)
+	UiSkin.eyebrow(kh, UiSkin.DIM, 7)
+	var ks := ScrollContainer.new()
+	ks.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	ks.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	ks.custom_minimum_size = Vector2(0, 40)
+	right.add_child(ks)
+	inv_keys = _lbl(ks, "", Color(0.80, 0.83, 0.86), 7)
+	inv_keys.custom_minimum_size = Vector2(286, 0)
+	v.add_child(UiSkin.key_bar([["I", "zavřít"], ["Backspace", "zahodit z ruky"], ["LTM", "vzít / položit"]]))
 	inv_panel.visible = false
+
+var _inv_status: Label
+var _inv_crumb: RichTextLabel
+var _inv_left: Control
+var _inv_right: Control
+var _inv_wbar: ProgressBar
+var _inv_wnum: Label
 
 ## The key list: what each key does with the current gear (and where the thing is).
 func _keys_text(p: Node) -> String:
@@ -1286,6 +1588,10 @@ func _open_inventory() -> void:
 	inventory_open = true
 	held_slot = ""
 	inv_panel.visible = true
+	if _inv_crumb and me():
+		var tmp := UiSkin.crumb(["Výstroj", String(me().display_name)])
+		_inv_crumb.text = (tmp.get_node("Crumb") as RichTextLabel).text
+		tmp.free()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_refresh_inventory()
 
@@ -1352,7 +1658,7 @@ func _input(event: InputEvent) -> void:
 	if target != "" and target != _drag_from and p.busy <= 0:
 		p.timed_move(_drag_from, target)
 		_dragged = true
-	elif target == "" and not inv_panel.get_global_rect().has_point(mp):
+	elif target == "" and not _inv_left.get_global_rect().has_point(mp) and not _inv_right.get_global_rect().has_point(mp):
 		p.drop_slot(_drag_from)
 	held_slot = ""
 	_drag_from = ""
@@ -1374,40 +1680,170 @@ func _refresh_inventory() -> void:
 		b.modulate = Color(1.6, 1.4, 0.6) if s == held_slot else Color(1, 1, 1)
 	var w: int = p.carried_weight()
 	var cap := int(p.merc.get("strength", 30))
-	inv_info.text = "Váha %d / síla %d%s" % [w, cap, "   PŘETÍŽEN - pomalejší pohyb" if w > cap else ""]
+	inv_info.text = "PŘETÍŽEN - pomalejší pohyb" if w > cap else ""
 	if held_slot != "":
-		inv_info.text += "   V ruce: " + Game.ITEMS[p.inv[held_slot]["id"]]["name"]
+		inv_info.text += ("   " if inv_info.text != "" else "") + "Vybráno: " + Game.ITEMS[p.inv[held_slot]["id"]]["name"]
 	inv_info.add_theme_color_override("font_color", RED if w > cap else TEXT)
+	if _inv_status:
+		_inv_status.text = ("Váha %d / %d kg" % [w, cap]).to_upper()
+		_inv_status.add_theme_color_override("font_color", UiSkin.BAD if w > cap else UiSkin.DIM)
+		_inv_wbar.max_value = maxf(cap, 1)
+		_inv_wbar.value = mini(w, cap)
+		var fs := StyleBoxFlat.new()
+		fs.bg_color = UiSkin.BAD if w > cap else TEXT
+		_inv_wbar.add_theme_stylebox_override("fill", fs)
+		_inv_wnum.text = "%d / %d" % [w, cap]
 	if inv_keys:
 		inv_keys.text = _keys_text(p)
 
 # ---- pause -----------------------------------------------------------------------------------
 func _build_pause() -> void:
-	pause_panel = _panel("PAUZA", Vector2(150, 6), Vector2(340, 0))
-	var outer: VBoxContainer = pause_panel.get_child(0)
-	_btn(outer, "Pokračovat", _resume)
-	# the settings scroll if they do not fit
-	var sc := ScrollContainer.new()
-	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	sc.custom_minimum_size = Vector2(330, 250)
-	outer.add_child(sc)
-	var box := VBoxContainer.new()
-	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sc.add_child(box)
-	_lbl(box, "Hra běží dál - vetřelci nečekají.", FRAME, 9)
-	settings_ui(box)
-	# (0.57) hardcore: walking out of a real mission is its failure - the first press only warns
-	_leave_warn = _lbl(outer, "", RED, 9)
-	_leave_warn.visible = false
+	# 0.72 (návrh A): celá obrazovka - hra ztmavená za ní, vlevo seznam, vpravo mise a tým / nastavení
+	pause_panel = PanelContainer.new()
+	pause_panel.name = "Pause"
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(UiSkin.BG.r, UiSkin.BG.g, UiSkin.BG.b, 0.78)
+	pause_panel.add_theme_stylebox_override("panel", sb)
+	pause_panel.position = Vector2.ZERO
+	pause_panel.size = Vector2(640, 360)
+	pause_panel.custom_minimum_size = Vector2(640, 360)
+	add_child(pause_panel)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 0)
+	pause_panel.add_child(v)
+	var mg := MarginContainer.new()
+	mg.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	for k in [["left", 40], ["right", 30], ["top", 50], ["bottom", 10]]:
+		mg.add_theme_constant_override("margin_" + k[0], k[1])
+	v.add_child(mg)
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 28)
+	mg.add_child(cols)
+	var left := VBoxContainer.new()
+	left.custom_minimum_size = Vector2(140, 0)
+	left.add_theme_constant_override("separation", 2)
+	cols.add_child(left)
+	var t := _lbl(left, "Pauza", TEXT, 20)
+	UiSkin.headline(t, 20)
+	t.autowrap_mode = TextServer.AUTOWRAP_OFF
+	var e := _lbl(left, "Hra běží dál", UiSkin.ACC, 7)
+	UiSkin.eyebrow(e, UiSkin.ACC, 7)
+	e.autowrap_mode = TextServer.AUTOWRAP_OFF
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 16)
+	left.add_child(gap)
+	_pause_rows = {}
+	_pause_row(left, "go", "Pokračovat", _resume)
+	_pause_row(left, "set", "Nastavení", func(): _pause_page("set"))
+	_pause_row(left, "keys", "Ovládání", func(): _pause_page("keys"))
+	_pause_row(left, "voice", "Hlas a mikrofon", func(): _pause_page("voice"))
 	# (0.7x) down in one's own base, co-op: the host may be waiting for the team on the globe
 	if mission().local() and Net.is_online():
-		_ready_pbtn = _btn(outer, "", func():
+		_ready_pbtn = _pause_row(left, "ready", "", func():
 			Net.set_ready(not Net.is_ready(Net.my_id()))
 			_ready_ptext.call_deferred())
 		Net.ready_changed.connect(_ready_ptext)
 		_ready_ptext()
-	_leave_btn = _btn(outer, _leave_text(), _leave_pressed)
+	_leave_btn = _pause_row(left, "leave", _leave_text(), _leave_pressed)
+	_leave_btn.add_theme_color_override("font_color", UiSkin.BAD)
+	_leave_btn.add_theme_color_override("font_hover_color", UiSkin.BAD.lightened(0.2))
+	# (0.57) hardcore: walking out of a real mission is its failure - the first press only warns
+	_leave_warn = _lbl(left, "", RED, 7)
+	_leave_warn.custom_minimum_size = Vector2(140, 0)
+	_leave_warn.visible = false
+	_pause_right = VBoxContainer.new()
+	_pause_right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_pause_right.add_theme_constant_override("separation", 3)
+	cols.add_child(_pause_right)
+	v.add_child(UiSkin.key_bar([["Esc", "pokračovat"], ["LTM", "vybrat"]]))
 	pause_panel.visible = false
+
+var _pause_rows := {}
+var _pause_right: VBoxContainer
+var _pause_on := "info"
+func _pause_row(parent: Node, key: String, text: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_NONE
+	b.clip_text = true
+	b.custom_minimum_size = Vector2(140, 18)
+	b.add_theme_font_size_override("font_size", 9)
+	UiSkin.row(b, key == "go")
+	b.pressed.connect(cb)
+	parent.add_child(b)
+	_pause_rows[key] = b
+	return b
+
+## The right half of the pause: what goes on and who is where (info), or one page of the settings.
+func _pause_page(page: String) -> void:
+	_pause_on = page
+	for k in _pause_rows:
+		var b: Button = _pause_rows[k]
+		var col = b.get_theme_color("font_color") if b.has_theme_color_override("font_color") else null
+		UiSkin.row(b, k == page or (page == "info" and k == "go"))
+		if col != null:
+			b.add_theme_color_override("font_color", col)
+	for c in _pause_right.get_children():
+		_pause_right.remove_child(c)
+		c.queue_free()
+	if page == "info":
+		var mp: Dictionary = Net.mission_params
+		var m := mission()
+		var parts: Array = [String(mp.get("type_name", "Mise"))]
+		if String(mp.get("place", "")) != "":
+			parts.append(String(mp["place"]))
+		if mp.has("hour"):
+			var h := float(mp["hour"])
+			parts.append("%02d:%02d" % [int(h), int(fmod(h, 1.0) * 60)])
+		var eb := _lbl(_pause_right, " · ".join(parts), UiSkin.ACC, 7)
+		UiSkin.eyebrow(eb, UiSkin.ACC, 7)
+		var hl := _lbl(_pause_right, "Na základně" if m and m.home() else "Vetřelci nečekají", TEXT, 14)
+		UiSkin.headline(hl, 14)
+		var tx := _lbl(_pause_right, "Pauza hru nezastaví. Tvůj voják zůstává na místě a dál ho mohou trefit." if not (m and m.home()) else "Pauza hru nezastaví. Na základně je klid.", UiSkin.DIM, 8)
+		tx.custom_minimum_size = Vector2(300, 0)
+		var me_p := me()
+		var mates := []
+		if m:
+			for o in m.players():
+				if o != me_p:
+					mates.append(o)
+		if not mates.is_empty():
+			var sp := Control.new()
+			sp.custom_minimum_size = Vector2(0, 8)
+			_pause_right.add_child(sp)
+			var th := _lbl(_pause_right, "Tým", UiSkin.DIM, 7)
+			UiSkin.eyebrow(th, UiSkin.DIM, 7)
+			for o in mates:
+				var bad: bool = o.downed or o.dead
+				if Game.veteran() and not bad:
+					continue
+				var st: String = "mrtev" if o.dead else ("padl %d s" % int(o.bleed_left) if o.downed else ("krvácí" if o.bleeding > 0 else ("%d m" % int(me_p.global_position.distance_to(o.global_position)) if me_p else "")))
+				if Game.veteran():
+					st = st.split(" ")[0]
+				var row := PanelContainer.new()
+				row.add_theme_stylebox_override("panel", UiBox.make(Color(1, 1, 1, 0.025), UiSkin.LINE, 8, Vector4(6, 2, 6, 2)))
+				_pause_right.add_child(row)
+				var hb := HBoxContainer.new()
+				row.add_child(hb)
+				var n := _lbl(hb, "Někdo z týmu" if Game.veteran() else String(o.display_name), TEXT, 8)
+				n.autowrap_mode = TextServer.AUTOWRAP_OFF
+				n.clip_text = true
+				n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				var sl := _lbl(hb, st, UiSkin.BAD if bad else (UiSkin.ACC if st == "krvácí" else UiSkin.OK), 8)
+				sl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		return
+	var hl2 := _lbl(_pause_right, {"set": "Nastavení", "keys": "Ovládání", "voice": "Hlas a mikrofon"}[page], TEXT, 14)
+	UiSkin.headline(hl2, 14)
+	settings_tab = {"set": settings_tab if settings_tab in ["ctl", "snd", "gfx"] else "ctl", "keys": "keys", "voice": "voice"}[page]
+	var sc := ScrollContainer.new()
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.custom_minimum_size = Vector2(0, 240)
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_pause_right.add_child(sc)
+	var box := VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(box)
+	settings_ui(box)
 
 var _ready_pbtn: Button
 func _ready_ptext() -> void:
@@ -1725,10 +2161,11 @@ static func settings_ui(box: Control) -> void:
 
 ## 0.72 (Ari): everyone's own keys. Click a key and press the new one (Esc = keep the old one),
 ## right click clears it. Two keys per action; a key taken from another action leaves it there.
+static var keys_group := 0
 static func _keys_ui(box: Control) -> void:
 	var hint := Label.new()
 	hint.add_theme_font_size_override("font_size", 8)
-	hint.add_theme_color_override("font_color", Color(0.6, 0.7, 0.8))
+	hint.add_theme_color_override("font_color", UiSkin.DIM)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD
 	hint.custom_minimum_size = Vector2(200, 0)
 	hint.text = "Klikni na klávesu a stiskni novou (Esc = nechat). Pravé tlačítko = smazat. Klávesa vzatá jiné akci se u ní smaže. Esc, myš a kolečko zůstávají."
@@ -1739,19 +2176,43 @@ static func _keys_ui(box: Control) -> void:
 			var ks: Array = Game.keys_of(b[0])
 			var bt: Button = b[2]
 			bt.text = Game.key_label(int(ks[b[1]])) if b[1] < ks.size() else "-"
-			bt.add_theme_color_override("font_color", UiSkin.BAD if ks.is_empty() else Color(0.85, 0.92, 1.0))
+			bt.add_theme_color_override("font_color", UiSkin.BAD if ks.is_empty() else UiSkin.TEXT)
+	# 0.72 (návrh A): the groups as small tabs over the table (Pohyb / Boj / Věci / Hlas / Stíhačka)
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 2)
+	box.add_child(tabs)
+	var groups: Array = []
+	var tab_btns: Array = []
+	var show_group := func(k: int) -> void:
+		keys_group = k
+		for g in groups.size():
+			(groups[g] as Control).visible = g == k
+			UiSkin.row(tab_btns[g], g == k)
+			(tab_btns[g] as Button).alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var grp: VBoxContainer = null
 	for row in Game.KEY_ROWS:
-		if String(row[0]) == "":
-			var sub := Label.new()
-			sub.add_theme_font_size_override("font_size", 9)
-			sub.add_theme_color_override("font_color", Color(0.9, 0.8, 0.5))
-			sub.text = String(row[1])
-			box.add_child(sub)
-			continue
+		if String(row[0]) == "" or grp == null:
+			grp = VBoxContainer.new()
+			grp.name = "Keys_%d" % groups.size()
+			grp.add_theme_constant_override("separation", 1)
+			box.add_child(grp)
+			groups.append(grp)
+			var tb := Button.new()
+			var nm := String(row[1]) if String(row[0]) == "" else "Klávesy"
+			tb.text = nm.capitalize() if nm != "VĚCI A AKCE" else "Věci a akce"
+			tb.add_theme_font_size_override("font_size", 8)
+			tb.custom_minimum_size = Vector2(0, 14)
+			tb.focus_mode = Control.FOCUS_NONE
+			tabs.add_child(tb)
+			tab_btns.append(tb)
+			var gi := tab_btns.size() - 1
+			tb.pressed.connect(func(): show_group.call(gi))
+			if String(row[0]) == "":
+				continue
 		var action: String = row[0]
 		var hb := HBoxContainer.new()
 		hb.add_theme_constant_override("separation", 3)
-		box.add_child(hb)
+		grp.add_child(hb)
 		var l := Label.new()
 		l.add_theme_font_size_override("font_size", 8)
 		l.text = String(row[1])
@@ -1799,8 +2260,10 @@ static func _keys_ui(box: Control) -> void:
 	rb.focus_mode = Control.FOCUS_NONE
 	rb.text = "Výchozí klávesy"
 	rb.pressed.connect(func(): Game.reset_keys(); refresh.call())
+	UiSkin.ghost(rb)
 	box.add_child(rb)
 	refresh.call()
+	show_group.call(clampi(keys_group, 0, groups.size() - 1))
 
 static func _meter_fill() -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
@@ -1822,6 +2285,7 @@ func open_screen(c: Control) -> void:
 
 func _pause() -> void:
 	_ready_ptext()
+	_pause_page("info")
 	paused = true
 	inventory_open = true   # blocks player input the same way
 	pause_panel.visible = true

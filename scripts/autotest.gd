@@ -752,6 +752,21 @@ func _ui_mission(p: Node) -> void:
 	await get_tree().process_frame
 	await _uic("m_briefing_full")
 	out("BRIEF len %d vis %d text %s" % [m().hud._brief_len, m().hud._brief_lbl.visible_characters, m().hud._brief_lbl.text.replace("\n", " | ")])
+	# the same with the place on the map (a campaign mission has lat/lon)
+	var keep_bg: Node = h._brief_bg
+	keep_bg.visible = false
+	Net.mission_params["lat"] = 49.4
+	Net.mission_params["lon"] = 15.6
+	Net.mission_params["type_name"] = "Teroristický útok"
+	h.briefing(m()._briefing_text() + "\nPočasí: hustá mlha.")
+	h._brief_lbl.visible_characters = -1
+	await get_tree().process_frame
+	await _uic("m_briefing_map")
+	h._brief_bg.queue_free()
+	h._brief_bg = keep_bg
+	keep_bg.visible = true
+	Net.mission_params.erase("lat")
+	Net.mission_params.erase("lon")
 	_skip_brief()
 	await get_tree().create_timer(3.0).timeout
 	h.message("[RÁDIO] Pilot: Ztrácím signál od Vendula Sokolová! Někdo k ní běžte, než ji něco odtáhne do tmy. Opakuji, ztrácím signál!", 5.0)
@@ -765,6 +780,12 @@ func _ui_mission(p: Node) -> void:
 	h._close_inventory()
 	h._pause()
 	await _uic("m_pause")
+	for pg in ["set", "keys", "voice"]:
+		h._pause_page(pg)
+		await _uic("m_pause_" + pg)
+	h._leave_pressed()
+	await _uic("m_pause_leave")
+	h._resume()
 	h.pause_panel.visible = false
 	h.paused = false
 	var lines := []
@@ -772,6 +793,14 @@ func _ui_mission(p: Node) -> void:
 		lines.append("Bořek Krejčí %d - zabití 12, zajato 3 - v bezvědomí" % i)
 	lines.append("Civilisté: zachráněno 3, mrtvých 4, ztraceno ve tmě 1")
 	h.show_result("MISE NEÚSPĚŠNÁ", "Tým se stáhl z mise.\n\n" + "\n".join(lines) + "\n\nTvůj voják: zraněn - uzdraví se za 120 min\nZkušenosti +345  (Desátník)\nPOVÝŠEN: Desátník! Přesnost +3, Odvaha +2. Vyber si talent v menu Můj voják.\n\nTeror (Městečko u Jihlavy): neúspěch. Odměna 120 kr, důvěra -14. Padlí: 2. Civilisté: zachráněno 3, mrtvých 4.")
+	await _uic("m_result_text")
+	h.result_panel.queue_free()
+	var team := []
+	for i in 4:
+		team.append(["Bořek Krejčí-Novotný %d" % i, 12, 3, "v bezvědomí" if i == 1 else "v pořádku"])
+	h.show_result("MISE NEÚSPĚŠNÁ", "x", {"why": "Tým se stáhl z mise.", "team": team, "kills": 48, "caps": 12, "civ": [3, 4],
+		"fate": "zraněn - uzdraví se za 120 min", "more": "Zkušenosti +345  (Desátník)\nPOVÝŠEN: Desátník! Přesnost +3, Odvaha +2. Vyber si talent v menu Můj voják.\nTvůj žold: +120 kr (máš 1 340 kr)",
+		"camp": "Teror (Městečko u Jihlavy): neúspěch. Odměna 120 kr, důvěra -14. Padlí: 2. Civilisté: zachráněno 3, mrtvých 4. Ztracená výstroj: 2× Zás. puška, Granát, Lékárnička, Plazmová puška.", "quality": "Slabé"})
 	await _uic("m_result")
 	get_tree().quit()
 

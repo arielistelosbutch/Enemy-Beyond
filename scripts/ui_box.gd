@@ -23,7 +23,7 @@ static func make(f: Color, l: Color, s := 15, m := Vector4(6, 3, 6, 3)) -> UiBox
 	return b
 
 func with_bar(c: Color, side := 0, px := 2.0) -> UiBox:
-	var b: UiBox = duplicate()
+	var b := UiBox.make(fill, line, sides, Vector4(content_margin_left, content_margin_top, content_margin_right, content_margin_bottom))
 	b.bar = c
 	b.bar_side = side
 	b.bar_px = px
