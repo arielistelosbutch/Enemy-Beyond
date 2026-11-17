@@ -405,3 +405,198 @@ static func item_icon(b: Button, id: String, w := 30) -> void:
 	b.expand_icon = true
 	b.add_theme_constant_override("icon_max_width", w)
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+
+# ---- 0.72 full screens of direction A: breadcrumb on top, key bar at the bottom -------------------
+## The surface of a full screen (no edge - the screen is the window).
+static func full(margin := Vector4(14, 8, 14, 0)) -> StyleBox:
+	var key := "full%s" % margin
+	if not _cache.has(key):
+		_cache[key] = _box(Color(BG.r, BG.g, BG.b, 0.93), Color(0, 0, 0, 0), 0, margin)
+	return _cache[key]
+
+## The breadcrumb of a full screen: "ZÁKLADNA · ZBROJNICE" (the last part bright) and a status
+## on the right ("Rozpočet 1 200 kr · moje peníze 340 kr"). Returns the bar; the status label is
+## its child named "Status", the crumb "Crumb".
+static func crumb(parts: Array, status := "") -> HBoxContainer:
+	var h := HBoxContainer.new()
+	h.name = "CrumbBar"
+	h.add_theme_constant_override("separation", 6)
+	h.custom_minimum_size.y = 14
+	var c := RichTextLabel.new()
+	c.name = "Crumb"
+	c.bbcode_enabled = true
+	c.fit_content = true
+	c.scroll_active = false
+	c.autowrap_mode = TextServer.AUTOWRAP_OFF
+	c.add_theme_font_override("normal_font", caps_font())
+	c.add_theme_font_override("bold_font", caps_font())
+	c.add_theme_font_size_override("normal_font_size", 7)
+	c.add_theme_font_size_override("bold_font_size", 7)
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var s := ""
+	for i in parts.size():
+		var p: String = String(parts[i]).to_upper()
+		if i < parts.size() - 1:
+			s += "[color=#%s]%s · [/color]" % [DIM.to_html(false), p]
+		else:
+			s += "[color=#%s]%s[/color]" % [TEXT.to_html(false), p]
+	c.text = s
+	c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	c.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(c)
+	var st := Label.new()
+	st.name = "Status"
+	st.text = status.to_upper()
+	st.add_theme_font_override("font", caps_font())
+	st.add_theme_font_size_override("font_size", 7)
+	st.add_theme_color_override("font_color", DIM)
+	st.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	st.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(st)
+	return h
+
+## A key cap with its meaning: [Esc] zpět. keys = [["Esc", "zpět"], ["LTM", "vybrat"], ...];
+## an entry with an empty key is a plain hint ("Dílna · Prodej").
+static func key_bar(keys: Array) -> PanelContainer:
+	var p := PanelContainer.new()
+	p.name = "KeyBar"
+	if not _cache.has("keybar"):
+		_cache["keybar"] = _box(Color(0, 0, 0, 0.45), LINE, 2, Vector4(14, 4, 14, 4))
+	p.add_theme_stylebox_override("panel", _cache["keybar"])
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 10)
+	p.add_child(h)
+	for k in keys:
+		var one := HBoxContainer.new()
+		one.add_theme_constant_override("separation", 3)
+		h.add_child(one)
+		if String(k[0]) != "":
+			one.add_child(key_cap(String(k[0])))
+		var l := Label.new()
+		l.text = String(k[1])
+		l.add_theme_font_size_override("font_size", 7)
+		l.add_theme_color_override("font_color", DIM)
+		l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		one.add_child(l)
+	return p
+
+static func key_cap(k: String) -> Label:
+	var l := Label.new()
+	l.text = k
+	l.add_theme_font_override("font", font(true))
+	l.add_theme_font_size_override("font_size", 7)
+	l.add_theme_color_override("font_color", TEXT)
+	if not _cache.has("keycap"):
+		_cache["keycap"] = _box(Color(1, 1, 1, 0.04), EDGE, 15, Vector4(3, 0, 3, 0))
+	l.add_theme_stylebox_override("normal", _cache["keycap"])
+	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return l
+
+## A big name on a full screen (Erik Král, Mise splněna, Šedivák).
+static func headline(l: Label, size := 16) -> void:
+	l.add_theme_font_override("font", font(true))
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", TEXT)
+
+## A small dim caps column head / eyebrow (no divider).
+static func eyebrow(l: Label, col := DIM, size := 7) -> void:
+	l.text = l.text.to_upper()
+	l.add_theme_font_override("font", caps_font())
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", col)
+
+## 0.72: a whole full screen of direction A over another screen (the globe's windows): breadcrumb on
+## top, the body, the key bar. Returns {"panel", "body", "status", "keys"}; the panel is added to parent.
+static func screen(parent: Node, parts: Array, status: String, keys: Array, alpha := 0.93) -> Dictionary:
+	var p := PanelContainer.new()
+	p.name = "Screen"
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(BG.r, BG.g, BG.b, alpha)
+	p.add_theme_stylebox_override("panel", sb)
+	p.position = Vector2.ZERO
+	p.custom_minimum_size = Vector2(640, 360)
+	p.size = Vector2(640, 360)
+	parent.add_child(p)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	p.add_child(col)
+	var top := MarginContainer.new()
+	for side in ["left", "right"]:
+		top.add_theme_constant_override("margin_" + side, 14)
+	top.add_theme_constant_override("margin_top", 8)
+	top.add_theme_constant_override("margin_bottom", 6)
+	col.add_child(top)
+	var bar := crumb(parts, status)
+	top.add_child(bar)
+	var mid := MarginContainer.new()
+	for side in ["left", "right"]:
+		mid.add_theme_constant_override("margin_" + side, 14)
+	mid.add_theme_constant_override("margin_bottom", 6)
+	mid.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(mid)
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 4)
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	mid.add_child(body)
+	var kb := key_bar(keys)
+	col.add_child(kb)
+	return {"panel": p, "body": body, "status": bar.get_node("Status"), "keys": kb.get_child(0)}
+
+## A small framed action in a table row: "on" gold (chosen / in use), "own" white, "buy" dim.
+static func chip(parent: Node, t: String, kind: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = t
+	b.focus_mode = Control.FOCUS_NONE
+	b.add_theme_font_size_override("font_size", 7)
+	var line: Color = {"on": ACC, "own": TEXT, "buy": Color(1, 1, 1, 0.2)}[kind]
+	var col: Color = {"on": ACC, "own": TEXT, "buy": DIM}[kind]
+	var n := UiBox.make(Color(ACC, 0.1) if kind == "on" else Color(0, 0, 0, 0), line, 15, Vector4(4, 1, 4, 1))
+	b.add_theme_stylebox_override("normal", n)
+	b.add_theme_stylebox_override("pressed", n)
+	b.add_theme_stylebox_override("hover", UiBox.make(Color(1, 1, 1, 0.05), ACC_HI, 15, Vector4(4, 1, 4, 1)))
+	b.add_theme_stylebox_override("hover_pressed", n)
+	b.add_theme_stylebox_override("disabled", UiBox.make(Color(0, 0, 0, 0), Color(1, 1, 1, 0.1), 15, Vector4(4, 1, 4, 1)))
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	b.add_theme_color_override("font_color", col)
+	b.add_theme_color_override("font_hover_color", ACC_HI)
+	b.add_theme_color_override("font_disabled_color", Color(DIM, 0.5))
+	b.pressed.connect(cb)
+	_click(b)
+	parent.add_child(b)
+	return b
+
+## Key ............ value (a line with a divider under it).
+static func kv(parent: Node, k: String, v: String, col := TEXT, size := 7) -> HBoxContainer:
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", UiBox.make(Color(0, 0, 0, 0), LINE, 8, Vector4(0, 2, 0, 2)))
+	parent.add_child(p)
+	var h := HBoxContainer.new()
+	p.add_child(h)
+	var a := Label.new()
+	a.text = k
+	a.add_theme_font_size_override("font_size", size)
+	a.add_theme_color_override("font_color", DIM)
+	a.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(a)
+	var b := Label.new()
+	b.text = v
+	b.add_theme_font_size_override("font_size", size)
+	b.add_theme_color_override("font_color", col)
+	b.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	h.add_child(b)
+	return h
+
+## A tab of a full screen: text only, a gold line under the chosen one.
+static func tab(b: BaseButton, chosen := false) -> void:
+	button(b)
+	var m := Vector4(6, 1, 6, 2)
+	var base := _box(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 0, m)
+	var sel := _box(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 0, m).with_bar(ACC, 3, 2.0)
+	b.add_theme_stylebox_override("normal", sel if chosen else base)
+	b.add_theme_stylebox_override("hover", _box(Color(1, 1, 1, 0.04), Color(0, 0, 0, 0), 0, m).with_bar(ACC_HI, 3, 1.0))
+	b.add_theme_stylebox_override("pressed", sel)
+	b.add_theme_stylebox_override("hover_pressed", sel)
+	b.add_theme_font_size_override("font_size", 7)
+	b.add_theme_font_override("font", caps_font())
+	b.add_theme_color_override("font_color", TEXT if chosen else DIM)
+	b.text = b.text.to_upper()

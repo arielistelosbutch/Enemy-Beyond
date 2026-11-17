@@ -550,21 +550,73 @@ func _unhandled_input(event: InputEvent) -> void:
 		_game_menu()
 
 func _game_menu() -> void:
-	var box := _overlay("HERNÍ MENU", 260)
-	_btn(box, "Pokračovat", _close_popup, 10)
-	_btn(box, "Nastavení (myš, zvuk, mikrofon)", _settings_menu, 10)
+	# 0.72 (návrh A): the globe dims, a short list in the middle
+	_close_popup()
+	_live_kind = ""
+	var sc := UiSkin.screen(self, [], "", [["Esc", "pokračovat"]], 0.72)
+	popup = sc["panel"]
+	(sc["panel"].get_child(0).get_child(0) as Control).visible = false       # (no breadcrumb)
+	var body: VBoxContainer = sc["body"]
+	body.alignment = BoxContainer.ALIGNMENT_CENTER
+	var mid := VBoxContainer.new()
+	mid.add_theme_constant_override("separation", 2)
+	mid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	body.add_child(mid)
+	var hl := _lbl(mid, "Herní menu", TEXT, 16)
+	UiSkin.headline(hl, 16)
+	hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var stops := not Campaign.viewer
+	var eb := _lbl(mid, Campaign.date_text() + (" · čas stojí" if stops else " · čas běží u hostitele"), UiSkin.ACC, 7)
+	UiSkin.eyebrow(eb, UiSkin.ACC, 7)
+	eb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	eb.autowrap_mode = TextServer.AUTOWRAP_OFF
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 10)
+	mid.add_child(gap)
+	var items := [["Pokračovat", _close_popup], ["Nastavení", _settings_menu]]
 	if Campaign.viewer:
-		_btn(box, "Zpět do lobby", func(): Game.globe_to_menu(self), 10)
+		items.append(["Zpět do lobby", func(): Game.globe_to_menu(self)])
 	else:
-		_btn(box, "Uložit a odejít do hlavního menu", _quit, 10)
+		items.append(["Uložit", func():
+			Campaign.save()
+			_toast_msg("Uloženo.")
+			_close_popup()])
+		items.append(["Uložit a odejít do menu", _quit])
+	for i in items.size():
+		var b := Button.new()
+		b.text = items[i][0]
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(176, 18)
+		b.add_theme_font_size_override("font_size", 9)
+		UiSkin.tab(b, i == 0)
+		b.add_theme_font_size_override("font_size", 8)
+		b.alignment = HORIZONTAL_ALIGNMENT_CENTER
+		b.pressed.connect(items[i][1])
+		mid.add_child(b)
+
+func _toast_msg(t: String) -> void:
+	if _toast:
+		_toast.text = t
+		_toast_t = 2.5
 
 ## 0.72 (Ari): the settings (microphone above all) also from the globe - in co-op too.
 ## Nothing stops: the campaign runs on underneath, as it does with any other window.
 func _settings_menu() -> void:
-	var box := _overlay("NASTAVENÍ", 360)
-	_lbl(box, "Hra běží dál - čas na glóbu se nezastaví.", FRAME, 8)
-	preload("res://scripts/hud.gd").settings_ui(_scroll(box, 250))
-	_btn(box, "Zpět", _game_menu, 10)
+	_close_popup()
+	_live_kind = ""
+	var sc := UiSkin.screen(self, ["Glóbus", "Nastavení"], "Hra běží dál - čas na glóbu se nezastaví", [["Esc", "zpět na glóbus"]])
+	popup = sc["panel"]
+	var body: VBoxContainer = sc["body"]
+	var scr := ScrollContainer.new()
+	scr.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scr.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_child(scr)
+	var inner := VBoxContainer.new()
+	inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scr.add_child(inner)
+	preload("res://scripts/hud.gd").settings_ui(inner)
+	var bk := _btn(body, "Zpět", _game_menu, 9)
+	bk.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 
 func _input(event: InputEvent) -> void:
 	if popup != null:
@@ -1382,6 +1434,95 @@ func _overlay(title: String, w := 400.0) -> VBoxContainer:
 	tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	return box
 
+## 0.72 (návrh A): a whole screen over the globe (zbrojnice, dílna, prodej): breadcrumb, body, keys.
+var _scr_status: Label
+func _full(parts: Array, status: String, keys: Array) -> VBoxContainer:
+	_close_popup()
+	_live_kind = ""
+	var sc := UiSkin.screen(self, parts, status, keys)
+	popup = sc["panel"]
+	_scr_status = sc["status"]
+	return sc["body"]
+
+## A table head: [["Zboží", 0 (= expand)], ["Cena", 40], ...]
+func _thead(parent: Node, cols: Array) -> void:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 4)
+	parent.add_child(h)
+	for c in cols:
+		var l := _lbl(h, c[0], UiSkin.DIM, 6)
+		UiSkin.eyebrow(l, UiSkin.DIM, 6)
+		l.autowrap_mode = TextServer.AUTOWRAP_OFF
+		if int(c[1]) == 0:
+			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		else:
+			l.custom_minimum_size = Vector2(c[1], 0)
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+## A table row: a line under it, gold bar on the left when marked. Returns its HBox.
+func _trow(parent: Node, marked := false) -> HBoxContainer:
+	var p := PanelContainer.new()
+	var st := UiBox.make(Color(UiSkin.ACC, 0.08) if marked else Color(0, 0, 0, 0), UiSkin.LINE, 8, Vector4(4, 1, 2, 1))
+	if marked:
+		st = st.with_bar(UiSkin.ACC, 0, 2.0)
+	p.add_theme_stylebox_override("panel", st)
+	parent.add_child(p)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 4)
+	p.add_child(h)
+	return h
+
+## A cell: right-aligned number (w > 0) or the expanding name (w = 0).
+func _tcell(row: Node, t: String, w: int, col := TEXT) -> Label:
+	var l := _lbl(row, t, col, 8)
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	l.clip_text = true
+	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if w == 0:
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	else:
+		l.custom_minimum_size = Vector2(w, 0)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	return l
+
+## The item's picture and name in a table cell.
+func _tname(row: Node, id: String, t: String, col := TEXT) -> Label:
+	var ic := TextureRect.new()
+	ic.texture = UiSkin.icon(id)
+	ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	ic.custom_minimum_size = Vector2(26, 14)
+	ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(ic)
+	return _tcell(row, t, 0, col)
+
+## Tabs along the top of a list.
+func _tabs(parent: Node, tabs: Array, on: String, cb: Callable) -> void:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 2)
+	parent.add_child(h)
+	for t in tabs:
+		var k: String = t[0]
+		var b := Button.new()
+		b.text = t[1]
+		b.focus_mode = Control.FOCUS_NONE
+		UiSkin.tab(b, k == on)
+		b.pressed.connect(func(): cb.call(k))
+		h.add_child(b)
+
+## A small dim caps heading.
+func _eyebrow(parent: Node, t: String, col := Color(0.553, 0.592, 0.647)) -> Label:
+	var l := _lbl(parent, t, col, 7)
+	UiSkin.eyebrow(l, col, 7)
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	return l
+
+## The money line of the base screens' breadcrumb.
+func _money_status() -> String:
+	if Campaign.viewer:
+		return "Moje peníze %d kr" % Net.my_money()
+	return "Rozpočet %d kr · moje %d kr" % [int(Campaign.data["credits"]), Net.my_money()]
+
 ## A scrolling area inside an overlay (long lists).
 func _scroll(box: VBoxContainer, h := 280.0) -> VBoxContainer:
 	var sc := ScrollContainer.new()
@@ -1552,36 +1693,30 @@ func _live_dirty(_a = null) -> void:
 
 func _show_armory() -> void:
 	_cart_clean()
-	var box := _overlay("ZBROJNICE - NÁKUP", 612)
+	# 0.72 (návrh A): a full screen - the goods as a table on the left, the basket on the right
+	var base_pay := "ze svých peněz" if Campaign.viewer else "z rozpočtu"
+	var body := _full(["Základna", "Zbrojnice"], _money_status(), [["Shift", "+klik 5 kusů"], ["", "Do skladu = pro tým (%s), sobě = do tvé skříňky" % base_pay], ["Esc", "na glóbus"]])
 	_live_mark("armory")
-	popup.position.y = 6
-	var base_pay := "ze svých peněz" if Campaign.viewer else "z rozpočtu základny"
-	_lbl(box, "Vyber do košíku, pak potvrď. DO SKLADU = pro celý tým natrvalo (platí se %s), SOBĚ = jen do tvé skříňky z tvých peněz. Ve skladu je to druhý den. Shift + klik = 5 kusů. Vyzkoumané věci vyrábí dílna." % base_pay, FRAME, 7).custom_minimum_size = Vector2(596, 0)
-	var tabs := HBoxContainer.new()
-	tabs.add_theme_constant_override("separation", 3)
-	box.add_child(tabs)
-	for c in ARM_CATS:
-		var ck: String = c[0]
-		var tb := _btn(tabs, c[1], func():
-			_cart_cat = ck
-			_arm_scroll = 0
-			_show_armory(), 8)
-		tb.custom_minimum_size = Vector2(58, 18)
-		if ck == _cart_cat:
-			tb.add_theme_color_override("font_color", ACCENT)
-			tb.add_theme_color_override("font_hover_color", ACCENT)
-			tb.text = "[%s]" % c[1]
 	var cols := HBoxContainer.new()
-	cols.add_theme_constant_override("separation", 6)
-	box.add_child(cols)
-	# left: the goods
+	cols.add_theme_constant_override("separation", 14)
+	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_child(cols)
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 2)
+	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cols.add_child(left)
+	_tabs(left, ARM_CATS, _cart_cat, func(k):
+		_cart_cat = k
+		_arm_scroll = 0
+		_show_armory())
+	_thead(left, [["Zboží", 0], ["Cena", 34], ["Sklad", 34], ["Moje", 26], ["", 98]])
 	var sc := ScrollContainer.new()
-	sc.custom_minimum_size = Vector2(340, 236)
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	cols.add_child(sc)
+	left.add_child(sc)
 	_arm_list = VBoxContainer.new()
 	_arm_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_arm_list.add_theme_constant_override("separation", 2)
+	_arm_list.add_theme_constant_override("separation", 0)
 	sc.add_child(_arm_list)
 	sc.get_v_scroll_bar().value_changed.connect(func(v): _arm_scroll = int(v))
 	var locker: Dictionary = Game.merc.get("locker", {})
@@ -1592,48 +1727,50 @@ func _show_armory() -> void:
 			continue
 		shown += 1
 		var key: String = id
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 2)
-		_arm_list.add_child(row)
 		var arm_n := int(Campaign.data["armory"].get(id, 0))
 		var ord_n := Campaign.on_order(id)
 		var taken := Net.claim_names(key)
-		var name_b := _btn(row, "%s  %d kr\nsklad %d%s, tvoje %d%s" % [Game.ITEMS[id]["short"], Campaign.price(id), arm_n, (" +%d zítra" % ord_n) if ord_n > 0 else "", int(locker.get(id, 0)), ("  (bere si: %s)" % taken) if taken != "" else ""], func(): pass, 8)
-		name_b.custom_minimum_size = Vector2(228, 24)
-		name_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		name_b.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		name_b.clip_text = true
-		UiSkin.item_icon(name_b, key, 30)
-		_arm_rows[key] = [name_b, name_b.text]
-		var bb := _btn(row, "+ Sklad", func(): _cart_add("base", key, 5 if Input.is_key_pressed(KEY_SHIFT) else 1), 8)
-		bb.custom_minimum_size = Vector2(48, 24)
-		var mb := _btn(row, "+ Sobě", func(): _cart_add("me", key, 5 if Input.is_key_pressed(KEY_SHIFT) else 1), 8)
-		mb.custom_minimum_size = Vector2(48, 24)
+		var row := _trow(_arm_list)
+		var base_t := String(Game.ITEMS[id]["short"]) + (("  · bere si %s" % taken) if taken != "" else "")
+		var nl := _tname(row, key, base_t)
+		_tcell(row, str(Campaign.price(id)), 34, UiSkin.DIM)
+		var stock_t := str(arm_n) + ((" +%d" % ord_n) if ord_n > 0 else "")
+		_tcell(row, stock_t, 34)
+		_tcell(row, str(int(locker.get(id, 0))), 26)
+		var acts := HBoxContainer.new()
+		acts.add_theme_constant_override("separation", 2)
+		acts.custom_minimum_size = Vector2(98, 0)
+		acts.alignment = BoxContainer.ALIGNMENT_END
+		row.add_child(acts)
+		UiSkin.chip(acts, "+ Sklad", "own", func(): _cart_add("base", key, 5 if Input.is_key_pressed(KEY_SHIFT) else 1))
+		UiSkin.chip(acts, "+ Sobě", "own", func(): _cart_add("me", key, 5 if Input.is_key_pressed(KEY_SHIFT) else 1))
+		_arm_rows[key] = [nl, base_t, row.get_parent(), "sklad %d, moje %d" % [arm_n, int(locker.get(id, 0))]]
 	if shown == 0:
-		_lbl(_arm_list, "V této skupině teď nic neprodávají.", FRAME, 8)
-	# right: the basket
-	var cp := PanelContainer.new()
-	_style(cp, Color(0.03, 0.05, 0.10, 0.95))
-	cp.custom_minimum_size = Vector2(250, 236)
-	cols.add_child(cp)
-	_cart_box = VBoxContainer.new()
-	_cart_box.add_theme_constant_override("separation", 2)
-	cp.add_child(_cart_box)
-	_cart_draw()
+		_lbl(_arm_list, "V této skupině teď nic neprodávají.", UiSkin.DIM, 8)
 	var foot := HBoxContainer.new()
 	foot.add_theme_constant_override("separation", 6)
-	box.add_child(foot)
-	_btn(foot, "Dílna - výroba...", _show_workshop, 9)
-	_btn(foot, "Prodat ze skladu a kořisti...", _show_sell, 9)
-	var sp := Control.new()
-	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	foot.add_child(sp)
-	_btn(foot, "Zavřít", _close_popup, 9)
+	left.add_child(foot)
+	_btn(foot, "Dílna - výroba", _show_workshop, 8)
+	_btn(foot, "Prodej", _show_sell, 8)
+	var gb := _btn(foot, "Zpět", _close_popup, 8)
+	UiSkin.ghost(gb)
+	# right: the basket
+	_cart_box = VBoxContainer.new()
+	_cart_box.add_theme_constant_override("separation", 2)
+	_cart_box.custom_minimum_size = Vector2(196, 0)
+	cols.add_child(_cart_box)
+	_cart_draw()
 	# keep the list where it was (rebuilt after a tab change or a purchase)
 	var want := _arm_scroll
 	await get_tree().process_frame
 	if is_instance_valid(sc):
 		sc.scroll_vertical = want
+
+## What one goods row says (for the tests): the name and the numbers.
+func _arm_row_text(id: String) -> String:
+	if not _arm_rows.has(id) or not is_instance_valid(_arm_rows[id][0]):
+		return ""
+	return String(_arm_rows[id][0].text) + " " + String(_arm_rows[id][3])
 
 ## Only the basket panel is redrawn on +/-, so the goods list keeps its scroll.
 func _cart_draw() -> void:
@@ -1646,13 +1783,15 @@ func _cart_draw() -> void:
 		if not is_instance_valid(r[0]):
 			continue
 		var inn := int(_cart["base"].get(id, 0)) + int(_cart["me"].get(id, 0))
-		(r[0] as Button).text = String(r[1]) + (("  [v košíku %d]" % inn) if inn > 0 else "")
-		if inn > 0: (r[0] as Button).add_theme_color_override("font_color", ACCENT)
-		else: (r[0] as Button).remove_theme_color_override("font_color")
-	var head := _lbl(_cart_box, "KOŠÍK (%d ks)" % _cart_count(), ACCENT, 9)
-	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		(r[0] as Label).text = String(r[1]) + (("  · v košíku %d" % inn) if inn > 0 else "")
+		(r[0] as Label).add_theme_color_override("font_color", UiSkin.ACC if inn > 0 else TEXT)
+		var st := UiBox.make(Color(UiSkin.ACC, 0.08) if inn > 0 else Color(0, 0, 0, 0), UiSkin.LINE, 8, Vector4(4, 1, 2, 1))
+		if inn > 0:
+			st = st.with_bar(UiSkin.ACC, 0, 2.0)
+		(r[2] as PanelContainer).add_theme_stylebox_override("panel", st)
+	_eyebrow(_cart_box, "Košík · %d ks" % _cart_count(), UiSkin.ACC if _cart_count() > 0 else UiSkin.DIM)
 	var sc := ScrollContainer.new()
-	sc.custom_minimum_size = Vector2(0, 128)
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_cart_box.add_child(sc)
 	var lines := VBoxContainer.new()
@@ -1660,49 +1799,42 @@ func _cart_draw() -> void:
 	lines.add_theme_constant_override("separation", 1)
 	sc.add_child(lines)
 	if _cart_count() == 0:
-		_lbl(lines, "Prázdný. Přidej věci tlačítky + Sklad / + Sobě.", FRAME, 7).custom_minimum_size = Vector2(230, 0)
+		_lbl(lines, "Prázdný. Přidej věci tlačítky + Sklad / + Sobě.", UiSkin.DIM, 7).custom_minimum_size = Vector2(186, 0)
 	for side_k in ["base", "me"]:
 		var c: Dictionary = _cart[side_k]
 		if c.is_empty():
 			continue
-		_lbl(lines, "DO SKLADU" if side_k == "base" else "SOBĚ", FRAME, 7)
+		_eyebrow(lines, "Do skladu" if side_k == "base" else "Sobě")
 		for id in c:
 			var key: String = id
 			var sk: String = side_k
-			var row := HBoxContainer.new()
-			row.add_theme_constant_override("separation", 1)
-			lines.add_child(row)
-			var l := _lbl(row, "%d× %s  %d kr" % [int(c[id]), Game.ITEMS[id]["short"], Campaign.price(id) * int(c[id])], TEXT, 7)
-			l.autowrap_mode = TextServer.AUTOWRAP_OFF
-			l.clip_text = true
-			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			l.custom_minimum_size = Vector2(150, 0)
+			var row := _trow(lines)
+			var l := _tcell(row, "%d× %s" % [int(c[id]), Game.ITEMS[id]["short"]], 0)
+			l.add_theme_font_size_override("font_size", 7)
+			var pl := _tcell(row, str(Campaign.price(id) * int(c[id])), 30, UiSkin.DIM)
+			pl.add_theme_font_size_override("font_size", 7)
 			for e in [["-", -1], ["+", 1]]:
 				var d: int = e[1]
-				_btn(row, e[0], func(): _cart_add(sk, key, d * (5 if Input.is_key_pressed(KEY_SHIFT) else 1)), 7).custom_minimum_size = Vector2(18, 16)
-			_btn(row, "x", func(): _cart_add(sk, key, -999), 7).custom_minimum_size = Vector2(18, 16)
+				UiSkin.chip(row, e[0], "buy", func(): _cart_add(sk, key, d * (5 if Input.is_key_pressed(KEY_SHIFT) else 1)))
+			UiSkin.chip(row, "x", "buy", func(): _cart_add(sk, key, -999))
 	# totals against the money
 	var sb := _cart_sum("base")
 	var sm := _cart_sum("me")
 	var mine := Net.my_money()
 	if Campaign.viewer:
 		var all := sb + sm
-		_lbl(_cart_box, "Do skladu %d kr + sobě %d kr" % [sb, sm], TEXT, 7)
-		_lbl(_cart_box, "Celkem %d kr, máš %d kr" % [all, mine], RED if all > mine else ACCENT, 8)
+		UiSkin.kv(_cart_box, "Do skladu + sobě", "%d + %d kr" % [sb, sm])
+		UiSkin.kv(_cart_box, "Z mých peněz", "%d / %d" % [all, mine], UiSkin.BAD if all > mine else TEXT)
 	else:
 		var cr := int(Campaign.data["credits"])
-		_lbl(_cart_box, "Do skladu %d kr (rozpočet %d kr)" % [sb, cr], RED if sb > cr else TEXT, 7)
-		_lbl(_cart_box, "Sobě %d kr (tvoje peníze %d kr)" % [sm, mine], RED if sm > mine else TEXT, 7)
-		_lbl(_cart_box, "Celkem %d kr" % (sb + sm), ACCENT, 8)
-	var row2 := HBoxContainer.new()
-	row2.add_theme_constant_override("separation", 3)
-	_cart_box.add_child(row2)
-	var ok := _btn(row2, "Potvrdit nákup", _cart_buy, 9)
-	ok.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		UiSkin.kv(_cart_box, "Z rozpočtu", "%d / %d" % [sb, cr], UiSkin.BAD if sb > cr else TEXT)
+		UiSkin.kv(_cart_box, "Z mých peněz", "%d / %d" % [sm, mine], UiSkin.BAD if sm > mine else TEXT)
+	var ok := _btn(_cart_box, "POTVRDIT NÁKUP · %d KR" % (sb + sm), _cart_buy, 8)
 	ok.disabled = _cart_count() == 0 or _cart_short() != ""
-	var clr := _btn(row2, "Vyprázdnit", func():
+	var clr := _btn(_cart_box, "Vyprázdnit", func():
 		_cart = {"base": {}, "me": {}}
 		_cart_draw(), 8)
+	UiSkin.ghost(clr)
 	clr.disabled = _cart_count() == 0
 
 ## "" when the basket can be paid, otherwise why not.
@@ -1756,44 +1888,58 @@ static func _cart_n(d: Dictionary) -> int:
 ## The workshop: what research opened is made here - credits, alloys from the wrecks,
 ## Moskovium, and days on a line. Only the host orders it (it is his base).
 func _show_workshop() -> void:
-	var box := _overlay("DÍLNA - VÝROBA", 500)
-	_live_mark("workshop")
+	# 0.72 (návrh A): what can be made as a table, the queue on the right
 	var lines := Campaign.workshop_lines()
-	_lbl(box, "Dílny: %d (tempo %d %%). Kredity základny: %d   Slitiny: %d ks   Moskovium 115: %d g" % [lines, int(round(Campaign.workshop_rate() * 100.0)), int(Campaign.data["credits"]), Campaign.alloys(), Campaign.moskovium()], FRAME, 8).custom_minimum_size = Vector2(480, 0)
+	var body := _full(["Základna", "Dílna"], "Dílny %d · tempo %d %% · kredity %d · slitiny %d · moskovium %d g" % [lines, int(round(Campaign.workshop_rate() * 100.0)), int(Campaign.data["credits"]), Campaign.alloys(), Campaign.moskovium()],
+		[["LTM", "zařadit do výroby"], ["", "Zbrojnice · Prodej"], ["Esc", "na glóbus"]])
+	_live_mark("workshop")
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 14)
+	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_child(cols)
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 2)
+	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cols.add_child(left)
 	if lines == 0:
-		_lbl(box, "Základna nemá dílnu. Bez ní se nic nevyrobí.", ACCENT, 8)
+		_lbl(left, "Základna nemá dílnu. Bez ní se nic nevyrobí.", UiSkin.ACC, 8)
 	elif Campaign.viewer:
-		_lbl(box, "Výrobu zadává a platí hostitel.", FRAME, 8)
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 8)
-	_scroll(box, 190).add_child(grid)
+		_lbl(left, "Výrobu zadává a platí hostitel.", UiSkin.DIM, 8)
+	_thead(left, [["Výroba", 0], ["Cena", 92], ["Doba", 44], ["Sklad", 30], ["", 44]])
+	var sc := ScrollContainer.new()
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	left.add_child(sc)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 0)
+	sc.add_child(list)
 	var n := 0
 	for id in Campaign.SHOP:
 		if not Game.ITEMS.has(id) or not Campaign.workshop_item(id) or not Campaign.unlocked(id):
 			continue
 		n += 1
 		var key: String = id
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 2)
-		grid.add_child(row)
 		var parts := ["%d kr" % Campaign.price(id)]
 		if Campaign.SHOP_AL.has(id): parts.append("%d sl." % int(Campaign.SHOP_AL[id]))
 		if Campaign.SHOP_MK.has(id): parts.append("%d g" % int(Campaign.SHOP_MK[id]))
 		for it in Campaign.MAKE_EATS.get(id, {}):
 			parts.append("%d× %s" % [int(Campaign.MAKE_EATS[id][it]), String(Game.ITEMS[it]["short"])])
 		var ord_n := Campaign.on_order(id)
-		var name_b := _btn(row, "%s  %s, %s\nsklad %d%s" % [Game.ITEMS[id]["short"], " + ".join(parts), _span(Campaign.make_days(id) / maxf(Campaign.workshop_rate(), 1.0)),
-			int(Campaign.data["armory"].get(id, 0)), (", vyrábí se %d" % ord_n) if ord_n > 0 else ""], func(): pass, 8)
-		name_b.custom_minimum_size = Vector2(190, 24)
-		name_b.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		UiSkin.item_icon(name_b, key, 30)
-		var mb := _btn(row, "Vyrobit", func():
+		var row := _trow(list, ord_n > 0)
+		var nl := _tname(row, key, String(Game.ITEMS[id]["short"]) + (("  · vyrábí se %d" % ord_n) if ord_n > 0 else ""), UiSkin.ACC if ord_n > 0 else TEXT)
+		nl.tooltip_text = String(Game.ITEMS[id]["name"])
+		var cl := _tcell(row, " + ".join(parts), 92, UiSkin.DIM)
+		cl.tooltip_text = " + ".join(parts)
+		cl.mouse_filter = Control.MOUSE_FILTER_PASS
+		_tcell(row, _span(Campaign.make_days(id) / maxf(Campaign.workshop_rate(), 1.0)), 44, UiSkin.DIM)
+		_tcell(row, str(int(Campaign.data["armory"].get(id, 0))), 30)
+		var mb := UiSkin.chip(row, "Vyrobit", "own", func():
 			if Campaign.make(key):
 				Game.play_ui(self, "money", -10)
 				_show_workshop()
-			else: _alert("Nelze vyrobit\nChybí kredity, slitiny nebo Moskovium 115."), 8)
-		mb.custom_minimum_size = Vector2(46, 24)
+			else: _alert("Nelze vyrobit\nChybí kredity, slitiny nebo Moskovium 115."))
+		mb.custom_minimum_size = Vector2(44, 0)
 		mb.disabled = Campaign.viewer or lines == 0
 	# what research designed for the whole unit (vests, helmets, the fighters): made once, then everyone has it
 	for uid in Campaign.UPGRADES:
@@ -1802,40 +1948,59 @@ func _show_workshop() -> void:
 		n += 1
 		var ukey: String = uid
 		var u: Dictionary = Campaign.UPGRADES[uid]
-		var urow := HBoxContainer.new()
-		urow.add_theme_constant_override("separation", 2)
-		grid.add_child(urow)
 		var up := ["%d kr" % Campaign.upgrade_price(uid)]
 		if u.has("al"): up.append("%d sl." % int(u["al"]))
 		if u.has("mk"): up.append("%d g" % int(u["mk"]))
-		var ub := _btn(urow, "%s\n%s, %s%s" % [u["name"], " + ".join(up), _span(float(u["days"]) * Campaign.time_k() / maxf(Campaign.workshop_rate(), 1.0)),
-			", vyrábí se" if Campaign.upgrade_coming(uid) else ""], func(): pass, 8)
-		ub.custom_minimum_size = Vector2(190, 24)
-		ub.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		UiSkin.item_icon(ub, String(Campaign.RESEARCH[uid].get("icon", "")), 30)
-		var umb := _btn(urow, "Vyrobit", func():
+		var coming := Campaign.upgrade_coming(uid)
+		var urow := _trow(list, coming)
+		_tname(urow, String(Campaign.RESEARCH[uid].get("icon", "")), String(u["name"]) + ("  · vyrábí se" if coming else ""), UiSkin.ACC if coming else TEXT)
+		var ucl := _tcell(urow, " + ".join(up), 92, UiSkin.DIM)
+		ucl.tooltip_text = " + ".join(up)
+		ucl.mouse_filter = Control.MOUSE_FILTER_PASS
+		_tcell(urow, _span(float(u["days"]) * Campaign.time_k() / maxf(Campaign.workshop_rate(), 1.0)), 44, UiSkin.DIM)
+		_tcell(urow, "-", 30, UiSkin.DIM)
+		var umb := UiSkin.chip(urow, "Vyrobit", "own", func():
 			if Campaign.make_upgrade(ukey):
 				Game.play_ui(self, "money", -10)
 				_show_workshop()
-			else: _alert("Nelze vyrobit\nChybí kredity, slitiny nebo Moskovium 115."), 8)
-		umb.custom_minimum_size = Vector2(46, 24)
-		umb.disabled = Campaign.viewer or lines == 0 or Campaign.upgrade_coming(uid)
+			else: _alert("Nelze vyrobit\nChybí kredity, slitiny nebo Moskovium 115."))
+		umb.custom_minimum_size = Vector2(44, 0)
+		umb.disabled = Campaign.viewer or lines == 0 or coming
 	if n == 0:
-		_lbl(box, "Zatím není co vyrábět.", FRAME, 8)
+		_lbl(list, "Zatím není co vyrábět.", UiSkin.DIM, 8)
+	var foot := HBoxContainer.new()
+	foot.add_theme_constant_override("separation", 6)
+	left.add_child(foot)
+	_btn(foot, "Zbrojnice", _show_armory, 8)
+	_btn(foot, "Prodej", _show_sell, 8)
+	var gb := _btn(foot, "Zpět", _close_popup, 8)
+	UiSkin.ghost(gb)
 	# the queue
+	var right := VBoxContainer.new()
+	right.add_theme_constant_override("separation", 3)
+	right.custom_minimum_size = Vector2(170, 0)
+	cols.add_child(right)
+	_eyebrow(right, "Ve výrobě", UiSkin.ACC)
 	var q := []
 	var now := float(Campaign.data["day"])
 	for o in Campaign.data.get("orders", []):
 		if o.get("made", false):
 			var it := String(o["item"])
-			var nm: String = Campaign.queue_name(it)
-			q.append([float(o["at"]), "%s (%s)" % [nm, _span(float(o["at"]) - now)]])
+			q.append([float(o["at"]), Campaign.queue_name(it)])
 	q.sort_custom(func(x, y): return x[0] < y[0])
-	var ql := []
-	for e in q:
-		ql.append(e[1])
-	_lbl(box, ("Ve výrobě: " + ", ".join(ql)) if not ql.is_empty() else "Dílna stojí - nic se nevyrábí.", TEXT, 8).custom_minimum_size = Vector2(480, 0)
-	_btn(box, "Zpět", _show_armory)
+	if q.is_empty():
+		_lbl(right, "Dílna stojí - nic se nevyrábí.", UiSkin.DIM, 8).custom_minimum_size = Vector2(170, 0)
+	for qi in mini(q.size(), 8):
+		var e: Array = q[qi]
+		var hb := _trow(right, qi == 0)        # (the first one is being made right now)
+		var nl2 := _lbl(hb, String(e[1]), TEXT, 8)
+		nl2.autowrap_mode = TextServer.AUTOWRAP_OFF
+		nl2.clip_text = true
+		nl2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var tl := _lbl(hb, _span(float(e[0]) - now), UiSkin.DIM, 7)
+		tl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	if q.size() > 8:
+		_lbl(right, "a dalších %d" % (q.size() - 8), UiSkin.DIM, 7)
 
 ## "5 h" / "2,5 dne"
 func _span(d: float) -> String:
@@ -1844,21 +2009,31 @@ func _span(d: float) -> String:
 
 ## The black market: spare gear from the armory (40 % of the price) and alien loot.
 func _show_sell() -> void:
-	var box := _overlay("PRODEJ", 500)
+	# 0.72 (návrh A): the same table as the armory
+	var body := _full(["Základna", "Prodej"], "Rozpočet %d kr" % int(Campaign.data["credits"]), [["LTM", "prodat"], ["", "co se prodá, je pryč"], ["Esc", "na glóbus"]])
 	_live_mark("sell")
-	_lbl(box, "Co se prodá, je pryč. Výbava ze skladu za 40 % ceny, mimozemská kořist na černém trhu. Kredity základny: %d." % int(Campaign.data["credits"]), FRAME, 8).custom_minimum_size = Vector2(480, 0)
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 8)
-	_scroll(box, 250).add_child(grid)
+	_lbl(body, "Výbava ze skladu za 40 % ceny, mimozemská kořist na černém trhu.", UiSkin.DIM, 8)
+	_thead(body, [["Věc", 0], ["Kusů", 34], ["Dostaneš", 52], ["", 48]])
+	var sc := ScrollContainer.new()
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	body.add_child(sc)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 0)
+	sc.add_child(list)
 	var n := 0
 	for id in Campaign.data["armory"]:
 		if not Game.ITEMS.has(id) or int(Campaign.data["armory"][id]) <= 0:
 			continue
 		var key: String = id
-		var b := _btn(grid, "%s (%dx) - prodat za %d kr" % [Game.ITEMS[id]["short"], int(Campaign.data["armory"][id]), Campaign.sell_price(id)], func():
-			if Campaign.sell(key): Game.play_ui(self, "money", -10); _show_sell(), 8)
-		b.custom_minimum_size = Vector2(235, 22)
+		var row := _trow(list)
+		_tname(row, key, String(Game.ITEMS[id]["short"]))
+		_tcell(row, str(int(Campaign.data["armory"][id])), 34)
+		_tcell(row, "%d kr" % Campaign.sell_price(id), 52, UiSkin.DIM)
+		var b := UiSkin.chip(row, "Prodat", "own", func():
+			if Campaign.sell(key): Game.play_ui(self, "money", -10); _show_sell())
+		b.custom_minimum_size = Vector2(48, 0)
 		b.disabled = Campaign.viewer
 		n += 1
 	var found: Dictionary = Campaign.data.get("found", {})
@@ -1866,14 +2041,24 @@ func _show_sell() -> void:
 		if int(found.get(k, 0)) <= 0:
 			continue
 		var key2: String = k
-		var b2 := _btn(grid, "%s (%dx) - prodat za %d kr" % [Campaign.loot_name(k).replace("tělo: ", ""), int(found[k]), Campaign.loot_sell_price(k)], func():
-			if Campaign.sell_loot(key2): Game.play_ui(self, "money", -10); _show_sell(), 8)
-		b2.custom_minimum_size = Vector2(235, 22)
+		var row2 := _trow(list)
+		_tcell(row2, Campaign.loot_name(k).replace("tělo: ", ""), 0)
+		_tcell(row2, str(int(found[k])), 34)
+		_tcell(row2, "%d kr" % Campaign.loot_sell_price(k), 52, UiSkin.DIM)
+		var b2 := UiSkin.chip(row2, "Prodat", "own", func():
+			if Campaign.sell_loot(key2): Game.play_ui(self, "money", -10); _show_sell())
+		b2.custom_minimum_size = Vector2(48, 0)
 		b2.disabled = Campaign.viewer
 		n += 1
 	if n == 0:
-		_lbl(box, "Není co prodat.", FRAME, 9)
-	_btn(box, "Zpět", _show_armory)
+		_lbl(list, "Není co prodat.", UiSkin.DIM, 8)
+	var foot := HBoxContainer.new()
+	foot.add_theme_constant_override("separation", 6)
+	body.add_child(foot)
+	_btn(foot, "Zbrojnice", _show_armory, 8)
+	_btn(foot, "Dílna - výroba", _show_workshop, 8)
+	var gb := _btn(foot, "Zpět", _close_popup, 8)
+	UiSkin.ghost(gb)
 
 ## 0.57: the base screen of its own - the plan from above, the rooms, building, the hangar.
 func _show_base(select := -1) -> void:
@@ -2048,9 +2233,7 @@ func _autotest() -> void:
 			await get_tree().create_timer(0.05).timeout
 		var seen_ms := Time.get_ticks_msec() - t0
 		await get_tree().create_timer(0.4).timeout
-		var row := ""
-		if _arm_rows.has("grenade") and is_instance_valid(_arm_rows["grenade"][0]):
-			row = String(_arm_rows["grenade"][0].text).replace("\n", " ")
+		var row := _arm_row_text("grenade")
 		var redrawn := ("sklad %d" % (g0 + 5)) in row
 		Game.loadout = {}
 		Net.report_claim()
@@ -2313,6 +2496,8 @@ func _autotest() -> void:
 		await get_tree().create_timer(0.4).timeout
 		_close_popup()
 		await _ui_check("geo_busy")
+		speed = 0  # stop the clock: a craft arriving mid-check would pop its alert over the encyclopedia
+		_close_popup()
 		# the tree half done, the encyclopedia on an autopsy and a weapon
 		Campaign.data["research"]["done"] = ["pitva", "medicina", "pitva_levit", "zenijni", "tezke", "rozbor_plazma", "vesta", "slitiny", "vyslech"]
 		Campaign.data["research"]["current"] = "laser"

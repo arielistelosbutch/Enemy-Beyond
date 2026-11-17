@@ -34,59 +34,49 @@ static func open(parent: Node) -> ResearchScreen:
 func build() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	var bg := TextureRect.new()
-	bg.texture = UiSkin.backdrop()
-	bg.stretch_mode = TextureRect.STRETCH_SCALE
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
-	# header
-	var top := PanelContainer.new()
-	top.add_theme_stylebox_override("panel", UiSkin.panel(5))
-	top.position = Vector2(4, 3)
-	top.size = Vector2(632, 34)
-	add_child(top)
-	var th := HBoxContainer.new()
-	th.add_theme_constant_override("separation", 10)
-	top.add_child(th)
-	var t := Label.new()
-	t.text = "VÝZKUM"
-	th.add_child(t)
-	UiSkin.title(t, 13)
-	var hv := VBoxContainer.new()
-	hv.add_theme_constant_override("separation", 1)
-	hv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	th.add_child(hv)
-	head_lbl = _lbl(hv, "", TEXT, 8)
+	# 0.72 (návrh A): a full screen - breadcrumb, the tree on the left, the project on the right, keys
+	var sc0 := UiSkin.screen(self, ["Základna", "Výzkum"], "", [["LTM", "vybrat projekt"], ["", "zlatě hotovo · bíle lze zahájit · ??? zatím neznámé"], ["Esc", "zpět"]], 1.0)
+	head_lbl = sc0["status"]
+	var body: VBoxContainer = sc0["body"]
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 14)
+	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_child(cols)
+	var lv := VBoxContainer.new()
+	lv.add_theme_constant_override("separation", 3)
+	lv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cols.add_child(lv)
 	bar = ProgressBar.new()
-	bar.custom_minimum_size = Vector2(300, 6)
+	bar.custom_minimum_size = Vector2(0, 2)
 	bar.show_percentage = false
-	hv.add_child(bar)
-	_btn(th, "Encyklopedie", func(): _ency(""), 8).custom_minimum_size = Vector2(80, 16)
-	_btn(th, "Zavřít", close, 8).custom_minimum_size = Vector2(60, 16)
+	var bgs := StyleBoxFlat.new()
+	bgs.bg_color = Color(1, 1, 1, 0.08)
+	var fgs := StyleBoxFlat.new()
+	fgs.bg_color = ACCENT
+	bar.add_theme_stylebox_override("background", bgs)
+	bar.add_theme_stylebox_override("fill", fgs)
+	lv.add_child(bar)
 	# the tree
-	var tp := PanelContainer.new()
-	tp.add_theme_stylebox_override("panel", UiSkin.inset(3))
-	tp.position = Vector2(4, 40)
-	tp.size = Vector2(430, 316)
-	add_child(tp)
 	var sc := ScrollContainer.new()
-	sc.custom_minimum_size = Vector2(424, 310)
-	tp.add_child(sc)
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sc.custom_minimum_size = Vector2(400, 0)
+	lv.add_child(sc)
 	canvas = TreeCanvas.new()
 	canvas.screen = self
 	sc.add_child(canvas)
+	var foot := HBoxContainer.new()
+	foot.add_theme_constant_override("separation", 6)
+	lv.add_child(foot)
+	_btn(foot, "Encyklopedie", func(): _ency(""), 8)
+	var zb := _btn(foot, "Zpět", close, 8)
+	UiSkin.ghost(zb)
 	# detail
-	var dp := PanelContainer.new()
-	dp.add_theme_stylebox_override("panel", UiSkin.panel(7))
-	dp.position = Vector2(438, 40)
-	dp.size = Vector2(198, 316)
-	add_child(dp)
 	var dsc := ScrollContainer.new()
-	dsc.custom_minimum_size = Vector2(184, 300)
+	dsc.custom_minimum_size = Vector2(188, 0)
 	dsc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	dp.add_child(dsc)
+	cols.add_child(dsc)
 	detail = VBoxContainer.new()
-	detail.custom_minimum_size = Vector2(178, 0)
+	detail.custom_minimum_size = Vector2(180, 0)
 	detail.add_theme_constant_override("separation", 3)
 	dsc.add_child(detail)
 	_layout()
@@ -123,7 +113,7 @@ func _btn(parent: Node, s: String, cb: Callable, size := 9) -> Button:
 	var b := Button.new()
 	b.text = s
 	b.add_theme_font_size_override("font_size", size)
-	UiSkin.button(b)
+	UiSkin.auto(b)
 	b.focus_mode = Control.FOCUS_NONE
 	b.pressed.connect(cb)
 	parent.add_child(b)
@@ -213,13 +203,13 @@ func _state(id: String) -> String:
 	return "locked"
 
 func _col(st: String) -> Color:
-	return {"done": DONE, "current": ACCENT, "open": FRAME, "locked": LOCKED}[st]
+	return {"done": ACCENT, "current": UiSkin.ACC_HI, "open": TEXT, "locked": UiSkin.DIM}[st]
 
 func refresh() -> void:
 	var r: Dictionary = Campaign.data["research"]
 	var cur := String(r["current"])
-	head_lbl.text = "Kredity: %d   Moskovium: %d g   Laboratoře: %d   Probíhá: %s" % [int(Campaign.data["credits"]), Campaign.moskovium(), Campaign.count("laborator"),
-		(Campaign.RESEARCH[cur]["name"] + " %d %%" % int(float(r["progress"]) / Campaign.research_days(cur) * 100)) if cur != "" else "nic - vyber projekt"]
+	head_lbl.text = ("Kredity %d · moskovium %d g · laboratoře %d · probíhá %s" % [int(Campaign.data["credits"]), Campaign.moskovium(), Campaign.count("laborator"),
+		(Campaign.RESEARCH[cur]["name"] + " %d %%" % int(float(r["progress"]) / Campaign.research_days(cur) * 100)) if cur != "" else "nic - vyber projekt"]).to_upper()
 	bar.value = float(r["progress"]) / Campaign.research_days(cur) * 100.0 if cur != "" else 0.0
 	for id in nodes:
 		var b: Button = nodes[id]
@@ -229,19 +219,20 @@ func refresh() -> void:
 		b.text = String(Campaign.RESEARCH[id]["name"]) if kn else "???"
 		var ic := String(Campaign.RESEARCH[id].get("icon", ""))
 		b.icon = UiSkin.icon(ic) if kn and ic != "" and UiSkin.icon(ic) else null
-		var sb := StyleBoxFlat.new()
+		# 0.72 (návrh A): gold = done, gold bar = in progress, white = can start, dim = unknown
 		var c := _col(st)
-		sb.bg_color = Color(c.r * 0.18, c.g * 0.18, c.b * 0.22, 0.95) if st != "locked" else Color(0.08, 0.09, 0.1, 0.9)
-		sb.border_color = c if id != selected else Color(1, 1, 1)
-		sb.set_border_width_all(1 if id != selected else 2)
-		sb.set_corner_radius_all(2)
-		sb.content_margin_left = 3
-		for s in ["normal", "hover", "pressed"]:
-			var s2: StyleBoxFlat = sb.duplicate()
-			if s == "hover":
-				s2.bg_color = s2.bg_color.lightened(0.12)
-			b.add_theme_stylebox_override(s, s2)
-		b.add_theme_color_override("font_color", c.lightened(0.3) if st != "locked" else LOCKED.lightened(0.15))
+		var fill: Color = {"done": Color(ACCENT, 0.10), "current": Color(ACCENT, 0.16), "open": Color(1, 1, 1, 0.04), "locked": Color(1, 1, 1, 0.015)}[st]
+		var line: Color = {"done": Color(ACCENT, 0.7), "current": ACCENT, "open": Color(1, 1, 1, 0.55), "locked": Color(1, 1, 1, 0.12)}[st]
+		if id == selected:
+			line = UiSkin.ACC_HI
+		var sb := UiBox.make(fill, line, 15, Vector4(3, 1, 3, 1))
+		if st == "current":
+			sb = sb.with_bar(ACCENT, 0, 2.0)
+		var sh := UiBox.make(Color(fill.r, fill.g, fill.b, fill.a + 0.06), UiSkin.ACC_HI, 15, Vector4(3, 1, 3, 1))
+		for s3 in ["normal", "pressed", "focus"]:
+			b.add_theme_stylebox_override(s3, sb)
+		b.add_theme_stylebox_override("hover", sh)
+		b.add_theme_color_override("font_color", c)
 		b.add_theme_color_override("font_hover_color", Color(1, 1, 1))
 		b.modulate.a = 1.0 if st != "locked" else 0.8
 	canvas.queue_redraw()
@@ -267,25 +258,35 @@ func _select(id: String) -> void:
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		detail.add_child(tr)
-	var tl := _lbl(detail, String(rr["name"]).to_upper(), ACCENT, 10)
-	UiSkin.title(tl, 10)
-	_lbl(detail, {"done": "HOTOVO", "current": "PROBÍHÁ", "open": "LZE ZAHÁJIT", "locked": "ZAMČENO"}[st], _col(st), 8)
-	_lbl(detail, String(rr["desc"]), TEXT, 8)
-	_lbl(detail, "Cena: %d kr%s   Doba: %d dní" % [Campaign.research_cost(id), (" + %d g Moskovia" % int(rr["mk"])) if rr.has("mk") else "", ceili(Campaign.research_days(id))], FRAME, 8)
+	var stt: String = {"done": "Hotovo", "current": "Probíhá", "open": "Lze zahájit", "locked": "Zamčeno"}[st]
+	if st == "current":
+		stt += " · %d %%" % int(float(Campaign.data["research"]["progress"]) / Campaign.research_days(id) * 100)
+	var el := _lbl(detail, stt, _col(st), 7)
+	UiSkin.eyebrow(el, ACCENT if st in ["done", "current"] else UiSkin.DIM, 7)
+	var tl := _lbl(detail, String(rr["name"]), TEXT, 12)
+	UiSkin.headline(tl, 12)
+	tl.custom_minimum_size = Vector2(178, 0)
+	_lbl(detail, String(rr["desc"]), Color(0.80, 0.83, 0.86), 7).custom_minimum_size = Vector2(178, 0)
+	UiSkin.kv(detail, "Cena", "%d kr%s" % [Campaign.research_cost(id), (" + %d g Mk" % int(rr["mk"])) if rr.has("mk") else ""])
+	UiSkin.kv(detail, "Doba", "%d dní" % ceili(Campaign.research_days(id)))
 	var nl := Campaign.needs_list(id)
 	if not nl.is_empty() and st != "done":
-		_lbl(detail, "Vyžaduje:", FRAME, 8)
+		var ok := true
 		for c in nl:
-			_lbl(detail, ("  ✔ " if c[1] else "  ✘ ") + String(c[0]), DONE if c[1] else RED, 8)
+			ok = ok and bool(c[1])
+		UiSkin.kv(detail, "Vyžaduje", "" if ok else "chybí", TEXT if ok else RED)
+		for c in nl:
+			var cl := _lbl(detail, ("✔ " if c[1] else "✘ ") + String(c[0]), UiSkin.OK if c[1] else RED, 7)
+			cl.custom_minimum_size = Vector2(178, 0)
 	var lt := Campaign.leads_to(id)
 	if not lt.is_empty():
 		var names := []
 		for k in lt:
 			names.append(Campaign.RESEARCH[k]["name"] if known(k) else "???")
-		_lbl(detail, "Vede k: " + ", ".join(names), LOCKED.lightened(0.3), 8)
+		_lbl(detail, "Vede k: " + ", ".join(names), UiSkin.DIM, 7).custom_minimum_size = Vector2(178, 0)
 	if st == "open" and not Campaign.viewer:
 		var busy := String(Campaign.data["research"]["current"]) != ""
-		var b := _btn(detail, "Zahájit výzkum" if not busy else "Probíhá jiný výzkum", func():
+		var b := _btn(detail, "ZAHÁJIT VÝZKUM" if not busy else "Probíhá jiný výzkum", func():
 			if Campaign.start_research(id):
 				Game.play_ui(self, "ui_confirm", -6)
 				if on_changed.is_valid(): on_changed.call()
@@ -315,9 +316,8 @@ class TreeCanvas extends Control:
 	var pulse := 0.0
 	func _draw() -> void:
 		for b in bands:
-			draw_rect(Rect2(2, b[0], size.x - 4, b[1]), Color(0.1, 0.13, 0.17, 0.55))
-			draw_line(Vector2(2, b[0]), Vector2(size.x - 2, b[0]), Color(0.3, 0.42, 0.5, 0.6), 1.0)
-			draw_string(UiSkin.font(true), Vector2(6, b[0] + 9), String(b[2]).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 7, Color(0.5, 0.65, 0.72))
+			draw_line(Vector2(2, b[0]), Vector2(size.x - 2, b[0]), UiSkin.LINE, 1.0)
+			draw_string(UiSkin.caps_font(), Vector2(6, b[0] + 9), String(b[2]).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 7, UiSkin.DIM)
 		for id in Campaign.RESEARCH:
 			var n: Dictionary = Campaign.RESEARCH[id]["needs"]
 			if not n.has("research"):
@@ -331,9 +331,9 @@ class TreeCanvas extends Control:
 				var a: Vector2 = screen.pos[r] + Vector2(screen.NODE_W, screen.NODE_H / 2)
 				var b2: Vector2 = screen.pos[id] + Vector2(0, screen.NODE_H / 2)
 				var done: bool = Campaign.researched(r)
-				var col := Color(0.4, 0.9, 0.5, 0.85) if done else Color(0.4, 0.45, 0.5, 0.6)
+				var col := Color(UiSkin.ACC, 0.6) if done else Color(1, 1, 1, 0.18)
 				if id == screen.selected or r == screen.selected:
-					col = Color(1.0, 0.85, 0.5, 0.95)
+					col = UiSkin.ACC_HI
 				var mx := a.x + 10.0
 				var pts := PackedVector2Array([a, Vector2(mx, a.y), Vector2(mx, b2.y), b2])
 				draw_polyline(pts, col, 1.5 if done else 1.0)
@@ -341,4 +341,4 @@ class TreeCanvas extends Control:
 		var cur := String(Campaign.data["research"]["current"])
 		if cur != "" and screen.pos.has(cur):
 			var p: Vector2 = screen.pos[cur]
-			draw_rect(Rect2(p - Vector2(3, 3), Vector2(screen.NODE_W + 6, screen.NODE_H + 6)), Color(1.0, 0.74, 0.32, 0.25 + pulse * 0.5), false, 2.0)
+			draw_rect(Rect2(p - Vector2(3, 3), Vector2(screen.NODE_W + 6, screen.NODE_H + 6)), Color(UiSkin.ACC, 0.2 + pulse * 0.4), false, 1.0)
