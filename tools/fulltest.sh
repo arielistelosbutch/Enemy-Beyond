@@ -40,6 +40,14 @@ run menu_ui     300 x "\[UI\] ready: 0"                    --autotest=ui
 run mods_ui     200 x "\[MODS\] bought true"              --autotest=modsui
 run talent_ui   200 x "\[TALENT\] skip true chain true rank true spent true eye true drone true" --autotest=talentui
 run dice        60 s "RESULT dicetest ok"                tools/test/dicetest.gd
+run mtypes      60 s "RESULT missiontypes ok"            tools/test/missiontypes.gd
+run convoy      300 h "RESULT convoytest saved true banner true .* finished true" --autotest=convoytest --mtype=convoy --biome=forest --hold=90
+run convoy_fail 300 h "Vetřelci rozbili náklad konvoje"  --autotest=convoytest --mtype=convoy --biome=farm --group=bijci --fail=1
+run pilot       300 h "END\] success=true"               --autotest=objtest --mtype=pilot --biome=forest
+run radar_st    300 h "OBJ radar on true"                 --autotest=objtest --mtype=radar --biome=base --size=large
+run bug         200 h "RESULT bugtest tagged true gone false finished true" --autotest=bugtest --mtype=bug --biome=forest --ufo=raider --crewof=raider
+run bug_fail    200 h "RESULT bugtest tagged false gone true finished true" --autotest=bugtest --mtype=bug --biome=forest --ufo=raider --crewof=raider --fail=1
+run quarantine  300 h "RESULT quartest carriers [2-9] tell true/false hatched [1-9] saved true nest 0 finished true" --autotest=quartest --mtype=quarantine --biome=town --size=large
 run presets     200 x "\[PRESET\] first false list true merc true levels true dice_nolevels true gear true" --autotest=presets
 run sights     1000 x "scope mode=scope on=true"          --autotest=sightshot --day=1 --fast=1
 run menu_flick  200 x "RESULT menuflicker 0"               --autotest=menuflicker
@@ -83,6 +91,8 @@ pair() {   # name, host mode, client mode, expected in host log, expected in cli
   fi
 }
 pair coop_mission host client          "players=2"                "blk=false vet=false players=2"  7901
+pair coop_radar nmradarhost nmradarclient "RESULT nm nmradarhost radar true" "RESULT nm nmradarclient radar true lit [1-9]" 7961
+pair coop_bug   nmbughost nmbugclient   "RESULT nm nmbughost radar false bug true gone true" "RESULT nm nmbugclient radar false lit 0 bug true gone true banner true" 7962
 pair coop_pot     pothost potclient     "RESULT potpaid pothost paid 315 money \\+315" "RESULT potpaid potclient paid 315 money \\+315" 7936
 pair coop_heal    coophealhost coophealclient "RESULT coopheal host ok" "client t=10 hp [0-9.]+ bleeding 0.00"  7902
 pair safe_out   safeouthost safeoutclient "RESULT safeout host out true players 1 shots 0" "RESULT safeout client finished true hp ([0-9.]+) -> \\1" 7935
@@ -234,6 +244,10 @@ run styletest  100 h "RESULT styletest .*far: advance" --autotest=styletest --mt
 run nemtest    120 h "RESULT nemtest old 0 .* unseen_stalk false .* seen_stalk true goal_to_seen 1[0-9] m" --autotest=nemtest --mtype=crash --biome=farm --seed=3 --hour=13
 run dirtest    330 h "RESULT dirtest old 0 .* in_fight 0" --autotest=dirtest --mtype=crash --biome=farm --seed=3 --hour=13
 run civtest    150 h "RESULT civtest old 0 v063 0 civ [1-9]" --autotest=civtest --mtype=terror --biome=town --seed=2 --hour=13
+run civpanic   150 h "RESULT civpanic hidden [1-9][0-9]* locked [1-9][0-9]* knock true talk true refused true pry true" --autotest=civpanic --mtype=terror --biome=town --seed=2 --hour=13
+run nvgtest    120 h "RESULT nvgtest blind true recover true shot true torch true low true dead true off true" --autotest=nvgtest --mtype=landed --hour=23
+run civstuck_town 150 h "RESULT civstuck .* spawn_in_wall 0 .* longest_wall 0\.[0-9] s longest_stuck [0-7]\.[0-9] s" --autotest=civstuck --mtype=terror --biome=town --seed=4 --hour=13
+run civstuck_farm 150 h "RESULT civstuck .* spawn_in_wall 0 .* longest_wall 0\.[0-9] s longest_stuck [0-7]\.[0-9] s" --autotest=civstuck --mtype=terror --biome=farm --seed=7 --hour=13
 run tunetest   160 h "RESULT tunetest diff normal" --autotest=tunetest --mtype=crash --biome=farm --seed=3 --hour=13
 run ai_late    160 h "RESULT aitest jestetan late 1 dmg [1-9][0-9][0-9]" --autotest=aitest --mtype=crash --biome=farm --late=1 --seed=5 --hour=13
 run latetest   120 h "RESULT latetest pack [2-9] nemesis [1-9][0-9]* marked true waves 2 added [2-9]" --autotest=latetest --mtype=crash --biome=farm --late=1 --seed=5 --hour=23
@@ -245,6 +259,11 @@ run ui_bigpack  200 x "m_result: 0 probl"                  --autotest=uimission 
 run rooftest   250 h "RESULT rooftest slabs [1-9][0-9]* holes 0" --autotest=rooftest --mtype=terror --biome=town --seed=3
 # 2026-11-17 déšť: GPU kapky běží pořád (i z budovy je vidět venku), střecha je zastaví; xvfb s Vulkanem navíc fotí rain_inside*.png
 run rain       250 h "RESULT rainshot gpu true visible_inside true visible_outside true" --autotest=rainshot --weather=storm --mtype=terror --biome=town --day=1 --seed=3
+run lamps      200 h "RESULT lamptest lamps [1-9][0-9]* hittable [1-9][0-9]* shot_dark true" --autotest=lamptest --mtype=terror --biome=town --hour=23 --seed=3
+run wxshift    200 h "RESULT wxtest from overcast .* -> rain rain true ratio 0.55 .* puddles [1-9][0-9]* sound true .* -> fog rain false sound false" --autotest=wxtest --mtype=crash --biome=farm --weather=overcast --wxshift=rain@4 --wxblend=6 --seed=3
+run tracks_snow 200 h "RESULT tracktest .* tracks [3-9][0-9]* .*smoke_drift" --autotest=tracktest --mtype=crash --biome=forest --terrain=snow --day=1 --seed=3
+run tracks_mud 200 h "RESULT tracktest weather storm .* tracks [3-9][0-9]* .*fire_down 2.20 fire_up 0.30" --autotest=tracktest --mtype=crash --biome=farm --weather=storm --seed=3
+run lens       200 h "RESULT lensshot sight dot drops ([3-9]|[1-9][0-9]) fog 0.[4-9]" --autotest=lensshot --mtype=crash --biome=farm --weather=storm --seed=3
 # car windows lean in with the pillars in the model itself, glass tinted (a script test, not --autotest)
 timeout 120 $G --headless --path . -s tools/test/cartest.gd > $LOG/cartest.log 2>&1
 if grep -q "RESULT cartest ok" $LOG/cartest.log; then pass=$((pass+1)); report+="OK    cartest\n"; else fail=$((fail+1)); report+="CHYBA cartest $(grep RESULT $LOG/cartest.log | cut -c1-120)\n"; fi

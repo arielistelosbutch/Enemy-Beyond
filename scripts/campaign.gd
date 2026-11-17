@@ -76,6 +76,23 @@ const USSR_SOUTH := [[46.0, 38.8], [53.0, 37.3], [57.0, 38.0], [61.0, 36.0], [62
 	[110.0, 49.7], [115.0, 49.8], [117.0, 49.6], [120.0, 52.5], [125.0, 53.3], [128.0, 49.5], [131.0, 47.8], [131.5, 43.0], [134.0, 42.0]]
 
 ## Which bloc of 1990 this place on the globe belongs to ("" = sea or nobody's).
+## (0.7x Radarová stanice) a station saved: reports in that bloc last longer for 30 days; lost or
+## left alone: a blind spot - they vanish sooner. Only the mission's expiry (what the radar sees).
+const RADAR_AREA_DAYS := 30.0
+func _radar_area(lat: float, lon: float, good: bool) -> void:
+	var b := bloc_at(lat, lon)
+	var areas: Dictionary = data.get("radar_areas", {})
+	areas[b] = {"good": good, "until": float(data["day"]) + RADAR_AREA_DAYS}
+	data["radar_areas"] = areas
+	var nm: String = String(BLOCS.get(b, {}).get("name", b))
+	_log(("Radarová stanice (%s) znovu běží: hlášení z oblasti %s vydrží 30 dní déle." if good else "Radarová stanice (%s) je slepá: v oblasti %s bude 30 dní slepá skvrna.") % [nearest_place(lat, lon), nm])
+
+func radar_cover(lat: float, lon: float) -> float:
+	var a: Dictionary = data.get("radar_areas", {}).get(bloc_at(lat, lon), {})
+	if a.is_empty() or float(a["until"]) < float(data.get("day", 0.0)):
+		return 1.0
+	return 1.3 if a["good"] else 0.6
+
 static func bloc_at(lat: float, lon: float) -> String:
 	lon = fposmod(lon + 180.0, 360.0) - 180.0
 	# islands and corners first
@@ -193,6 +210,16 @@ const MTYPES := {
 		"text": "Nouzový maják. Někdo, kdo o vetřelcích ví víc, než by měl, se schovává před jejich hlídkou. Najít, chránit, dostat do Kondoru."},
 	"sabotage": {"name": "Sabotáž", "reward": 800, "aliens": 2, "expire": 0.5, "trust": 6,
 		"text": "Vetřelci rozmístili v krajině tři majáky. Volají jimi posily. Položit nálože, zničit všechny tři a zmizet."},
+	"convoy": {"name": "Uvízlý konvoj", "reward": 600, "aliens": 1, "expire": 0.35, "trust": 6,
+		"text": "Vojenský konvoj s nákladem pro Projekt X stojí na silnici, vetřelci ho zastavili. Udržet náklaďáky, než pro náklad přiletí vrtulník."},
+	"radar": {"name": "Radarová stanice", "reward": 700, "aliens": 2, "expire": 0.45, "trust": 6,
+		"text": "Spojenecká radarová stanice zmlkla. U areálu přistálo UFO a vyřadilo proud. Obnovit rozvodny a znovu zapnout radar - jinak je nebe nad oblastí slepé."},
+	"quarantine": {"name": "Karanténa", "reward": 650, "aliens": 1, "expire": 0.4, "trust": 8,
+		"text": "Armáda uzavřela městečko. Mrtví vstávají a nákaza se šíří odněkud zevnitř. Najít zdroj a zničit ho. Zdravé lidi vzít s sebou - jen ty zdravé."},
+	"bug": {"name": "Štěnice na lodi", "reward": 500, "aliens": 1, "expire": 0.25, "trust": 4,
+		"text": "UFO přistálo a nikdo ho nezastavil. Technici mají štěnici, která se přichytí na trup. Kdyby s ní loď odletěla, radar by nás dovedl k jejich základně. Jen si vás nesmí všimnout."},
+	"pilot": {"name": "Sestřelený pilot", "reward": 400, "aliens": 0, "expire": 0.5, "trust": 5,
+		"text": "Náš Sokol spadl. Pilot se katapultoval a od té doby se nehlásí. Vetřelci ho hledají taky. Najít ho a dostat domů."},
 	"alienbase": {"name": "Základna vetřelců", "reward": 1400, "aliens": 5, "expire": 9999.0, "trust": 14,
 		"text": "Výslech prozradil, kde mají základnu. Jeskyně pod zemí, velitelské centrum s řídicím jádrem, v líhni zajatí lidé. Zničit jádro."},
 	"base": {"name": "Útok na základnu", "reward": 600, "aliens": 3, "expire": 0.2, "trust": 6,
@@ -781,6 +808,8 @@ func advance(days: float) -> bool:
 				report.emit(_base_fell("Nikdo základnu nebránil."))
 				stop = true
 				continue
+			if m["type"] == "radar":
+				_radar_area(float(m["lat"]), float(m["lon"]), false)
 			var lost_trust := int(round((15 if m["type"] == "terror" else 5) * (1.0 + war_stage())))     # (the later, the less patience)
 			data["trust"] = int(data["trust"]) - lost_trust
 			_log("%s (%s) zůstala bez odpovědi. Důvěra −%d." % [MTYPES[m["type"]]["name"], m["place"], lost_trust])
@@ -800,14 +829,21 @@ func advance(days: float) -> bool:
 			if rng.randf() < 0.5 and is_land(float(f["lat"]), float(f["lon"])):
 				var m := generate_mission(Vector2(float(f["lat"]), float(f["lon"])))
 				m["type"] = "landed"
-				m["reward"] = MTYPES["landed"]["reward"]
+				# (0.7x zkušební) now and then a chance to follow it home instead
+				if _bug_ok(String(f["kind"])) and rng.randf() < BUG_CHANCE:
+					m["type"] = "bug"
+					m["expires"] = float(data["day"]) + float(MTYPES["bug"]["expire"])
+					m["size"] = "large" if String(f["kind"]) == "harvester" else m.get("size", "medium")
+					if m["size"] == "colossal":
+						m["size"] = "large"
+				m["reward"] = MTYPES[m["type"]]["reward"]
 				m["extra_aliens"] = UFO_ALIENS[f["kind"]] + 1
 				m["crew_of"] = f["kind"]           # (0.63: the crew is the ship's - mission.SHIP_CREW)
-				if String(f["kind"]) in ["supply", "battleship", "harvester"]:
+				if String(f["kind"]) in ["supply", "battleship", "harvester"] or m["type"] == "bug":
 					m["ufo"] = f["kind"]           # it lands as what flew
 					m["size"] = UFO_SIZES[f["kind"]]
 				data["missions"].append(m)
-				_log("UFO, které nikdo nezastavil, přistálo: " + m["place"])
+				_log(("UFO, které nikdo nezastavil, přistálo: " if m["type"] == "landed" else "UFO přistálo a technici mají připravenou štěnici: ") + m["place"])
 				mission_found.emit(m)
 			else:
 				_log("UFO opustilo dosah radaru.")
@@ -1343,6 +1379,13 @@ func intercept_done(id: int, outcome: String, kind: String, jet_hp: float, lost 
 		"shot_down":
 			data["trust"] = clampi(int(data["trust"]) - 2, 0, 100)
 			txt = "Stíhačky sestřeleny, piloti se katapultovali."
+			# (0.7x) over land one of them does not come back on his own: a mission to fetch him
+			if is_land(lat, lon) and Game.autotest() == "":
+				var pm := generate_mission(Vector2(lat, lon), "pilot")
+				pm["expires"] = float(data["day"]) + float(MTYPES["pilot"]["expire"])
+				data["missions"].append(pm)
+				txt += " Jeden se nehlásí - spadl v oblasti %s. Vetřelci ho hledají taky." % pm["place"]
+				mission_found.emit(pm)
 		"escaped", "fuel":
 			txt = "UFO uniklo."
 	# the battleship coming for the base does not turn back because the jets failed
@@ -1378,7 +1421,7 @@ func intercept_done(id: int, outcome: String, kind: String, jet_hp: float, lost 
 
 # ---- missions ---------------------------------------------------------------------------------------
 ## `at` (lat, lon): where it has to be (a crashed or landed UFO); otherwise a random place on land.
-func generate_mission(at := Vector2.INF) -> Dictionary:
+func generate_mission(at := Vector2.INF, force := "") -> Dictionary:
 	var lat := 0.0
 	var lon := 0.0
 	for tries in (0 if at != Vector2.INF else 200):
@@ -1393,16 +1436,22 @@ func generate_mission(at := Vector2.INF) -> Dictionary:
 			break
 	if at != Vector2.INF:
 		lat = at.x; lon = at.y
-	var types := ["crash", "crash", "landed", "abduction", "terror", "rescue", "sabotage"]
+	var types := ["crash", "crash", "landed", "abduction", "terror", "rescue", "sabotage", "convoy", "radar"]
 	if float(data["day"]) < 4.0:
 		types = ["crash", "crash", "landed", "abduction", "rescue"]
+	elif int(data.get("month", 0)) >= QUARANTINE_FROM:
+		types.append("quarantine")      # (Ari) late only: every fallen carrier lets a Líhavec out
 	var t: String = types[rng.randi() % types.size()]
+	if force != "":
+		t = force
 	var info: Dictionary = MTYPES[t]
 	var terr0 := terrain_at(lat, lon)
 	var biome := "farm"
 	var roll := rng.randf()
 	if t == "terror":
 		biome = "town" if roll < 0.75 else "industrial"
+	elif t == "quarantine":
+		biome = "town"
 	elif abs(lat) > 63:
 		biome = "polar"
 	elif terr0 == "snow" or abs(lat) > 55:
@@ -1423,14 +1472,25 @@ func generate_mission(at := Vector2.INF) -> Dictionary:
 		"crash": size = "small" if rng.randf() < 0.4 else "medium"
 		"abduction": size = "small" if rng.randf() < 0.5 else "medium"
 		"rescue", "sabotage": size = "large" if rng.randf() < 0.6 else "medium"
+		"convoy": size = "medium" if rng.randf() < 0.6 else "large"
+		"pilot": size = "medium" if rng.randf() < 0.5 else "large"
+		"radar": size = "large"
+		"bug": size = "medium" if rng.randf() < 0.6 else "large"
+		"quarantine": size = "large"
 	var terr := terrain_at(lat, lon)
 	if biome == "polar":
 		terr = "snow"
 	if terr == "desert" and biome in ["farm", "forest", "mountain", "polar"]:
 		biome = "desert"       # sand, rocks, ruins - not fields and cows
+	if t == "pilot" and biome in ["town", "industrial", "farm"]:
+		biome = "forest" if rng.randf() < 0.6 else "mountain"     # (he came down in the woods)
+	if t == "radar":
+		biome = "base"         # the station: hangars, barracks, the tower (desert sand stays on the ground)
+	if t == "convoy" and biome in ["town", "industrial", "polar"]:
+		biome = "forest" if rng.randf() < 0.5 else "farm"     # (a convoy on a country road)
 	var id := int(data["next_id"])
 	data["next_id"] = id + 1
-	var exp_days: float = float(info["expire"]) * (1.0 + 0.4 * count("radar")) * bloc_k("radar") * rng.randf_range(0.8, 1.3)
+	var exp_days: float = float(info["expire"]) * (1.0 + 0.4 * count("radar")) * bloc_k("radar") * radar_cover(lat, lon) * rng.randf_range(0.8, 1.3)
 	return {
 		"id": id, "type": t, "lat": lat, "lon": lon, "place": nearest_place(lat, lon),
 		"expires": float(data["day"]) + exp_days, "biome": biome, "race": "grey", "size": size, "terrain": terr,
@@ -1528,6 +1588,44 @@ func known_habits() -> Dictionary:
 			out[who] = l
 	return out
 
+## 0.7x Karanténa: from this month of the war (0 = the first)
+const QUARANTINE_FROM := 3
+
+## 0.7x Štěnice na lodi (zkušební mise): an unstopped ship that lands is now and then a chance to
+## follow it home - only while we do not know where their base is, and not the giants (they land as
+## maps of their own).
+const BUG_CHANCE := 0.3
+const BUG_FROM_DAY := 5.0
+func _bug_ok(kind: String) -> bool:
+	if float(data["day"]) < BUG_FROM_DAY or not kind in ["scout", "raider", "harvester"]:
+		return false
+	for mm in data["missions"]:
+		if mm["type"] in ["alienbase", "bug"]:
+			return false
+	return true
+
+## The tracker flew with them: the radar follows it to their base.
+func _bug_tracked(_m: Dictionary) -> String:
+	for mm in data["missions"]:
+		if mm["type"] == "alienbase":
+			return " Štěnice potvrdila, co už víme: letěla k jejich základně."
+	_add_alien_base("Štěnice na trupu UFO dovedla radar až k základně vetřelců: %s. Mise čeká na globu.")
+	return " Radar vede štěnici k jejich základně."
+
+## No tracker: the ship is in the air - one more chance, for the interceptors.
+func _bug_escaped(m: Dictionary) -> String:
+	if not data.has("flights"):
+		data["flights"] = []
+	var id := int(data["next_id"])
+	data["next_id"] = id + 1
+	var f := {"id": id, "kind": String(m.get("crew_of", m.get("ufo", "raider"))), "lat": float(m.get("lat", base_lat())), "lon": float(m.get("lon", base_lon())),
+		"heading": rng.randf_range(0, 360), "speed": rng.randf_range(15, 25), "until": float(data["day"]) + 0.12 + rng.randf_range(0.3, 0.45)}
+	if not f["kind"] in ["scout", "raider", "harvester"]:
+		f["kind"] = "raider"
+	data["flights"].append(f)
+	flight_found.emit(f)
+	return " Loď odstartovala bez štěnice - radar ji drží, stíhačka ji ještě může dostat."
+
 ## The interrogation told us where they hide on Earth: a base underground (stays until destroyed).
 ## A captured Šedivák mostly knows only its own task - only now and then does it let slip
 ## where their base on Earth is (Výslech zajatce).
@@ -1539,7 +1637,7 @@ func _grey_talks() -> void:
 	if rng.randf() < GREY_TELLS:
 		_add_alien_base()
 
-func _add_alien_base() -> void:
+func _add_alien_base(why := "") -> void:
 	for mm in data["missions"]:
 		if mm["type"] == "alienbase":
 			return
@@ -1550,7 +1648,7 @@ func _add_alien_base() -> void:
 	m["reward"] = int(MTYPES["alienbase"]["reward"])
 	m["expires"] = float(data["day"]) + 9999.0
 	data["missions"].append(m)
-	_log("Zajatý Šedivák při výslechu prozradil polohu jejich základny: %s. Mise čeká na globu." % m["place"])
+	_log((why if why != "" else "Zajatý Šedivák při výslechu prozradil polohu jejich základny: %s. Mise čeká na globu.") % m["place"])
 
 func _add_final() -> void:
 	for mm in data["missions"]:
@@ -1689,6 +1787,9 @@ func _gear_lost(kits: Dictionary, lost: Dictionary, lockers: Dictionary) -> Stri
 	return (" Ze skladu ubylo (spotřebováno nebo zůstalo venku): " + ", ".join(l) + ".") if not l.is_empty() else ""
 
 func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs: int, civ_saved := 0, civ_dead := 0, races := [], loot := {}, wiped := false, kits := {}, q := 1.0, lost_gear := {}, lockers := {}) -> String:
+	# (0.7x Štěnice) not loot: the tracker on their hull
+	var tagged := int(loot.get("bug_tag", 0)) > 0
+	loot.erase("bug_tag")
 	# what the team brought home: research needs it, Moskovium pays for alien tech
 	var found: Dictionary = data.get("found", {})
 	var got := []
@@ -1761,6 +1862,11 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 				crafts().erase(c)
 			else:
 				c["state"] = "back"
+	if m["type"] == "radar":
+		_radar_area(float(m.get("lat", base_lat())), float(m.get("lon", base_lon())), success)
+	var bug_txt := ""
+	if m["type"] == "bug":
+		bug_txt = _bug_tracked(m) if tagged and success else _bug_escaped(m)
 	if m["type"] == "mars":
 		if success:
 			data["won"] = true
@@ -1773,7 +1879,7 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 	# the base's part of the reward (the mercenaries' pay goes to them, see the mission's end)
 	var money := int(((int(int(m["reward"]) * 0.6) if success else 0) + kills * 40 + captures * 160 + civ_saved * 60) * q)
 	data["credits"] = int(data["credits"]) + money
-	var dt: int = (int(info["trust"]) if success else -6) + civ_saved * 2 - civ_dead
+	var dt: int = (int(info["trust"]) if success else (-2 if m["type"] == "bug" else -6)) + civ_saved * 2 - civ_dead
 	data["trust"] = clampi(int(data["trust"]) + dt, 0, 100)
 	var st: Dictionary = data["stats"]
 	st["kills"] = int(st["kills"]) + kills
@@ -1800,7 +1906,7 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 	elif wiped and not success:
 		var kl := _kondor_lost({})
 		txt += kl if transport() != "heli" else kl.replace("Kondoru", "Čápa").replace("Kondor", "Čáp")
-	txt += gear_txt
+	txt += gear_txt + bug_txt
 	_log(txt)
 	if m["type"] == "base" and not success:
 		fell = _base_fell("Obrana selhala.")

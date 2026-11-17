@@ -181,7 +181,8 @@ static func _plan(m: Node, b: Dictionary, key: String, lead: Node, g: Array) -> 
 	for x in g:
 		if x.state == x.S.COMBAT and x.tac in HUNTERS and not x.flying and not x.airborne:
 			fighters.append(x)
-	var tgt: Node = pl["target"]
+	var tgt_v = pl["target"]
+	var tgt: Node = tgt_v if is_instance_valid(tgt_v) else null     # (a player who has left: freed)
 	if pl["roles"].is_empty():
 		if m.t < float(pl["cd"]) or fighters.size() < 2:
 			return

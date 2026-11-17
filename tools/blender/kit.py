@@ -246,3 +246,132 @@ def gun_gallery(out, files, cols=3, dx=1.5, dz=0.45, res_w=1280):
     rows = (len(files) + cols - 1) // cols
     preview(out, target=(0.0, 0, -(rows - 1) * dz / 2), dist=(0.8 + cols * dx / 2) * 1.25, angle=0.0, height=0.0,
             res=(res_w, 260 + rows * 200))
+
+# ---- 0.72: the nature in the look of the newer models -----------------------------------------------
+# Smooth, lumpy crowns built from noise (mathutils.noise, seeded by an offset), darker undersides,
+# trunks with root flares and bark ridges, chiselled stones with moss on the top faces only.
+from mathutils import noise as _nz
+
+def _shade(o, ang=40.0):
+    """Smooth shading, edges sharper than ang stay hard (stones, crystals)."""
+    _sel(o)
+    for p in o.data.polygons:
+        p.use_smooth = True
+    try:
+        bpy.ops.object.shade_smooth_by_angle(angle=math.radians(ang))
+    except Exception:
+        pass
+    return o
+
+def _two_tone(o, top, under, limit=-0.25):
+    """Faces looking down get the darker material (the shade under a crown)."""
+    o.data.materials.clear()
+    o.data.materials.append(top)
+    o.data.materials.append(under)
+    for p in o.data.polygons:
+        p.material_index = 1 if p.normal.z < limit else 0
+    return o
+
+def lump(m, c, r, scale=(1, 1, 1), seed=0, amt=0.22, sub=3, freq=1.6, bumps=0.11, under=None):
+    """A soft, cloud-like clump of leaves: an icosphere pushed out by low noise, small leafy bumps."""
+    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=sub, radius=1.0)
+    o = bpy.context.active_object
+    off = Vector((seed * 7.31, seed * 3.17, seed * 5.53))
+    for v in o.data.vertices:
+        d = v.co.normalized()
+        k = 1.0 + amt * _nz.noise(d * freq + off) + bumps * _nz.noise(d * 5.5 + off * 1.7)
+        v.co = Vector((d.x * scale[0], d.y * scale[1], d.z * scale[2])) * r * k
+        if v.co.z < -r * scale[2] * 0.55:       # flatter underneath, like a real crown
+            v.co.z = -r * scale[2] * 0.55 + (v.co.z + r * scale[2] * 0.55) * 0.35
+    o = _finish(o, m, c, (0, 0, 0), (1, 1, 1))
+    smooth(o)
+    if under is not None:
+        _two_tone(o, m, under)
+    return o
+
+def bark_tube(m, pts, radii, verts=10, seed=0, ridge=0.08, flare=0.0):
+    """A tube through pts with the given radii: bark ridges along it, roots flaring at the foot."""
+    me = bpy.data.meshes.new("bark")
+    bm = bmesh.new()
+    rows = []
+    pts = [Vector(p) for p in pts]
+    off = Vector((seed * 1.7, seed * 2.9, 0.0))
+    for i, (p, r) in enumerate(zip(pts, radii)):
+        d = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
+        q = Vector((0, 0, 1)).rotation_difference(d)
+        row = []
+        for k in range(verts):
+            a = k / verts * TAU
+            rr = r * (1.0 + ridge * _nz.noise(Vector((math.cos(a) * 2.0, math.sin(a) * 2.0, p.z * 1.5)) + off))
+            if flare > 0 and i == 0:
+                rr *= 1.0 + flare * (0.6 + 0.4 * math.cos(a * 3 + seed))     # root buttresses
+            elif flare > 0 and i == 1:
+                rr *= 1.0 + flare * 0.25 * (0.6 + 0.4 * math.cos(a * 3 + seed))
+            row.append(bm.verts.new(p + q @ Vector((math.cos(a) * rr, math.sin(a) * rr, 0))))
+        rows.append(row)
+    for i in range(len(rows) - 1):
+        for k in range(verts):
+            bm.faces.new((rows[i][k], rows[i][(k + 1) % verts], rows[i + 1][(k + 1) % verts], rows[i + 1][k]))
+    bm.faces.new(list(reversed(rows[0])))
+    bm.faces.new(rows[-1])
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new("bark", me)
+    bpy.context.collection.objects.link(o)
+    _fix_normals(o)
+    o = _finish(o, m, (0, 0, 0), (0, 0, 0), (1, 1, 1))
+    return smooth(o)
+
+def _path(a, b, n, seed, bend):
+    rr = random.Random(seed)
+    a = Vector(a); b = Vector(b)
+    side = Vector((rr.uniform(-1, 1), rr.uniform(-1, 1), 0))
+    out = []
+    for i in range(n + 1):
+        t = i / n
+        p = a.lerp(b, t) + side * bend * math.sin(t * math.pi) + Vector((rr.uniform(-1, 1), rr.uniform(-1, 1), 0)) * bend * 0.25 * t
+        out.append(p)
+    return out
+
+def branch(m, a, b, r0, r1, seed=0, verts=7, n=4, bend=0.15):
+    pts = _path(a, b, n, seed, bend)
+    return bark_tube(m, pts, [r0 + (r1 - r0) * i / n for i in range(n + 1)], verts, seed, 0.05)
+
+def stone(m, r, scale, seed, cuts=9, sub=3, moss=None, dark=None):
+    """A chiselled boulder: a rounded lump cut by random planes into facets, soft between them,
+    sunk into the ground. Moss on the faces that look up, darker in the clefts underneath."""
+    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=sub, radius=1.0)
+    o = bpy.context.active_object
+    rr = random.Random(seed)
+    off = Vector((seed * 2.3, seed * 1.1, seed * 3.7))
+    for v in o.data.vertices:
+        d = v.co.normalized()
+        v.co = d * (1.0 + 0.16 * _nz.noise(d * 1.3 + off) + 0.03 * _nz.noise(d * 6.0 + off))
+    planes = []
+    for k in range(cuts):
+        n = Vector((rr.uniform(-1, 1), rr.uniform(-1, 1), rr.uniform(-0.5, 1))).normalized()
+        planes.append((n, rr.uniform(0.6, 0.82)))
+    for v in o.data.vertices:
+        for n, dist in planes:
+            e = v.co.dot(n) - dist
+            if e > 0:
+                v.co -= n * e
+    for v in o.data.vertices:
+        v.co = Vector((v.co.x * scale[0], v.co.y * scale[1], v.co.z * scale[2])) * r
+        v.co.z += r * scale[2] * 0.45
+        if v.co.z < -0.12:
+            v.co.z = -0.12
+    o = _finish(o, m, (0, 0, 0), (0, 0, 0), (1, 1, 1))
+    _shade(o, 38.0)
+    mats_ = [m] + ([moss] if moss else []) + ([dark] if dark else [])
+    o.data.materials.clear()
+    for x in mats_:
+        o.data.materials.append(x)
+    top_h = max(v.co.z for v in o.data.vertices)
+    for p in o.data.polygons:
+        if moss and p.normal.z > 0.62 and p.center.z > top_h * 0.55 and _nz.noise(p.center * 1.7 + off) > -0.15:
+            p.material_index = 1
+        elif dark and p.normal.z < -0.1:
+            p.material_index = len(mats_) - 1
+    return o
+

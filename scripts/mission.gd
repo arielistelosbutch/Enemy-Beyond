@@ -358,6 +358,10 @@ func _ready() -> void:
 		_build_rain(true)
 	if weather == "storm" or weather == "rain":
 		_build_rain(false, 380 if weather == "rain" else 700)
+	wx = WX.new()
+	wx.raw_env = _env_raw
+	add_child(wx)
+	wx.setup(self)
 	_build_door()
 	_ufo_ambience()
 	_ship_engine()
@@ -372,6 +376,11 @@ func _ready() -> void:
 		var vr := RandomNumberGenerator.new()
 		vr.seed = Net.mission_seed + 7
 		vip_name = VIP_NAMES[vr.randi() % VIP_NAMES.size()]
+	if mtype() == "pilot":
+		var pr := RandomNumberGenerator.new()
+		pr.seed = Net.mission_seed + 7
+		vip_name = "Pilot " + PILOT_NAMES[pr.randi() % PILOT_NAMES.size()]
+		_pilot_trail()
 	if home():
 		# (0.7x, Ari: "pořád funguje jako samostatná mise") no briefing, no waiting: out of the lift
 		# and walking. A short word on the way back up instead.
@@ -560,6 +569,13 @@ func _ufo_ambience() -> void:
 		_loop_player(big, "ufo_ship_ambience", -6.0)
 
 const RAIN_DB := -7.0
+func rain_db() -> float:
+	return RAIN_DB
+## (2026-11-17) Weather that lives through the mission: changes, wet ground, wind, tracks (scripts/weather_fx.gd).
+const WX := preload("res://scripts/weather_fx.gd")
+var wx: Node
+var under_roof := false      # the local camera is under a roof (rain drums on it, the sights fog up)
+var _env_raw := {}
 var _rain_out: AudioStreamPlayer
 var _rain_roof: AudioStreamPlayer
 
@@ -584,6 +600,11 @@ func _briefing_text() -> String:
 			"alienbase": "Výslech prozradil, kde mají základnu: jeskyně pod zemí, vykopané do skály a zarostlé jejich zahradou. Sjíždíte šachtou dolů. Někde v hloubce je velitelské centrum s řídicím jádrem - a v líhni prý drží lidi.",
 			"sabotage": "Tři cizí majáky v krajině vysílají k jejich lodím. Dokud stojí, přicházejí další. Každý maják: drž u něj F 3 sekundy, nálož bouchne za 8 sekund.",
 			"base": "Vetřelci přistáli nad základnou. Vyřadili pojistky - hlavní světla zhasla, svítí jen rudé nouzové lampy. Lezou dovnitř hangárem a šachtou výtahu, ve vlnách. Vydržet a zabít všechny. Znáte tu každou chodbu - oni ne." if Net.mission_params.has("base") else "Vetřelci přistáli u základny v rokli. Kondor stojí na ploše a nikam se neletí. Útočí ve vlnách od okraje rokle. Vydržet a zabít všechny.",
+			"radar": "Spojenecká radarová stanice zmlkla uprostřed noci. Na kraji areálu přistálo UFO a jeho posádka vyřadila proud. Rozvodny jsou tři, rozmístěné po areálu, každá napájí svou část. Radar se zapíná z pultu v domku pod věží - jde to, až budou běžet všechny tři.",
+			"pilot": "Náš Sokol spadl do lesa po souboji s UFO. Pilot se katapultoval, ale vysílačku nemá - nouzový maják zůstal ve vraku. Vetřelci, kteří ho sestřelili, slezli dolů a hledají ho taky. Je zraněný, nejspíš se schoval kousek od místa pádu.",
+			"quarantine": "Armáda uzavřela městečko. Lidé v něm onemocněli něčím, co nezná žádný lékař - a ti, co umřeli, zase vstali. Zdroj nákazy je prý v jednom z domů. Zdraví lidé se schovávají. Ne každý, kdo vypadá zdravě, zdravý je.",
+			"bug": "UFO přistálo neporušené a posádka je venku. Tentokrát ho nechceme zničit - chceme vědět, kam letí. Technici dali štěnici: malý vysílač, který se přichytí na trup. Připevnit ji, aniž by si vás všimli. Když vás odhalí, loď nebude čekat.",
+			"convoy": "Vojenský konvoj veze náklad pro Projekt X. Vetřelci ho zastavili na silnici: hlava kolony hoří, řidiči jsou pryč. Pro náklad letí vrtulník. Do té doby ho nikdo nesmí rozbít.",
 			"terror": "Vetřelci vtrhli do městečka. Spojení s místními je přerušeno. Poslední hovor na tísňovou linku: \"Je to černé, je to rychlé, a ti, co to zabilo, zase vstávají.\"\nZachraň, koho můžeš (F u vyděšeného civilisty - půjde za tebou do Kondoru).",
 		}
 		var terr: String = {"snow": "\nTerén: sníh.", "desert": "\nTerén: poušť."}.get(mp.get("terrain", ""), "")
@@ -592,7 +613,12 @@ func _briefing_text() -> String:
 			"mars": task = "ÚKOL: zničit tři pylony štítu a Velký mozek. Návrat není."
 			"rescue": task = "ÚKOL: najít a přivést do Kondoru živého - ostatní vetřelci jsou až na druhém místě (F u něj = půjde za tebou)."
 			"sabotage": task = "ÚKOL: zničit všechny tři majáky a vrátit se do Kondoru."
+			"radar": task = "ÚKOL: obnovit proud ve třech rozvodnách (drž F 3 s u skříně) a pak v domku pod věží zapnout radar. Posádka lodi je rozlezlá po areálu."
 			"alienbase": task = "ÚKOL: najít velitelské centrum, zničit řídicí jádro (výbuch!) a vrátit se k šachtě. Zajatce z líhně vezměte s sebou (F u nich)."
+			"pilot": task = "ÚKOL: najít pilota a přivést ho do Kondoru živého (F u něj = půjde za tebou). Začněte u vraku."
+			"quarantine": task = "ÚKOL: najít zdroj nákazy a zničit ho (drž F 3 s, nálož bouchne za 8 sekund). Zdravé lidi vezměte do Kondoru (F u nich). Nakažené ne."
+			"bug": task = "ÚKOL: potichu dojít k lodi a připevnit štěnici na trup (drž F 3 s u trupu). Pak odlet. Boj s posádkou není potřeba - spíš naopak."
+			"convoy": task = "ÚKOL: udržet náklad konvoje, dokud pro něj nepřiletí vrtulník (pilot se hlásí vysílačkou). Pak odlet. Zabít všechny vetřelce není potřeba."
 			"base": task = "ÚKOL: ubránit základnu - přežít všechny vlny. Prohra znamená vyrabovanou základnu."
 		var learned := ""
 		var hb: Dictionary = mp.get("habits", {})
@@ -682,6 +708,7 @@ func set_nvg(on: bool, ir := false) -> void:
 		grain += 0.05
 	_nvg_mat.set_shader_parameter("gain", gain)
 	_nvg_mat.set_shader_parameter("grain", grain)
+	_nvg_gain = gain
 	_amb_base += add - _nvg_amb
 	env.ambient_light_energy += add - _nvg_amb
 	_nvg_amb = add
@@ -703,6 +730,112 @@ func nvg_glare(at: Vector3, reach: float, k: float) -> void:
 	if not get_world_3d().direct_space_state.intersect_ray(q).is_empty():
 		return
 	hud.nvg_overload(clampf(k * (1.3 - d / reach), 0.25, 1.0))
+
+## (0.72, Ari) Bright light in front of the tube. Lamps, fires, a mate's torch in the face, muzzle
+## flashes: the intensifier cannot take it and the picture burns out pale - look into a lit street
+## lamp and you are blind until you look away (the tube's protection then brings the gain back
+## slowly). Your own torch on with the tube down washes out what is near. Day burns it out.
+## Only on this machine (each one sees through his own tube).
+var nvg_wash := 0.0
+var nvg_flick := 1.0           # the battery (player.gd sets it)
+var _nvg_gain := 5.0
+var _nvg_kick := 0.0
+var _nvg_want := 0.0
+var _nvg_lights: Array = []
+var _nvg_scan := 0.0
+var _nvg_eval := 0.0
+func _nvg_tick(delta: float) -> void:
+	if not nvg_on or _nvg_mat == null:
+		nvg_wash = 0.0
+		_nvg_kick = 0.0
+		return
+	var me := local_player()
+	if me == null or me.cam == null:
+		return
+	_nvg_scan -= delta
+	if _nvg_scan <= 0.0:
+		_nvg_scan = 2.0
+		_nvg_lights = find_children("*", "Light3D", true, false).filter(func(l): return not (l is DirectionalLight3D))
+	_nvg_eval -= delta
+	if _nvg_eval <= 0.0:
+		_nvg_eval = 0.1
+		_nvg_want = nvg_light_load(me)
+	var want := clampf(_nvg_want + _nvg_kick, 0.0, 0.95)
+	_nvg_kick = maxf(0.0, _nvg_kick - delta * 2.2)     # (after: a flash shows even on a long frame)
+	# up at once, back down slowly
+	nvg_wash = want if want > nvg_wash else maxf(want, nvg_wash - delta * 0.7)
+	_nvg_mat.set_shader_parameter("wash", nvg_wash)
+	_nvg_mat.set_shader_parameter("gain", _nvg_gain * (1.0 - 0.5 * nvg_wash))
+	_nvg_mat.set_shader_parameter("flick", nvg_flick)
+
+## How hard the light in view hits the tube (0 dark .. ~1 blinding).
+func nvg_light_load(me: Node) -> float:
+	var cam: Camera3D = me.cam
+	var eye := cam.global_position
+	var fwd := -cam.global_transform.basis.z
+	var ss := get_world_3d().direct_space_state
+	var sum := 0.0
+	var rays := 0
+	for l in _nvg_lights:
+		if not is_instance_valid(l) or not l.is_visible_in_tree() or l.light_energy < 0.3:
+			continue
+		if l == me.get("flash") or me.is_ancestor_of(l):
+			continue
+		var lp: Vector3 = l.global_position
+		var to := lp - eye
+		var d := to.length()
+		var reach: float = (l.omni_range if l is OmniLight3D else l.spot_range) * 2.5
+		if d > reach or d < 0.05:
+			continue
+		var look := fwd.dot(to / d)
+		if look < 0.82:
+			continue
+		var k: float = l.light_energy * (1.0 - d / reach) * smoothstep(0.82, 0.985, look)
+		if l is SpotLight3D:
+			# a torch only blinds from inside its beam
+			var aim: float = (-l.global_transform.basis.z).dot(-to / d)
+			if aim < cos(deg_to_rad(l.spot_angle * 1.3)):
+				continue
+			k *= 2.0
+		if k < 0.05:
+			continue
+		if rays < 8:
+			rays += 1
+			var q := PhysicsRayQueryParameters3D.create(eye, lp, Game.WORLD)
+			q.exclude = [me.get_rid()]
+			var hit := ss.intersect_ray(q)
+			if not hit.is_empty() and (hit.position as Vector3).distance_to(lp) > 0.4:
+				continue
+		sum += k
+	var burn := sum * 0.35
+	# your own torch with the tube down: what it lights near you burns out
+	if me.get("light_on"):
+		var q2 := PhysicsRayQueryParameters3D.create(eye, eye + fwd * 6.0, Game.WORLD)
+		q2.exclude = [me.get_rid()]
+		var h2 := ss.intersect_ray(q2)
+		burn += 0.3 + (0.45 * (1.0 - eye.distance_to(h2.position) / 6.0) if not h2.is_empty() else 0.0)
+	# daylight: the whole picture, unless there is a roof over you
+	if phase() == "den":
+		var q3 := PhysicsRayQueryParameters3D.create(eye, eye + Vector3(0, 12.0, 0), Game.WORLD)
+		burn += 0.15 if not ss.intersect_ray(q3).is_empty() else 0.7
+	elif phase() != "noc":
+		burn += 0.12
+	return clampf(burn, 0.0, 0.95)
+
+## A short flash (a shot) in front of the tube: a jolt of white that fades in a moment.
+func nvg_flash(at: Vector3, k: float) -> void:
+	if not nvg_on:
+		return
+	var me := local_player()
+	if me == null or me.cam == null:
+		return
+	var to: Vector3 = at - me.cam.global_position
+	var d := to.length()
+	if d > 25.0:
+		return
+	if d > 1.5 and (-me.cam.global_transform.basis.z).dot(to / d) < 0.5:
+		return
+	_nvg_kick = minf(0.8, _nvg_kick + k * clampf(1.2 - d / 25.0, 0.2, 1.0))
 
 ## The Night Eye talent: the eyes get used to the dark (only on this machine).
 func night_eyes() -> void:
@@ -866,6 +999,7 @@ func _environment() -> void:
 		moon.light_volumetric_fog_energy = lerpf(nv[8], moon.light_volumetric_fog_energy, w)
 	_sky_light()
 	add_child(moon)
+	_env_raw = WX.snap(env, moon)
 	_weather_env()
 
 ## Light, fog and wind by the weather (night values; day keeps its flat grey light).
@@ -955,9 +1089,9 @@ func _maybe_spawn() -> void:
 	# (campaign crash / landed missions carry "crew_of" = the ship that flew; quick missions and tests as before)
 	var kind := String(Net.mission_params.get("crew_of", ""))
 	_crew_cap = 0
-	if SHIP_CREW.has(kind) and mtype() in ["crash", "landed"]:
+	if SHIP_CREW.has(kind) and mtype() in ["crash", "landed", "bug"]:
 		var sc: Array = SHIP_CREW[kind]
-		count = int(ceil(float(sc[0]) + float(sc[1]) * maxi(0, Net.roster.size() - 1) - 0.001)) + (1 if mtype() == "landed" else 0) + (1 if Game.veteran() else (-1 if Game.easy() else 0))
+		count = int(ceil(float(sc[0]) + float(sc[1]) * maxi(0, Net.roster.size() - 1) - 0.001)) + (1 if mtype() in ["landed", "bug"] else 0) + (1 if Game.veteran() else (-1 if Game.easy() else 0))
 		_crew_cap = int(sc[2])
 	# (Ari 2026-11-13: the defence was brutal - 7 + waves solo, ~30 in four) our base: a raiding party
 	# of 3 (+1 for every other mercenary) plus what the war adds (extra_aliens 0-3), then BASE_WAVES
@@ -965,16 +1099,30 @@ func _maybe_spawn() -> void:
 		var extra := int(Net.mission_params.get("extra_aliens", 0))
 		count = int(ceil(float(BASE_CREW[0]) + float(BASE_CREW[1]) * maxi(0, Net.roster.size() - 1) - 0.001)) + extra + (1 if Game.veteran() else (-1 if Game.easy() else 0))
 		_crew_cap = int(BASE_CREW[2]) + extra
+	# (0.7x nové mise) no ship on the map: a small party, the rest comes in waves (SITE_CREW)
+	if SITE_CREW.has(mtype()):
+		var scc: Array = SITE_CREW[mtype()]
+		count = int(ceil(float(scc[0]) + float(scc[1]) * maxi(0, Net.roster.size() - 1) - 0.001)) + int(Net.mission_params.get("extra_aliens", 0)) / 2 + (1 if Game.veteran() else (-1 if Game.easy() else 0))
+		_crew_cap = int(scc[2])
 	var crew := _crew(count, rng)
+	if mtype() == "quarantine":
+		# (0.7x Karanténa) the town's own dead, and the swollen thing that keeps the brood
+		crew = ["nador"]
+		for k in maxi(1, count - 1):
+			crew.append("zombie")
 	for k in crew.size():
 		var p: Vector3 = spawns[k % spawns.size()] + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
 		if map.get("evac", Vector3.ZERO) != Vector3.ZERO and p.distance_to(map["evac"]) < 35.0 and not mtype() in ["base", "home", "alienbase"]:
 			p = _far_point(rng, 35.0)      # nobody waits at the ramp
+		if mtype() == "radar" and k % 2 == 1:
+			p = _far_point(rng, 30.0)      # (spread over the station, not all by their ship)
 		if crew[k] in ["lihnoun", "ohar", "nador", "ohnivec"]:
 			# these do not stay by the ship: somewhere out in the dark
 			var wp: Array = map["waypoints"]
 			if not wp.is_empty():
 				p = _far_point(rng, 25.0)
+		if mtype() == "quarantine" and k == 0:
+			p = free_spot(nest_spot() + Vector3(0, 0.3, 0))
 		spawner.spawn({"kind": "alien", "id": next_alien_id, "pos": p, "race": crew[k]})
 		next_alien_id += 1
 		if not crew[k] in crew_names:
@@ -990,6 +1138,12 @@ func _maybe_spawn() -> void:
 	# civilians (terror and abduction)
 	var mt: String = Net.mission_params.get("type", "")
 	var nciv := 0
+	var carriers := {}
+	if mt == "quarantine":
+		nciv = mini(14, 8 + 2 * maxi(0, Net.roster.size() - 1))
+		var nc := maxi(2, int(round(nciv * QUAR_CARRIERS)))
+		while carriers.size() < nc:
+			carriers[rng.randi() % nciv] = true
 	if mt == "terror":
 		nciv = rng.randi_range(5, 8)
 	elif mt == "abduction":
@@ -1011,13 +1165,18 @@ func _maybe_spawn() -> void:
 			next_alien_id += 1
 			aliens_total += 1
 	for ci in nciv:
-		spawner.spawn({"kind": "civ", "id": ci, "pos": cpos[ci] if ci < cpos.size() else _far_point(rng, 12.0)})
+		spawner.spawn({"kind": "civ", "id": ci, "pos": cpos[ci] if ci < cpos.size() else civ_spawn_point(rng), "carrier": carriers.has(ci)})
 	civs_total = nciv
 	if Game.autotest() != "" and nciv > 0:
 		print("[CIV] %d civilians (%s)" % [nciv, "aboard the ship" if mt in ["crash", "landed"] else mt])
 	_spawn_objectives(rng)
 
 ## A random walkable point at least @a min_d from the team's landing spot.
+## (0.72, Ari: a villager stuck in a wall) a civilian's place at the start: a waypoint with a little
+## scatter, then pushed out of walls and things (the scatter used to put some inside a house wall).
+func civ_spawn_point(rng: RandomNumberGenerator) -> Vector3:
+	return free_spot(_far_point(rng, 12.0))
+
 func _far_point(rng: RandomNumberGenerator, min_d: float) -> Vector3:
 	var wp: Array = map["waypoints"]
 	for i in 30:
@@ -1044,6 +1203,8 @@ var _crew_cap := 0
 ## Our base attacked: [first party solo, + per other mercenary, most], waves after it and a wave's
 ## size (1 + mercenaries; veteran +1 wave and +1 alien), a breather before a wave once all are down.
 const BASE_CREW := [3, 1.0, 7]
+## (0.7x) the new missions without a ship on the map: [solo, + per other mercenary, most]
+const SITE_CREW := {"convoy": [2, 0.67, 5], "pilot": [2, 0.67, 5], "quarantine": [3, 1.0, 7]}
 const BASE_WAVES := 1
 const WAVE_BREATHER := 30.0
 ## Who is on board: one group per ship, soldiers, an officer on bigger ships,
@@ -1067,7 +1228,7 @@ func _crew(count: int, rng: RandomNumberGenerator) -> Array:
 		gid = pool[rng.randi() % pool.size()]
 	var g: Dictionary = GROUPS[gid]
 	var out := []
-	var big: bool = count >= 5 or mt == "landed" or String(mp.get("ufo", "")) == "harvester"
+	var big: bool = count >= 5 or mt in ["landed", "bug"] or String(mp.get("ufo", "")) == "harvester"
 	if mt == "terror":
 		var nt := clampi(1 + count / 3, 1, 3)
 		for i in nt:
@@ -1195,7 +1356,15 @@ func calm_civ(civ_name: String, player_name: String) -> void:
 	var c := actors.get_node_or_null(civ_name)
 	var p := actors.get_node_or_null(player_name)
 	if c and p:
-		c.calm_by(p)
+		if not c.calm_by(p):
+			var who := multiplayer.get_remote_sender_id()
+			_say_to.rpc_id(who if who > 0 else 1, "\"Ne! Nikam nejdu, je to tam venku!\"", 2.5)
+
+## (0.72) A line meant for one soldier only (a civilian's answer, a locked door).
+@rpc("authority", "call_local", "reliable")
+func _say_to(text: String, dur: float) -> void:
+	if hud:
+		hud.message(text, dur)
 
 @rpc("any_peer", "call_local", "reliable")
 func shoot_civ(civ_name: String) -> void:
@@ -1328,8 +1497,12 @@ func _process(delta: float) -> void:
 		if is_instance_valid(l):
 			l.light_energy = 1.4 + sin(t * 13.0) * 0.25 + sin(t * 7.3) * 0.2
 	_electric(delta)
+	if wx and started() and multiplayer.is_server() and wx.shift_at >= 0.0 and t >= wx.shift_at:
+		wx.shift_at = -1.0
+		_weather_shift.rpc(wx.shift_to)
 	_fires_tick(delta)
 	_mines_tick()
+	_nvg_tick(delta)
 	_storm_fx(delta)
 	_hallucinate(delta)
 	if multiplayer.is_server() and _spawned and not finished:
@@ -1403,15 +1576,15 @@ func _electric(delta: float) -> void:
 	# bulbs and the moths around them stay dark (dawn and dusk: on while it is still dim)
 	var daylight := phase() == "den" or (phase() != "noc" and twilight() > 0.6)
 	for l in map.get("elec_lights", []):
-		if not is_instance_valid(l):
+		if not is_instance_valid(l) or l.get_meta("shot", false):
 			continue
 		if daylight:
 			if l.visible:
 				l.visible = false
-				var dl = l.get_meta("lens", false)
+				var dl = (l.get_meta("lens") if l.has_meta("lens") else null)
 				if is_instance_valid(dl):
 					dl.visible = false
-				var dm = l.get_meta("moths", false)
+				var dm = (l.get_meta("moths") if l.has_meta("moths") else null)
 				if is_instance_valid(dm):
 					dm.visible = false
 			continue
@@ -1423,7 +1596,7 @@ func _electric(delta: float) -> void:
 			if not a.dead:
 				near = min(near, a.global_position.distance_to(l.global_position))
 		var e := base
-		if _power_out:
+		if _power_out and not l.get_meta("powered", false):
 			e = 0.0
 		elif near < 14.0 and randf() < 0.25 + (14.0 - near) / 14.0 * 0.6:
 			e = base * randf_range(0.0, 0.4)
@@ -1436,7 +1609,7 @@ func _electric(delta: float) -> void:
 		var mo = l.get_meta("moths", false)
 		if is_instance_valid(mo) and mo is Node3D:
 			mo.visible = e > base * 0.5
-		var lens = l.get_meta("lens", false)
+		var lens = (l.get_meta("lens") if l.has_meta("lens") else null)
 		if is_instance_valid(lens):
 			lens.visible = e > base * 0.2
 
@@ -1522,24 +1695,26 @@ func _storm_fx(delta: float) -> void:
 	RenderingServer.global_shader_parameter_set("wind_strength", ws)
 	var me := local_player()
 	var cam := get_viewport().get_camera_3d()
-	if me and rain:
+	if me:
 		# around the camera (also when a dead soldier watches a mate), ahead of where you are going
 		var feet: Vector3 = me.global_position
 		var vel: Vector3 = me.velocity
 		if cam and cam.global_position.distance_to(me.global_position) > 4.0:
 			feet = cam.global_position - Vector3(0, 1.6, 0)
 			vel = Vector3.ZERO
-		rain.global_position = feet + Vector3(0, RAIN_UP, 0) + vel * 0.4
+		if rain:
+			rain.global_position = feet + Vector3(0, RAIN_UP, 0) + vel * 0.4
 		# under a roof (a house, a barn, inside their ship) it drums on the roof
 		_roof_t -= delta
 		if _roof_t <= 0.0:
 			_roof_t = 0.3
 			var q := PhysicsRayQueryParameters3D.create(feet + Vector3(0, 1.8, 0), feet + Vector3(0, 30, 0), 1)
 			var under := not get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+			under_roof = under
 			# GPU rain runs all the time (the roof stops the drops); CPU rain cannot, so it hides
-			if not rain_gpu:
+			if rain and not rain_gpu:
 				rain.visible = not under
-			if _rain_out:
+			if _rain_out and not (wx and wx.blending()):
 				var tw := create_tween().set_parallel()
 				tw.tween_property(_rain_out, "volume_db", RAIN_DB - (12.0 if under else 0.0), 0.5)
 				tw.tween_property(_rain_roof, "volume_db", -9.0 if under else -60.0, 0.5)
@@ -1556,6 +1731,13 @@ func _storm_fx(delta: float) -> void:
 			env.ambient_light_energy = _amb_base
 			env.background_color = _bg_base
 			env.fog_density = _fog_base
+
+## (2026-11-17) The host: the weather turns (rain comes, a mist rises, the storm passes...). Every
+## machine fades it in itself (WeatherFx.shift) - nobody is told, they see and hear it.
+@rpc("authority", "call_local", "reliable")
+func _weather_shift(to: String) -> void:
+	if wx and WEATHER_NAMES.has(to):
+		wx.shift(to)
 
 @rpc("authority", "call_local", "reliable")
 func _lightning(thunder_delay: float) -> void:
@@ -1795,7 +1977,7 @@ func _story(ps: Array) -> void:
 ## Is the task of this mission fulfilled (the team may fly home with a success)?
 func _objective_met() -> bool:
 	match mtype():
-		"rescue":
+		"rescue", "pilot":
 			var v := vip()
 			return v != null and v.saved
 		"sabotage":
@@ -1804,6 +1986,14 @@ func _objective_met() -> bool:
 			return false
 		"alienbase":
 			return core_down()
+		"convoy":
+			return convoy_saved
+		"radar":
+			return radar_on
+		"bug":
+			return bug_tagged
+		"quarantine":
+			return not beacons.is_empty() and beacons_left() == 0
 	return _spawned and aliens_total > 0 and alive_aliens() == 0
 
 ## Host: the objective met -> the banner (Enter = fly home at once); (0.69, Ari) reinforcements
@@ -1816,7 +2006,7 @@ func _done_check() -> void:
 
 ## Missions whose task is "the crew down" (not a rescue, beacons, a core...).
 func _kill_all() -> bool:
-	return not mtype() in ["rescue", "sabotage", "base", "mars", "alienbase"]
+	return not mtype() in ["rescue", "sabotage", "base", "mars", "alienbase", "convoy", "pilot", "radar", "bug", "quarantine"]
 
 @rpc("authority", "call_local", "reliable")
 func _hide_done() -> void:
@@ -1869,6 +2059,7 @@ func explode(p: Vector3, radius: float, dmg: float, by: String, big: bool) -> vo
 	noise(p, 50.0 if big else 30.0)
 	blast_shock(p, 14.0 if big else 10.0)
 	blast_breakables(p, radius, dmg)
+	_cargo_blast(p, radius, dmg)
 	# a blast near anything that burns may set it alight
 	if randf() < (0.75 if _flammable_near(p, radius + 1.0) else 0.12):
 		ignite(p)
@@ -1984,6 +2175,9 @@ func _break(i: int) -> void:
 	n.set_meta("broken", true)
 	var kind := String(n.get_meta("break_kind"))
 	var at := n.global_position
+	if n.has_meta("lamp"):
+		_lamp_out(n)
+		return
 	if n == map.get("core") and multiplayer.is_server():
 		hud_note.rpc("ŘÍDICÍ JÁDRO ZNIČENO! Zpět k šachtě.")
 	if n.has_meta("explode") and multiplayer.is_server():
@@ -2047,6 +2241,42 @@ func _break(i: int) -> void:
 	n.queue_free()
 	_nav_dirty = 2.0
 
+## (Ari 17. 11.) A shot-out lamp: the light, the lens and the moths go dark for good, a pop of glass and
+## a few sparks. Runs on every machine (from the rpc _break), so the street is dark for everyone.
+func _lamp_out(n: Node3D) -> void:
+	var l = n.get_meta("lamp")
+	var at := n.global_position
+	if is_instance_valid(l):
+		l.set_meta("shot", true)
+		l.visible = false
+		for k in ["lens", "moths"]:
+			var o = l.get_meta(k, null)
+			if is_instance_valid(o):
+				(o as Node3D).visible = false
+	var parts := CPUParticles3D.new()
+	parts.one_shot = true
+	parts.amount = 18
+	parts.lifetime = 1.0
+	parts.explosiveness = 1.0
+	parts.direction = Vector3(0, -1, 0)
+	parts.spread = 80.0
+	parts.initial_velocity_min = 1.0
+	parts.initial_velocity_max = 3.0
+	parts.gravity = Vector3(0, -12, 0)
+	var chip := BoxMesh.new()
+	chip.size = Vector3(0.04, 0.04, 0.008)
+	var cm := StandardMaterial3D.new()
+	cm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	cm.albedo_color = Color(1.0, 0.85, 0.5)
+	chip.material = cm
+	parts.mesh = chip
+	add_child(parts)
+	parts.global_position = at
+	parts.emitting = true
+	get_tree().create_timer(1.5).timeout.connect(func(): if is_instance_valid(parts): parts.queue_free())
+	Game.play_at(self, "glass_break", at, -6)
+	n.queue_free()
+
 ## 0.62 výkon: rozbitý kus zmizí i ze sloučené sítě své zdi (map_gen._merge_breakable); přestaví se
 ## jednou na konci snímku, i když výbuch rozbije víc kusů naráz.
 var _mg_dirty := {}
@@ -2107,14 +2337,14 @@ var smokes := []     # [{pos, until}]
 const SMOKE_R := 4.5
 
 func add_smoke(p: Vector3) -> void:
-	smokes.append({"pos": p, "until": t + 28.0})
 	var c := CPUParticles3D.new()
+	smokes.append({"pos": p, "until": t + 28.0, "born": t, "node": c})
 	c.amount = 90
 	c.lifetime = 6.0
 	c.preprocess = 2.0
 	c.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
 	c.emission_sphere_radius = 2.5
-	c.gravity = Vector3(0, 0.05, 0)
+	c.gravity = Vector3(0, 0.05, 0) + wind_now() * 0.12     # (2026-11-17) the wind takes it away
 	c.initial_velocity_min = 0.1
 	c.initial_velocity_max = 0.4
 	c.scale_amount_min = 2.0
@@ -2198,7 +2428,7 @@ func _fire_on(id: int, p: Vector3, size: float, life: float) -> void:
 	fl.emission_box_extents = Vector3(0.7, 0.1, 0.7) * size
 	fl.direction = Vector3(0, 1, 0)
 	fl.spread = 12.0
-	fl.gravity = Vector3(0, 2.5, 0)
+	fl.gravity = Vector3(0, 2.5, 0) + wind_now() * 0.9       # (2026-11-17) the flames lean with the wind
 	fl.initial_velocity_min = 0.6
 	fl.initial_velocity_max = 1.6
 	fl.scale_amount_min = 0.6
@@ -2228,7 +2458,7 @@ func _fire_on(id: int, p: Vector3, size: float, life: float) -> void:
 	sm.emission_sphere_radius = 1.2 * size
 	sm.direction = Vector3(0, 1, 0)
 	sm.spread = 25.0
-	sm.gravity = Vector3(0.3, 0.6, 0)
+	sm.gravity = Vector3(0, 0.6, 0) + wind_now() * 0.5
 	sm.initial_velocity_min = 0.6
 	sm.initial_velocity_max = 1.2
 	sm.scale_amount_min = 2.5
@@ -2263,7 +2493,7 @@ func _fire_on(id: int, p: Vector3, size: float, life: float) -> void:
 	Game.play_at(self, "fire_ignite", p + Vector3.UP * 0.5, -2)
 	fires[id] = {"pos": p, "node": n, "light": l, "until": t + life, "size": size, "flames": fl, "smoke": sm}
 	# the smoke blocks sight like a smoke grenade, a little above the flames
-	smokes.append({"pos": p + Vector3(0, 0.6, 0), "until": t + life + 8.0})
+	smokes.append({"pos": p + Vector3(0, 0.6, 0), "until": t + life + 8.0, "plume": true})
 
 @rpc("authority", "call_local", "reliable")
 func _fire_off(id: int) -> void:
@@ -2287,10 +2517,15 @@ func _fire_off(id: int) -> void:
 
 ## Every machine: the flames flicker. The host: burns, spreads, ends.
 func _fires_tick(delta: float) -> void:
+	_smoke_tick()
+	var wn := wind_now()
 	for f in fires.values():
 		var l: OmniLight3D = f["light"]
 		if is_instance_valid(l):
 			l.light_energy = 2.0 + randf() * 1.4
+		if is_instance_valid(f["flames"]):
+			(f["flames"] as CPUParticles3D).gravity = Vector3(0, 2.5, 0) + wn * 0.9
+			(f["smoke"] as CPUParticles3D).gravity = Vector3(0, 0.6, 0) + wn * 0.5
 	if not multiplayer.is_server() or fires.is_empty():
 		return
 	_fire_t -= delta
@@ -2322,17 +2557,46 @@ func _fires_tick(delta: float) -> void:
 			var d := Vector2(bp.x - p.x, bp.z - p.z).length()
 			if d < 2.6:
 				hit_breakable(i, 3.5, "fire")       # (it burned through a wall in seconds - slower now)
-			if kind != "glass" and d < 4.8 and d > 1.5 and randf() < 0.05:
+			if kind != "glass" and d < 4.8 and d > 1.5 and randf() < 0.05 * _downwind(p, bp):
 				ignite(Vector3(bp.x, p.y, bp.z), clampf(float(f["size"]) * randf_range(0.8, 1.1), 0.7, 1.4))
 		if t > float(f["until"]):
 			_fire_off.rpc(id)
+
+## (2026-11-17) The wind of the mission (WeatherFx: one direction from the seed, the weather gives the
+## strength): it carries the smoke, bends the flames and spreads a fire downwind.
+func wind_now() -> Vector3:
+	return wx.wind if wx else Vector3.ZERO
+
+const SMOKE_DRIFT := 0.22          # m/s of drift per unit of wind
+## Where a smoke cloud is now: grenade smoke drifts off with the wind (a fire's column leans away).
+func smoke_at(sm: Dictionary) -> Vector3:
+	var age: float = clampf(t - float(sm.get("born", t)), 0.0, 30.0)
+	if sm.get("plume", false):
+		return sm["pos"] + wind_now() * 1.4
+	return sm["pos"] + wind_now() * SMOKE_DRIFT * age
+
+## Every machine: the smoke's emitters drift as the clouds do.
+func _smoke_tick() -> void:
+	for sm in smokes:
+		var n = sm.get("node")
+		if n != null and is_instance_valid(n) and float(sm["until"]) > t - 8.0:
+			(n as Node3D).global_position = smoke_at(sm) + Vector3(0, 1.2, 0)
+			(n as CPUParticles3D).gravity = Vector3(0, 0.05, 0) + wind_now() * 0.12
+
+## A fire creeps downwind more readily than against it (×0.3 .. ×2.2 in a gale).
+func _downwind(from: Vector3, to: Vector3) -> float:
+	var w := wind_now()
+	var d := Vector3(to.x - from.x, 0, to.z - from.z)
+	if w.length() < 0.05 or d.length() < 0.01:
+		return 1.0
+	return clampf(1.0 + 0.9 * d.normalized().dot(w.normalized()) * minf(w.length(), 1.4), 0.3, 2.2)
 
 ## True when a line of sight crosses a smoke cloud.
 func smoke_blocks(a: Vector3, b: Vector3) -> bool:
 	for sm in smokes:
 		if sm["until"] < t:
 			continue
-		var c: Vector3 = sm["pos"] + Vector3(0, 1.2, 0)
+		var c: Vector3 = smoke_at(sm) + Vector3(0, 1.2, 0)
 		var ab := b - a
 		var k := clampf((c - a).dot(ab) / max(ab.length_squared(), 0.001), 0.0, 1.0)
 		if (a + ab * k).distance_to(c) < SMOKE_R:
@@ -2481,11 +2745,14 @@ func _judge() -> void:
 				_end.rpc(true, "VELKÝ MOZEK JE MRTVÝ. Jejich velín na Marsu utichl - a s ním každá loď, každý Šedivák, každý hlas v hlavě. Je konec.")
 				return
 	var mt := mtype()
-	if mt == "rescue":
+	if mt in ["rescue", "pilot"]:
 		var v := vip()
 		if v and v.dead and not finished:
 			_end.rpc(false, "%s nepřežil. Mise selhala." % vip_name)
 			return
+	if mt == "convoy" and cargo_hp <= 0.0 and not finished:
+		_end.rpc(false, "Vetřelci rozbili náklad konvoje. Mise selhala.")
+		return
 	if mt == "base" and waves_left <= 0 and alive_aliens() == 0 and standing > 0:
 		_end.rpc(true, "Základna ubráněna. Poslední vetřelec leží u plotu.")
 		return
@@ -2498,13 +2765,25 @@ func _judge() -> void:
 		var won := alive_aliens() == 0 or (_done_once and _kill_all())
 		var why := "Posádka UFO zneškodněna." if alive_aliens() == 0 else ("Úkol splněn, ale tým odletěl před posilami." if won else "Tým se stáhl z mise.")
 		match mt:
-			"rescue":
+			"rescue", "pilot":
 				var v2 := vip()
 				won = v2 != null and v2.saved
 				why = ("%s je v bezpečí na palubě." % vip_name) if won else ("Odlet bez %s. Mise selhala." % vip_name)
 			"sabotage":
 				won = beacons_left() == 0
 				why = "Všechny majáky zničeny." if won else "Majáky dál volají posily. Mise selhala."
+			"radar":
+				won = radar_on
+				why = "Radar stanice znovu běží. Nebe nad oblastí je zase vidět." if won else "Stanice zůstala potmě. Radar v oblasti je slepý."
+			"quarantine":
+				won = beacons_left() == 0
+				why = "Zdroj nákazy shořel. Město zůstane v karanténě, ale už se nešíří." if won else "Zdroj nákazy dál žije. Karanténa nevydrží."
+			"bug":
+				won = bug_tagged
+				why = "Štěnice sedí na trupu. Až loď odletí, radar ji povede až k nim." if won else ("Loď odstartovala bez štěnice. Radar ji ještě chvíli uvidí - je čas na stíhačku." if bug_gone else "Tým se stáhl a štěnice zůstala v batohu.")
+			"convoy":
+				won = convoy_saved
+				why = "Náklad konvoje je na cestě domů." if won else "Tým se stáhl dřív, než přiletěl vrtulník. Náklad zůstal vetřelcům."
 			"alienbase":
 				won = core_down()
 				why = "Řídicí jádro jejich základny je zničené. Bez něj jsou slepí a hluší." if won else "Jádro dál stojí. Základna vetřelců přežila."
@@ -2561,10 +2840,17 @@ func _loot(success: bool) -> Dictionary:
 			var w: String = Campaign.RACE_WEAPON[a.race]
 			out[w] = int(out.get(w, 0)) + 1
 	var mt: String = Net.mission_params.get("type", "")
-	var mk: Array = {"crash": [25, 50], "landed": [50, 100], "abduction": [30, 60], "terror": [10, 25], "rescue": [10, 30], "sabotage": [30, 60], "base": [40, 80]}.get(mt, [0, 0])
-	var al: Array = {"crash": [6, 14], "landed": [10, 20], "abduction": [6, 12], "terror": [0, 3], "rescue": [2, 6], "sabotage": [6, 12], "base": [8, 16]}.get(mt, [0, 0])
+	var mk: Array = {"crash": [25, 50], "landed": [50, 100], "abduction": [30, 60], "terror": [10, 25], "rescue": [10, 30], "pilot": [5, 15], "bug": [0, 0], "quarantine": [10, 25], "radar": [30, 60], "sabotage": [30, 60], "base": [40, 80], "convoy": [40, 80]}.get(mt, [0, 0])
+	var al: Array = {"crash": [6, 14], "landed": [10, 20], "abduction": [6, 12], "terror": [0, 3], "rescue": [2, 6], "pilot": [1, 4], "bug": [0, 3], "quarantine": [0, 3], "radar": [6, 12], "sabotage": [6, 12], "base": [8, 16], "convoy": [8, 16]}.get(mt, [0, 0])
 	out["moskovium"] = int(r.randi_range(mk[0], mk[1]) * (1.0 - salvage_burn))
 	out["slitiny"] = int(r.randi_range(al[0], al[1]) * (1.0 - salvage_burn))
+	if mt == "convoy":
+		# what the convoy carried and the aliens did not break open
+		var keep := clampf(cargo_hp / CARGO_HP, 0.2, 1.0)
+		out["moskovium"] = int(out["moskovium"] * keep)
+		out["slitiny"] = int(out["slitiny"] * keep)
+	if mt == "bug" and bug_tagged:
+		out["bug_tag"] = 1          # (Campaign.mission_done: the radar follows it home)
 	# a ship we shot down: the wreck goes to the hangar for the technicians
 	if mt == "crash" and String(Net.mission_params.get("ufo", "")) != "":
 		out["vrak_" + String(Net.mission_params["ufo"])] = 1
@@ -2666,13 +2952,16 @@ func _end(success: bool, why: String, airlift := false, abandoned := false) -> v
 		lines.append("%s - zabití %d, zajato %d - %s" % [p.display_name, p.kills, p.captures, "mrtev" if p.dead else ("v bezvědomí" if p.downed else ("zraněn" if p.wounded else "v pořádku"))])
 	var civ_saved := 0
 	var civ_dead := 0
+	var civ_sick := 0
 	for c in civilians():
 		if c.saved:
 			civ_saved += 1
+		elif c.carrier:
+			civ_sick += 1          # (Karanténa) lost before the team came - not counted as our dead
 		elif c.dead:
 			civ_dead += 1
 	if civs_total > 0:
-		lines.append("Civilisté: zachráněno %d, mrtvých %d, ztraceno ve tmě %d" % [civ_saved, civ_dead, civs_total - civ_saved - civ_dead])
+		lines.append("Civilisté: zachráněno %d, mrtvých %d, ztraceno ve tmě %d" % [civ_saved, civ_dead, civs_total - civ_saved - civ_dead - civ_sick] + ((", nakažených %d" % civ_sick) if civ_sick > 0 else ""))
 	var camp := ""
 	if not Net.mission_params.is_empty() and multiplayer.is_server() and Campaign.active:
 		var tk := 0
@@ -3242,6 +3531,7 @@ func _hang_doors() -> void:
 ## 0.60 blast door of the base: steel plate with a frame of ribs, yellow-black stripes at the
 ## bottom edge and a small window (looks the same from both sides).
 const BLAST_HP := 360.0           # metal: plasma x0.4, blast x0.7 (~12 plasma rifle hits, 3 grenades)
+const LOCK_PRY := 1.8            # (0.72) a wooden door a civilian locked: a few blows, the whole street hears
 const BLAST_PRY := 3.2            # seconds of an alien prying it before it gives (a Bijec or more aliens faster)
 func _blast_look(sb: Node3D, w: float, h: float) -> void:
 	var dark := Game.color_mat(Color(0.2, 0.21, 0.22))
@@ -3327,6 +3617,15 @@ func use_door(i: int, from: Vector3) -> void:
 	var d: Dictionary = doors[i]
 	if not is_instance_valid(d["body"]):
 		return
+	if String(d.get("locked", "")) != "" and not d["open"]:
+		# (0.72) somebody has locked himself in: a soldier can only knock (or break it)
+		_door_knock.rpc(i)
+		var who := multiplayer.get_remote_sender_id()
+		_say_to.rpc_id(who if who > 0 else 1, "Zamčeno.", 1.5)
+		var c := actors.get_node_or_null(String(d["locked"]))
+		if c and c.has_method("knocked"):
+			c.knocked(i)
+		return
 	var side := 0.0
 	if not d["open"]:
 		# it opens away from whoever pushes it
@@ -3334,6 +3633,95 @@ func use_door(i: int, from: Vector3) -> void:
 		side = 1.0 if normal.dot(from - (d["c"] as Vector3)) > 0.0 else -1.0
 	_door_state.rpc(i, side, false)
 	noise(d["c"], 7.0)
+
+## (0.72) Host: a civilian opens a shut (not locked) door in his way, quietly.
+func open_door(i: int, from: Vector3) -> void:
+	if i < 0 or i >= doors.size() or doors[i]["open"] or not is_instance_valid(doors[i]["body"]):
+		return
+	if String(doors[i].get("locked", "")) != "":
+		return
+	var normal := Vector3(0, 0, 1).rotated(Vector3.UP, float(doors[i]["base"]))
+	_door_state.rpc(i, 1.0 if normal.dot(from - (doors[i]["c"] as Vector3)) > 0.0 else -1.0, false)
+
+## (0.72) Panic in a terror: a civilian runs into a house, shuts the doors and locks them. The doors
+## of the house = doors up to 10 m from the room whose way to the room stays under the roof (never
+## the neighbour's front door). Host only; the lock goes to everybody (sound, and the state).
+var civ_hides := {}             # index of map vip_spots -> people hidden there
+var _house_doors := {}
+func house_doors(sp: Vector3) -> Array:
+	var key := Vector3i(roundi(sp.x * 4.0), roundi(sp.y * 4.0), roundi(sp.z * 4.0))
+	if _house_doors.has(key):
+		return _house_doors[key]
+	var out := []
+	var ss := get_world_3d().direct_space_state
+	var nm := get_world_3d().navigation_map
+	var roofed := func(pt: Vector3) -> bool:
+		var q := PhysicsRayQueryParameters3D.create(pt + Vector3(0, 0.5, 0), pt + Vector3(0, 9.0, 0), Game.WORLD)
+		return not ss.intersect_ray(q).is_empty()
+	for i in doors.size():
+		var d: Dictionary = doors[i]
+		if d.has("slide") or not is_instance_valid(d["body"]):
+			continue
+		var c: Vector3 = d["c"]
+		if Vector2(c.x - sp.x, c.z - sp.z).length() > 10.0 or absf(c.y - sp.y) > 3.0:
+			continue
+		var normal := Vector3(0, 0, 1).rotated(Vector3.UP, float(d["base"]))
+		var inside := Vector3.INF
+		for sd in [1.0, -1.0]:
+			var pt: Vector3 = c + normal * sd * 0.8
+			if roofed.call(pt):
+				inside = pt
+				break
+		if inside == Vector3.INF:
+			continue
+		var path := NavigationServer3D.map_get_path(nm, sp, inside, true)
+		if path.size() < 2 or (path[path.size() - 1] as Vector3).distance_to(inside) > 1.2:
+			continue
+		var ok := true
+		var L := 0.0
+		for k in range(1, path.size()):
+			L += (path[k] as Vector3).distance_to(path[k - 1])
+			var mid: Vector3 = ((path[k] as Vector3) + (path[k - 1] as Vector3)) * 0.5
+			if not roofed.call(mid):
+				ok = false
+				break
+		if ok and L < 16.0:
+			out.append(i)
+	_house_doors[key] = out
+	return out
+
+func lock_door(i: int, by: String) -> void:
+	var d: Dictionary = doors[i]
+	if not is_instance_valid(d["body"]) or String(d.get("locked", "")) != "":
+		return
+	if d["open"]:
+		_door_state.rpc(i, 0.0, false)
+	_door_lock.rpc(i, by)
+
+func unlock_door(i: int, by: String, open_it := false) -> void:
+	var d: Dictionary = doors[i]
+	if String(d.get("locked", "")) != by:
+		return
+	_door_lock.rpc(i, "")
+	if open_it and is_instance_valid(d["body"]):
+		var c := actors.get_node_or_null(by)
+		open_door(i, c.global_position if c else (d["c"] as Vector3))
+
+func door_locked(i: int) -> bool:
+	return i >= 0 and i < doors.size() and String(doors[i].get("locked", "")) != ""
+
+@rpc("authority", "call_local", "reliable")
+func _door_lock(i: int, by: String) -> void:
+	if i < 0 or i >= doors.size():
+		return
+	doors[i]["locked"] = by
+	if is_instance_valid(doors[i]["body"]):
+		Game.play_at(self, "clink", (doors[i]["c"] as Vector3) + Vector3(0, 1.0, 0), -10)     # the key, the bolt
+
+@rpc("authority", "call_local", "reliable")
+func _door_knock(i: int) -> void:
+	if i >= 0 and i < doors.size():
+		Game.play_at(self, "knock", (doors[i]["c"] as Vector3) + Vector3(0, 1.2, 0), -2)
 
 @rpc("authority", "call_local", "reliable")
 func _door_state(i: int, side: float, slam: bool) -> void:
@@ -3366,14 +3754,14 @@ func _doors_tick(delta: float) -> void:
 		var i := door_near(a.global_position, 1.4)
 		if i < 0 or doors[i]["open"]:
 			continue
-		if doors[i].has("slide"):
+		if doors[i].has("slide") or door_locked(i):
 			pried[i] = float(pried.get(i, 0.0)) + (2.0 if String(a.race).begins_with("bijec") or String(a.race).begins_with("kolos") else 1.0)
 			continue
 		var normal := Vector3(0, 0, 1).rotated(Vector3.UP, float(doors[i]["base"]))
 		_door_state.rpc(i, 1.0 if normal.dot(a.global_position - (doors[i]["c"] as Vector3)) > 0.0 else -1.0, true)
 	for i in doors.size():
 		var d: Dictionary = doors[i]
-		if not d.has("slide"):
+		if not d.has("slide") and not door_locked(i):
 			continue
 		if not pried.has(i):
 			d["pry"] = maxf(0.0, float(d.get("pry", 0.0)) - 0.3 * 0.5)     # it does not heal at once
@@ -3383,8 +3771,10 @@ func _doors_tick(delta: float) -> void:
 		if int(before / 0.9) != int(float(d["pry"]) / 0.9):
 			_door_blow.rpc(i)
 			noise(d["c"], 14.0)
-		if float(d["pry"]) >= BLAST_PRY:
+		if float(d["pry"]) >= (BLAST_PRY if d.has("slide") else LOCK_PRY):
 			d["pry"] = 0.0
+			if door_locked(i):
+				_door_lock.rpc(i, "")      # the bolt gives
 			_door_state.rpc(i, 1.0, true)
 
 @rpc("authority", "call_local", "unreliable")
@@ -3510,9 +3900,26 @@ func _spawn_objectives(rng: RandomNumberGenerator) -> void:
 		"base":
 			waves_left = BASE_WAVES + (1 if Game.veteran() else 0)
 			_wave_t = 90.0
+		"convoy":
+			_convoy_setup()
+		"pilot":
+			spawner.spawn({"kind": "civ", "id": 50, "pos": free_spot(pilot_spot()), "vip": true})
+		"radar":
+			_blackout.rpc()
+		"bug":
+			_bug_t = 0.0
 
 ## Every machine builds the beacons from the map (same seed = same places).
 func _build_beacons() -> void:
+	if mtype() == "radar":
+		_build_substations()
+		return
+	if mtype() == "bug":
+		_build_bug_spot()
+		return
+	if mtype() == "quarantine":
+		_build_nest()
+		return
 	if mtype() != "sabotage":
 		return
 	var r := RandomNumberGenerator.new()
@@ -3560,13 +3967,24 @@ func beacons_left() -> int:
 ## The beacon a mercenary stands at (-1 = none).
 func beacon_near(p: Vector3) -> int:
 	for i in beacons.size():
-		if not beacons[i]["gone"] and not beacons[i]["planted"] and p.distance_to(beacons[i]["pos"]) < 2.6:
+		if not beacons[i]["gone"] and not beacons[i]["planted"] and not beacons[i].get("locked", false) and p.distance_to(beacons[i]["pos"]) < 2.6:
 			return i
 	return -1
 
 @rpc("any_peer", "call_local", "reliable")
 func plant(i: int) -> void:
 	if not multiplayer.is_server() or i < 0 or i >= beacons.size() or beacons[i]["planted"]:
+		return
+	if mtype() == "bug":
+		if not bug_tagged:
+			_bug_placed.rpc(_bug_hull_point(beacons[i]["pos"]))
+			_done_check()
+		return
+	if mtype() == "radar":
+		if not beacons[i].get("locked", false):
+			_power_on.rpc(i)
+			noise(beacons[i]["pos"], 40.0)       # (the hum and the lights going up: they hear it, they see it)
+			_done_check()
 		return
 	_plant_t[i] = 8.0
 	_armed.rpc(i)
@@ -3586,7 +4004,10 @@ func _beacon_gone(i: int) -> void:
 		beacons[i]["node"].queue_free()
 	if hud:
 		var left := beacons_left()
-		hud.message(("Maják zničen. Zbývá %d." % left) if left > 0 else "Všechny majáky zničeny. Zpátky do Kondoru!", 3.5)
+		if mtype() == "quarantine":
+			hud.message("Zdroj nákazy je zničený. Zdravé lidi do Kondoru - pak odlet (Enter).", 4.0)
+		else:
+			hud.message(("Maják zničen. Zbývá %d." % left) if left > 0 else "Všechny majáky zničeny. Zpátky do Kondoru!", 3.5)
 
 ## Host, every frame: timers of the objectives.
 func _objectives_tick(delta: float) -> void:
@@ -3609,6 +4030,12 @@ func _objectives_tick(delta: float) -> void:
 			for k in _crew(bn, rr):
 				spawn_alien(k, _edge_point(rr))
 			hud_note.rpc("Maják vysílá - z temnoty přichází další vetřelec." if bn == 1 else "Maják vysílá - z temnoty přichází další vetřelci.")
+	if mtype() == "convoy":
+		_convoy_tick(delta)
+	if mtype() == "pilot":
+		_pilot_tick(delta)
+	if mtype() == "bug":
+		_bug_tick(delta)
 	if mtype() == "base" and waves_left > 0:
 		_wave_t -= delta
 		if alive_aliens() == 0 and _wave_t > WAVE_BREATHER:
@@ -3628,6 +4055,589 @@ func _objectives_tick(delta: float) -> void:
 			for k in crew.size():
 				spawn_alien(crew[k], _spawn_beside(from, 3.0, rr2))
 			hud_note.rpc(("DALŠÍ VLNA! Lezou dovnitř hangárem nebo šachtou výtahu (%d)." if indoor() else "DALŠÍ VLNA! Útočí od okraje rokle (%d).") % crew.size())
+
+# ---- 0.7x Radarová stanice: three substations (the sabotage's beacons turned round) and the radar --
+var radar_on := false
+
+## Every machine: the substations (grey cabinets with a red lamp) and the radar's console - kept in
+## `beacons` (hold F 3 s as at a beacon; the console is locked until all three run).
+func _build_substations() -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = Net.mission_seed + 313
+	var wp: Array = map["waypoints"].duplicate()
+	var sw: Vector3 = map.get("radar_switch", Vector3.INF)
+	var picked := []
+	for tries in 600:
+		if picked.size() >= 3 or wp.is_empty():
+			break
+		var p: Vector3 = wp[r.randi() % wp.size()]
+		if p.y > 1.0 or p.distance_to(map["evac"]) < 22.0 or (map["ufo"] != Vector3.ZERO and p.distance_to(map["ufo"]) < 14.0):
+			continue
+		if sw != Vector3.INF and p.distance_to(sw) < 12.0:
+			continue
+		var ok := true
+		for q in picked:
+			if p.distance_to(q) < 30.0 - tries * 0.04:
+				ok = false
+		if ok:
+			picked.append(p)
+	for i in picked.size():
+		var at: Vector3 = picked[i] + Vector3(1.6, 0, 1.6)
+		var n := Node3D.new()
+		add_child(n)
+		n.global_position = at
+		n.rotation.y = r.randf() * TAU
+		_cabinet(n)
+		var l := OmniLight3D.new()
+		l.light_color = Color(1.0, 0.2, 0.1)
+		l.light_energy = 1.2
+		l.omni_range = 3.5
+		n.add_child(l)
+		l.position = Vector3(0, 2.0, 0.4)
+		beacons.append({"node": n, "pos": at, "planted": false, "gone": false, "light": l, "sub": true})
+	if sw != Vector3.INF:
+		var ln := OmniLight3D.new()
+		ln.light_color = Color(1.0, 0.6, 0.15)
+		ln.light_energy = 0.0
+		ln.omni_range = 3.0
+		add_child(ln)
+		ln.global_position = sw + Vector3(0, 1.2, 0.3)
+		beacons.append({"node": null, "pos": sw, "planted": false, "gone": false, "light": ln, "locked": true, "console": true})
+	# the station's lamps: each belongs to the nearest substation (it comes on with it)
+	for lt in map.get("elec_lights", []):
+		if not is_instance_valid(lt):
+			continue
+		var best := -1
+		var bd := 1e9
+		for i in picked.size():
+			var d: float = (lt as Node3D).global_position.distance_to(picked[i])
+			if d < bd:
+				bd = d
+				best = i
+		lt.set_meta("sub", best)
+
+## A substation cabinet: plain boxes in the colours of the base (no new model needed).
+func _cabinet(n: Node3D) -> void:
+	var grey := StandardMaterial3D.new()
+	grey.albedo_color = Color(0.42, 0.45, 0.43)
+	grey.roughness = 0.7
+	grey.metallic = 0.3
+	var yel := StandardMaterial3D.new()
+	yel.albedo_color = Color(0.85, 0.7, 0.1)
+	for part in [[Vector3(0, 0.9, 0), Vector3(1.4, 1.8, 0.6), grey], [Vector3(0, 1.84, 0), Vector3(1.5, 0.08, 0.7), grey],
+			[Vector3(0, 1.45, 0.31), Vector3(0.36, 0.3, 0.02), yel], [Vector3(-0.35, 0.9, 0.31), Vector3(0.04, 1.4, 0.02), grey]]:
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = part[1]
+		mi.mesh = bm
+		mi.material_override = part[2]
+		n.add_child(mi)
+		mi.position = part[0]
+	var sb := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	var sh := BoxShape3D.new()
+	sh.size = Vector3(1.4, 1.8, 0.6)
+	cs.shape = sh
+	sb.add_child(cs)
+	n.add_child(sb)
+	sb.position = Vector3(0, 0.9, 0)
+
+@rpc("authority", "call_local", "reliable")
+func _power_on(i: int) -> void:
+	var b: Dictionary = beacons[i]
+	b["planted"] = true
+	b["gone"] = true
+	if b.get("console", false):
+		radar_on = true
+		var dish = map.get("radar_dish")
+		if is_instance_valid(dish):
+			var tw := create_tween().bind_node(dish).set_loops()
+			tw.tween_property(dish, "rotation:y", TAU, 6.0).as_relative()
+		(b["light"] as OmniLight3D).light_energy = 1.5
+		Game.play_at(self, "radar_ping", b["pos"], 0.0)
+		if hud:
+			hud.message("RADAR BĚŽÍ. Úkol splněn - Enter = odlet.", 5.0)
+		return
+	(b["light"] as OmniLight3D).light_color = Color(0.3, 1.0, 0.4)
+	Game.play_at(self, "hum", b["pos"], -2.0)
+	for lt in map.get("elec_lights", []):
+		if is_instance_valid(lt) and int(lt.get_meta("sub", -1)) == i:
+			lt.set_meta("powered", true)
+	var left := 0
+	for bb in beacons:
+		if bb.get("sub", false) and not bb["gone"]:
+			left += 1
+	if left == 0:
+		for bb in beacons:
+			if bb.get("console", false):
+				bb["locked"] = false
+				(bb["light"] as OmniLight3D).light_energy = 0.8
+	if hud:
+		hud.message(("Rozvodna běží - část areálu se rozsvítila. Zbývají %d." % left) if left > 0 else "Proud je zpátky v celém areálu. Teď radar - pult v domku pod věží.", 4.0)
+
+# ---- 0.7x Karanténa (pozdní mise): a town where the dead rise, and not every living one is well ------
+## Ari: "z každého takhle padlého se zrodí líhňák" - every carrier who falls (or turns on the way to
+## the Kondor) lets a Líhavec out; that is why it comes only late in the war (Campaign). The source is
+## a growth in one of the houses, destroyed like a sabotage beacon (hold F, a charge, 8 s).
+const QUAR_CARRIERS := 0.35
+
+## Every machine: the house with the growth - the hiding place furthest from the Kondor (seeded).
+func nest_spot() -> Vector3:
+	var spots: Array = map.get("vip_spots", []).duplicate()
+	if spots.is_empty():
+		return _far_point_seeded(Net.mission_seed + 515, 40.0)
+	var r := RandomNumberGenerator.new()
+	r.seed = Net.mission_seed + 515
+	var best: Vector3 = spots[0]
+	var bd := -1e9
+	for sp in spots:
+		var sc: float = (sp as Vector3).distance_to(map["evac"]) + r.randf_range(0.0, 12.0)
+		if sc > bd:
+			bd = sc
+			best = sp
+	return best
+
+func _far_point_seeded(sd: int, min_d: float) -> Vector3:
+	var r := RandomNumberGenerator.new()
+	r.seed = sd
+	return _far_point(r, min_d)
+
+func _build_nest() -> void:
+	var at := nest_spot()
+	at.y = maxf(0.0, at.y - 0.3)
+	var n := Node3D.new()
+	add_child(n)
+	n.global_position = at
+	var g: Node3D = Game.model("v_ab_bulbs")
+	if g:
+		n.add_child(g)
+		g.scale = Vector3.ONE * 0.9
+	var l := OmniLight3D.new()
+	l.light_color = Color(0.55, 1.0, 0.35)
+	l.light_energy = 1.4
+	l.omni_range = 5.0
+	l.shadow_enabled = false
+	n.add_child(l)
+	l.position = Vector3(0, 0.8, 0)
+	var tw := create_tween().bind_node(l).set_loops()
+	tw.tween_property(l, "light_energy", 0.6, 1.4).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(l, "light_energy", 1.4, 1.4).set_trans(Tween.TRANS_SINE)
+	var ap := AudioStreamPlayer3D.new()
+	ap.unit_size = 2.0
+	ap.max_distance = 18.0
+	n.add_child(ap)
+	_loop_player(ap, "hum", -16.0)
+	ap.pitch_scale = 0.55
+	beacons.append({"node": n, "pos": at, "planted": false, "gone": false, "light": l, "nest": true})
+
+## Host: a Líhavec out of a carrier (dead or turning) - his body stays down.
+func hatch_from(c: Node) -> void:
+	if not multiplayer.is_server() or finished or not is_instance_valid(c) or c.has_meta("hatched"):
+		return
+	c.set_meta("hatched", true)
+	var at: Vector3 = c.global_position
+	burst_fx.rpc(at + Vector3(0, 0.6, 0), true)
+	spawn_alien("lihnoun", at + Vector3(0, 0.3, 0))
+
+# ---- 0.7x Štěnice na lodi (zkušební): a tracker on the hull of a landed ship ----------------------
+## Ari: "hráč musí potichu umístit štěnici na ufo, pokud se to nepovede, bude mít šanci jej
+## sestřelit ještě ve vzduchu". No new mechanics: the tracker is planted like a sabotage charge
+## (hold F 3 s at the hull), "seen" = the aliens' own combat state. Once they know about the team
+## (or after BUG_TIME on their own - nobody shows a clock) the ship warms up and lifts off with
+## whoever is aboard; outside crew stays. The campaign turns a miss into a ship in flight.
+const BUG_TIME := 540.0       # (veteran 450, easy 660) the ship's job here is done
+const BUG_WARM := 25.0        # from "they know" to the lift-off
+var bug_tagged := false
+var bug_gone := false
+var _bug_t := -1.0
+var _bug_warm := -1.0
+
+func _bug_limit() -> float:
+	var t := float(Game.cmd_arg("bugtime", "0"))
+	if t > 0.0:
+		return t
+	return BUG_TIME + (-90.0 if Game.veteran() else (120.0 if Game.easy() else 0.0))
+
+## The ship's rough radius (as map_gen builds it).
+func _ship_r() -> float:
+	return float({"scout": 5.0, "raider": 7.0, "harvester": 10.0}.get(String(map.get("ufo_kind", "raider")), 7.0))
+
+## Every machine: one spot at the foot of the hull, away from the ramp side where the crew mills.
+func _build_bug_spot() -> void:
+	var c: Vector3 = map.get("ufo", Vector3.ZERO)
+	if c == Vector3.ZERO:
+		return
+	var r := RandomNumberGenerator.new()
+	r.seed = Net.mission_seed + 414
+	var best := Vector3.INF
+	var bd := -1e9
+	# the side facing the Kondor is the one the team comes from - the one away from the doors
+	for k in 8:
+		var ang := float(k) / 8.0 * TAU + r.randf_range(-0.2, 0.2)
+		var p := c + Vector3(cos(ang), 0.0, sin(ang)) * (_ship_r() + 0.6)
+		p.y = 0.0
+		var score := -p.distance_to(map["evac"]) + r.randf_range(0.0, 6.0)
+		if score > bd:
+			bd = score
+			best = p
+	beacons.append({"node": null, "pos": best, "planted": false, "gone": false, "bug": true})
+
+## Host: where on the hull the tracker sticks (a ray from outside towards the middle).
+func _bug_hull_point(at: Vector3) -> Vector3:
+	var c: Vector3 = map.get("ufo", at)
+	var dir := Vector3(c.x - at.x, 0.0, c.z - at.z).normalized()
+	var space := get_world_3d().direct_space_state
+	for h in [1.0, 1.4, 0.7, 1.9]:
+		var from := at - dir * 1.5 + Vector3(0, h, 0)
+		var q := PhysicsRayQueryParameters3D.create(from, from + dir * 6.0, Game.WORLD)
+		var hit := space.intersect_ray(q)
+		if not hit.is_empty():
+			return hit["position"] - dir * 0.04
+	return at + Vector3(0, 1.0, 0)
+
+@rpc("authority", "call_local", "reliable")
+func _bug_placed(at: Vector3) -> void:
+	bug_tagged = true
+	for b in beacons:
+		if b.get("bug", false):
+			b["planted"] = true
+			b["gone"] = true
+	# the tracker: a small dark box with a slow green lamp (no new model needed)
+	var n := Node3D.new()
+	add_child(n)
+	n.global_position = at
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.14, 0.09, 0.14)
+	mi.mesh = bm
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.12, 0.13, 0.12)
+	dark.metallic = 0.5
+	dark.roughness = 0.5
+	mi.material_override = dark
+	n.add_child(mi)
+	var led := OmniLight3D.new()
+	led.light_color = Color(0.3, 1.0, 0.4)
+	led.light_energy = 0.0
+	led.omni_range = 0.8
+	led.shadow_enabled = false
+	n.add_child(led)
+	led.position = Vector3(0, 0.08, 0)
+	var tw := create_tween().bind_node(led).set_loops()
+	tw.tween_property(led, "light_energy", 0.6, 0.1)
+	tw.tween_property(led, "light_energy", 0.0, 0.2)
+	tw.tween_interval(2.2)
+	# the ship carries it away when it goes
+	var ship = map.get("ufo_node")
+	if is_instance_valid(ship):
+		n.reparent(ship, true)
+	if hud:
+		hud.message("ŠTĚNICE SEDÍ. Úkol splněn - Enter = odlet.", 5.0)
+
+## Host, every frame.
+func _bug_tick(delta: float) -> void:
+	if _bug_t < 0.0 or bug_gone or finished:
+		return
+	_bug_t += delta
+	if _bug_warm < 0.0:
+		var seen := false
+		for a in aliens():
+			if not a.dead and a.state == a.S.COMBAT:
+				seen = true
+				break
+		var lim := _bug_limit()
+		if not seen and not bug_tagged and _bug_t > lim - 120.0 and lim > 150.0:
+			_radio_once("bug_late", "Kondor: Z lodi je slyšet motory. Moc času nezbývá.", 5.0)
+		if seen or _bug_t > lim:
+			_bug_warm = BUG_WARM
+			if not bug_tagged:
+				_radio_once("bug_seen", "Kondor: Loď se zahřívá ke startu! Jestli tu štěnici chcete dostat na trup, je to teď." if seen else "Kondor: Loď se chystá ke startu!", 6.0)
+			_ambient.rpc("ufo_engine", map["ufo"] + Vector3(0, 2.0, 0), 6.0)
+		return
+	_bug_warm -= delta
+	if _bug_warm <= 0.0:
+		# who is aboard (or right at the hull and not fighting) goes with it
+		var c: Vector3 = map["ufo"]
+		for a in aliens():
+			if a.dead or a.captured:
+				continue
+			var d := Vector2(a.global_position.x - c.x, a.global_position.z - c.z).length()
+			if d < _ship_r() * 0.8 or (d < _ship_r() + 1.5 and a.state != a.S.COMBAT):
+				a.queue_free()
+		_bug_lift.rpc()
+		_nav_dirty = 1.5
+		_done_check()
+
+@rpc("authority", "call_local", "reliable")
+func _bug_lift() -> void:
+	bug_gone = true
+	var ship = map.get("ufo_node")
+	Game.play_at(self, "ufo_engine", map["ufo"] + Vector3(0, 3.0, 0), 8.0)
+	if hud:
+		hud.message("UFO odstartovalo." if bug_tagged else "UFO odstartovalo - bez štěnice.", 4.0)
+	if not is_instance_valid(ship):
+		return
+	var n: Node3D = ship
+	var tw := create_tween().bind_node(n)
+	tw.tween_property(n, "position:y", n.position.y + 6.0, 3.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.parallel().tween_property(n, "rotation:y", n.rotation.y + 1.2, 3.0)
+	tw.tween_property(n, "position", n.position + Vector3(0, 160.0, -60.0), 5.0).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_callback(n.queue_free)
+
+# ---- 0.7x Sestřelený pilot: the Záchrana's VIP, without the beacon -----------------------------
+const PILOT_NAMES := ["Jan Vrba", "Tomáš Kříž", "Petra Malá", "Ondřej Sýkora", "Lucie Horká", "Marek Dvořák"]
+## The longer the team looks, the closer the aliens get: at these seconds one of them is sent to
+## search round where he hides (from far, then nearer).
+const PILOT_HUNT := [[90.0, 30.0], [180.0, 18.0], [270.0, 9.0]]
+var _pilot_at := Vector3.INF
+var _hunt_i := 0
+
+## Where the pilot crawled to: the same on every machine (the seed and the map's cover) - 14 to
+## 34 m from the wreck, away from the Kondor.
+func pilot_spot() -> Vector3:
+	if _pilot_at != Vector3.INF:
+		return _pilot_at
+	var jet: Vector3 = map.get("jet", map["evac"])
+	var r := RandomNumberGenerator.new()
+	r.seed = Net.mission_seed + 211
+	var cand := []
+	for c in map.get("cover", []):
+		var d: float = (c as Vector3).distance_to(jet)
+		if d > 14.0 and d < 34.0 and (c as Vector3).distance_to(map["evac"]) > 25.0 and (c as Vector3).y < 1.0:
+			cand.append(c)
+	if cand.is_empty():
+		var a := r.randf() * TAU
+		_pilot_at = jet + Vector3(sin(a), 0, cos(a)) * 18.0 + Vector3(0, 0.3, 0)
+	else:
+		_pilot_at = (cand[r.randi() % cand.size()] as Vector3) + Vector3(0, 0.3, 0)
+	return _pilot_at
+
+## Every machine: drops of blood from the wreck towards him - they fade out halfway (no marker).
+func _pilot_trail() -> void:
+	var a: Vector3 = map.get("jet", map["evac"]) + Vector3(0, 0, 0)
+	var b := pilot_spot()
+	var dir := b - a
+	dir.y = 0
+	var r := RandomNumberGenerator.new()
+	r.seed = Net.mission_seed + 212
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.16, 0.01, 0.015)
+	m.roughness = 0.6
+	var n := int(dir.length() * 0.6 / 0.9)
+	for i in n:
+		if r.randf() < 0.35:
+			continue          # (now and then a gap - he pressed the wound)
+		var p := a + dir.normalized() * (2.5 + 0.9 * i) + Vector3(r.randf_range(-0.3, 0.3), 0.04, r.randf_range(-0.3, 0.3))
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		var sz := r.randf_range(0.12, 0.3)
+		bm.size = Vector3(sz, 0.01, sz * 1.4)
+		mi.mesh = bm
+		mi.material_override = m
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
+		mi.global_position = p
+		mi.rotation.y = atan2(dir.x, dir.z) + r.randf_range(-0.4, 0.4)
+
+## Host: the hunt closes in.
+func _pilot_tick(_delta: float) -> void:
+	var v := vip()
+	if v == null or v.saved or v.dead or _hunt_i >= PILOT_HUNT.size():
+		return
+	if t < float(PILOT_HUNT[_hunt_i][0]):
+		return
+	var rad: float = PILOT_HUNT[_hunt_i][1]
+	_hunt_i += 1
+	var best: Node = null
+	var bd := 1e9
+	for a in aliens():
+		if a.dead or a.husk or a.state == a.S.COMBAT or a.state == a.S.DRAG:
+			continue
+		var d: float = a.global_position.distance_to(v.global_position)
+		if d < bd:
+			bd = d
+			best = a
+	if best:
+		var ang := randf() * TAU
+		best.lurk_at(v.global_position + Vector3(sin(ang), 0, cos(ang)) * rad)
+		if Game.autotest() != "": print("[PILOT] hunt %d: %s to %.0f m of him" % [_hunt_i, best.race, rad])
+
+# ---- 0.7x Uvízlý konvoj: hold the cargo until the helicopter comes for it ---------------------
+## (Ari 17. 11.: a time limit only in the players' favour - they hold out, nobody races a clock.
+## No countdown on the screen: the pilot says on the radio how far he is.)
+const CARGO_HP := 100.0
+const CONVOY_HOLD := 360.0            # seconds from the start (veteran +60, easy -60)
+const CONVOY_WAVES := 3               # +1 veteran
+const CONVOY_WAVE_GAP := 85.0
+const CARGO_PRY := 1.6                # cargo per second one alien at the trucks breaks (Bijec, Kolos x2)
+const CARGO_WORDS := ["nepoškozený", "poškozený", "těžce poškozený", "zničený"]
+var cargo_hp := CARGO_HP
+var cargo_level := 0                  # every machine: what the HUD line says (from the host)
+var convoy_saved := false
+var _hold := CONVOY_HOLD
+var _cargo_send := 0.0
+var _cargo_blow_t := 0.0
+
+func cargo_spots() -> Array:
+	return map.get("cargo", [])
+
+## Host, at spawn.
+func _convoy_setup() -> void:
+	_hold = CONVOY_HOLD + (60.0 if Game.veteran() else (-60.0 if Game.easy() else 0.0))
+	if Game.cmd_arg("hold", "") != "":
+		_hold = float(Game.cmd_arg("hold", "360"))
+	waves_left = CONVOY_WAVES + (1 if Game.veteran() else 0)
+	_wave_t = 70.0
+	reinf_count = REINF_MAX         # (the waves are the reinforcements here - nothing on top of them)
+	# the ambushers: they are at the trucks already, the team lands among them
+	var rr := RandomNumberGenerator.new()
+	rr.seed = Net.mission_seed + 41
+	var c: Vector3 = map.get("convoy_at", map["evac"])
+	for a in aliens():
+		if rr.randf() < 0.5:
+			a.lurk_at(c + Vector3(rr.randf_range(-6, 6), 0, rr.randf_range(-12, 12)))
+
+## Host, every frame of the mission.
+func _convoy_tick(delta: float) -> void:
+	if convoy_saved or finished:
+		return
+	var left := _hold - t
+	var mins := int(round(_hold / 60.0))
+	for m in [[_hold - 1.0, "start", "Čáp pro náklad startuje. Budu u vás asi za %s. Držte ty náklaďáky." % ("minutu" if mins <= 1 else ("%d minuty" % mins if mins <= 4 else "%d minut" % mins))],
+			[180.0, "m3", "Čáp: tři minuty. Vidím na obzoru světla, jste to vy?"],
+			[60.0, "m1", "Čáp: minuta. Připravte náklad, spouštím háky."],
+			[15.0, "s15", "Čáp: jsem nad lesem. Držte jim hlavy dole!"]]:
+		if left <= float(m[0]) and (String(m[1]) == "start" or float(m[0]) < _hold - 20.0):
+			_radio_once(String(m[1]), String(m[2]), 6.0)
+	# waves from the dark (a breather when all are down, as at the base)
+	if waves_left > 0 and left > 40.0:
+		_wave_t -= delta
+		if alive_aliens() == 0 and _wave_t > WAVE_BREATHER:
+			_wave_t = WAVE_BREATHER
+		if _wave_t <= 0.0:
+			waves_left -= 1
+			_wave_t = CONVOY_WAVE_GAP
+			var rr := RandomNumberGenerator.new()
+			rr.randomize()
+			var n := 2 + maxi(0, Net.roster.size() - 1) + (1 if Game.veteran() else (-1 if Game.easy() else 0))
+			var from := _convoy_edge(rr)
+			var crew := _crew(maxi(1, n), rr)
+			for k in crew.size():
+				spawn_alien(crew[k], _spawn_beside(from, 4.0, rr))
+			hud_note.rpc("Z temnoty se ozývá další skupina.")
+			_cargo_send = 0.0
+	# they go for the cargo: whoever is not fighting walks to the trucks and breaks it open
+	_cargo_send -= delta
+	if _cargo_send <= 0.0:
+		_cargo_send = 4.0
+		var spots := cargo_spots()
+		if not spots.is_empty():
+			for a in aliens():
+				if a.dead or a.husk or a.state == a.S.COMBAT or a.state == a.S.DRAG:
+					continue
+				var sp: Vector3 = spots[(int(String(a.name).hash()) & 0xffff) % spots.size()]
+				if a.global_position.distance_to(sp) > 3.0:
+					a.lurk_at(sp)
+	var rate := 0.0
+	var at := Vector3.ZERO
+	for a in aliens():
+		if a.dead or a.husk or a.state == a.S.COMBAT:
+			continue
+		for sp in cargo_spots():
+			if a.global_position.distance_to(sp) < 3.4:
+				rate += CARGO_PRY * (2.0 if String(a.race).begins_with("bijec") or a.race == "kolos" else 1.0)
+				at = sp
+				break
+	if rate > 0.0:
+		_cargo_hurt(rate * delta)
+		_cargo_blow_t -= delta
+		if _cargo_blow_t <= 0.0:
+			_cargo_blow_t = 0.9
+			_ambient.rpc("door_bash", at + Vector3(0, 1.0, 0), -4.0)
+			noise(at, 18.0)
+	if left <= 0.0:
+		convoy_saved = true
+		_cargo_lift.rpc()
+		_radio_once("lift", "Čáp: náklad je na hácích, odlétám. Díky, chlapi. Teď zmizte i vy.", 7.0)
+		_done_check()
+
+## Host: a blast by the trucks hurts the cargo too.
+func _cargo_blast(p: Vector3, radius: float, dmg: float) -> void:
+	if mtype() != "convoy" or convoy_saved:
+		return
+	for sp in cargo_spots():
+		var d: float = (sp as Vector3).distance_to(p)
+		if d < radius + 1.5:
+			_cargo_hurt(dmg * 0.12 * clampf(1.2 - d / (radius + 1.5), 0.2, 1.0))
+			return
+
+func _cargo_hurt(d: float) -> void:
+	cargo_hp = maxf(0.0, cargo_hp - d)
+	var lv := 0 if cargo_hp > 75.0 else (1 if cargo_hp > 40.0 else (2 if cargo_hp > 0.0 else 3))
+	if lv != cargo_level:
+		_cargo_state.rpc(lv)
+
+@rpc("authority", "call_local", "reliable")
+func _cargo_state(lv: int) -> void:
+	var was := cargo_level
+	cargo_level = lv
+	if hud and lv > was and lv < 3:
+		hud.message("Vetřelci se dostali k náklaďákům - náklad je %s!" % CARGO_WORDS[lv], 4.0)
+
+## A point at the edge of the map, away from the convoy (the waves come from the woods).
+func _convoy_edge(rr: RandomNumberGenerator) -> Vector3:
+	var c: Vector3 = map.get("convoy_at", map["evac"])
+	var s: float = map["size"]
+	var best := Vector3(s / 2, 0.3, s - 4.0)
+	var bd := -1.0
+	for k in 10:
+		var t2 := rr.randf_range(6.0, s - 6.0)
+		var p: Vector3 = [Vector3(t2, 0.3, 5.0), Vector3(t2, 0.3, s - 5.0), Vector3(5.0, 0.3, t2), Vector3(s - 5.0, 0.3, t2)][rr.randi() % 4]
+		var d := p.distance_to(c)
+		for pl in players():
+			d = minf(d, pl.global_position.distance_to(p) + 10.0)
+		d += rr.randf_range(0.0, 15.0)        # (not always the same side)
+		if d > bd:
+			bd = d
+			best = p
+	return best
+
+## Every machine: the Čáp comes in low over the convoy, hangs there and takes the cargo away.
+@rpc("authority", "call_local", "reliable")
+func _cargo_lift() -> void:
+	convoy_saved = true
+	var c: Vector3 = map.get("convoy_at", map["evac"])
+	var h: Node3D = Game.model("heli")
+	add_child(h)
+	Game.ship_ramp(h, 0.0)
+	var s: float = map["size"]
+	h.global_position = Vector3(c.x, 40.0, -40.0)
+	h.look_at(Vector3(c.x, 40.0, c.z), Vector3.UP)
+	for rn in ["RotorF", "RotorR"]:
+		var r: Node3D = h.find_child(rn, true, false)
+		if r:
+			var rt := create_tween().bind_node(r).set_loops()
+			rt.tween_property(r, "rotation:y", TAU, 0.35).as_relative()
+	var lamp := SpotLight3D.new()
+	lamp.light_energy = 6.0
+	lamp.spot_range = 40.0
+	lamp.spot_angle = 22.0
+	h.add_child(lamp)
+	lamp.rotation.x = -PI / 2
+	var ap := AudioStreamPlayer3D.new()
+	ap.max_distance = 140.0
+	ap.unit_size = 12.0
+	h.add_child(ap)
+	_loop_player(ap, "heli_flight", 0.0)
+	var tw := create_tween()
+	tw.tween_property(h, "global_position", c + Vector3(0, 13.0, 0), 7.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(5.0)
+	tw.tween_callback(func():
+		for n in get_tree().get_nodes_in_group("cargo_crate"):
+			if is_instance_valid(n):
+				n.queue_free())
+	tw.tween_property(h, "global_position", Vector3(c.x, 45.0, s + 60.0), 9.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	tw.tween_callback(h.queue_free)
 
 ## A place for one of a wave near the way in @e - only where it can really stand: on the floor,
 ## on the same side of the walls as the way in (a hatch is in a corner: up to 3 m off it put them
@@ -3722,10 +4732,43 @@ func objective_text() -> String:
 			if v.st == v.C.FOLLOW:
 				return "%s jde za tebou (zdraví %d/3) - do Kondoru!" % [vip_name, v.vip_hp]
 			return "Najdi: %s (nouzový maják)" % vip_name
+		"pilot":
+			var v := vip()
+			if v == null:
+				return ""
+			if v.dead:
+				return "%s je mrtvý." % vip_name
+			if v.saved:
+				return "%s je v Kondoru. Odlet: všichni Enter v lodi." % vip_name
+			if v.st == v.C.FOLLOW:
+				return "%s jde za tebou (zdraví %d/3) - do Kondoru!" % [vip_name, v.vip_hp]
+			return "Najdi pilota Sokola (spadl u vraku, maják nemá)."
 		"sabotage":
 			return "Majáky: zničeno %d/%d (drž F u majáku 3 s)" % [beacons.size() - beacons_left(), beacons.size()]
 		"base":
 			return "Obrana základny: vln zbývá %d, vetřelců %d" % [waves_left, alive_aliens()]
+		"radar":
+			if radar_on:
+				return "Radar běží. Odlet: Enter."
+			var lit := 0
+			for b in beacons:
+				if b.get("sub", false) and b["gone"]:
+					lit += 1
+			return ("Rozvodny: %d/3 (drž F 3 s u skříně)" % lit) if lit < 3 else "Proud je zpátky - zapni radar v domku pod věží."
+		"quarantine":
+			if beacons_left() == 0:
+				return "Zdroj je zničený. Zdravé lidi do Kondoru, pak odlet (Enter)."
+			return "Najdi zdroj nákazy v některém z domů a znič ho (drž F 3 s)."
+		"bug":
+			if bug_tagged:
+				return "Štěnice je na trupu. Odlet: Enter."
+			if bug_gone:
+				return "Loď je pryč. Zpátky do Kondoru."
+			return "Připevni štěnici na trup lodi (drž F 3 s u trupu). Nenech se vidět."
+		"convoy":
+			if convoy_saved:
+				return "Náklad je pryč. Odlet: Enter."
+			return "Konvoj: drž náklad do příletu vrtulníku. Náklad %s." % CARGO_WORDS[clampi(cargo_level, 0, CARGO_WORDS.size() - 1)]
 	return ""
 
 ## Host: who killed one of their commanders this mission (they will remember him).

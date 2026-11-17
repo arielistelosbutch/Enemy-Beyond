@@ -12,7 +12,8 @@ const AIT := preload("res://scripts/autotest_ai.gd")    # (the aliens' AI tests)
 const PERF := preload("res://scripts/autotest_perf.gd")    # (výkon, propady FPS)
 const FL2 := preload("res://scripts/autotest_facelift2.gd")   # (0.70 facelift II: ozvěna, špína, zeď padlých, intro)
 const GT := preload("res://scripts/autotest_ground.gd")    # (vetřelci a zem: chodníky, schody)
-const RAIN := preload("res://scripts/autotest_rain.gd")    # (2026-11-17: déšť vidět z budov)
+const RAIN := preload("res://scripts/autotest_rain.gd")
+const WEATHER := preload("res://scripts/autotest_weather.gd")   # (2026-11-17: nápady z deště)    # (2026-11-17: déšť vidět z budov)
 const CEIL := preload("res://scripts/autotest_ceil.gd")    # (0.69: proskakování stropem budov)
 const INTERIOR := preload("res://scripts/autotest_interior.gd")    # (2026-11-13: interiéry domů)
 const FL := preload("res://scripts/autotest_facelift.gd")   # (0.66 facelift: radar, transportér, načítání, lidé na základně)
@@ -73,13 +74,25 @@ func _process(delta: float) -> void:
 		"perf": PERF.run(self, p)
 		"groundtest": GT.run(self, p)
 		"rainshot": RAIN.run(self, p)
+		"lamptest": WEATHER.lamps(self, p)
+		"wxtest": WEATHER.shift(self, p)
+		"wxshot": WEATHER.shots(self, p)
+		"tracktest": WEATHER.tracks(self, p)
+		"lensshot": WEATHER.lens(self, p)
 		"ceiltest": CEIL.run(self, p)
 		"interiors": INTERIOR.run(self, p)
 		"spectate": preload("res://scripts/autotest_spectate.gd").run(self, p)
 		"shouldershot": preload("res://scripts/autotest_shoulder.gd").run(self, p)
 		"radiosprint": preload("res://scripts/autotest_shoulder.gd").radio(self, p)
 		"dazetest", "dazebase": preload("res://scripts/autotest_daze.gd").run(self, p)
+		"convoytest": preload("res://scripts/autotest_missions.gd").convoy(self, p)
+		"bugtest": preload("res://scripts/autotest_missions.gd").bug(self, p)
+		"quartest": preload("res://scripts/autotest_missions.gd").quar(self, p)
 		"chaintest", "chainbase": preload("res://scripts/autotest_daze.gd").chain(self, p)
+		"civpanic": preload("res://scripts/autotest_civnvg.gd").civpanic(self, p)
+		"nvgtest": preload("res://scripts/autotest_civnvg.gd").nvgtest(self, p)
+		"civstuck": preload("res://scripts/autotest_civnvg.gd").civstuck(self, p)
+		"civlooks": preload("res://scripts/autotest_civnvg.gd").civlooks(self, p)
 		"radartest": FL.radar(self, p)
 		"transport": FL.transport(self, p)
 		"echotest", "echobase": FL2.echo(self, p)
@@ -127,6 +140,33 @@ func _process(delta: float) -> void:
 					for q in m().players():
 						q.hurt.rpc_id(q.get_multiplayer_authority(), 999.0, q.global_position + Vector3(0, 0, 2))
 					out("[WIPE] everybody shot down")
+		"nmradarhost", "nmradarclient", "nmbughost", "nmbugclient":
+			_skip_brief()
+			if p and m().started() and step == 0 and m().players().size() >= 2:
+				step = 1
+				p.hp = 5000.0
+				var host := mode.ends_with("host")
+				if host:
+					for a in m().aliens():
+						a.set_physics_process(false)
+					await get_tree().create_timer(2.0).timeout
+					for i in m().beacons.size():
+						m().plant(i)
+						await get_tree().create_timer(0.5).timeout
+					if mode == "nmbughost":
+						m()._bug_warm = 0.5
+					await get_tree().create_timer(4.0).timeout
+					out("RESULT nm %s radar %s bug %s gone %s banner %s" % [mode, m().radar_on, m().bug_tagged, m().bug_gone, m().done_banner])
+					await get_tree().create_timer(6.0).timeout
+					get_tree().quit()
+					return
+				for s in 40:
+					await get_tree().create_timer(0.5).timeout
+					if (mode == "nmradarclient" and m().radar_on) or (mode == "nmbugclient" and m().bug_gone):
+						break
+				var lit: int = m().map.get("elec_lights", []).filter(func(l): return is_instance_valid(l) and l.get_meta("powered", false)).size()
+				out("RESULT nm %s radar %s lit %d bug %s gone %s banner %s" % [mode, m().radar_on, lit, m().bug_tagged, m().bug_gone, m().done_banner])
+				get_tree().quit()
 		"nadehost", "nadeclient", "flarehost", "flareclient":
 			_skip_brief()
 			if p and m().started() and step == 0 and m().players().size() >= 2:
@@ -1472,13 +1512,15 @@ func _objtest(p: Node) -> void:
 			get_tree().quit()
 		return
 	match m().mtype():
-		"rescue":
+		"rescue", "pilot":
 			var v: Node = m().vip()
 			if v == null:
 				return
 			if step == 0:
 				step = 1
 				out("OBJ vip %s at %s (evac %s)" % [m().vip_name, v.global_position, m().map["evac"]])
+				if m().map.has("jet"):
+					out("OBJ pilot %.1f m from the wreck" % v.global_position.distance_to(m().map["jet"]))
 				# how much of the map can be reached from the Kondor?
 				var nmap: RID = m().get_world_3d().navigation_map
 				var ev: Vector3 = NavigationServer3D.map_get_closest_point(nmap, m().map["evac"] + Vector3(0, 0, 3))
@@ -1511,7 +1553,7 @@ func _objtest(p: Node) -> void:
 					out("OBJ vip walking %s dist %.1f next %s path %s fin %s" % [v.global_position, v.global_position.distance_to(m().map["evac"]), v.agent.get_next_path_position(), v.agent.get_current_navigation_path(), v.agent.is_navigation_finished()])
 					if t > 90.0:
 						v.global_position = m().map["evac"] + Vector3(0, 0.3, 1.0)
-		"sabotage":
+		"sabotage", "radar":
 			if step == 0:
 				step = 1
 				out("OBJ beacons %d" % m().beacons.size())
@@ -1524,6 +1566,11 @@ func _objtest(p: Node) -> void:
 				m().plant(step - 1)
 				step += 1
 				p.global_position = m().map["evac"] + Vector3(0, 0.3, 0)
+			elif m().mtype() == "radar" and step == m().beacons.size() + 1:
+				var lit: int = m().map.get("elec_lights", []).filter(func(l): return is_instance_valid(l) and l.get_meta("powered", false)).size()
+				out("OBJ radar on %s powered lights %d of %d banner %s" % [m().radar_on, lit, m().map.get("elec_lights", []).size(), m().done_banner])
+				p.wants_evac = true
+				step = 99
 			elif step == m().beacons.size() + 1 and m().beacons_left() == 0:
 				out("OBJ all beacons gone")
 				p.wants_evac = true

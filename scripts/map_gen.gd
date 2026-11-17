@@ -22,6 +22,9 @@ var info := {
 }
 var us := 2                # how many blocks the ship takes on a side
 var _sky_x := -9           # the Kondor's column (roads keep off it)
+## (0.7x nové mise) what lies where the UFO would: "" = the UFO, "convoy" = a stranded convoy on the
+## road, "jet" = the wreck of our Sokol, "none" = nothing (the quarantined village)
+var site := ""
 var _circle_done := false
 
 var biome := "farm"
@@ -44,7 +47,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	if not ufo_kind in ["scout", "raider", "harvester", "battleship", "supply"]:
 		match mtype:
 			"crash": ufo_kind = "scout" if rng.randf() < 0.6 else "raider"
-			"landed":
+			"landed", "bug":
 				ufo_kind = "harvester" if params.get("size", "") in ["large", "huge", "colossal"] else "raider"
 				# later in the war the giants come down: a battleship or a supply ship
 				if params.get("late", false) and params.get("size", "") in ["huge", "colossal"] and rng.randf() < 0.55:
@@ -105,19 +108,39 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	var uz := rng.randi_range(N / 2 - us / 2, N / 2 - us / 2 + 1)
 	if biome == "base":
 		uz = N - us           # they landed at the far end of the ravine
-	for dx in us:
-		for dz in us:
-			grid[ux + dx][uz + dz] = "ufo"
-	info["ufo"] = Vector3((ux + us / 2.0) * BLOCK, 0, (uz + us / 2.0) * BLOCK)
+	site = String({"convoy": "convoy", "pilot": "jet", "quarantine": "none"}.get(mtype, ""))
+	if site == "":
+		for dx in us:
+			for dz in us:
+				grid[ux + dx][uz + dz] = "ufo"
+		info["ufo"] = Vector3((ux + us / 2.0) * BLOCK, 0, (uz + us / 2.0) * BLOCK)
+	elif site == "convoy":
+		# two blocks of one road column: the trucks stand on it, the road runs on to both edges
+		grid[ux][uz] = "convoy"
+		grid[ux][uz + 1] = "convoy"
+		info["convoy_at"] = Vector3(ux * BLOCK + BLOCK / 2, 0, (uz + 1) * BLOCK)
+	elif site == "jet":
+		for dx in 2:
+			for dz in 2:
+				grid[ux + dx][uz + dz] = "jet"
+		info["jet"] = Vector3((ux + 1) * BLOCK, 0, (uz + 1) * BLOCK)
 	# the Kondor: one block in from the edge, an open block in front of its nose and beside its wings
 	# (it used to stand with its nose against the edge of the world)
 	var sx := rng.randi_range(1, N - 2)
+	for k in 30:
+		if site != "convoy" or absi(sx - ux) >= 2:
+			break
+		sx = rng.randi_range(1, N - 2)     # (the convoy's road keeps clear of the landing place)
 	grid[sx][1] = "sky"
 	for dx in [-1, 0, 1]:
 		for dz in [0, 1]:
 			if grid[sx + dx][dz] == "":
 				grid[sx + dx][dz] = "open"
 	_sky_x = sx
+	if site == "convoy":
+		for z in N:
+			if grid[ux][z] == "":
+				grid[ux][z] = ("street" if biome in ["town", "industrial", "base"] else "road") + "_ns"
 	_lay_roads(grid, ux, uz)
 	# the landmarks of each kind of place first, then the fill around them
 	var extra := maxi(0, (N * N - 49) / 12)     # bigger maps: more of everything
@@ -190,7 +213,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 		for z in N:
 			Game.load_step(Game.BUILD_MAP_FROM + (Game.BUILD_TILES_TO - Game.BUILD_MAP_FROM) * float(x * N + z) / float(N * N))     # 0.72: the loading bar moves
 			var o := Vector3(x * BLOCK, 0, z * BLOCK)
-			var dsg: Dictionary = {} if grid[x][z] in ["sky", "ufo"] else MapPieces.pick(self, grid[x][z])
+			var dsg: Dictionary = {} if grid[x][z] in ["sky", "ufo", "convoy", "jet"] else MapPieces.pick(self, grid[x][z])
 			if not dsg.is_empty():
 				if grid[x][z] in ["house2", "ruin", "garden", "orchard", "stream", "rocks", "cabin", "warehouse", "containers", "tanks", "yard", "fuel", "hangar", "barracks", "radar", "sandbags", "shop", "pub", "park", "parking", "icelake", "icespires", "polarhut"]:
 					info["landmarks"].append([grid[x][z], o])
@@ -239,6 +262,9 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 				"icespires": _icespires(o)
 				"polarhut": _polar_hut(o)
 				"sky": _skyranger(o)
+				"convoy": _road(o, false)
+				"jet":
+					_ground(o, "grass")
 				"open": _open(o)
 				"ufo":
 					_ground(o, "concrete" if biome == "industrial" else "grass")
@@ -246,10 +272,18 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 						_grass(o, 700, "dry", 0.5, 1.1)
 	if Game.autotest() != "": print("[MAP] tiles done %d ms" % (Time.get_ticks_msec() - _t0))
 	Game.load_step(Game.BUILD_TILES_TO)
-	if us > 2:
+	if site == "convoy":
+		_convoy(info["convoy_at"])
+	elif site == "jet":
+		_jet_wreck(info["jet"])
+	elif site == "none":
+		pass
+	elif us > 2:
 		_big_ufo(Vector3((ux + us / 2.0) * BLOCK, 0, (uz + us / 2.0) * BLOCK))
 	else:
 		_ufo(Vector3((ux + 1) * BLOCK, 0, (uz + 1) * BLOCK))
+	if site != "":
+		_site_spawns()
 	if Game.autotest() != "": print("[MAP] ufo done")
 	Game.load_step(Game.BUILD_TILES_TO + 0.03)
 	_war_scars(grid, params)
@@ -258,6 +292,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	_borders()
 	_clear_doors()
 	_untangle()
+	_shootable_lamps()
 	Game.load_step(Game.BUILD_TILES_TO + 0.05)
 	_zfix()
 	Game.load_step(Game.BUILD_TILES_TO + 0.10)
@@ -269,6 +304,34 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	Game.load_step(Game.BUILD_MAP_TO)
 	if Game.autotest() != "": print("[MAP] nav done %d ms" % (Time.get_ticks_msec() - _t0))
 	return info
+
+## (Ari 17. 11.) Street lamps and bulbs can be shot out: a small glass body round each lens
+## (Mission._break turns the light off for good - on every machine, the break is an rpc).
+## No mesh of its own (the lens stays what it was), so the merging leaves it alone.
+func _shootable_lamps() -> void:
+	if capturing or Game.cmd_arg("oldlamps", "") == "1":
+		return
+	for l in info["elec_lights"]:
+		if not is_instance_valid(l) or not (l as Node).has_meta("lens"):
+			continue
+		var lens = l.get_meta("lens")
+		if not is_instance_valid(lens) or not lens is MeshInstance3D or (lens as MeshInstance3D).mesh == null:
+			continue
+		var mi: MeshInstance3D = lens
+		var ab := mi.mesh.get_aabb()
+		var sb := StaticBody3D.new()
+		var cs := CollisionShape3D.new()
+		var sh := BoxShape3D.new()
+		sh.size = (ab.size + Vector3(0.06, 0.06, 0.06)).clamp(Vector3(0.12, 0.08, 0.12), Vector3(2.2, 0.4, 2.2))
+		cs.shape = sh
+		sb.add_child(cs)
+		root.add_child(sb)
+		sb.global_transform = mi.global_transform * Transform3D(Basis(), ab.get_center())
+		sb.collision_layer = Game.GLASS      # bullets stop on it, the paths and the walkers do not see it
+		sb.collision_mask = 0
+		sb.set_meta("lamp", l)
+		_breakable(sb, "glass")
+		l.set_meta("lamp_body", sb)
 
 ## 0.61: faces of two blocks lying in one plane flicker - the smaller block steps out of it (scripts/zfix.gd).
 ## `--nozfix=1` leaves them as they were (for comparing with `--autotest=zfight`).
@@ -990,7 +1053,7 @@ func _rock(p: Vector3, size := 1.0, solid := true) -> Node3D:
 	return n
 
 ## How high the stones' models reach above the ground (m, before scaling).
-const ROCK_TOP := {"rock_a": 1.15, "rock_b": 1.01, "rock_c": 1.96, "rock_d": 0.64}
+const ROCK_TOP := {"rock_a": 1.16, "rock_b": 0.99, "rock_c": 2.17, "rock_d": 0.63}   # (0.72 new stones)
 
 ## 0.60: a stone is solid in its real shape. The models came with a box as a hollow trimesh,
 ## smaller than the stone: mercs and aliens walked into it (and once inside, through it).
@@ -1714,7 +1777,7 @@ func _house(o: Vector3) -> void:
 	_kitchen(c + Vector3(0.45, 0.1, 4.4), false, 1.2)
 	# the yard: a well, firewood, washing on the line or the hen house
 	_prop("well", o + Vector3(1.0, 0, 10.9), rng.randf() * TAU)
-	_prop("woodpile", o + Vector3(11.2, 0, 3.9), PI / 2)     # (0.70: off the middle - it is solid now and stood in the next house's side door)
+	_prop("woodpile", o + Vector3(11.2, 0, 3.2), PI / 2)     # (0.70: off the middle - it is solid now and stood in the next house's side door; 0.72.1 a bit further, its loose logs reached the door)
 	if rng.randf() < 0.5:
 		_prop("laundry", o + Vector3(6.5, 0, 10.9), 0.0, false)
 	else:
@@ -1971,7 +2034,7 @@ func _house2(o: Vector3) -> void:
 	_kitchen(c + Vector3(0.45, 0.1, 5.0), false, 2.0)
 	_rug(c + Vector3(2.0, 0, 2.2), Vector2(2.6, 1.8), Color(0.25, 0.3, 0.5))
 	_rug(up + Vector3(3.0, 0.0, 5.8), Vector2(2.0, 1.4), Color(0.5, 0.35, 0.2))
-	_prop("woodpile", o + Vector3(11.2, 0, 3.9), PI / 2)     # (0.70: off the middle - it is solid now and stood in the next house's side door)
+	_prop("woodpile", o + Vector3(11.2, 0, 3.2), PI / 2)     # (0.70: off the middle - it is solid now and stood in the next house's side door; 0.72.1 a bit further, its loose logs reached the door)
 	_cover(c + Vector3(3.6, 0, -1.0)); _cover(c + Vector3(1.0, 0, 1.0)); _cover(up + Vector3(2.0, 0.1, 1.0)); _cover(up + Vector3(6.0, 0.1, 5.5))
 	info["waypoints"].append(c + Vector3(2, 0, 3))
 	info["waypoints"].append(up + Vector3(3, 0.1, 5.5))
@@ -2506,6 +2569,10 @@ func _radar_tower(o: Vector3) -> void:
 	box(hut + Vector3(1.5, 0.5, 2.0), Vector3(2.0, 1.0, 0.6), Game.mat("metal", 0.5))
 	_cover(b + Vector3(2.2, 0, 0)); _cover(b + Vector3(-2.2, 0, 0))
 	info["waypoints"].append(b + Vector3(0, 0, 3.0))
+	# (0.7x Radarová stanice) the console in the hut switches the radar back on; the dish turns then
+	if not info.has("radar_switch"):
+		info["radar_switch"] = hut + Vector3(1.5, 0.3, 1.25)
+		info["radar_dish"] = dish
 
 ## Sandbags and a gun position at the edge of the base.
 func _sandbags(o: Vector3) -> void:
@@ -3035,6 +3102,7 @@ func _ufo(center: Vector3) -> void:
 	var kind: String = ufo_kind
 	var u: Node3D = Game.model("ufo_g_" + kind)
 	root.add_child(u)
+	info["ufo_node"] = u          # (0.7x Štěnice: the ship can lift off)
 	for sb in u.find_children("*", "StaticBody3D", true, false):
 		sb.set_meta("surf", "metal")
 	var yaw := rng.randf_range(-0.5, 0.5)
@@ -3614,22 +3682,17 @@ func _prop_m(model: String, p: Vector3, yaw: float, sc: float) -> void:
 	else:
 		FitCollision.fit(n)
 
-## A dark drag trail: from the farmhouse door towards the crash site. Ends
-## halfway, in the middle of nowhere.
+## (0.72) The old drag trail of dark-red boxes from the farmhouse door is gone (Ari: "obdélníky na zemi,
+## co kdysi bývala krev"). The rng draws stay, so a map with the same seed is the same as before.
 func _blood_trail() -> void:
-	if info["house"] == Vector3.ZERO:
+	if info["house"] == Vector3.ZERO or info["ufo"] == Vector3.ZERO:
 		return
-	var a: Vector3 = info["house"]
-	var b: Vector3 = info["ufo"]
-	var dir := (b - a)
+	var dir: Vector3 = info["ufo"] - info["house"]
 	dir.y = 0
 	var steps := int(min(dir.length() * 0.55, 22.0) / 0.7)
-	var m := Game.color_mat(Color(0.16, 0.01, 0.015))
-	var side := Vector3(-dir.z, 0, dir.x).normalized()
 	for i in steps:
-		var p := a + dir.normalized() * (0.7 * i) + side * sin(i * 0.7) * 0.25
-		var sz := rng.randf_range(0.25, 0.5) * (1.0 - float(i) / steps * 0.6)
-		box(p + Vector3(0, 0.045, 0), Vector3(sz, 0.01, sz * 1.6), m, false, atan2(dir.x, dir.z) + rng.randf_range(-0.3, 0.3))
+		rng.randf_range(0.25, 0.5)
+		rng.randf_range(-0.3, 0.3)
 
 func _borders() -> void:
 	var s := BLOCK * N
@@ -3644,3 +3707,68 @@ func _borders() -> void:
 			[Vector3(-0.5, 2, s / 2), Vector3(1, 4, s)], [Vector3(s + 0.5, 2, s / 2), Vector3(1, 4, s)]]:
 		# (0.69: the edge of the map - nobody climbs on top of it and walks out; player.mantle_spot)
 		box(p[0], p[1], m).set_meta("border", true)
+
+
+# ---- 0.7x nové typy misí: what lies in the middle instead of the UFO --------------------------
+## The stranded convoy (a column of the road through two blocks): a humvee at the head, two lorries,
+## the cargo crates by them - the cover the team holds. info["cargo"] = where the cargo is (the
+## aliens go there to break it open, Mission._convoy_tick).
+func _convoy(c: Vector3) -> void:
+	info["cargo"] = []
+	info["cargo_nodes"] = []
+	var lead := "humvee_wreck"
+	var lorry := "truck_wreck"
+	if terrain == "snow":
+		lead = "snowmobile_wreck"
+	var rows := [[lead, -8.5], [lorry, -1.5], [lorry, 6.5]]
+	for i in rows.size():
+		var z: float = rows[i][1] + rng.randf_range(-0.6, 0.6)
+		var p := c + Vector3(rng.randf_range(-0.4, 0.4), 0, z)
+		_prop(rows[i][0], p, rng.randf_range(-0.18, 0.18) + (PI if i == 0 and rng.randf() < 0.3 else 0.0))
+		if i > 0:
+			# the load: army crates stacked by the lorry (what we came for)
+			var cp := p + Vector3(2.7 * (1 if i == 1 else -1), 0, rng.randf_range(-1.0, 1.0))
+			var crate := _prop("mil_crates", cp, rng.randf() * TAU)
+			crate.add_to_group("cargo_crate")
+			info["cargo_nodes"].append(crate)       # (kept out of the merging: the Čáp takes them away)
+			info["cargo"].append(p)
+			info["cargo"].append(cp)
+		if i == 0:
+			_smolder(p + Vector3(0, 0.7, 0.8))      # the head of the column took the first hit
+	for k in 3:
+		_prop("crater", c + Vector3(rng.randf_range(-6, 6), 0, rng.randf_range(-11, 11)), rng.randf() * TAU, false)
+
+## Our Sokol came down here: the jet broken in two, burning, a scorched furrow behind it.
+func _jet_wreck(c: Vector3) -> void:
+	var yaw := rng.randf() * TAU
+	var jet: Node3D = Game.model("sokol")
+	root.add_child(jet)
+	jet.position = c + Vector3(0, 0.35, 0)
+	jet.rotation = Vector3(rng.randf_range(-0.12, -0.05), yaw, rng.randf_range(0.25, 0.4))
+	_solid_mesh(jet)
+	var fwd := Vector3(sin(yaw), 0, cos(yaw))
+	_cover(c + fwd.cross(Vector3.UP) * 2.4)
+	_cover(c - fwd.cross(Vector3.UP) * 2.4)
+	_smolder(c + Vector3(0, 0.4, 0) - fwd * 2.0)
+	_smolder(c + fwd * 1.5 + Vector3(0, 0.3, 0))
+	for k in 4:
+		_prop("debris", c - fwd * (5.0 + k * 3.5) + fwd.cross(Vector3.UP) * rng.randf_range(-1.5, 1.5), rng.randf() * TAU)
+	_prop("crater", c - fwd * 3.0, yaw, false)
+	info["jet_fwd"] = fwd
+
+## No ship to come out of: the aliens start out where the team is not (away from the Kondor and
+## from the convoy / the wreck).
+func _site_spawns() -> void:
+	if not info["alien_spawns"].is_empty():
+		return
+	var avoid: Vector3 = info.get("convoy_at", info.get("jet", info["evac"]))
+	var s: float = BLOCK * N
+	var cand := []
+	for wp in info["waypoints"]:
+		var p: Vector3 = wp
+		if p.distance_to(info["evac"]) > 35.0 and p.distance_to(avoid) > 30.0 and p.x > 6.0 and p.z > 6.0 and p.x < s - 6.0 and p.z < s - 6.0:
+			cand.append(p + Vector3(0, 0.3, 0))
+	if cand.is_empty():
+		cand.append(Vector3(s / 2, 0.3, s - 8.0))
+	for i in mini(8, cand.size()):
+		info["alien_spawns"].append(cand[rng.randi() % cand.size()])

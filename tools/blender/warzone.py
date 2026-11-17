@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from common import *
 from common import _finish
 from mathutils import Vector
+import kit as K       # (0.72) the shapes of the newer models: lofts, bark, stones
 
 ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
 OUTDIR = ARGS[0] if ARGS else "."
@@ -80,64 +81,102 @@ def save(name, vis, col):
     export_glb(os.path.join(OUTDIR, "v_%s.glb" % name.lower()), [o] + col)
 
 # ==================================================================================================
+def _wheel(m, c, r, w, tyre=True, rim_m=None):
+    """(0.72) A wheel side-on along x: a rounded tyre with tread blocks, a dished rim with nuts."""
+    out = []
+    x, y, z = c
+    if tyre:
+        out.append(K.disc(m["tyre"], c, r, w, 'x', verts=24, b=0.04))
+        for k in range(12):
+            a = k / 12 * TAU
+            out.append(K.bx(m["tyre"], (x, y + math.cos(a) * r * 1.005, z + math.sin(a) * r * 1.005), (w * 0.9, 0.05, 0.03), 0.005, rot=(a, 0, 0)))
+    rr = r * (0.55 if tyre else 0.75)
+    rm = rim_m or m["dsteel"]
+    sx = 1 if x > 0 else -1
+    out.append(K.disc(rm, (x + sx * w * 0.45, y, z), rr, 0.04, 'x', verts=20, b=0.01))
+    out.append(K.disc(m["soot"], (x + sx * w * 0.5, y, z), rr * 0.35, 0.04, 'x', verts=12))
+    for k in range(6):
+        a = k / 6 * TAU
+        out.append(K.disc(rm, (x + sx * w * 0.52, y + math.cos(a) * rr * 0.6, z + math.sin(a) * rr * 0.6), 0.02, 0.03, 'x', verts=6))
+    return out
+
 def car_burnt():
-    """A burnt-out hatchback: charred shell, no glass, bare rims, rust bleeding through, a few embers."""
+    """(0.72) The same old hatchback as the village cars (village.car), burnt out: charred and rusted
+    shell sunk on bare rims, no glass, the roof sagging, the bonnet sprung, the seats burnt to springs,
+    a few embers still glowing inside."""
     reset(); m = M(); v = []
-    body = box(m["char"], (0, 0, 0.62), (1.66, 3.9, 0.62))
-    for vt in body.data.vertices:
-        if vt.co.y > 1.5:
-            vt.co.z -= 0.12 if vt.co.z > 0.62 else 0.0        # bonnet slopes
-    v.append(bev(body, 0.06))
-    v.append(jitter(bx(m["rust"], (0, 1.75, 0.66), (1.6, 0.5, 0.36), 0.03), 0.03, 1))          # crumpled bonnet
-    # cabin: four pillars and a sagging roof, no glass
-    for x in (-0.72, 0.72):
-        for y, lean in ((1.05, -0.45), (-1.3, 0.25), (-0.15, 0.0)):
-            v.append(tb(m["soot"], (x, y, 0.92), (x * 0.92, y + lean * 0.4, 1.42), 0.045, 6))
-    roof = box(m["rust2"], (0, -0.2, 1.44), (1.42, 1.9, 0.05))
+    sunk = -0.12
+    body = K.box_loft(m["char"], [(1.92, 0, 0.55 + sunk, 1.5, 0.4), (1.75, 0, 0.6 + sunk, 1.62, 0.55), (0.75, 0, 0.66 + sunk, 1.64, 0.62),
+                                  (-1.6, 0, 0.64 + sunk, 1.64, 0.62), (-1.9, 0, 0.62 + sunk, 1.55, 0.5)], b=0.06)
+    K._two_tone(body, m["char"], m["soot"], -0.3)
+    for p_ in body.data.polygons:                       # rust bleeding through the burnt paint
+        if p_.normal.z > -0.3 and K._nz.noise(p_.center * 1.6 + Vector((3, 1, 2))) > 0.18:
+            p_.material_index = 0
+    body.data.materials.append(m["rust"])
+    for p_ in body.data.polygons:
+        if abs(p_.normal.x) > 0.6 and K._nz.noise(p_.center * 2.2) > 0.12:
+            p_.material_index = 2
+    v.append(body)
+    bon = K.bx(m["rust"], (0, 1.32, 0.86 + sunk), (1.5, 0.95, 0.04), 0.01, rot=(0.32, 0.04, 0.03))     # the bonnet sprung up
+    v.append(jitter(bon, 0.015, 3))
+    roof = K.bx(m["rust2"], (0, -0.4, 1.4 + sunk), (1.38, 1.6, 0.05), 0.015)
     for vt in roof.data.vertices:
-        vt.co.z -= 0.08 * math.cos(vt.co.y * 1.4) + (0.06 if vt.co.x > 0 else 0)
+        vt.co.z -= 0.09 * math.cos(vt.co.y * 1.6 + 0.6) + (0.05 if vt.co.x > 0 else 0)
     v.append(roof)
-    v.append(bx(m["soot"], (0, -0.2, 0.95), (1.3, 1.6, 0.08), 0.01))                            # what is left of the seats
-    for x in (-0.42, 0.42):
-        v.append(bx(m["soot"], (x, -0.55, 1.1), (0.45, 0.12, 0.4), 0.02, rot=(0.25, 0, 0)))
-    v.append(bx(m["dsteel"], (0, 1.97, 0.45), (1.7, 0.14, 0.18), 0.03))                          # bumpers
-    v.append(bx(m["dsteel"], (0, -1.97, 0.45), (1.7, 0.14, 0.18), 0.03))
-    for x in (-0.82, 0.82):                                                                      # bare rims on the ground
-        for y in (1.25, -1.2):
-            rim = cyl(m["dsteel"], (x, y, 0.27), 0.27, 0.16, verts=12, rot=(0, PI2, 0))
-            v.append(smooth(rim))
-            v.append(smooth(cyl(m["soot"], (x * 1.01, y, 0.27), 0.12, 0.17, verts=8, rot=(0, PI2, 0))))
-    for k, (x, y) in enumerate(((0.3, 0.2), (-0.4, -0.6), (0.1, -1.4))):                       # embers in the cabin
-        v.append(jitter(box(m["ember"], (x, y, 1.0), (0.18, 0.14, 0.05)), 0.02, k))
-    v.append(bx(m["rust"], (0.84, 0.2, 0.62), (0.03, 2.6, 0.4), 0.01))                          # rusted flanks
-    v.append(bx(m["rust"], (-0.84, -0.3, 0.6), (0.03, 2.2, 0.35), 0.01))
+    for sx in (1, -1):
+        v.append(K.beam(m["soot"], (sx * 0.74, 0.62, 0.95 + sunk), (sx * 0.69, 0.4, 1.36 + sunk), 0.07, 0.06))
+        v.append(K.beam(m["soot"], (sx * 0.75, -0.35, 0.95 + sunk), (sx * 0.7, -0.35, 1.36 + sunk), 0.07, 0.1))
+        v.append(K.beam(m["soot"], (sx * 0.75, -1.45, 0.95 + sunk), (sx * 0.69, -1.2, 1.36 + sunk), 0.07, 0.18))
+        v.append(K.bx(m["dsteel"], (sx * 0.82, 0.12, 0.62 + sunk), (0.01, 0.02, 0.5), 0.002))
+        for sy in (1, -1):
+            y = sy * 1.2 - (0.05 if sy < 0 else 0)
+            v.append(K.disc(m["dsteel"], (sx * 0.74, y, 0.22), 0.23, 0.16, 'x', verts=18, b=0.015))       # bare rims
+            v.append(K.disc(m["soot"], (sx * 0.83, y, 0.22), 0.1, 0.03, 'x', verts=12))
+            v.append(K.beam(m["rust2"], (sx * 0.8, y - 0.38, 0.48 + sunk), (sx * 0.8, y + 0.38, 0.48 + sunk), 0.04, 0.05))
+    for x in (-0.38, 0.38):                                         # seats: burnt to frames and springs
+        v.append(K.bx(m["soot"], (x, -0.25, 0.72 + sunk), (0.48, 0.5, 0.06), 0.01))
+        for k in range(4):
+            v.append(K.tb(m["dsteel"], (x - 0.22, -0.52 + k * 0.06, 0.78 + sunk + k * 0.12), (x + 0.22, -0.52 + k * 0.06, 0.78 + sunk + k * 0.12), 0.012, 5))
+    v.append(K.tb(m["soot"], (-0.35, 0.35, 0.8 + sunk), (-0.35, 0.15, 1.05 + sunk), 0.02, 6))          # the steering column
+    v.append(K.torus(m["soot"], (-0.35, 0.12, 1.07 + sunk), 0.17, 0.015, rot=(1.1, 0, 0), seg=16, mseg=4))
+    v.append(K.bx(m["dsteel"], (0, 1.99, 0.33), (1.6, 0.08, 0.12), 0.02, rot=(0, 0.12, 0)))          # bumpers, one fallen
+    v.append(K.bx(m["dsteel"], (0.2, -2.05, 0.08), (1.6, 0.08, 0.12), 0.02, rot=(0.0, 0.0, 0.25)))
+    for k, (x, y) in enumerate(((0.3, 0.2), (-0.4, -0.6), (0.1, -1.4))):
+        v.append(K.lump(m["ember"], (x, y, 0.82 + sunk), 0.09, (1.4, 1, 0.4), 50 + k, 0.3, 2))
+    v.append(K.lump(m["soot"], (0.2, 1.4, 0.73 + sunk), 0.4, (1.6, 1.0, 0.3), 61, 0.3, 2))             # ash where the engine burnt
     save("Car_burnt", v, [colbox("car", (0, 0, 0.75), (1.7, 4.0, 1.5))])
 
 def humvee_wreck():
-    """A military truck sunk in sand to the axles: sand paint gone to rust, shattered windows, a crate."""
+    """(0.72) A military truck sunk in sand to the axles: a wide bevelled body, the sand paint gone
+    to rust in patches, a cracked windscreen, a crate on the back, sand drifted against it."""
     reset(); m = M(); v = []
-    v.append(bx(m["sand"], (0, 0.2, 0.85), (2.2, 4.6, 0.8), 0.08))
-    hood = box(m["sand"], (0, 1.7, 1.25), (2.0, 1.5, 0.12))
-    v.append(bev(hood, 0.03))
-    v.append(bx(m["sand"], (0, -0.4, 1.65), (2.1, 2.2, 0.85), 0.06))                            # cabin
-    v.append(bx(m["dsteel"], (0, 0.73, 1.65), (1.9, 0.06, 0.6), 0.01, rot=(-0.3, 0, 0)))         # windscreen frame
-    v.append(jitter(bx(m["glass"], (0.45, 0.75, 1.67), (0.8, 0.03, 0.45), 0.005, rot=(-0.3, 0, 0)), 0.02, 3))
-    for k in range(5):                                                                           # grille
-        v.append(bx(m["dsteel"], (-0.7 + k * 0.35, 2.47, 0.95), (0.12, 0.06, 0.5), 0.01))
-    v.append(bx(m["dsteel"], (0, 2.5, 0.6), (2.2, 0.2, 0.2), 0.03))
+    body = K.box_loft(m["sand"], [(-2.05, 0, 0.85, 2.15, 0.75), (1.0, 0, 0.88, 2.2, 0.85), (2.45, 0, 0.82, 2.1, 0.7)], b=0.08)
+    body.data.materials.append(m["rust"])
+    for p_ in body.data.polygons:
+        p_.material_index = 1 if K._nz.noise(p_.center * 1.4 + Vector((5, 2, 1))) > 0.25 else 0
+    v.append(body)
+    v.append(K.box_loft(m["sand"], [(0.95, 0, 1.28, 2.0, 0.08), (2.45, 0, 1.2, 1.95, 0.08)], b=0.02))        # bonnet
+    v.append(K.box_loft(m["sand"], [(-1.5, 0, 1.68, 2.1, 0.85), (0.6, 0, 1.68, 2.05, 0.8), (0.8, 0, 1.6, 1.95, 0.6)], b=0.06))   # cabin
+    v.append(K.bx(m["dsteel"], (0, 0.75, 1.68), (1.9, 0.06, 0.6), 0.01, rot=(-0.3, 0, 0)))                  # windscreen frame
+    v.append(jitter(K.bx(m["glass"], (0.45, 0.78, 1.7), (0.8, 0.03, 0.45), 0.005, rot=(-0.3, 0, 0)), 0.015, 3))
+    for k in range(6):                                                                                     # grille
+        v.append(K.bx(m["dsteel"], (-0.75 + k * 0.3, 2.47, 0.95), (0.1, 0.05, 0.5), 0.01))
+    v.append(K.bx(m["dsteel"], (0, 2.52, 0.6), (2.2, 0.2, 0.2), 0.03))
+    for x in (-0.75, 0.75):
+        v.append(K.disc(m["glass"], (x, 2.48, 1.08), 0.11, 0.05, 'y', verts=14))                            # head lamps
     for x in (-1.0, 1.0):
         for y in (1.6, -1.4):
-            v.append(smooth(cyl(m["tyre"], (x, y, 0.3), 0.5, 0.42, verts=14, rot=(0, PI2, 0))))
-    v.append(jitter(bx(m["rust"], (0.8, -0.4, 1.3), (0.6, 1.8, 0.5), 0.03), 0.04, 5))           # rust patches
-    v.append(jitter(bx(m["rust2"], (-0.6, 1.6, 1.32), (0.7, 0.8, 0.1), 0.02), 0.03, 6))
-    v.append(bx(m["olive2"], (0.4, -1.8, 1.45), (0.9, 0.6, 0.45), 0.03))                        # a crate on the back
-    v.append(bx(m["white"], (0.4, -2.11, 1.45), (0.4, 0.01, 0.1), 0.003))
-    v.append(tb(m["dsteel"], (-0.9, -1.0, 2.05), (-0.9, -1.0, 3.2), 0.02, 6))                   # whip antenna
-    # sand piled against it
-    for k, (x, y, s) in enumerate(((1.4, 0.5, 1.6), (-1.3, -0.5, 1.4), (0.2, 2.8, 1.2))):
-        d = smooth(sphere(m["sand"], (x, y, 0.0), s, seg=12, rings=6, scale=(0.6, 1.4, 0.35)))
-        d.data.materials.clear(); d.data.materials.append(mat2("WSandDrift", (0.62, 0.45, 0.3), 0.95))
-        v.append(d)
+            v += _wheel(m, (x, y, 0.3), 0.5, 0.42)
+    v.append(K.bx(m["olive2"], (0.4, -1.8, 1.47), (0.9, 0.6, 0.45), 0.03))                                 # a crate on the back
+    v.append(K.bx(m["olive"], (0.4, -1.8, 1.71), (0.93, 0.63, 0.05), 0.01))
+    v.append(K.bx(m["white"], (0.4, -2.11, 1.45), (0.4, 0.01, 0.1), 0.003))
+    v.append(K.tb(m["dsteel"], (-0.9, -1.0, 2.05), (-0.85, -1.05, 3.2), 0.015, 6))                          # whip antenna
+    drift = mat2("WSandDrift", (0.62, 0.45, 0.3), 0.95)
+    for k, (x, y, sc) in enumerate(((1.4, 0.5, 1.6), (-1.3, -0.5, 1.4), (0.2, 2.8, 1.2))):
+        o = K.lump(drift, (x, y, 0.0), sc, (0.6, 1.4, 0.35), 90 + k, 0.12, 3, bumps=0.03)
+        for vt in o.data.vertices:
+            vt.co.z = max(vt.co.z, -0.05)
+        v.append(o)
     save("Humvee_wreck", v, [colbox("hum", (0, 0.2, 1.0), (2.3, 5.0, 2.0))])
 
 def radar_dish():
@@ -341,23 +380,31 @@ def mil_crates():
     save("Mil_crates", v, [colbox("c", (0.2, 0.2, 0.6), (2.6, 1.4, 1.2))])
 
 def rubble():
-    """A heap of broken concrete with rebar sticking out (ruined towns)."""
+    """(0.72) A heap of broken concrete: chunks with chiselled faces, a slab of painted wall,
+    bent rebar sticking out, dust in the gaps (ruined towns)."""
     reset(); m = M(); v = []
     r = random.Random(5)
+    base = K.lump(m["concrete2"], (0, 0, -0.05), 1.6, (1.0, 1.0, 0.32), 5, 0.3, 3, bumps=0.08)
+    for vt in base.data.vertices:
+        vt.co.z = max(vt.co.z, -0.05)
+    v.append(base)
     for k in range(18):
         a = r.uniform(0, TAU); d = r.uniform(0, 1.8)
-        z = max(0.1, 0.9 - d * 0.45) * r.uniform(0.5, 1.0)
-        s = (r.uniform(0.4, 1.2), r.uniform(0.3, 0.9), r.uniform(0.15, 0.4))
-        o = bx(m["concrete"] if k % 3 else m["concrete2"], (math.cos(a) * d, math.sin(a) * d, z), s, 0.03,
-               rot=(r.uniform(-0.6, 0.6), r.uniform(-0.6, 0.6), r.uniform(0, TAU)))
-        v.append(jitter(o, 0.05, k))
+        z = max(0.1, 0.8 - d * 0.42) * r.uniform(0.5, 1.0)
+        s = (r.uniform(0.4, 1.1), r.uniform(0.3, 0.8), r.uniform(0.25, 0.5))
+        o = K.stone(m["concrete"] if k % 3 else m["concrete2"], 0.5, s, 100 + k, 7, 2)
+        o.location = (math.cos(a) * d, math.sin(a) * d, z - 0.15)
+        o.rotation_euler = (r.uniform(-0.5, 0.5), r.uniform(-0.5, 0.5), r.uniform(0, TAU))
+        K.apply_xf(o)
+        v.append(o)
     for k in range(7):
         a = r.uniform(0, TAU); d = r.uniform(0, 1.2)
         p = Vector((math.cos(a) * d, math.sin(a) * d, 0.5))
         q = p + Vector((r.uniform(-0.7, 0.7), r.uniform(-0.7, 0.7), r.uniform(0.4, 1.0)))
-        v.append(tb(m["rust"], tuple(p), tuple(q), 0.015, 4, sm=False))
-        v.append(tb(m["rust"], tuple(q), tuple(q + Vector((r.uniform(-0.3, 0.3), r.uniform(-0.3, 0.3), -0.2))), 0.015, 4, sm=False))
-    v.append(bx(m["white"], (0.9, -0.3, 0.35), (1.0, 0.08, 0.6), 0.01, rot=(0.9, 0.2, 0.5)))   # a bit of painted wall
+        e = q + Vector((r.uniform(-0.3, 0.3), r.uniform(-0.3, 0.3), -0.2))
+        v.append(K.bark_tube(m["rust"], [p, p.lerp(q, 0.5), q, q.lerp(e, 0.5), e], [0.014] * 5, 5, k, 0.0))
+    wall = K.bx(m["white"], (0.9, -0.3, 0.35), (1.0, 0.1, 0.6), 0.015, rot=(0.9, 0.2, 0.5))      # a bit of painted wall
+    v.append(jitter(wall, 0.02, 3))
     save("Rubble", v, [colbox("r", (0, 0, 0.45), (2.6, 2.6, 0.9))])
 
 def silo():
@@ -391,86 +438,149 @@ def silo():
     save("Silo", v, [colbox("s", (0, 0, H / 2), (R * 1.9, R * 1.9, H))])
 
 def snowmobile_wreck():
+    """(0.72) A crashed snowmobile: a rounded red hood, a torn seat, a cracked windscreen,
+    one bent ski, the rubber track."""
     reset(); m = M(); v = []
-    v.append(bx(m["red"].copy() if False else mat2("WSledRed", (0.5, 0.08, 0.06), 0.6), (0, 0.2, 0.5), (0.9, 1.6, 0.45), 0.08))
-    v.append(bx(m["soot"], (0, -0.6, 0.65), (0.75, 1.0, 0.25), 0.06))
-    v.append(bx(mat2("WSledRed", (0.5, 0.08, 0.06), 0.6), (0, 0.95, 0.75), (0.8, 0.4, 0.3), 0.08, rot=(0.5, 0, 0)))
-    v.append(jitter(bx(m["glass"], (0, 0.75, 1.0), (0.6, 0.05, 0.3), 0.01, rot=(-0.5, 0, 0.3)), 0.02, 1))
-    v.append(tb(m["dsteel"], (-0.45, 0.55, 1.0), (0.45, 0.55, 1.0), 0.025, 6))
-    for x in (-0.45, 0.45):                                                                     # skis
-        v.append(bx(m["dsteel"], (x, 1.0, 0.08), (0.14, 1.0, 0.04), 0.01))
-        v.append(bx(m["dsteel"], (x, 1.55, 0.15), (0.14, 0.2, 0.04), 0.01, rot=(0.6, 0, 0)))
-    v.append(bx(m["tyre"], (0, -0.3, 0.2), (0.55, 1.5, 0.35), 0.06))
+    red = mat2("WSledRed", (0.5, 0.08, 0.06), 0.45, 0.1)
+    v.append(K.loft(red, [(1.3, 0, 0.55, 0.32, 0.2), (0.9, 0, 0.62, 0.45, 0.32), (0.2, 0, 0.62, 0.47, 0.32), (-0.2, 0, 0.55, 0.45, 0.25)], verts=20))
+    v.append(K.loft(m["soot"], [(-0.15, 0, 0.75, 0.32, 0.12), (-1.0, 0, 0.78, 0.33, 0.12), (-1.15, 0, 0.72, 0.3, 0.08)], verts=14))   # seat
+    v.append(jitter(K.bx(m["glass"], (0, 0.45, 0.98), (0.6, 0.04, 0.3), 0.01, rot=(-0.5, 0, 0.3)), 0.015, 1))
+    v.append(K.tb(m["dsteel"], (-0.4, 0.2, 0.95), (0.4, 0.2, 0.95), 0.02, 8))                                # handlebar
+    for x in (-0.4, 0.4):
+        v.append(K.tb(m["soot"], (x, 0.2, 0.95), (x * 1.15, 0.2, 0.95), 0.03, 8))
+    for x in (-0.45, 0.45):                                                                                 # skis (one bent)
+        sk = K.box_loft(m["dsteel"], [(0.5, x, 0.08, 0.14, 0.03), (1.4, x, 0.08, 0.14, 0.03), (1.6, x, 0.2, 0.12, 0.03)], b=0.008)
+        if x > 0:
+            for vt in sk.data.vertices:
+                vt.co.x += 0.15 * max(0.0, vt.co.y - 0.8)
+        v.append(sk)
+        v.append(K.tb(m["dsteel"], (x, 0.9, 0.1), (x * 0.7, 0.9, 0.45), 0.02, 6))
+    v.append(K.box_loft(m["tyre"], [(-1.0, 0, 0.18, 0.5, 0.3), (0.2, 0, 0.18, 0.5, 0.3), (0.45, 0, 0.3, 0.5, 0.2)], b=0.06))
+    for k in range(10):
+        v.append(K.bx(m["tyre"], (0, -0.95 + k * 0.12, 0.02), (0.52, 0.04, 0.03), 0.005))
     save("Snowmobile_wreck", v, [colbox("s", (0, 0.2, 0.5), (1.1, 2.6, 1.0))])
 
 def fallen_signal():
-    """A toppled traffic light still glowing red, and a bent road sign (town streets)."""
+    """(0.72) A toppled traffic light still glowing red, its pole torn off its concrete foot, and a
+    bent road sign (town streets)."""
     reset(); m = M(); v = []
-    v.append(tb(m["dsteel"], (0, 0, 0.1), (3.6, 0.6, 0.25), 0.07, 8))
-    v.append(bx(m["dsteel"], (3.9, 0.65, 0.3), (0.35, 0.3, 0.9), 0.04, rot=(0, PI2 - 0.1, 0.15)))
+    v.append(K.tb(m["dsteel"], (0.1, 0.02, 0.1), (3.6, 0.6, 0.25), 0.07, 14))
+    v.append(K.bx(m["dsteel"], (3.9, 0.65, 0.3), (0.35, 0.3, 0.9), 0.04, rot=(0, PI2 - 0.1, 0.15)))
     for k, mm in enumerate((m["red"], m["soot"], m["soot"])):
-        v.append(smooth(cyl(mm, (3.62 + k * 0.28, 0.48, 0.32), 0.09, 0.03, verts=12, rot=(PI2, 0, 0.15))))
-    v.append(bx(m["concrete2"], (0, 0, 0.1), (0.5, 0.5, 0.2), 0.03))
-    v.append(tb(m["dsteel"], (-1.5, 1.2, 0.0), (-1.4, 1.1, 1.3), 0.035, 6))
-    v.append(tb(m["dsteel"], (-1.4, 1.1, 1.3), (-0.9, 1.4, 1.8), 0.035, 6))
-    v.append(bx(m["blue"], (-0.75, 1.5, 1.95), (0.7, 0.04, 0.55), 0.01, rot=(0.1, 0.4, 0.3)))
-    v.append(bx(m["white"], (-0.75, 1.475, 1.95), (0.08, 0.01, 0.35), 0.003, rot=(0.1, 0.4, 0.3)))
+        v.append(K.disc(mm, (3.62 + k * 0.28, 0.48, 0.32), 0.09, 0.03, 'z', verts=16))
+        v.append(K.tb(m["soot"], (3.62 + k * 0.28, 0.5, 0.32), (3.62 + k * 0.28, 0.32, 0.36), 0.11, 16, r2=0.105))   # visors
+    v.append(K.bx(m["concrete2"], (0, 0, 0.1), (0.5, 0.5, 0.2), 0.03))
+    stub = K.tb(m["dsteel"], (0, 0, 0.2), (0, 0, 0.42), 0.07, 14)
+    for vt in stub.data.vertices:          # torn end
+        if vt.co.z > 0.35:
+            vt.co.z += 0.05 * math.sin(vt.co.x * 60)
+    v.append(stub)
+    for k in range(4):
+        v.append(K.disc(m["dsteel"], (math.cos(k * PI2 + 0.7) * 0.18, math.sin(k * PI2 + 0.7) * 0.18, 0.21), 0.025, 0.04, verts=6))
+    v.append(K.tb(m["dsteel"], (-1.5, 1.2, 0.0), (-1.4, 1.1, 1.3), 0.035, 10))
+    v.append(K.tb(m["dsteel"], (-1.4, 1.1, 1.3), (-0.9, 1.4, 1.8), 0.035, 10))
+    v.append(K.bx(m["blue"], (-0.75, 1.5, 1.95), (0.7, 0.04, 0.55), 0.01, rot=(0.1, 0.4, 0.3)))
+    v.append(K.bx(m["white"], (-0.75, 1.475, 1.95), (0.62, 0.01, 0.47), 0.003, rot=(0.1, 0.4, 0.3)))
+    v.append(K.bx(m["blue"], (-0.75, 1.47, 1.95), (0.08, 0.01, 0.32), 0.003, rot=(0.1, 0.4, 0.3)))
     save("Fallen_signal", v, [colbox("t", (1.8, 0.3, 0.3), (3.8, 0.8, 0.6))])
 
 def crater():
-    """A shell crater: a scorched dish with a thrown-up rim of earth and stones (flat, walkable)."""
+    """(0.72) A shell crater: a scorched dish with a ragged, thrown-up rim of earth, clods and stones
+    round it, a black blast in the middle (flat, walkable)."""
     reset(); m = M(); v = []
     earth = mat2("WEarth", (0.24, 0.18, 0.12), 0.95)
     r = random.Random(9)
-    bpy.ops.mesh.primitive_circle_add(vertices=28, radius=2.6, fill_type='TRIFAN')
+    bpy.ops.mesh.primitive_circle_add(vertices=48, radius=2.7, fill_type='TRIFAN')
     d = bpy.context.active_object
-    _sel(d); bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.subdivide(number_cuts=3); bpy.ops.object.mode_set(mode='OBJECT')
+    _sel(d); bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.subdivide(number_cuts=5); bpy.ops.object.mode_set(mode='OBJECT')
     for vt in d.data.vertices:
-        rr = Vector((vt.co.x, vt.co.y)).length / 2.6
-        vt.co.z = -0.55 * max(0.0, 1 - rr * 1.4) ** 1.5 + 0.28 * math.exp(-((rr - 0.82) / 0.13) ** 2) + r.uniform(-0.03, 0.03)
+        rr = Vector((vt.co.x, vt.co.y)).length / 2.7
+        a = math.atan2(vt.co.y, vt.co.x)
+        rim = 0.82 + 0.05 * math.sin(a * 5 + 1.0) + 0.04 * K._nz.noise(Vector((vt.co.x, vt.co.y, 0)) * 1.3)
+        vt.co.z = -0.55 * max(0.0, 1 - rr * 1.35) ** 1.5 + 0.3 * math.exp(-((rr - rim) / 0.13) ** 2) \
+            + 0.04 * K._nz.noise(Vector((vt.co.x, vt.co.y, 0.5)) * 2.5)
+        vt.co.z *= max(0.0, min(1.0, (1.0 - rr) * 6.0)) if rr > 0.9 else 1.0      # back to the ground at the edge
     _finish(d, earth, (0, 0, 0.02), (0, 0, 0), (1, 1, 1))
-    v.append(smooth(d))
-    sc = smooth(sphere(m["soot"], (0, 0, -0.42), 1.1, seg=16, rings=6, scale=(1, 1, 0.12)))
-    v.append(sc)
-    for k in range(10):
-        a = r.uniform(0, TAU); rr = r.uniform(2.1, 2.9)
-        v.append(jitter(bx(m["concrete2"] if k % 2 else earth, (math.cos(a) * rr, math.sin(a) * rr, 0.12), (r.uniform(0.15, 0.4),) * 3, 0.03), 0.04, k))
+    smooth(d)
+    d.data.materials.append(m["soot"])
+    for p_ in d.data.polygons:
+        if Vector((p_.center.x, p_.center.y)).length < 1.15 + 0.2 * K._nz.noise(p_.center * 1.5):
+            p_.material_index = 1
+    v.append(d)
+    for k in range(16):
+        a = r.uniform(0, TAU); rr = r.uniform(2.0, 3.1)
+        if k % 2:
+            o = K.stone(m["concrete2"], r.uniform(0.1, 0.22), (1.2, 1, 0.8), 70 + k, 6, 2)
+        else:
+            o = K.lump(earth, (0, 0, 0), r.uniform(0.12, 0.25), (1.3, 1, 0.6), 70 + k, 0.35, 2, bumps=0.15)
+        o.location = (math.cos(a) * rr, math.sin(a) * rr, 0.08)
+        K.apply_xf(o)
+        v.append(o)
     save("Crater", v, [])
 
 def debris():
-    """Smashed planks, a broken door, shingles and a bucket - what is left round a wrecked house."""
+    """(0.72) Smashed planks with splintered ends, a broken door, roof tiles, a dented bucket and
+    a twisted gutter - what is left round a wrecked house."""
     reset(); m = M(); v = []
     r = random.Random(4)
+    def plank(mm, c, L, w, t, rot):
+        o = K.bx(mm, c, (w, L, t), 0.008, rot=rot)
+        return jitter(o, 0.006, r.randint(0, 99))
     for k in range(14):
         a = r.uniform(0, TAU); d = r.uniform(0, 2.2)
         L = r.uniform(0.8, 2.4)
-        v.append(bx(m["wood"] if k % 3 else m["char"], (math.cos(a) * d, math.sin(a) * d, 0.04 + r.uniform(0, 0.2)), (0.12, L, 0.035), 0.01,
-                    rot=(r.uniform(-0.25, 0.25), r.uniform(-0.2, 0.2), r.uniform(0, TAU))))
-    v.append(bx(m["wood"], (0.6, -0.4, 0.06), (0.85, 1.9, 0.05), 0.01, rot=(0.05, 0.08, 0.4)))      # a door
-    v.append(bx(m["dsteel"], (0.75, -0.1, 0.1), (0.05, 0.12, 0.03), 0.005, rot=(0, 0, 0.4)))
-    for k in range(8):
-        v.append(bx(mat2("WShingle", (0.4, 0.15, 0.1), 0.85), (r.uniform(-1.5, 1.5), r.uniform(-1.5, 1.5), 0.03), (0.3, 0.2, 0.025), 0.005, rot=(0, 0, r.uniform(0, TAU))))
-    v.append(smooth(cyl(m["dsteel"], (-1.2, 0.9, 0.15), 0.15, 0.3, verts=12, r2=0.12, rot=(PI2 * 0.95, 0, 0.6))))
+        o = plank(m["wood"] if k % 3 else m["char"], (math.cos(a) * d, math.sin(a) * d, 0.04 + r.uniform(0, 0.18)), L, 0.12, 0.035,
+                  (r.uniform(-0.25, 0.25), r.uniform(-0.2, 0.2), r.uniform(0, TAU)))
+        v.append(o)
+    v.append(K.bx(m["wood"], (0.6, -0.4, 0.06), (0.85, 1.9, 0.05), 0.01, rot=(0.05, 0.08, 0.4)))      # a door with panels
+    for k in range(2):
+        v.append(K.bx(m["wood"], (0.6 + math.sin(0.4) * 0.0, -0.4 + (k - 0.5) * 0.9, 0.095), (0.6, 0.7, 0.02), 0.01, rot=(0.05, 0.08, 0.4)))
+    v.append(K.disc(m["dsteel"], (0.82, -0.05, 0.11), 0.04, 0.03, verts=10))                            # its knob
+    tile = mat2("WShingle", (0.4, 0.15, 0.1), 0.85)
+    for k in range(10):
+        o = K.bx(tile, (r.uniform(-1.6, 1.6), r.uniform(-1.6, 1.6), 0.03), (0.3, 0.2, 0.025), 0.006, rot=(r.uniform(-0.15, 0.15), 0, r.uniform(0, TAU)))
+        for vt in o.data.vertices:          # tiles are curved
+            vt.co.z += 0.02 * math.cos((vt.co.x - o.location.x) * 6)
+        v.append(o)
+    b = K.lathe(m["dsteel"], [(0.0, 0.0), (0.12, 0.0), (0.155, 0.3), (0.15, 0.3), (0.11, 0.015), (0.0, 0.015)], verts=16)   # bucket on its side
+    for vt in b.data.vertices:
+        vt.co.y, vt.co.z = vt.co.z, -vt.co.y
+        vt.co.x += 0.03 * K._nz.noise(vt.co * 6)
+    b.location = (-1.2, 0.9, 0.15); b.rotation_euler = (0, 0, 0.6); K.apply_xf(b)
+    v.append(b)
+    g = K.bark_tube(m["dsteel"], K._path((-0.4, 1.4, 0.05), (1.4, 1.9, 0.12), 5, 5, 0.25), [0.06] * 6, 8, 5, 0.0)
+    v.append(g)
     save("Debris", v, [])
 
 def dead_tree():
-    """A dead, blasted tree: bare trunk split at the top, twisted branches, roots clawing the ground."""
+    """(0.72) A dead, blasted tree: a split, crooked trunk with root flares, twisted bare branches
+    that thin to twigs, roots clawing the ground, a charred scar up one side."""
     reset(); m = M(); v = []
     bark = mat2("WDeadBark", (0.2, 0.16, 0.12), 0.95)
     r = random.Random(21)
     def limb(p, d, L, w, depth):
         q = p + d * L
-        v.append(tb(bark, tuple(p), tuple(q), w, 6, r2=w * 0.7))
+        pts = K._path(p, q, 3, r.randint(0, 999), L * 0.08)
+        v.append(K.bark_tube(bark, pts, [w, w * 0.9, w * 0.8, w * 0.68], 8 if w > 0.1 else 6, r.randint(0, 99), 0.1))
         if depth >= 3 or w < 0.025:
             return
         for k in range(r.choice((2, 2, 3))):
             nd = (d + Vector((r.uniform(-0.9, 0.9), r.uniform(-0.9, 0.9), r.uniform(-0.1, 0.5)))).normalized()
             limb(q, nd, L * r.uniform(0.55, 0.75), w * 0.6, depth + 1)
-    limb(Vector((0, 0, 0)), Vector((0.05, 0.02, 1)).normalized(), 3.2, 0.28, 0)
+    trunk = K.bark_tube(bark, [(0, 0, -0.15), (0.02, 0, 0.35), (0.06, 0.02, 1.6), (0.12, 0.04, 3.2)], [0.42, 0.3, 0.25, 0.18], 12, 21, 0.14, 0.6)
+    v.append(trunk)
+    limb(Vector((0.12, 0.04, 3.1)), Vector((0.2, 0.05, 1)).normalized(), 1.6, 0.17, 1)
+    limb(Vector((0.1, 0.03, 2.9)), Vector((-0.5, 0.2, 1)).normalized(), 1.5, 0.14, 1)
+    limb(Vector((0.05, 0.02, 1.9)), Vector((0.3, -0.9, 0.5)).normalized(), 1.4, 0.1, 2)
     for k in range(6):
         a = k / 6 * TAU + r.uniform(0, 0.5)
-        v.append(tb(bark, (0, 0, 0.35), (math.cos(a) * 1.3, math.sin(a) * 1.3, -0.1), 0.15, 6, r2=0.03))
-    v.append(jitter(smooth(cyl(m["char"], (0.1, 0.05, 1.6), 0.2, 1.0, verts=8)), 0.03, 2))      # a burnt scar
+        pts = K._path((math.cos(a) * 0.2, math.sin(a) * 0.2, 0.3), (math.cos(a) * 1.3, math.sin(a) * 1.3, -0.1), 3, 40 + k, 0.1)
+        v.append(K.bark_tube(bark, pts, [0.14, 0.1, 0.06, 0.02], 7, 40 + k, 0.1))
+    scar = K.bark_tube(m["char"], [(0.0, 0, 0.6), (0.05, 0, 1.6), (0.1, 0.03, 2.6)], [0.27, 0.25, 0.19], 12, 7, 0.14)
+    for vt in scar.data.vertices:            # only the front of the trunk is burnt black
+        if vt.co.y < 0.05:
+            vt.co.x *= 0.9; vt.co.y = vt.co.y * 0.9
+    v.append(scar)
     save("Dead_tree", v, [colbox("t", (0, 0, 1.6), (0.6, 0.6, 3.2))])
 
 def broken_fence():
@@ -487,22 +597,35 @@ def broken_fence():
     save("Broken_fence", v, [colbox("f", (-1.0, 0, 0.6), (2.1, 0.1, 1.2))])
 
 def truck_wreck():
-    """A burnt-out flatbed truck, cab torched, a load of crates spilled behind it."""
+    """(0.72) A burnt-out flatbed truck: a rounded cab torched black with rust coming through, the
+    windscreen gone, a sprung bonnet, a flatbed with a side flap hanging open, crates spilled behind."""
     reset(); m = M(); v = []
-    v.append(bx(m["char"], (0, 2.3, 1.3), (2.2, 1.9, 1.7), 0.08))                                # cab
-    v.append(bx(m["rust"], (0, 3.45, 0.95), (2.1, 0.6, 0.9), 0.06))                              # bonnet
-    v.append(bx(m["soot"], (0, 3.0, 1.75), (1.9, 0.05, 0.7), 0.01, rot=(-0.25, 0, 0)))           # empty windscreen frame
-    v.append(bx(m["dsteel"], (0, -0.9, 0.85), (2.3, 4.6, 0.18), 0.03))                           # flatbed
+    cab = K.box_loft(m["char"], [(1.35, 0, 1.25, 2.2, 1.6), (2.8, 0, 1.35, 2.2, 1.8), (3.1, 0, 1.25, 2.1, 1.55)], b=0.12)
+    K._two_tone(cab, m["char"], m["soot"], 0.3)
+    v.append(cab)
+    v.append(K.box_loft(m["rust"], [(3.1, 0, 0.95, 2.1, 0.9), (3.7, 0, 0.9, 2.0, 0.8), (3.8, 0, 0.82, 1.9, 0.6)], b=0.08))
+    v.append(jitter(K.bx(m["rust2"], (0, 3.45, 1.48), (1.9, 0.6, 0.05), 0.01, rot=(0.35, 0.05, 0)), 0.01, 2))   # sprung bonnet lid
+    v.append(K.beam(m["soot"], (-0.95, 3.1, 1.6), (-0.9, 2.85, 2.15), 0.08, 0.08))                           # empty windscreen frame
+    v.append(K.beam(m["soot"], (0.95, 3.1, 1.6), (0.9, 2.85, 2.15), 0.08, 0.08))
+    v.append(K.beam(m["soot"], (-0.9, 2.85, 2.15), (0.9, 2.85, 2.15), 0.08, 0.08))
+    for k in range(6):                                                                                       # grille
+        v.append(K.bx(m["dsteel"], (-0.75 + k * 0.3, 3.82, 0.85), (0.1, 0.04, 0.45), 0.01))
+    v.append(K.bx(m["dsteel"], (0, 3.9, 0.5), (2.2, 0.14, 0.2), 0.03))
+    v.append(K.bx(m["dsteel"], (0, -0.9, 0.85), (2.3, 4.6, 0.16), 0.03))                                     # flatbed
+    for k in range(9):
+        v.append(K.bx(m["wood"] if k % 3 else m["char"], (0, -3.0 + k * 0.52, 0.95), (2.2, 0.48, 0.04), 0.008))
     for y in (-3.1, 1.25):
-        v.append(bx(m["rust2"], (0, y, 1.3), (2.3, 0.1, 0.9), 0.02))
-    v.append(bx(m["rust2"], (1.12, -0.9, 1.15), (0.08, 4.6, 0.45), 0.02, rot=(0.0, 0.5, 0.0)))  # side flap hanging open
+        v.append(K.bx(m["rust2"], (0, y, 1.3), (2.3, 0.1, 0.9), 0.02))
+    v.append(K.bx(m["rust2"], (1.12, -0.9, 1.15), (0.08, 4.6, 0.45), 0.02, rot=(0.0, 0.5, 0.0)))            # side flap hanging open
+    v.append(K.bx(m["dsteel"], (0, 0.9, 0.55), (0.25, 7.0, 0.2), 0.02))                                      # chassis rail
     for x in (-1.0, 1.0):
         for y in (2.6, -0.4, -1.9):
-            v.append(smooth(cyl(m["dsteel"] if y > 0 else m["tyre"], (x, y, 0.48), 0.48, 0.35, verts=14, rot=(0, PI2, 0))))
-    for k, (x, y, z, yaw) in enumerate(((0.4, -1.5, 1.25, 0.2), (-0.5, -0.2, 1.25, -0.1), (1.9, -3.6, 0.3, 0.9), (2.4, -2.6, 0.3, 0.3))):
-        v.append(bx(m["olive"] if k % 2 else m["wood"], (x, y, z), (1.0, 0.7, 0.6), 0.03, rot=(0, 0, yaw)))
+            v += _wheel(m, (x, y, 0.48), 0.48, 0.35, tyre=y < 0)
+    for k, (x, y, z, yaw) in enumerate(((0.4, -1.5, 1.27, 0.2), (-0.5, -0.2, 1.27, -0.1), (1.9, -3.6, 0.3, 0.9), (2.4, -2.6, 0.3, 0.3))):
+        v.append(K.bx(m["olive"] if k % 2 else m["wood"], (x, y, z), (1.0, 0.7, 0.6), 0.03, rot=(0, 0, yaw)))
+        v.append(K.bx(m["olive2"] if k % 2 else m["char"], (x, y, z + 0.29), (1.03, 0.73, 0.05), 0.01, rot=(0, 0, yaw)))
     for k in range(3):
-        v.append(jitter(box(m["ember"], (r_ := (-0.3 + k * 0.3), 2.3, 0.6), (0.25, 0.25, 0.06)), 0.03, k))
+        v.append(K.lump(m["ember"], (-0.3 + k * 0.3, 2.3, 0.62), 0.12, (1.3, 1, 0.4), 80 + k, 0.3, 2))
     save("Truck_wreck", v, [colbox("cab", (0, 2.6, 1.3), (2.3, 2.7, 2.2)), colbox("bed", (0, -0.9, 0.9), (2.3, 4.6, 0.9))])
 
 ALL = dict(car_burnt=car_burnt, humvee_wreck=humvee_wreck, radar_dish=radar_dish, radio_tower=radio_tower,

@@ -723,18 +723,37 @@ def handheld():
           bx(m["steel"], (0.015, 0.0, 0.035), (0.006, 0.05, 0.008), 0.001, rot=(0, 0, 0)),
           torus(m["steel"], (-0.016, 0.02, 0.06), 0.011, 0.0018, (0, PI2, 0), 12)], "Grenade")
     reset(); m = M()
-    save([ty(mat2("FlareRed", (0.7, 0.12, 0.08), 0.7), -0.04, 0.16, 0, 0.016, verts=12),
-          ty(m["dark"], 0.155, 0.175, 0, 0.017, verts=12),
-          bx(m["white"], (0.0162, 0.06, 0), (0.002, 0.08, 0.01), 0.0005),
-          ty(m["black"], -0.045, -0.03, 0, 0.017, verts=12)], "Flare")
+    # (0.72) a road flare: a ribbed red tube, a printed band, a striker cap with a grip ring, the fuse end
+    fr = mat2("FlareRed", (0.7, 0.12, 0.08), 0.55)
+    p = [ty(fr, -0.03, 0.15, 0, 0.016, verts=20)]
+    for k in range(5):
+        p.append(ring(m["dark"] if k == 0 else fr, -0.025 + k * 0.006, 0, 0.0168, 0.0025, verts=20))
+    p.append(ty(m["white"], 0.04, 0.09, 0, 0.0163, verts=20))
+    p.append(ty(fr, 0.055, 0.075, 0, 0.0165, verts=20))
+    p.append(ty(m["dark"], 0.15, 0.176, 0, 0.0175, verts=20))
+    p.append(ring(m["black"], 0.172, 0, 0.0178, 0.003, verts=20))
+    p.append(ty(m["black"], -0.045, -0.03, 0, 0.0172, verts=20))
+    p.append(ty(mat2("FlareFuse", (0.45, 0.35, 0.2), 0.8), -0.052, -0.045, 0, 0.008, verts=10))
+    save(p, "Flare")
     reset(); m = M()
+    # (0.72) a first-aid pouch: a padded case with rounded edges, a zip all round, a white cross,
+    # a carry strap and two buckles on the side
     wh = mat2("White", (0.9, 0.9, 0.9), 0.7)
-    mr = mat2("MedRed", (0.6, 0.08, 0.06), 0.7)
-    save([bx(mr, (0, 0.04, 0.0), (0.12, 0.08, 0.1), 0.01, seg=2),
-          bx(mat2("MedRedDark", (0.4, 0.05, 0.04), 0.7), (0, 0.04, 0.0), (0.124, 0.084, 0.012), 0.003),
-          box(wh, (0, 0.04, 0.051), (0.06, 0.015, 0.002)), box(wh, (0, 0.04, 0.051), (0.015, 0.06, 0.002)),
-          bx(m["black"], (0, 0.04, -0.053), (0.06, 0.03, 0.006), 0.002),
-          bx(m["black"], (0.062, 0.04, 0.02), (0.004, 0.02, 0.012), 0.001)], "Medkit")
+    mr = mat2("MedRed", (0.6, 0.08, 0.06), 0.75)
+    mrd = mat2("MedRedDark", (0.4, 0.05, 0.04), 0.7)
+    p = [bx(mr, (0, 0.04, 0.0), (0.12, 0.08, 0.1), 0.016, seg=3)]
+    p.append(bx(mrd, (0, 0.04, 0.0), (0.124, 0.084, 0.008), 0.003, seg=2))           # the zip band
+    for k in range(14):
+        p.append(bx(m["dark"], (-0.055 + k * 0.0085, 0.0, 0.0), (0.004, 0.002, 0.006), 0.0005))   # zip teeth at the front
+    p.append(bx(m["steel"], (0.05, -0.002, 0.0), (0.008, 0.004, 0.012), 0.001))       # zip pull
+    p.append(bx(wh, (0, 0.04, 0.0505), (0.062, 0.018, 0.003), 0.0012))
+    p.append(bx(wh, (0, 0.022, 0.0505), (0.018, 0.022, 0.003), 0.0012))
+    p.append(bx(wh, (0, 0.058, 0.0505), (0.018, 0.022, 0.003), 0.0012))
+    p.append(bx(m["black"], (0, 0.04, -0.053), (0.08, 0.03, 0.006), 0.002))            # carry strap
+    for z in (0.025, -0.025):
+        p.append(bx(m["black"], (0.062, 0.04, z), (0.004, 0.024, 0.012), 0.001))
+        p.append(bx(m["dark"], (0.0645, 0.04, z), (0.002, 0.016, 0.014), 0.0008))
+    save(p, "Medkit")
 
 def energo_nuz():
     """X-WEP-002 energy knife: the combat knife's shape, a grey laser-family grip with a small red cell

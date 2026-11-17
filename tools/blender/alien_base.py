@@ -7,6 +7,7 @@ Run: python3 tools/blender/alien_base.py <outdir> [--only a,b] [--gallery out.pn
 import sys, os, math, random
 sys.path.insert(0, os.path.dirname(__file__))
 from kit import *
+from kit import _nz, _shade   # (0.72)
 
 ARGS = [a for a in sys.argv[1:] if not a.startswith("--") and not a.endswith(".png") and "," not in a]
 OUTDIR = ARGS[0] if ARGS else "."
@@ -68,51 +69,78 @@ def trumpets():
     save("Trumpets", vis, [], "ab_trumpets")
 
 def coral():
-    """Red branching coral, a forked fan."""
+    """(0.72) Red branching coral: smooth tapering forks that end in round knobs."""
     reset(); m = M(); vis = []
     rr = random.Random(9)
-    def branch(p, d, l, w, depth):
-        q = (p[0] + d[0] * l, p[1] + d[1] * l, p[2] + d[2] * l)
-        vis.append(tb(m["coral"], p, q, w, 6))
+    def branch_(p, d, l, w, depth):
+        p = Vector(p); d = Vector(d)
+        q = p + d * l
+        pts = [p, p.lerp(q, 0.5) + Vector((rr.uniform(-1, 1), rr.uniform(-1, 1), 0)) * l * 0.06, q]
+        vis.append(bark_tube(m["coral"], pts, [w, w * 0.85, w * 0.72], 8, rr.randint(0, 99), 0.06))
         if depth > 0:
-            for s in (-1, 1):
-                nd = (d[0] + s * rr.uniform(0.3, 0.6), d[1] + rr.uniform(-0.3, 0.3), d[2])
-                n = math.sqrt(sum(c * c for c in nd))
-                branch(q, (nd[0] / n, nd[1] / n, nd[2] / n), l * 0.7, w * 0.7, depth - 1)
+            for sgn in (-1, 1):
+                nd = Vector((d.x + sgn * rr.uniform(0.3, 0.6), d.y + rr.uniform(-0.3, 0.3), d.z)).normalized()
+                branch_(q, nd, l * 0.7, w * 0.72, depth - 1)
         else:
-            vis.append(ball(m["coral"], q, w * 1.4, seg=6, rings=4))
+            vis.append(ball(m["coral"], q, w * 1.35, seg=10, rings=7))
     for k in range(3):
         a = k * TAU / 3
-        branch((math.cos(a) * 0.08, math.sin(a) * 0.08, 0), (math.cos(a) * 0.3, math.sin(a) * 0.3, 0.95), 0.4, 0.045, 2)
+        branch_((math.cos(a) * 0.08, math.sin(a) * 0.08, -0.02), (math.cos(a) * 0.3, math.sin(a) * 0.3, 0.95), 0.4, 0.05, 2)
+    vis.append(lump(m["coral"], (0, 0, 0.0), 0.16, (1, 1, 0.45), 9, 0.3, 2))
     save("Coral", vis, [], "ab_coral")
 
 def leaves():
-    """Broad flat leaves fanned out on the floor with pale veins."""
+    """(0.72) Broad leaves fanned out on the floor, curling up at the tips, a pale rib down each."""
     reset(); m = M(); vis = []
-    for k in range(6):
-        a = k * TAU / 6 + 0.2
+    for k in range(7):
+        a = k * TAU / 7 + 0.2
         ln = 0.5 + 0.12 * (k % 3)
-        pts = [(0, 0), (0.14, ln * 0.35), (0.12, ln * 0.75), (0, ln), (-0.12, ln * 0.75), (-0.14, ln * 0.35)]
-        o = plate(m["leaf"], pts, 0.0, 0.015)
-        o.rotation_euler = (0.35, 0, a)
+        o = lump(m["leaf"], (0, ln * 0.5, 0), 1.0, (0.15, ln * 0.5, 0.012), 30 + k, 0.0, 3, bumps=0.0)
+        for v in o.data.vertices:                 # a pointed tip, the blade curling up
+            t = v.co.y / ln
+            v.co.x *= 1.0 - max(0.0, t - 0.55) * 1.6
+            v.co.z += 0.32 * t * t * ln + 0.03 * abs(v.co.x) / 0.15
+        o.rotation_euler = (0.12, 0, a)
         o.location = (0, 0, 0.03)
         apply_xf(o)
         vis.append(o)
-        vis.append(beam(m["leaf2"], (0, 0, 0.04), (math.cos(a + PI2) * ln * 0.9, math.sin(a + PI2) * ln * 0.9, 0.04 + ln * 0.9 * math.sin(0.35)), 0.012, 0.012))
+        rib = [Vector((0, ln * t, 0.04 + 0.32 * t * t * ln)) for t in (0.0, 0.35, 0.7, 0.92)]
+        r_ = bark_tube(m["leaf2"], rib, [0.012, 0.01, 0.007, 0.003], 5, k, 0.0)
+        r_.rotation_euler = (0.12, 0, a)
+        r_.location = (0, 0, 0.03)
+        apply_xf(r_)
+        vis.append(r_)
     save("Leaves", vis, [], "ab_leaves")
 
 def stalagmite(fname, h, seed):
-    """A violet rock spire, knobbly, with a smaller one at its foot (cover)."""
+    """(0.72) A violet rock spire, knobbly and twisted, chiselled faces, a smaller one at its foot,
+    loose stones round it (cover)."""
     reset(); m = M(); vis = []; col = []
     rr = random.Random(seed)
-    prof = [(0.0, 0.0), (0.7, 0.0), (0.6, h * 0.2), (0.42, h * 0.5), (0.22, h * 0.8), (0.0, h)]
-    o = lathe(m["rock"], prof, 9, sm=False)
-    vis.append(jitter(o, 0.06, seed))
-    o2 = lathe(m["rock2"], [(0.0, 0.0), (0.35, 0.0), (0.2, h * 0.3), (0.0, h * 0.42)], 7, 0.62, 0.25, sm=False)
-    vis.append(jitter(o2, 0.04, seed + 1))
-    for k in range(3):
+    prof = [(0.0, -0.1), (0.72, -0.1), (0.66, h * 0.08), (0.58, h * 0.22), (0.47, h * 0.42), (0.33, h * 0.62), (0.2, h * 0.8), (0.08, h * 0.94), (0.0, h)]
+    o = lathe(m["rock"], prof, 18, sm=False)
+    off = Vector((seed * 1.3, seed * 0.7, seed * 2.1))
+    for v in o.data.vertices:
+        d = Vector((v.co.x, v.co.y, 0))
+        if d.length > 1e-4:
+            k = 1.0 + 0.22 * _nz.noise(Vector((v.co.x * 2.0, v.co.y * 2.0, v.co.z * 1.1)) + off)
+            tw = v.co.z * 0.5
+            x, y = v.co.x * k, v.co.y * k
+            v.co.x = x * math.cos(tw) - y * math.sin(tw)
+            v.co.y = x * math.sin(tw) + y * math.cos(tw)
+    _shade(o, 35.0)
+    vis.append(o)
+    o2 = lathe(m["rock2"], [(0.0, -0.05), (0.36, -0.05), (0.27, h * 0.18), (0.14, h * 0.32), (0.0, h * 0.42)], 12, 0.62, 0.25, sm=False)
+    for v in o2.data.vertices:
+        v.co += Vector((v.co.x - 0.62, v.co.y - 0.25, 0)) * 0.2 * _nz.noise(v.co * 3.0 + off)
+    _shade(o2, 35.0)
+    vis.append(o2)
+    for k in range(4):
         a = rr.uniform(0, TAU)
-        vis.append(ball(m["rock2"], (math.cos(a) * 0.55, math.sin(a) * 0.55, 0.1), rr.uniform(0.15, 0.25), (1.2, 1, 0.7), seg=7, rings=4))
+        st = stone(m["rock2"], rr.uniform(0.15, 0.25), (1.2, 1, 0.8), seed * 10 + k, 7, 2)
+        st.location = (math.cos(a) * 0.62, math.sin(a) * 0.62, -0.03)
+        apply_xf(st)
+        vis.append(st)
     col.append(colbox("Spire", (0, 0, h * 0.3), (0.9, 0.9, h * 0.6)))
     save("Stalagmite", vis, col, fname)
 

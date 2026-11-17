@@ -477,7 +477,12 @@ func _draw_hud() -> void:
 		var sm: String = p.sight_mode()
 		if sm == "scope":
 			_scope_picture(c, mid, p)
+			_lens_fx(c, mid, p, p.scope_r)
 		elif sm == "dot":
+			# (2026-11-17) rain on the glass, a cold lens fogging up indoors - under the dot (it shines through)
+			var sg: Dictionary = Game.sight_of(p.item_in("rh").get("id", ""), p.merc)
+			if p.cam and sg.has("relief"):
+				_lens_fx(c, mid, p, 0.021 / float(sg["relief"]) / tan(deg_to_rad(p.cam.fov) * 0.5) * sz.y * 0.5)
 			# (0.57) the red dot of the sight, where the bullet goes (the window around it is the model's)
 			c.draw_circle(mid, 3.2, Color(1, 0.15, 0.08, 0.18))
 			c.draw_circle(mid, 1.4, Color(1, 0.22, 0.12, 0.95))
@@ -590,7 +595,7 @@ func _draw_hud() -> void:
 	var marks := []
 	marks.append([ev, Color(0.5, 1.0, 0.55), "výsadek"])
 	var v: Node = mission().vip()
-	if v and not v.dead and not v.saved and v.st != v.C.FOLLOW:
+	if v and not v.dead and not v.saved and v.st != v.C.FOLLOW and mission().mtype() == "rescue":
 		marks.append([v.global_position, ACCENT, "maják ~%d m" % int(snappedf(v.global_position.distance_to(p.global_position), 5.0))])
 	var la: float = (Time.get_ticks_msec() - Game.loud_ms) / 1000.0
 	if la < LOUD_SECS and Game.loud_at.distance_to(p.global_position) > 6.0:
@@ -607,7 +612,7 @@ func _draw_hud() -> void:
 		c.draw_rect(Rect2(mid.x - 40, mid.y + 20, 80, 4), Color(0, 0, 0, 0.6))
 		c.draw_rect(Rect2(mid.x - 40, mid.y + 20, 80 * p.plant_hold / 3.0, 4), RED)
 	elif mission().beacon_near(p.global_position) >= 0:
-		_prompt("Drž F 3 s - položit nálož", ACCENT)
+		_prompt(("Drž F 3 s - zapnout radar" if mission().beacons[mission().beacon_near(p.global_position)].get("console", false) else "Drž F 3 s - obnovit proud") if mission().mtype() == "radar" else ("Drž F 3 s - připevnit štěnici" if mission().mtype() == "bug" else "Drž F 3 s - položit nálož"), ACCENT)
 	_cards(c, p)
 	if p.has_scanner():
 		_plate(c, Rect2(sz.x - 92, 12, 82, 92))
@@ -1009,6 +1014,12 @@ func _eye_icon(c: Control, o: Vector2, p: Node) -> void:
 	c.draw_rect(Rect2(o.x + 38, o.y + 17, 50 * clampf(w, 0.0, 1.0), 3), col)
 
 ## A plate of the menus' dark metal behind a group of the HUD (UiSkin's inset panel).
+## (2026-11-17) Drops and mist on the sight's glass (Mission.wx: only what the eye would see there).
+func _lens_fx(c: CanvasItem, mid: Vector2, p: Node, r: float) -> void:
+	var m := get_parent()
+	if m and "wx" in m and m.wx and p == m.local_player():
+		m.wx.draw_lens(c, mid, r)
+
 ## (0.57) Over the scope's picture (the player draws it, under the night-vision filter): a dark
 ## rim, thin crosshairs with a chevron at the centre.
 func _scope_picture(c: CanvasItem, mid: Vector2, p: Node) -> void:

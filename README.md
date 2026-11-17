@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.72
+# Operace X - Enemy Beyond — prototyp 0.72.1
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,21 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.72.1
+- Pět nových misí: Konvoj (ubránit náklad ze sestřelené lodi, než ho odveze vrtulník), Sestřelený pilot (najít a zachránit pilota u vraku Sokola), Radarová stanice (zapnout rozvodny a rozsvítit základnu), Karanténa (zničit hnízdo v městečku a zachránit zdravé civilisty – někteří v sobě nosí Líhavce) a Štěnice (potichu připevnit sledovač na přistálou loď a najít tak základnu vetřelců).
+- Civilisté vypadají jako lidé roku 1990 se stejnými tvářemi jako vojáci: ve městě úředníci, mladíci, paní v kabátku, na vesnici farmáři, dědové, traktoristé, vesničanky v šátku.
+- Při teroru civilisté víc panikaří: schovávají se v domech a zamykají dveře. Musím zaklepat a přemluvit je (držet F), a dokud vidí vetřelce, nevyjdou.
+- Noktovizor oslní lampa, záblesk nebo výstřel a baterie vydrží 20 minut.
+- Civilisté se už nezasekávají ve zdech a dveřích.
+- Počasí se během mise může změnit: začne pršet, přijde mlha nebo se vyjasní, světlo a vítr se mění plynule.
+- Po dešti je mokro: asfalt a střechy ztmavnou, na zemi jsou louže, ve kterých se odráží lampy, a v dešti v nich dělají kapky kroužky. Krok do louže je slyšet.
+- Vítr odnáší kouř z granátů, ohýbá plameny a oheň se šíří hlavně po větru.
+- V blátě a ve sněhu zůstávají stopy vetřelců, každý druh má svoje.
+- V dešti a sněhu jsou na sklíčku kolimátoru a optiky kapky, a když vejdu z chladu dovnitř, sklo se zamlží a pomalu čistí.
+- Pouliční lampy a světla v domech jdou rozstřelit, zhasnou natrvalo.
+- Předělal jsem staré modely na novou grafiku: stromy, keře, kameny, pařezy, klády, rákos, balíky sena, vraky aut, náklaďáku, humvee a skútru, krátery, trosky, kameny a věže na Marsu, korály a krápníky v základně vetřelců, lékárničku, světlici, štít, ponk a odpadkový koš.
+- Pryč je stará krvavá stopa z červených kvádrů od domu k UFO.
 
 ## Novinky 0.72
 - Nový vzhled celého rozhraní: čistý taktický styl bez rámečků v rámečcích, jedna zlatá barva zvýraznění, ostré písmo Barlow, vždy jen jedno okno najednou. HUD je vzdušnější a nastavení má záložky (Ovládání, Klávesy, Zvuk…).

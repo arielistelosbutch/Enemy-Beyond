@@ -5,6 +5,8 @@ shader_type canvas_item;
 uniform sampler2D screen : hint_screen_texture, filter_linear;
 uniform float gain = 5.0;
 uniform float grain = 0.1;
+uniform float wash = 0.0;     // (0.72) a bright light in view: the tube burns out towards white
+uniform float flick = 1.0;    // (0.72) a dying battery: the picture dims and stutters
 
 float hash(vec2 p) {
 	return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
@@ -22,6 +24,11 @@ void fragment() {
 	float v = 1.0 - exp(-l * gain);                       // amplified, saturating towards white
 	float n = hash(floor(FRAGCOORD.xy / 2.0) + vec2(TIME * 61.0, TIME * 17.0)) - 0.5;
 	v = clamp(v + n * grain + 0.035, 0.0, 1.0);
+	// the burnt-out tube: everything pale, the bright spot spreads out from the middle
+	vec2 cd = (SCREEN_UV - 0.5) * vec2(SCREEN_PIXEL_SIZE.y / SCREEN_PIXEL_SIZE.x, 1.0);
+	float halo = wash * (1.0 - smoothstep(0.0, 0.55, length(cd)) * 0.45);
+	v = mix(v, 1.0, clamp(halo, 0.0, 0.95));
+	v *= flick;
 	vec3 g = vec3(0.12, 1.0, 0.22) * v + vec3(0.55, 0.75, 0.55) * pow(v, 6.0);
 	// the round tube: the edge of the view is black
 	vec2 d = (SCREEN_UV - 0.5) * vec2(SCREEN_PIXEL_SIZE.y / SCREEN_PIXEL_SIZE.x, 1.0);
