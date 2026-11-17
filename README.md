@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.71
+# Operace X - Enemy Beyond — prototyp 0.72
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,21 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.72
+- Nový vzhled celého rozhraní: čistý taktický styl bez rámečků v rámečcích, jedna zlatá barva zvýraznění, ostré písmo Barlow, vždy jen jedno okno najednou. HUD je vzdušnější a nastavení má záložky (Ovládání, Klávesy, Zvuk…).
+- Klávesy si můžu přenastavit (dvě na každou akci) v Nastavení → Klávesy, i z hlavního menu, lobby a glóbu.
+- Vysílačka je na Tab, mluvit nahlas na T. Nastavení jde otevřít i z glóbu přes Esc.
+- Nový výzkum Displej detektoru v helmě: detektor pak funguje i na opasku, radar je vpravo nahoře.
+- Mezi glóbem a menu (voják, výstroj, peníze, úpravy zbraní) se už nic nenačítá. Načítání do mise ukazuje pruh postupu.
+- Kostky při tvorbě vojáka mají pojistku: tři hody patří hráči, smazáním vojáka a novým začátkem se už nedají přehazovat. Nové hody dostanu za vojáka ztraceného na misi.
+- Vojáci zvenku drží pušku opřenou o rameno, když míří a střílí; raketomet nesou na rameni a těžké zbraně od boku.
+- Posily přijdou na misi nejvýš dvakrát a majáky volají pomaleji. Tříštivý granát má větší výbuch a umí zapálit okolí.
+- Ochromení, knock-out, iluze ani oslepení už nejdou řetězit za sebou, takže se nedá zůstat bezmocný napořád.
+- Deset nových tetování (Žoldnéři, Máma, Invaders must die, Pomstím tě, Mrtvý vetřelec, Pivo, Bojím se tmy, Krull, Ignorbris, Lovec UFO). Voják v tvorbě stojí klidně s rukama dolů.
+- Auta mají správně nakloněná čelní a zadní skla a ploché střechy (třeba stříška benzinky) jsou pevné, nedá se jimi proskočit.
+- Déšť je vidět i z budov oknem a dveřmi a po vyjití nezačíná znovu. Lampy ve dne nesvítí a nelétají kolem nich můry, krávy je slyšet jen na farmě.
+- Opravené tabulky v rozhraní, aby byly přehlednější (Dílna, Prodej).
 
 ## Novinky 0.71
 - Ve zbrojnici je nákupní košík: záložky podle druhu zboží, vyberu, co chci do skladu a co sobě, vidím mezisoučty proti rozpočtu a vlastním penězům a teprve pak potvrdím. V co-opu se nákup pro základnu ohlásí všem.
@@ -129,7 +144,8 @@ Otevři složku v Godotu 4.7 a dej F5. Hlavní scéna je `scenes/Main.tscn`.
 | N | noční vidění |
 | E | ošetřit / táhnout padlého / sebrat; u lodi držet 2 s = odlet |
 | I | výstroj (ruce, záda, opasek, batoh) |
-| Tab (držet) | mluvit (mikrofon); s vysílačkou v ruce do vysílačky |
+| T (držet) | mluvit nahlas (slyší, kdo je blízko); v menu a lobby mluví i Tab |
+| Tab (držet) | vysílačka (slyší celý tým s vysílačkou) |
 | M | mikrofon stále zapnutý / vypnout |
 | F11 | celá obrazovka |
 | Esc | pauza a nastavení |
@@ -230,9 +246,9 @@ Posádky chodí ve skupinách: **Šeďáci + Diskoll**, **Levité + Ohař**, **J
   Velká loď (Myslodějové, Kolos), Náhodná.
 
 ## Vysílačky a hlas (verze 0.10)
-- Mikrofon: Tab (držet) = mluvíš, M = mikrofon stále zapnutý. Hlas jde z tvé postavy a slábne se vzdáleností (3D).
+- Mikrofon: T (držet) = mluvíš nahlas, Tab (držet) = vysílačka, M = mikrofon stále zapnutý. Hlas jde z tvé postavy a slábne se vzdáleností (3D).
   V nastavení: při stisku / stále zapnutý (podle hlasitosti) / vypnutý.
-- **Vysílačka** (na opasku, klávesa 4): drž ji v ruce a mluv (Tab, nebo tlačítko myši té ruky) - slyší tě
+- **Vysílačka** (na opasku, klávesa 4): drž Tab a mluv (nebo tlačítko myši té ruky) - slyší tě
   všichni, kdo vysílačku nesou, ať jsou kdekoli. Blízko vetřelců chrčí a vypadává.
   Výzkum Helmové vysílačky: vysíláš bez ruky.
 - Mluvení dělá hluk - vetřelci ho slyší, Ohař přiběhne.

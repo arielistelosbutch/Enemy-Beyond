@@ -1,4 +1,19 @@
 {
+ "0.72": [
+  "Nový vzhled celého rozhraní: čistý taktický styl bez rámečků v rámečcích, jedna zlatá barva zvýraznění, ostré písmo Barlow, vždy jen jedno okno najednou. HUD je vzdušnější a nastavení má záložky (Ovládání, Klávesy, Zvuk…).",
+  "Klávesy si můžu přenastavit (dvě na každou akci) v Nastavení → Klávesy, i z hlavního menu, lobby a glóbu.",
+  "Vysílačka je na Tab, mluvit nahlas na T. Nastavení jde otevřít i z glóbu přes Esc.",
+  "Nový výzkum Displej detektoru v helmě: detektor pak funguje i na opasku, radar je vpravo nahoře.",
+  "Mezi glóbem a menu (voják, výstroj, peníze, úpravy zbraní) se už nic nenačítá. Načítání do mise ukazuje pruh postupu.",
+  "Kostky při tvorbě vojáka mají pojistku: tři hody patří hráči, smazáním vojáka a novým začátkem se už nedají přehazovat. Nové hody dostanu za vojáka ztraceného na misi.",
+  "Vojáci zvenku drží pušku opřenou o rameno, když míří a střílí; raketomet nesou na rameni a těžké zbraně od boku.",
+  "Posily přijdou na misi nejvýš dvakrát a majáky volají pomaleji. Tříštivý granát má větší výbuch a umí zapálit okolí.",
+  "Ochromení, knock-out, iluze ani oslepení už nejdou řetězit za sebou, takže se nedá zůstat bezmocný napořád.",
+  "Deset nových tetování (Žoldnéři, Máma, Invaders must die, Pomstím tě, Mrtvý vetřelec, Pivo, Bojím se tmy, Krull, Ignorbris, Lovec UFO). Voják v tvorbě stojí klidně s rukama dolů.",
+  "Auta mají správně nakloněná čelní a zadní skla a ploché střechy (třeba stříška benzinky) jsou pevné, nedá se jimi proskočit.",
+  "Déšť je vidět i z budov oknem a dveřmi a po vyjití nezačíná znovu. Lampy ve dne nesvítí a nelétají kolem nich můry, krávy je slyšet jen na farmě.",
+  "Opravené tabulky v rozhraní, aby byly přehlednější (Dílna, Prodej)."
+ ],
  "0.71": [
   "Ve zbrojnici je nákupní košík: záložky podle druhu zboží, vyberu, co chci do skladu a co sobě, vidím mezisoučty proti rozpočtu a vlastním penězům a teprve pak potvrdím. V co-opu se nákup pro základnu ohlásí všem.",
   "Sklad je v co-opu u všech stejný a okna se samy překreslí. Když si spoluhráč něco vezme do výstroje, ostatní to vidí a nemůžou si vzít totéž.",
@@ -6,7 +21,8 @@
   "Vojáci se mezi hrami přenáší spolehlivě: zkušenosti, talenty, vzhled, peníze a díly na zbraních jdou s vojákem, ale věci koupené za vlastní peníze zůstávají v kampani, kde jsem je koupil. Padlý voják se už nikomu nevrátí.",
   "Míň omráčení: po každém ochromení mám chvíli klid, Ohař straší řevem jen toho, kdo ho vidí nebo je blízko, a na vlastní základně se vojáci drží líp.",
   "Hlas v co-opu je čistší: bez zkreslení, sykání a zbytečného šumu vysílačky.",
-  "Sklo kolimátoru je z očí úplně čiré, už není modré a v noci jako stínítko.", "Věci na mapách už neprotékají: hromady dřeva, bedny, vraky aut, traktor, studna, regály v obchodě, vysokozdvižný vozík, Sokol v hangáru, velín na Marsu i Kondor a Pelikán zvenku jsou pevné celé, ne jen kousek."
+  "Sklo kolimátoru je z očí úplně čiré, už není modré a v noci jako stínítko.",
+  "Věci na mapách už neprotékají: hromady dřeva, bedny, vraky aut, traktor, studna, regály v obchodě, vysokozdvižný vozík, Sokol v hangáru, velín na Marsu i Kondor a Pelikán zvenku jsou pevné celé, ne jen kousek."
  ],
  "0.70": [
   "Co-op přes VPN je plynulejší: hra posílá polohy 30× za sekundu místo každého snímku a cizí postavy se mezi nimi hladce posouvají. Hlas jde jednou cestou, takže se slyšíme v menu, na glóbu, v tvorbě vojáka, v misi i v transportéru, a už tolik nepraská.",

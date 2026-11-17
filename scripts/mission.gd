@@ -39,7 +39,9 @@ var _flash_t := 0.0          # lightning
 var _storm_t := 35.0
 var _radio_done := {}
 var _power_out := false
-var rain: CPUParticles3D
+var rain: GeometryInstance3D     # GPUParticles3D (Forward+/Mobile) or CPUParticles3D (Compatibility)
+var rain_gpu := false             # GPU rain: never switched off, a roof stops the drops (height field)
+var rain_field: GPUParticlesCollisionHeightField3D
 var _phantom: Node3D
 var _phantom_t := 0.0
 var _hallu_t := 20.0
@@ -280,6 +282,7 @@ func _ready() -> void:
 	Game.camo = Game.camo_for(Net.mission_params if not Net.mission_params.is_empty() else {"type": "crash"})
 	_pick_weather()
 	_environment()
+	Game.load_step(0.03)        # 0.72: the loading bar (the map reports on from here)
 	if mtype() == "alienbase":
 		map = preload("res://scripts/alien_base_gen.gd").new().build(self, Net.mission_seed, Net.mission_params)
 		_underground_env()
@@ -291,8 +294,10 @@ func _ready() -> void:
 	_core_hums()
 	if home():
 		_base_people()
+	Game.load_step(Game.BUILD_MAP_TO)
 	if multiplayer.is_server():
 		_nav_prime()
+	Game.load_step(0.92)
 	# 0.62 výkon: stíny lamp jen blízko kamery, měsíc ve 2 pásmech (Game.shadow_light / shadow_sun)
 	for l in find_children("*", "Light3D", true, false):
 		if l is DirectionalLight3D:
@@ -317,6 +322,7 @@ func _ready() -> void:
 	add_child(spawner)
 	spawner.spawn_path = spawner.get_path_to(actors)
 	spawner.spawn_function = _spawn
+	Game.load_step(0.95)
 	hud = Hud.new()
 	add_child(hud)
 	voice = preload("res://scripts/voice.gd").new()
@@ -349,27 +355,9 @@ func _ready() -> void:
 		ap.global_position = snd["pos"]
 		_loop_player(ap, snd["name"], snd["db"])
 	if weather == "snow":
-		_build_rain()
-		rain.amount = 900
-		rain.lifetime = 4.0
-		rain.gravity = Vector3(0, -0.6, 0)
-		rain.initial_velocity_min = 0.6
-		rain.initial_velocity_max = 1.4
-		rain.direction = Vector3(0.3, -1, 0.1)
-		rain.spread = 25.0
-		var sq := QuadMesh.new()
-		sq.size = Vector2(0.04, 0.04)
-		var smat := StandardMaterial3D.new()
-		smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		smat.albedo_color = Color(0.85, 0.88, 0.95, 0.8)
-		smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		smat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-		sq.material = smat
-		rain.mesh = sq
+		_build_rain(true)
 	if weather == "storm" or weather == "rain":
-		_build_rain()
-		if weather == "rain":
-			rain.amount = 380
+		_build_rain(false, 380 if weather == "rain" else 700)
 	_build_door()
 	_ufo_ambience()
 	_ship_engine()
@@ -466,7 +454,10 @@ func _critters(delta: float) -> void:
 	var biome := String(Net.mission_params.get("biome", "farm"))
 	var pool := ["owl"]
 	if biome in ["farm", "town"]:
-		pool += ["dog", "dog", "cow"]
+		pool += ["dog", "dog"]
+	# (2026-11-17, Ari) a cow only where cows are: on a farm or a map with a cowshed, not in a town
+	if biome == "farm" or not (map.get("cows", []) as Array).is_empty():
+		pool += ["cow"]
 	if biome == "forest":
 		pool += ["owl"]
 	if mtype() == "terror" or biome == "town":
@@ -1408,9 +1399,24 @@ func _electric(delta: float) -> void:
 	if _elec_t > 0:
 		return
 	_elec_t = 0.07
+	# (2026-11-17, Ari) by day nobody leaves the lamps on: street lamps, lights in houses, the
+	# bulbs and the moths around them stay dark (dawn and dusk: on while it is still dim)
+	var daylight := phase() == "den" or (phase() != "noc" and twilight() > 0.6)
 	for l in map.get("elec_lights", []):
 		if not is_instance_valid(l):
 			continue
+		if daylight:
+			if l.visible:
+				l.visible = false
+				var dl = l.get_meta("lens", false)
+				if is_instance_valid(dl):
+					dl.visible = false
+				var dm = l.get_meta("moths", false)
+				if is_instance_valid(dm):
+					dm.visible = false
+			continue
+		if not l.visible:
+			l.visible = true
 		var base: float = l.get_meta("base", 1.0)
 		var near := 99.0
 		for a in aliens():
@@ -1425,37 +1431,88 @@ func _electric(delta: float) -> void:
 			e = base * 0.3     # a tired battery, an old wire
 		l.light_energy = e
 		if not l.has_meta("moths"):
-			l.set_meta("moths", _moths(l))
-		var mo: Node3D = l.get_meta("moths")
-		if is_instance_valid(mo):
+			var made = _moths(l)
+			l.set_meta("moths", made if made != null else false)     # (null would erase the meta: no moths here)
+		var mo = l.get_meta("moths", false)
+		if is_instance_valid(mo) and mo is Node3D:
 			mo.visible = e > base * 0.5
-		var lens: Node = l.get_meta("lens", null)
-		if lens:
+		var lens = l.get_meta("lens", false)
+		if is_instance_valid(lens):
 			lens.visible = e > base * 0.2
 
 # ---- storm: lightning shows for a blink what stands in the field ----------------------------
-func _build_rain() -> void:
-	rain = CPUParticles3D.new()
-	rain.amount = 700
-	rain.lifetime = 0.9
-	rain.preprocess = 1.0
-	rain.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-	rain.emission_box_extents = Vector3(9, 0.5, 9)
-	rain.direction = Vector3(0.15, -1, 0.05)
-	rain.spread = 3.0
-	rain.gravity = Vector3(0, -9, 0)
-	rain.initial_velocity_min = 14.0
-	rain.initial_velocity_max = 17.0
-	rain.local_coords = false
+## Rain (or snow) around the camera. Forward+/Mobile: GPU particles that run all the time and die
+## on contact with a height field of the scene seen from above (it follows the camera), so under a
+## roof no drop falls, but through a window or a door you see it raining outside - and when you step
+## out it is already raining, it does not start again from nothing. Compatibility (GL) has no particle
+## collision: CPU particles as before, hidden under a roof.
+const RAIN_BOX := 14.0          # half-width of the box the drops are born in (m); was 9
+const RAIN_UP := 7.0            # the box above the camera's feet
+func _build_rain(snow: bool, amount := 700) -> void:
+	rain_gpu = RenderingServer.get_current_rendering_method() != "gl_compatibility" and Game.cmd_arg("cpurain", "") != "1"
+	var area := 1.0 if not rain_gpu else (RAIN_BOX * RAIN_BOX) / 81.0   # same density in a bigger box
+	var n := int((900 if snow else amount) * area)
+	var dir := Vector3(0.3, -1, 0.1) if snow else Vector3(0.15, -1, 0.05)
 	var qm := QuadMesh.new()
-	qm.size = Vector2(0.015, 0.35)
+	qm.size = Vector2(0.04, 0.04) if snow else Vector2(0.015, 0.35)
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = Color(0.55, 0.6, 0.7, 0.35)
+	mat.albedo_color = Color(0.85, 0.88, 0.95, 0.8) if snow else Color(0.55, 0.6, 0.7, 0.35)
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
 	qm.material = mat
-	rain.mesh = qm
+	if rain_gpu:
+		var g := GPUParticles3D.new()
+		g.amount = n
+		g.lifetime = 4.0 if snow else 0.9
+		g.preprocess = g.lifetime
+		# steps of 1/60 s even when the game runs slower: a drop never jumps through a roof in one frame
+		g.fixed_fps = 60
+		g.interpolate = true
+		g.local_coords = false
+		g.draw_order = GPUParticles3D.DRAW_ORDER_INDEX
+		# snow faces the camera, a raindrop is a streak along its fall
+		g.transform_align = GPUParticles3D.TRANSFORM_ALIGN_Z_BILLBOARD if snow else GPUParticles3D.TRANSFORM_ALIGN_Z_BILLBOARD_Y_TO_VELOCITY
+		g.visibility_aabb = AABB(Vector3(-RAIN_BOX - 4, -RAIN_UP - 26, -RAIN_BOX - 4), Vector3(RAIN_BOX * 2 + 8, RAIN_UP + 30, RAIN_BOX * 2 + 8))
+		g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var pm := ParticleProcessMaterial.new()
+		pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+		pm.emission_box_extents = Vector3(RAIN_BOX, 0.5, RAIN_BOX)
+		pm.direction = dir
+		pm.spread = 25.0 if snow else 3.0
+		pm.gravity = Vector3(0, -0.6, 0) if snow else Vector3(0, -9, 0)
+		pm.initial_velocity_min = 0.6 if snow else 14.0
+		pm.initial_velocity_max = 1.4 if snow else 17.0
+		pm.collision_mode = ParticleProcessMaterial.COLLISION_HIDE_ON_CONTACT
+		pm.collision_use_scale = false
+		g.process_material = pm
+		g.draw_pass_1 = qm
+		rain = g
+		add_child(rain)
+		# what stops the drops: the scene from above (roofs, ceilings, trees, the ground) around the camera
+		rain_field = GPUParticlesCollisionHeightField3D.new()
+		rain_field.size = Vector3(RAIN_BOX * 2 + 16, 80, RAIN_BOX * 2 + 16)
+		rain_field.resolution = GPUParticlesCollisionHeightField3D.RESOLUTION_512
+		rain_field.update_mode = GPUParticlesCollisionHeightField3D.UPDATE_MODE_WHEN_MOVED
+		rain_field.follow_camera_enabled = true
+		# not the soldiers' own FP hands/gun or HUD-only layers: only the world (layer 1) and props
+		rain_field.heightfield_mask = 0xFFFFF & ~(PlayerScript.FP_LAYER | PlayerScript.SHIELD_LAYER)
+		add_child(rain_field)
+		return
+	var c := CPUParticles3D.new()
+	c.amount = n
+	c.lifetime = 4.0 if snow else 0.9
+	c.preprocess = 1.0
+	c.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	c.emission_box_extents = Vector3(9, 0.5, 9)
+	c.direction = dir
+	c.spread = 25.0 if snow else 3.0
+	c.gravity = Vector3(0, -0.6, 0) if snow else Vector3(0, -9, 0)
+	c.initial_velocity_min = 0.6 if snow else 14.0
+	c.initial_velocity_max = 1.4 if snow else 17.0
+	c.local_coords = false
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED if snow else BaseMaterial3D.BILLBOARD_FIXED_Y
+	c.mesh = qm
+	rain = c
 	add_child(rain)
 
 var _roof_t := 0.0
@@ -1464,15 +1521,24 @@ func _storm_fx(delta: float) -> void:
 	var ws := (1.0 + 0.45 * sin(t * 0.13) + 0.25 * sin(t * 0.41 + 1.0)) * _wind_base + (0.8 if _flash_t > 0 else 0.0)
 	RenderingServer.global_shader_parameter_set("wind_strength", ws)
 	var me := local_player()
+	var cam := get_viewport().get_camera_3d()
 	if me and rain:
-		rain.global_position = me.global_position + Vector3(0, 7, 0) + me.velocity * 0.4
-		# under a roof (a house, a barn, inside their ship) it does not rain
+		# around the camera (also when a dead soldier watches a mate), ahead of where you are going
+		var feet: Vector3 = me.global_position
+		var vel: Vector3 = me.velocity
+		if cam and cam.global_position.distance_to(me.global_position) > 4.0:
+			feet = cam.global_position - Vector3(0, 1.6, 0)
+			vel = Vector3.ZERO
+		rain.global_position = feet + Vector3(0, RAIN_UP, 0) + vel * 0.4
+		# under a roof (a house, a barn, inside their ship) it drums on the roof
 		_roof_t -= delta
 		if _roof_t <= 0.0:
 			_roof_t = 0.3
-			var q := PhysicsRayQueryParameters3D.create(me.global_position + Vector3(0, 1.8, 0), me.global_position + Vector3(0, 30, 0), 1)
+			var q := PhysicsRayQueryParameters3D.create(feet + Vector3(0, 1.8, 0), feet + Vector3(0, 30, 0), 1)
 			var under := not get_world_3d().direct_space_state.intersect_ray(q).is_empty()
-			rain.visible = not under
+			# GPU rain runs all the time (the roof stops the drops); CPU rain cannot, so it hides
+			if not rain_gpu:
+				rain.visible = not under
 			if _rain_out:
 				var tw := create_tween().set_parallel()
 				tw.tween_property(_rain_out, "volume_db", RAIN_DB - (12.0 if under else 0.0), 0.5)
@@ -2082,6 +2148,29 @@ func _flammable_near(p: Vector3, r: float) -> bool:
 			return true
 	return false
 
+## Host: a blast sets alight the wood and crates around it (each with @a chance, at most @a most
+## fires; broken pieces burn too). Returns how many caught.
+func ignite_around(p: Vector3, r: float, chance: float, most: int) -> int:
+	if not multiplayer.is_server():
+		return 0
+	var lit := 0
+	var near: Array = []
+	for b in map.get("breakables", []):
+		if is_instance_valid(b) and String(b.get_meta("break_kind", "")) in ["wood", "crate"] \
+				and (b as Node3D).global_position.distance_to(p) < r:
+			near.append(b)
+	near.shuffle()
+	for b in near:
+		if lit >= most:
+			break
+		if randf() < chance:
+			var bp: Vector3 = (b as Node3D).global_position
+			var n0 := fires.size()
+			ignite(Vector3(bp.x, p.y + 0.3, bp.z), 0.9)
+			if fires.size() > n0:
+				lit += 1
+	return lit
+
 ## Host: sets a fire at @a p (if none burns right there yet).
 func ignite(p: Vector3, size := 1.0) -> void:
 	if not multiplayer.is_server() or fires.size() >= FIRE_MAX:
@@ -2522,13 +2611,13 @@ func _end(success: bool, why: String, airlift := false, abandoned := false) -> v
 			# (0.57) the mission given up from the menu: nobody comes for him
 			purse = maxi(0, purse - 250)
 			fate = "NEZVĚSTNÝ - mise opuštěna a on nestál u místa výsadku; zůstal na místě (odškodné rodině -250 kr; úspory převzal nový voják)"
-			Game.merc = Game.new_merc()
+			Game.merc = Game.lost_merc()
 		elif left_behind(me):
 			# the family is paid off: less when the body came home with the team
 			var cost := 80 if aboard else 250
 			purse = maxi(0, purse - cost)
 			fate = "PADL - voják je mrtvý (%s, odškodné rodině -%d kr; úspory převzal nový voják)" % ["tělo jste přivezli domů" if aboard else "tělo zůstalo na místě", cost]
-			Game.merc = Game.new_merc()      # the same slot gets a fresh recruit
+			Game.merc = Game.lost_merc()      # the same slot gets a fresh recruit
 		else:
 			# experience: only the living learn
 			var xp: int = 40 + (120 if success else 0) + me.kills * 25 + me.captures * 60 + me.revives * 30
@@ -2564,7 +2653,7 @@ func _end(success: bool, why: String, airlift := false, abandoned := false) -> v
 				else:
 					purse = maxi(0, purse - 250)
 					fate = "PADL - zárodek se v něm vylíhl cestou domů (odškodné rodině -250 kr; úspory převzal nový voják)"
-					Game.merc = Game.new_merc()
+					Game.merc = Game.lost_merc()
 		Game.merc["money"] = purse
 		Game.save_merc()
 		# the campaign record lives with the host
@@ -2849,7 +2938,12 @@ const VIP_NAMES := ["Dr. Kateřina Hronová", "pilot Sokola Jan Vrba", "Ing. Pav
 var vip_name := ""
 var beacons := []          # every machine: [{node, pos, planted, gone}]
 var _plant_t := {}         # host: beacon index -> seconds to blast
-var _reinf_t := 80.0
+var _reinf_t := BEACON_FIRST
+## (0.72, Ari) the beacons called one alien every 85 s for as long as they stood - far too many.
+## Now they call twice at most (their calls count against REINF_MAX like any other reinforcements):
+## first after BEACON_FIRST s, the second BEACON_NEXT s later; one alien (two with 3+ players).
+const BEACON_FIRST := 150.0
+const BEACON_NEXT := 180.0
 var waves_left := 0
 var _wave_t := 0.0
 
@@ -3507,12 +3601,14 @@ func _objectives_tick(delta: float) -> void:
 	if mtype() == "sabotage" and beacons_left() > 0:
 		# the beacons call for help
 		_reinf_t -= delta
-		if _reinf_t <= 0.0:
-			_reinf_t = 85.0
+		if _reinf_t <= 0.0 and reinf_take("beacon"):
+			_reinf_t = BEACON_NEXT
 			var rr := RandomNumberGenerator.new()
 			rr.randomize()
-			spawn_alien(_crew(1, rr)[0], _edge_point(rr))
-			hud_note.rpc("Maják vysílá - z temnoty přichází další vetřelec.")
+			var bn := 2 if Net.roster.size() >= 3 else 1
+			for k in _crew(bn, rr):
+				spawn_alien(k, _edge_point(rr))
+			hud_note.rpc("Maják vysílá - z temnoty přichází další vetřelec." if bn == 1 else "Maják vysílá - z temnoty přichází další vetřelci.")
 	if mtype() == "base" and waves_left > 0:
 		_wave_t -= delta
 		if alive_aliens() == 0 and _wave_t > WAVE_BREATHER:
@@ -3639,6 +3735,20 @@ var officer_killers := []
 var _pack_t := 60.0
 var _late_reinf_t := 0.0
 var _reinf_waves := 0
+## (0.72, Ari: "na velkých mapách hledat jednoho je peklo") reinforcements of any kind - the late ship,
+## the terror supply ship, a Bijec officer's call, the sabotage beacons - land at most REINF_MAX times
+## per mission. Host only (only the host spawns aliens), so the same for every player in co-op.
+const REINF_MAX := 2
+var reinf_count := 0
+func reinf_ok() -> bool:
+	return reinf_count < REINF_MAX
+## Host: one more arrival of reinforcements, if any are left (false = none, do not spawn).
+func reinf_take(what := "") -> bool:
+	if reinf_count >= REINF_MAX:
+		return false
+	reinf_count += 1
+	if Game.autotest() != "": print("[REINF] %s (%d/%d)" % [what, reinf_count, REINF_MAX])
+	return true
 var _supply_drops := 0
 var _nem_done := false
 ## Host, every frame of a running mission.
@@ -3671,7 +3781,7 @@ func _late_tick(delta: float) -> void:
 					n += 1
 				if n >= 2 and Game.autotest() != "": print("[LATE] night pack of %d after %s" % [n, prey.display_name])
 	# terror: the supply ship over the town makes good their losses - while its holds last
-	if mtype() == "terror" and _supply_drops < 2 and aliens_total > 0 and alive_aliens() <= aliens_total / 2:
+	if mtype() == "terror" and _supply_drops < 2 and aliens_total > 0 and alive_aliens() <= aliens_total / 2 and reinf_take("supply"):
 		_supply_drops += 1
 		var g2: Dictionary = GROUPS.get(crew_group, GROUPS.values()[0])
 		var rng2 := RandomNumberGenerator.new()
@@ -3684,7 +3794,7 @@ func _late_tick(delta: float) -> void:
 	# took too long: another ship drops more of them (the later in the war, the sooner)
 	_late_reinf_t += delta
 	var first := lerpf(600.0, 360.0, late)
-	if _reinf_waves < 3 and _late_reinf_t >= first + _reinf_waves * lerpf(300.0, 200.0, late):
+	if _reinf_waves < REINF_MAX and _late_reinf_t >= first + _reinf_waves * lerpf(300.0, 200.0, late) and reinf_take("ship"):
 		_reinf_waves += 1
 		var g: Dictionary = GROUPS.get(crew_group, GROUPS.values()[0])
 		var cnt := 2 + int(round(late)) + maxi(0, Net.roster.size() - 1)

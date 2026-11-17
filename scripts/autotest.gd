@@ -12,6 +12,7 @@ const AIT := preload("res://scripts/autotest_ai.gd")    # (the aliens' AI tests)
 const PERF := preload("res://scripts/autotest_perf.gd")    # (výkon, propady FPS)
 const FL2 := preload("res://scripts/autotest_facelift2.gd")   # (0.70 facelift II: ozvěna, špína, zeď padlých, intro)
 const GT := preload("res://scripts/autotest_ground.gd")    # (vetřelci a zem: chodníky, schody)
+const RAIN := preload("res://scripts/autotest_rain.gd")    # (2026-11-17: déšť vidět z budov)
 const CEIL := preload("res://scripts/autotest_ceil.gd")    # (0.69: proskakování stropem budov)
 const INTERIOR := preload("res://scripts/autotest_interior.gd")    # (2026-11-13: interiéry domů)
 const FL := preload("res://scripts/autotest_facelift.gd")   # (0.66 facelift: radar, transportér, načítání, lidé na základně)
@@ -71,10 +72,14 @@ func _process(delta: float) -> void:
 		"solo", "campaign": _solo(p)
 		"perf": PERF.run(self, p)
 		"groundtest": GT.run(self, p)
+		"rainshot": RAIN.run(self, p)
 		"ceiltest": CEIL.run(self, p)
 		"interiors": INTERIOR.run(self, p)
 		"spectate": preload("res://scripts/autotest_spectate.gd").run(self, p)
+		"shouldershot": preload("res://scripts/autotest_shoulder.gd").run(self, p)
+		"radiosprint": preload("res://scripts/autotest_shoulder.gd").radio(self, p)
 		"dazetest", "dazebase": preload("res://scripts/autotest_daze.gd").run(self, p)
+		"chaintest", "chainbase": preload("res://scripts/autotest_daze.gd").chain(self, p)
 		"radartest": FL.radar(self, p)
 		"transport": FL.transport(self, p)
 		"echotest", "echobase": FL2.echo(self, p)
@@ -105,6 +110,7 @@ func _process(delta: float) -> void:
 		"basewalk": _basewalk(p)
 		"basenade": _basenade(p)
 		"flaretest": _flaretest(p)
+		"fragtest": _fragtest(p)
 		"basefly": _basefly(p)
 		"coophealhost", "coophealclient": _coopheal(p)
 		"pothost", "potclient": _potcoop(p)
@@ -218,6 +224,7 @@ func _process(delta: float) -> void:
 		"airdeath": _airdeath(p)
 		"vipcheck": _vipcheck(p)
 		"climb": _climb(p)
+		"rooftest": preload("res://scripts/autotest_roof.gd").run(self, p)
 		"rocktest": _rocktest(p)
 		"hitbox": _hitbox(p)
 		"ufohull", "hullhost", "hullclient": preload("res://scripts/autotest_hull.gd").run(self, p)
@@ -267,6 +274,7 @@ func _process(delta: float) -> void:
 		"aitest": _aitest(p)
 		"aimphost", "aimpclient", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest": AIT.run(self, p)
 		"latetest": _latetest(p)
+		"reinfcap": _reinfcap(p)
 		"gunshots": _gunshots(p)
 		"topshot": _topshot(p)
 		"shieldtest": _shieldtest(p)
@@ -698,9 +706,10 @@ func _ui_mission(p: Node) -> void:
 	var h: Node = m().hud
 	await get_tree().create_timer(1.0).timeout
 	await _uic("m_briefing")
-	m().hud._brief_t = -1.0       # stop the typing: the whole text at once
+	m().hud._brief_t = float(m().hud._brief_len) / 40.0 - 0.05   # the whole text at once (the fade follows)
 	m().hud._brief_lbl.visible_characters = -1
-	await get_tree().create_timer(0.3).timeout
+	await get_tree().process_frame
+	await get_tree().process_frame
 	await _uic("m_briefing_full")
 	out("BRIEF len %d vis %d text %s" % [m().hud._brief_len, m().hud._brief_lbl.visible_characters, m().hud._brief_lbl.text.replace("\n", " | ")])
 	_skip_brief()
@@ -1938,6 +1947,87 @@ func _basenade(p: Node) -> void:
 	var br: Array = m().map.get("breakables", [])
 	out("breakables %d broken %d" % [br.size(), br.filter(func(b): return not is_instance_valid(b) or b.get_meta("broken", false)).size()])
 	out("RESULT basenade ok")
+## Frag grenade (0.72, Ari: "a bigger blast and more chance to set things alight"): grenades
+## dropped by wood/crates and on bare ground, how often a fire starts; an alien 6 m away is hurt.
+func _fragtest(p: Node) -> void:
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.inventory_open = false
+	p.hp = 5000.0
+	var al: Array = m().aliens()
+	var dummy: Node3D = null
+	for a in al:
+		if dummy == null and not a.dead:
+			dummy = a
+		else:
+			a.queue_free()
+	var wood: Array = []
+	var bare: Array = []
+	var br: Array = m().map.get("breakables", []).filter(func(b): return is_instance_valid(b) and String(b.get_meta("break_kind", "")) in ["wood", "crate"])
+	for b in br:
+		var bp: Vector3 = (b as Node3D).global_position
+		if wood.size() < 8 and wood.all(func(w): return w.distance_to(bp) > 12.0):
+			wood.append(Vector3(bp.x + 1.2, bp.y, bp.z))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var msz := float(m().map.get("size", 60.0))
+	for i in 400:
+		if bare.size() >= 8:
+			break
+		var c := Vector3(rng.randf_range(msz * 0.1, msz * 0.9), 0.3, rng.randf_range(msz * 0.1, msz * 0.9))
+		if br.all(func(b): return (b as Node3D).global_position.distance_to(c) > 9.0) \
+				and bare.all(func(w): return w.distance_to(c) > 12.0) and wood.all(func(w): return w.distance_to(c) > 12.0):
+			bare.append(c)
+	# (on the ground under each spot - the farm is not flat)
+	var ss: PhysicsDirectSpaceState3D = m().get_world_3d().direct_space_state
+	for arr in [wood, bare]:
+		for i in arr.size():
+			var c: Vector3 = arr[i]
+			var hit: Dictionary = ss.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(c.x, c.y + 3.0, c.z), Vector3(c.x, c.y - 30.0, c.z), Game.WORLD))
+			if arr == bare:
+				hit = ss.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(c.x, 40.0, c.z), Vector3(c.x, -30.0, c.z), Game.WORLD))
+			if not hit.is_empty():
+				arr[i] = hit["position"] + Vector3(0, 0.05, 0)
+			else:      # (no ground there: the nearest walkable point)
+				arr[i] = NavigationServer3D.map_get_closest_point(m().get_world_3d().navigation_map, c) + Vector3(0, 0.1, 0)
+	var res := {}
+	for set_name in ["wood", "bare"]:
+		var lit := 0
+		var spots: Array = wood if set_name == "wood" else bare
+		for at in spots:
+			var n0: int = m().fires.size()
+			p._spawn_throwable.rpc("grenade", at + Vector3(0, 0.4, 0), Vector3.ZERO, p.name)
+			await get_tree().create_timer(2.9).timeout
+			if m().fires.size() > n0:
+				lit += 1
+		res[set_name] = "%d/%d" % [lit, spots.size()]
+	# an alien 6 m from the blast takes some of it (outside the old 5 m)
+	var hurt := -1.0
+	if is_instance_valid(dummy):
+		var at: Vector3 = bare[0] if bare.size() > 0 else p.global_position + Vector3(8, 0, 0)
+		dummy.global_position = at + Vector3(6.0, 0.2, 0)
+		dummy.set_physics_process(false)
+		await get_tree().create_timer(0.3).timeout
+		var h0: float = dummy.hp
+		p.global_position = at + Vector3(-15.0, 0.3, 0)
+		p._spawn_throwable.rpc("grenade", at + Vector3(0, 0.4, 0), Vector3.ZERO, p.name)
+		var nd: Node3D = null
+		for c in m().get_children():
+			if String(c.name).begins_with("Thrown_"):
+				nd = c
+		var hold: Vector3 = dummy.global_position
+		for k in 140:      # (keep it standing there until the blast)
+			await get_tree().physics_frame
+			if is_instance_valid(dummy):
+				dummy.global_position = hold
+		if is_instance_valid(nd) and is_instance_valid(dummy):
+			out("frag dist %.2f nade %s alien %s at %s" % [nd.global_position.distance_to(dummy.global_position), nd.global_position, dummy.global_position, at])
+		await get_tree().create_timer(0.5).timeout
+		hurt = h0 - dummy.hp if is_instance_valid(dummy) else -2.0
+	out("frag dummy %s dead %s" % [dummy.race if is_instance_valid(dummy) else "-", str(dummy.dead) if is_instance_valid(dummy) else "-"])
+	out("RESULT fragtest wood %s bare %s hurt6m %.0f fires %d" % [res["wood"], res["bare"], hurt, m().fires.size()])
+
 ## A thrown flare (Ari: "it burned out like a firecracker"): it must land, lie still and keep
 ## burning for its whole time where it fell.
 func _flaretest(p: Node) -> void:
@@ -2909,6 +2999,36 @@ func _lasertest(p: Node) -> void:
 	p._edge_switch(kn)
 	var edge: bool = hits == [66.0, 66.0, 66.0, 38.0] and off and p._edge_strike(38.0, 66.0) == 66.0
 	out("RESULT lasertest drained %s waiting %s ready %s mg_dry %s mg_full %s edge %s" % [drained, waiting, ready, mg_dry, mg_full, edge])
+	get_tree().quit()
+
+## (0.72, Ari) reinforcements at most twice per mission: beacons, the late ship and a Bijec officer
+## all pushed to call over and over; only REINF_MAX lots may land.
+func _reinfcap(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.hp = 9999.0
+	await get_tree().create_timer(1.0).timeout
+	var n0: int = m().aliens().size()
+	for i in 40:
+		m()._reinf_t = 0.0
+		m()._late_reinf_t = 100000.0
+		await get_tree().process_frame
+	var mid: int = m().aliens().size()
+	# a Bijec officer who would call now: nothing may come any more
+	m().spawn_alien("bijec_velitel", m().free_spot(p.global_position + Vector3(40, 0.3, 40)))
+	await get_tree().create_timer(0.3).timeout
+	var offs: Array = m().aliens().filter(func(a): return a.race == "bijec_velitel" and not a.dead)
+	var off: Node = offs[-1] if not offs.is_empty() else null
+	var before_off: int = m().aliens().size()
+	if off:
+		off.state = off.S.COMBAT
+		off._reinf_t = 999.0
+		off._reinf_tick(0.1)
+	await get_tree().create_timer(0.5).timeout
+	var off_added: int = m().aliens().size() - before_off
+	out("RESULT reinfcap calls %d max %d added %d officer %d waves %d" % [m().reinf_count, m().REINF_MAX, mid - n0, off_added, m()._reinf_waves])
 	get_tree().quit()
 
 ## The late war: a night pack, the nemesis, an officer's killer remembered, reinforcements; the campaign side.
@@ -5242,6 +5362,10 @@ func _lookshot(p: Node) -> void:
 		if probe.find_child(need, true, false) == null:
 			bad += 1
 			out("[LOOK] CHYBA: v merc.glb chybí díl " + need)
+	for ti in range(6, Game.TATTOOS.size()):         # 0.72: nová tetování (Look_Tat_<id>)
+		if probe.find_child("Look_Tat_" + str(Game.TATTOOS[ti][0]), true, false) == null:
+			bad += 1
+			out("[LOOK] CHYBA: v merc.glb chybí tetování Look_Tat_" + str(Game.TATTOOS[ti][0]))
 	probe.free()
 	out("[LOOK] kosti %d, dílů vzhledu a výstroje %d" % [have.size(), pieces])
 	var looks := [
@@ -5272,6 +5396,47 @@ func _lookshot(p: Node) -> void:
 			for f in 12: await get_tree().process_frame
 			get_viewport().get_texture().get_image().save_png("user://vzhled_%s_%s.png" % [sch if sch != "" else "zakladna", "zepredu" if turn == 0 else "zezadu"])
 			row.queue_free()
+	# 0.72: every new tattoo close up from the right side (T-shirt), own camera high above the map:
+	# user://vzhled_tetovani_<id>.png
+	var hidden_ui: Array = []
+	for cl in get_tree().root.find_children("*", "CanvasLayer", true, false):
+		if cl.visible:
+			cl.visible = false
+			hidden_ui.append(cl)
+	var stage := Node3D.new()
+	m().add_child(stage)
+	stage.global_position = p.global_position + Vector3(0, 60, 0)
+	var tcam := Camera3D.new()
+	tcam.fov = 40
+	stage.add_child(tcam)
+	var lamp := DirectionalLight3D.new()
+	stage.add_child(lamp)
+	lamp.look_at_from_position(Vector3.ZERO, Vector3(1, -0.6, -0.4), Vector3.UP)
+	lamp.light_energy = 1.4
+	for ti in range(6, Game.TATTOOS.size()):
+		var tid := str(Game.TATTOOS[ti][0])
+		var mm: Node3D = Game.model("merc")
+		Game.apply_look(mm, {"top": 2, "vest": 3, "tattoo": ti, "skin": 1})
+		stage.add_child(mm)
+		var on := 0
+		for mi in mm.find_children("Look_Tat*", "MeshInstance3D", true, false):
+			on += int(mi.visible)
+		if on != 1:
+			bad += 1
+			out("[LOOK] CHYBA: tetování %s ukazuje %d dílů" % [tid, on])
+		var tm := mm.find_child("Look_Tat_" + tid, true, false) as MeshInstance3D
+		if tm != null:
+			var c: Vector3 = tm.global_transform * tm.get_aabb().get_center()
+			var out_dir: Vector3 = -mm.global_transform.basis.x.normalized()
+			tcam.look_at_from_position(c + out_dir * 0.42 + Vector3(0, 0.02, 0), c, Vector3.UP)
+			tcam.current = true
+		for f in 6: await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png("user://vzhled_tetovani_%s.png" % tid)
+		mm.free()
+	stage.queue_free()
+	for cl in hidden_ui:
+		cl.visible = true
+	cam.current = true
 	# the hands in view: each top once (the sleeve turns to skin on bare arms; the grips do not move)
 	for k in 4:
 		p.merc["look"] = {"top": k, "skin": 2}

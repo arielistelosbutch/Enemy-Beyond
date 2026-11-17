@@ -285,6 +285,9 @@ const RESEARCH := {
 		"desc": "Větší batoh s rámem podle vzoru výsadkářů: místo šesti míst devět. Víc nábojů, víc lékárniček - jen to pořád váží."},
 	"vysilacky": {"name": "Helmové vysílačky", "cost": 200, "days": 3.0, "needs": {}, "branch": "material", "icon": "radio",
 		"desc": "Vysílačka zabudovaná do helmy: mluvíš do éteru bez ruky na vysílačce. Odolnější proti rušení."},
+	# 0.72 (Ari): the detector's picture on the helmet - the detector itself can stay on the belt
+	"detektor_opasek": {"name": "Displej detektoru v helmě", "cost": 200, "days": 3.0, "needs": {}, "branch": "material", "icon": "scanner",
+		"desc": "Malý zelený displej na rameni helmy, kabelem k detektoru pohybu MD-01. Detektor pak stačí mít na opasku: obraz je vidět pořád a ruce zůstanou na zbrani. Pípá dál."},
 	"slitiny": {"name": "Vetřelecké slitiny", "cost": 300, "mk": 20, "days": 5.0, "needs": {"loot": "slitiny"}, "branch": "material", "icon": "a_pack",
 		"desc": "Rozbor jejich kovu z trupů a zbrojí. Sami ho zatím vyrobit neumíme - co se dá použít, přivezeme z vraků. Otevře cestu k experimentální vestě, pancéřování letadel a hybridní technice."},
 	"pancir_letadel": {"name": "Pancéřování letadel", "cost": 450, "days": 5.0, "needs": {"research": "slitiny"}, "branch": "lode", "icon": "dropship",
@@ -1812,6 +1815,7 @@ const UPGRADES := {
 	"batohy": {"name": "Výsadkové batohy", "cr": 700, "days": 3.0},
 	"vysilacky": {"name": "Helmové vysílačky", "cr": 500, "days": 3.0},
 	"detektor": {"name": "Citlivější detektory", "cr": 500, "days": 2.0},
+	"detektor_opasek": {"name": "Displeje detektoru do helem", "cr": 400, "days": 2.0},
 	"psi_clona": {"name": "Psionické clony do helem", "cr": 1200, "al": 10, "days": 5.0},
 	"psi_ochrana": {"name": "Lodní psionická ochrana CPS-01 (Pelikán)", "cr": 2500, "al": 40, "days": 6.0},
 	"pancir_letadel": {"name": "Pancéřování letadel", "cr": 1200, "al": 20, "days": 4.0},

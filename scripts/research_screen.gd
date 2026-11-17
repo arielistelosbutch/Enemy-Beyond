@@ -4,9 +4,9 @@ class_name ResearchScreen
 ## Columns go left to right as the knowledge builds up; the rows are the branches.
 ## Green = done, amber = in progress, cyan = can start now, grey = still locked.
 
-const TEXT := Color(0.84, 0.89, 0.92)
-const FRAME := Color(0.45, 0.78, 0.86)
-const ACCENT := Color(1.0, 0.74, 0.32)
+const TEXT := UiSkin.TEXT
+const FRAME := Color(0.67, 0.70, 0.74)   # 0.72: neutral secondary text (was cyan)
+const ACCENT := UiSkin.ACC
 const DONE := Color(0.4, 0.9, 0.5)
 const LOCKED := Color(0.38, 0.42, 0.47)
 const RED := Color(1.0, 0.45, 0.35)

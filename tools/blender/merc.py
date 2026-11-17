@@ -344,6 +344,46 @@ sl += pixels(FLAME, FO, 1.05) + pixels(SKULL, UO, 1.24, group="upperarm.R") + pi
 sl += [band(0.235, 1.0, "forearm.L", 0.078, 0.088, 0.006)] + pixels(XMARK, -FO, 1.06, group="forearm.L")
 piece("Look_TatSleeve", sl)
 
+# 0.72 (Ari): Žoldnéři (tři meče v kruhu, ostré tvary) + vtipná tetování (pixel art z tattoo_art.py,
+# vygenerováno z tattoo_designs.py). Uzly Look_Tat_<id> = Game.TATTOOS[i][0].
+from tattoo_art import TAT, ZOLD, ZOLD_U
+red_ink = mat("TattooRed", (0.42, 0.05, 0.05), rough=0.7)
+def ink_quad(m, loc, w, h, rot_x=0.0, group="forearm.R"):
+    """Plochý obdélník inkoustu kousek nad kůží, lícem ven (-x); 4 vrcholy místo 24 u kvádru."""
+    me = bpy.data.meshes.new("ink")
+    me.from_pydata([(0, -0.5, -0.5), (0, -0.5, 0.5), (0, 0.5, 0.5), (0, 0.5, -0.5)], [], [(0, 1, 2, 3)])
+    o = bpy.data.objects.new("ink", me)
+    bpy.context.scene.collection.objects.link(o)
+    import common
+    return common._finish(o, m, loc, (rot_x, 0, 0), (1, w, h), group)
+def tat_art(rows, px, along, zc=1.01, x=FO, group="forearm.R"):
+    """Mřížka na vnější straně předloktí; souvislé řady pixelů jako jeden kvádr.
+    Sloupce jdou na -y (dopředu), takže text se při pohledu zprava čte správně (ne zrcadlově)."""
+    if along:                      # podél paže: otočit o 90° (čte se od lokte k zápěstí)
+        H, W = len(rows), len(rows[0])
+        rows = ["".join(rows[H - 1 - r][c] for r in range(H)) for c in range(W)]
+    H, W = len(rows), len(rows[0])
+    out = []
+    for r, line in enumerate(rows):
+        c = 0
+        while c < W:
+            ch = line[c]
+            if ch in "XR":
+                e = c
+                while e + 1 < W and line[e + 1] == ch:
+                    e += 1
+                y = -((c + e) / 2 - (W - 1) / 2) * px
+                z = zc + ((H - 1) / 2 - r) * px
+                out.append(ink_quad(ink if ch == "X" else red_ink, (x, y, z), (e - c + 1) * px, px, group=group))
+                c = e + 1
+            else:
+                c += 1
+    return out
+piece("Look_Tat_zoldneri", [ink_quad(ink, (FO, -sx * ZOLD_U, 1.02 - sy * ZOLD_U), w * ZOLD_U, h * ZOLD_U, math.radians(a))
+                            for sx, sy, w, h, a in ZOLD])
+for tid, (tpx, talong, trows) in TAT.items():
+    piece("Look_Tat_" + tid, tat_art(trows, tpx, talong))
+
 # ---- glasses, things round the neck and in the mouth (Game.GLASSES, NECKS, MOUTHS) ----
 shades = mat("Shades", (0.025, 0.025, 0.03), rough=0.15)
 amber = mat("LensAmber", (0.75, 0.5, 0.1), rough=0.15)

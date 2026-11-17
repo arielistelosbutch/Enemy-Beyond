@@ -89,7 +89,10 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 			var b4 := Vector2i(x, z)
 			var gap := z > 0 and z < N and open.has(_edge(a, b4))
 			_rock_wall(Vector3(x * BLOCK, 0, z * BLOCK), true, gap)
+	var ci := 0
 	for c in cells:
+		Game.load_step(Game.BUILD_MAP_FROM + (Game.BUILD_TILES_TO - Game.BUILD_MAP_FROM) * float(ci) / float(maxi(1, cells.size())))
+		ci += 1
 		var o := Vector3(c.x * BLOCK, 0, c.y * BLOCK)
 		match cells[c]:
 			"entry": _shaft(o)
@@ -101,8 +104,11 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 		if cells[c] != "entry":
 			info["alien_spawns"].append(o + Vector3(BLOCK / 2 + rng.randf_range(-2, 2), 0.2, BLOCK / 2 + rng.randf_range(-2, 2)))
 			info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
+	Game.load_step(Game.BUILD_TILES_TO)
 	_zfix()
+	Game.load_step(Game.BUILD_TILES_TO + 0.10)
 	nav.bake_navigation_mesh(false)
+	Game.load_step(Game.BUILD_MAP_TO)
 	if Game.autotest() != "": print("[ABASE] built %d ms, cells %s" % [Time.get_ticks_msec() - _t0, cells.values()])
 	return info
 
