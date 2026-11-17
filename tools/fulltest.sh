@@ -7,7 +7,9 @@ LOG=/tmp/fulltest; mkdir -p $LOG; rm -f $LOG/*.log
 pass=0; fail=0; report=""
 run() {   # name, timeout, mode(h=headless,x=xvfb), expected pattern, args...
   local name=$1 to=$2 mode=$3 want=$4; shift 4
-  if [ "$mode" = x ]; then
+  if [ "$mode" = s ]; then      # (0.72) a test script on its own: the first arg is the script
+    timeout $to $G --headless --path . -s "$@" > $LOG/$name.log 2>&1
+  elif [ "$mode" = x ]; then
     timeout $to xvfb-run -a -s "-screen 0 1280x720x24" $G --path . --resolution 1280x720 -- "$@" > $LOG/$name.log 2>&1
   else
     timeout $to $G --headless --path . -- "$@" > $LOG/$name.log 2>&1
@@ -37,6 +39,7 @@ done
 run menu_ui     300 x "\[UI\] ready: 0"                    --autotest=ui
 run mods_ui     200 x "\[MODS\] bought true"              --autotest=modsui
 run talent_ui   200 x "\[TALENT\] skip true chain true rank true spent true eye true drone true" --autotest=talentui
+run dice        60 s "RESULT dicetest ok"                tools/test/dicetest.gd
 run presets     200 x "\[PRESET\] first false list true merc true levels true dice_nolevels true gear true" --autotest=presets
 run sights     1000 x "scope mode=scope on=true"          --autotest=sightshot --day=1 --fast=1
 run menu_flick  200 x "RESULT menuflicker 0"               --autotest=menuflicker
@@ -62,6 +65,7 @@ run blastdoor   300 h "RESULT blastdoor OK"                --autotest=blastdoor
 run navcache    200 h "RESULT navcache same true"         --autotest=navcache --mtype=landed --ufo=battleship --seed=2
 run perf        200 h "RESULT perf frames"                --autotest=perf --mtype=landed --ufo=battleship --seed=2 --dur=25 --kill=1
 run farview     300 x "RESULT farview"                   --autotest=farview --mtype=terror --biome=town --seed=3
+run loadprog  300 x "RESULT loadprog parked true same true signals true back_ms [0-9]+ loading_on_back false bar 1.00 .* dropped true" --autotest=loadprog
 run cart      120 h "RESULT carttest paid \\[true, true, 2, 1, 3, 0\\] kept \\[true, true, true, 51\\]" --autotest=carttest
 # co-op: two games at once (host and client on this machine)
 pair() {   # name, host mode, client mode, expected in host log, expected in client log, port
@@ -153,6 +157,8 @@ done
 run spectate  200 x "RESULT spectate active true eyes true next true auto true running true" --autotest=spectate --mtype=terror --biome=farm --seed=3 --day=1
 run daze      150 h "RESULT dazetest home false frozen ([0-3]?[0-9]) % .* cooldown true wall true" --autotest=dazetest --crew=ohar,grey --mtype=crash --biome=farm --seed=3
 run daze_base 150 h "RESULT dazetest home true frozen ([0-2]?[0-9]) % .* cooldown true wall true" --autotest=dazebase --attack=1 --crew=ohar,grey
+run chain     200 h "RESULT chaintest solo true longest [0-4]\.[0-9] s frozen ([0-2]?[0-9]) % .* ko_again false blind 1\.00/1\.00/0\.00" --autotest=chaintest --crew=grey --mtype=crash --biome=farm --seed=3
+run chain_base 200 h "RESULT chaintest solo true longest [0-4]\.[0-9] s frozen ([0-2]?[0-9]) % .* ko_again false blind 1\.00/1\.00/0\.00" --autotest=chainbase --attack=1 --crew=grey
 run lean       200 x "RESULT leantest ok"                 --autotest=leantest --mtype=crash --biome=farm --seed=7 --day=1
 run ws_click    100 x "RESULT wsclick bone true ring true item true" --autotest=wsclick
 run agun        150 x "RESULT agun ([0-9]+) of \1"        --autotest=agun
@@ -163,6 +169,7 @@ run mod_speed   300 x "RESULT modspeed ok" --autotest=modspeed
 run animator   150 x "RESULT animator click true imported true turned true keyed true moved true follows true fp true" --autotest=animator
 run locktest   120 h "RESULT locktest follows true turned true body true root true fp true" --autotest=locktest
 run blendtest  150 x "RESULT blendtest off [0-9.]+ on [0-9.]+ smoother true" --autotest=blendtest
+run shoulder   200 h "RESULT shouldershot mean 0\.0[0-9]"  --autotest=shouldershot --mtype=crash --biome=farm --seed=3 --day=1 --snaps=0
 run talenttest 250 h "RESULT talenttest .* ok true"     --autotest=talenttest
 # 0.62 animations: hit reactions, turning on the spot, the Ohař's moods (afk models: only in the game package)
 for r in ohar jestetan zombie bijec_velitel; do
@@ -172,6 +179,7 @@ run civanim     150 h "RESULT civanim [0-9]+ civilians afk idle,walk,run,lurk co
 run civdeath    150 h "RESULT civdeath 10 deaths bad 0" --autotest=civdeath --mtype=terror
 # 0.66 Facelift I: the drone's radar in solo, the transport after a mission, the people of the base, the loading screen
 run flare       200 h "RESULT flaretest life (59|6[0-9]) lit true moved 0.00" --autotest=flaretest --mtype=crash --biome=farm
+run frag        200 h "RESULT fragtest wood [5-8]/8 bare [0-8]/8 hurt6m [1-9]" --autotest=fragtest --mtype=crash --biome=farm --crew=grey,grey
 run radar       150 h "RESULT radar solo true scanner true kit_scanner false kit_radio false" --autotest=radartest --mtype=crash --biome=farm --day=1
 run rampcheck   200 h "RESULT rampcheck shut true open true" --autotest=rampcheck --prep=1
 run transport   150 h "RESULT transport closed true"     --autotest=transport --mtype=crash --biome=farm --day=1
@@ -228,9 +236,16 @@ run dirtest    330 h "RESULT dirtest old 0 .* in_fight 0" --autotest=dirtest --m
 run civtest    150 h "RESULT civtest old 0 v063 0 civ [1-9]" --autotest=civtest --mtype=terror --biome=town --seed=2 --hour=13
 run tunetest   160 h "RESULT tunetest diff normal" --autotest=tunetest --mtype=crash --biome=farm --seed=3 --hour=13
 run ai_late    160 h "RESULT aitest jestetan late 1 dmg [1-9][0-9][0-9]" --autotest=aitest --mtype=crash --biome=farm --late=1 --seed=5 --hour=13
-run latetest   120 h "RESULT latetest pack [2-9] nemesis [1-9][0-9]* marked true waves 3 added [3-9]" --autotest=latetest --mtype=crash --biome=farm --late=1 --seed=5 --hour=23
+run latetest   120 h "RESULT latetest pack [2-9] nemesis [1-9][0-9]* marked true waves 2 added [2-9]" --autotest=latetest --mtype=crash --biome=farm --late=1 --seed=5 --hour=23
+run reinfcap   120 h "RESULT reinfcap calls 2 max 2 added [2-9] officer 0 waves [01]" --autotest=reinfcap --mtype=sabotage --biome=farm --late=1 --seed=5
 run maptown   220 x "RESULT topshot untangled" --autotest=topshot --mtype=crash --biome=town --hour=13 --seed=11 --late=1
 run mapdesert 220 x "RESULT topshot untangled" --autotest=topshot --mtype=crash --biome=desert --terrain=desert --hour=13 --seed=7 --late=1
 run wrecks      60 h "RESULT wrecks \[\[1, 0, false\], \[2, 0, false\], \[0, 1, true\]\]" --autotest=wrecks
 run ui_bigpack  200 x "m_result: 0 probl"                  --autotest=uimission --research=batohy
+run rooftest   250 h "RESULT rooftest slabs [1-9][0-9]* holes 0" --autotest=rooftest --mtype=terror --biome=town --seed=3
+# 2026-11-17 déšť: GPU kapky běží pořád (i z budovy je vidět venku), střecha je zastaví; xvfb s Vulkanem navíc fotí rain_inside*.png
+run rain       250 h "RESULT rainshot gpu true visible_inside true visible_outside true" --autotest=rainshot --weather=storm --mtype=terror --biome=town --day=1 --seed=3
+# car windows lean in with the pillars in the model itself, glass tinted (a script test, not --autotest)
+timeout 120 $G --headless --path . -s tools/test/cartest.gd > $LOG/cartest.log 2>&1
+if grep -q "RESULT cartest ok" $LOG/cartest.log; then pass=$((pass+1)); report+="OK    cartest\n"; else fail=$((fail+1)); report+="CHYBA cartest $(grep RESULT $LOG/cartest.log | cut -c1-120)\n"; fi
 echo -e "\n==== VELKÝ TEST: $pass OK, $fail CHYB ====\n$report"

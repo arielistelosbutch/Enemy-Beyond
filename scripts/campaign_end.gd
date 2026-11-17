@@ -6,10 +6,10 @@ extends Control
 ## alike (the mates get the host's last state, Campaign.close_campaign). The main menu shows the
 ## record of ended campaigns with it too (Campaign.past_campaigns).
 
-const FRAME := Color(0.45, 0.78, 0.86)
-const TEXT := Color(0.84, 0.89, 0.92)
+const FRAME := Color(0.67, 0.70, 0.74)   # 0.72: neutral secondary text (was cyan)
+const TEXT := UiSkin.TEXT
 const DIM := Color(0.6, 0.66, 0.7)
-const ACCENT := Color(1.0, 0.74, 0.32)
+const ACCENT := UiSkin.ACC
 const RED := Color(1.0, 0.4, 0.3)
 const GOLD := Color(0.95, 0.8, 0.4)
 

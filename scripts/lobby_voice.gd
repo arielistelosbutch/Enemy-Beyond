@@ -94,7 +94,7 @@ func _process(delta: float) -> void:
 		return
 	if not Net.is_online() or multiplayer.multiplayer_peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
 		return
-	var out := transmit(fresh, Input.is_action_pressed("talk"), Game.voice_mode == "open" or Game.mic_live, delta)
+	var out := transmit(fresh, Input.is_action_pressed("talk") or Input.is_action_pressed("radio_talk"), Game.voice_mode == "open" or Game.mic_live, delta)
 	if out.is_empty():
 		_acc.clear()
 		return

@@ -53,6 +53,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	root = nav
 	for i in cells.size():
 		var c: Dictionary = cells[i]
+		Game.load_step(Game.BUILD_MAP_FROM + (Game.BUILD_TILES_TO - Game.BUILD_MAP_FROM) * float(i) / float(maxi(1, cells.size())))
 		if String(c.get("type", "")) == "":
 			continue
 		_room(i % gw, i / gw, String(c["type"]), float(c.get("days", 0.0)) > 0.0, params)
@@ -72,9 +73,12 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	info["evac"] = Vector3.ZERO
 	info["ufo"] = Vector3.ZERO
 	info["waypoints"] = info["cover"].duplicate()
+	Game.load_step(Game.BUILD_TILES_TO)
 	_zfix()
+	Game.load_step(Game.BUILD_TILES_TO + 0.10)
 	if not params.get("no_nav", false):        # (the base screen's top-down picture needs no paths)
 		nav.bake_navigation_mesh(false)
+	Game.load_step(Game.BUILD_MAP_TO)
 	if Game.autotest() != "": print("[BASE] built %d ms" % (Time.get_ticks_msec() - _t0))
 	return info
 

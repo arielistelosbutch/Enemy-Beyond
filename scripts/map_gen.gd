@@ -88,8 +88,11 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 		_mars()
 		_borders()
 		_stone_obstacles()
+		Game.load_step(Game.BUILD_TILES_TO)
 		_zfix()
+		Game.load_step(Game.BUILD_TILES_TO + 0.10)
 		nav.bake_navigation_mesh(false)
+		Game.load_step(Game.BUILD_MAP_TO)
 		return info
 	# layout: UFO 2x2 somewhere in the middle, the Kondor at an edge block
 	var grid := []
@@ -185,6 +188,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 
 	for x in N:
 		for z in N:
+			Game.load_step(Game.BUILD_MAP_FROM + (Game.BUILD_TILES_TO - Game.BUILD_MAP_FROM) * float(x * N + z) / float(N * N))     # 0.72: the loading bar moves
 			var o := Vector3(x * BLOCK, 0, z * BLOCK)
 			var dsg: Dictionary = {} if grid[x][z] in ["sky", "ufo"] else MapPieces.pick(self, grid[x][z])
 			if not dsg.is_empty():
@@ -241,22 +245,28 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 					if biome != "industrial" and biome != "base":
 						_grass(o, 700, "dry", 0.5, 1.1)
 	if Game.autotest() != "": print("[MAP] tiles done %d ms" % (Time.get_ticks_msec() - _t0))
+	Game.load_step(Game.BUILD_TILES_TO)
 	if us > 2:
 		_big_ufo(Vector3((ux + us / 2.0) * BLOCK, 0, (uz + us / 2.0) * BLOCK))
 	else:
 		_ufo(Vector3((ux + 1) * BLOCK, 0, (uz + 1) * BLOCK))
 	if Game.autotest() != "": print("[MAP] ufo done")
+	Game.load_step(Game.BUILD_TILES_TO + 0.03)
 	_war_scars(grid, params)
 	_blood_trail()
 	if Game.autotest() != "": print("[MAP] trail done")
 	_borders()
 	_clear_doors()
 	_untangle()
+	Game.load_step(Game.BUILD_TILES_TO + 0.05)
 	_zfix()
+	Game.load_step(Game.BUILD_TILES_TO + 0.10)
 	if Game.autotest() != "zfight" and Game.cmd_arg("nomerge", "") != "all":
 		_merge_static()
 	_stone_obstacles()
+	Game.load_step(Game.BUILD_TILES_TO + 0.12)
 	nav.bake_navigation_mesh(false)
+	Game.load_step(Game.BUILD_MAP_TO)
 	if Game.autotest() != "": print("[MAP] nav done %d ms" % (Time.get_ticks_msec() - _t0))
 	return info
 
@@ -268,6 +278,7 @@ func _zfix() -> void:
 	var t0 := Time.get_ticks_msec()
 	var n := ZFix.fix(root)
 	if Game.autotest() != "": print("[MAP] zfix moved %d faces (%d ms)" % [n, Time.get_ticks_msec() - t0])
+	if Game.autotest() != "": print("[MAP] solid roofs %d" % solid_roofs)
 
 ## 0.55: the blocks that only decorate (frames, plinths, boards, the small parts of furniture: they
 ## stop nothing and never change) are joined into one mesh per material and per 24 m square - far
@@ -337,6 +348,7 @@ func _merge_static() -> void:
 			(cd[0] as Node).free()
 		after += 1
 	if Game.autotest() != "": print("[MAP] merged %d decorations into %d meshes (%d ms)" % [before, after, Time.get_ticks_msec() - t0])
+	Game.load_step(-1.0)
 	if Game.cmd_arg("nomerge", "") != "1":
 		_merge_breakable()
 
@@ -438,6 +450,19 @@ func _walk_slab(pos: Vector3, size: Vector3) -> bool:
 		return false
 	return not _stairs_on
 
+## A flat slab overhead big enough to stand on (the fuel station canopy, ceilings, porch roofs):
+## underside above head height, thin, at least 1.5 m across and 4 m2. Without a collision a merc who
+## climbed up fell through it, and one below could jump up through it. Glass and lights stay as they are.
+var solid_roofs := 0
+func _roof_slab(pos: Vector3, size: Vector3, material: Material) -> bool:
+	if pos.y - size.y / 2.0 < 2.2 or size.y < 0.03 or size.y > 0.6:
+		return false
+	if minf(size.x, size.z) < 1.5 or size.x * size.z < 4.0:
+		return false
+	if material is BaseMaterial3D and ((material as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED or (material as BaseMaterial3D).emission_enabled):
+		return false
+	return true
+
 func box(pos: Vector3, size: Vector3, material: Material, collide := true, rot_y := 0.0) -> Node3D:
 	if material == Game.mat("roof", 1.0):
 		collide = true       # roofs can be climbed onto
@@ -451,6 +476,16 @@ func box(pos: Vector3, size: Vector3, material: Material, collide := true, rot_y
 			info["roofs"].append(top - ax)
 	if not collide and _walk_slab(pos, size):
 		collide = true       # 0.62: a pavement, a raised floor, a step: you walk ON it, not in it
+	var roof_forced := false
+	if not capturing and _roof_slab(pos, size, material):
+		if not collide and Game.cmd_arg("oldroofs", "") != "1":
+			collide = true       # (Ari 17. 11.) a canopy, a ceiling, a flat roof: you could jump through it
+			solid_roofs += 1
+			roof_forced = true
+		if rot_y == 0.0:
+			if not info.has("roof_slabs"):
+				info["roof_slabs"] = []
+			info["roof_slabs"].append([pos + Vector3(0, size.y / 2.0, 0), size])     # (for --autotest=rooftest)
 	if maxf(size.x, size.z) < 3.0 and size.y >= 0.15 and size.y < 3.0 and pos.y + size.y / 2.0 > 0.3:
 		_small.append(Vector3(pos.x, maxf(size.x, size.z) / 2.0, pos.z))   # (x, radius, z): crates, pallets...
 	var mi := MeshInstance3D.new()
@@ -483,6 +518,8 @@ func box(pos: Vector3, size: Vector3, material: Material, collide := true, rot_y
 		par.add_child(sb)
 		sb.position = pos
 		sb.rotation.y = rot_y
+		if roof_forced:
+			sb.set_meta("roof_slab", true)     # (interiors test: not a room ceiling of the old map)
 		return sb
 	par.add_child(mi)
 	mi.position = pos

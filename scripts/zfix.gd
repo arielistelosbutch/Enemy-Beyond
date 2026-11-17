@@ -28,6 +28,7 @@ static func fix(root: Node) -> int:
 	var total := 0
 	var changed := {}
 	for round_i in 4:
+		Game.load_step(-1.0)       # (0.72: the loading screen stays alive)
 		for b in boxes:
 			var bb: AABB = (b[1] as MeshInstance3D).global_transform * (b[1] as MeshInstance3D).get_aabb()
 			b[0] = bb

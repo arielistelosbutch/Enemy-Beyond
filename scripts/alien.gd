@@ -2807,6 +2807,8 @@ func _reinf_tick(delta: float) -> void:
 	if _reinf_t < (55.0 if Game.veteran() else 75.0):
 		return
 	_reinf_done = true
+	if not mission.reinf_take("officer"):
+		return             # (0.72) the mission has had its two lots of reinforcements already
 	var soldier: String = race.trim_suffix("_velitel")
 	var away := Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized()
 	for i in (3 if Game.veteran() else 2):

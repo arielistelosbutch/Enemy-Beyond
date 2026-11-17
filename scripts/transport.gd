@@ -256,7 +256,7 @@ func _panel(root: Control, title: String, stats: Array, report: String) -> void:
 	var hint := Label.new()
 	hint.text = "ENTER - pokračovat"
 	hint.add_theme_font_size_override("font_size", 8)
-	hint.add_theme_color_override("font_color", Color(0.62, 0.95, 0.88))
+	hint.add_theme_color_override("font_color", Color(0.80, 0.83, 0.86))
 	hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	top.add_child(hint)
 	# his own numbers: four pairs on a row, across the whole band

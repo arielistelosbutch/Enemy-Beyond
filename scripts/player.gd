@@ -462,14 +462,16 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 		# braced against the hip, pulled in and a bit to the centre
 		base = Vector3(base.x * 0.55, base.y - 0.03, base.z + 0.08)
 		rot = Vector3(0.0, 0.02, 0.0)
-	if _radio_lower > 0.01:
-		# the left hand lets go, the gun sinks in the right hand out of sight
-		base = base.lerp(Vector3(0.32, -0.8, -0.3), _radio_lower)
-		rot = rot.lerp(Vector3(1.0, 0.55, 0.35), _radio_lower)
 	if sprinting:
 		# weapon swung low across the body, swinging with the stride
 		base = Vector3(0.12, -0.32, -0.32) + Vector3(sin(_vm_t) * 0.04, -abs(cos(_vm_t)) * 0.04, 0)
 		rot = Vector3(0.35 + sin(_vm_t) * 0.06, 0.9, 0.45)
+	# (2026-11-16, Ari: „třetí ruka“) after the sprint's pose: before, sprinting put the gun with
+	# both hands back in view while the left hand already held the radio
+	if _radio_lower > 0.01:
+		# the left hand lets go, the gun sinks in the right hand out of sight
+		base = base.lerp(Vector3(0.32, -0.8, -0.3), _radio_lower)
+		rot = rot.lerp(Vector3(1.0, 0.55, 0.35), _radio_lower)
 	# reload: tilt in, hold, back up (the magazine drops at a quarter)
 	var rl := 0.0
 	var reloading := busy > 0 and busy_total > 0 and busy_text.begins_with("Přebíj")
@@ -482,7 +484,7 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 		k = 1.0
 	# which right-hand grip shows: both hands on the gun, or the right hand alone (the left
 	# is busy reloading, or holds something)
-	var busy_l := (reloading and rid in ["pistol", "magnum", "shotgun"]) or _rev_open > 0.05 or _fp_hand_busy
+	var busy_l := (reloading and rid in ["pistol", "magnum", "shotgun"]) or _rev_open > 0.05 or _fp_hand_busy or held_l == "radio" or _radio_lower > 0.3
 	var g2 := gun.get_node_or_null("GripTwo")
 	var g1 := gun.get_node_or_null("GripOne")
 	if g2 and g1:
@@ -760,6 +762,10 @@ func _animate_body(delta: float) -> void:
 		_drag_ex = null
 	_hit_overlay(delta)
 	_lean_overlay()
+	# (2026-11-16) aiming or shooting: the long gun goes up into the shoulder (_shoulder_gun)
+	_sh_k = move_toward(_sh_k, 1.0 if _shoulder_ok() else 0.0, delta / SHOULDER_IN)
+	if _sh_k > 0.001:
+		_aim_bend()
 	# the long gun sits in the right hand (follows the arms in every pose), not on the belly
 	if _sk and _hand_r >= 0 and body_gun:
 		var hand := _sk.global_transform * _sk.get_bone_global_pose(_hand_r)
@@ -838,6 +844,8 @@ func _mixamo_gun(hand: Transform3D) -> void:
 		var adj := Game.tweak_xform("tpa/%s@%s" % [held, _bclip_id.trim_suffix("_heavy").trim_suffix("_pistol")])
 		if adj != Transform3D():
 			body_gun.transform = body_gun.transform * adj
+		if _sh_k > 0.001:
+			_gun_to(_shoulder_gun(body_gun.global_transform, hand.origin, lh, m))
 		return
 	# the roll: standing still (both hands calmly on the gun) the trunk's "up" is the gun's up, and
 	# how that sits in the wrist is remembered; in every other movement the gun turns with the wrist
@@ -854,9 +862,185 @@ func _mixamo_gun(hand: Transform3D) -> void:
 		_grip_cal[held] = hb.inverse() * B
 	var sc := body_gun.global_transform.basis.get_scale().abs()      # (a mirrored parent reports a negative scale: that would turn the gun inside out)
 	var w := afk_gun_xform(B, origin, m, sc, held, _bclip_id)
-	_gun_to(w)
+	if _sh_k > 0.001:
+		_gun_to(_shoulder_gun(w, hand.origin, lh, m))
+	else:
+		_gun_to(w)
 	_lock_rel = hand.affine_inverse() * w
 	_lock_item = held
+
+## ---- (2026-11-16, Ari: „vojáci to vůbec nemají opřené o rameno a při střelbě to taky nevypadá
+## nejlépe“) The afk movements carry the gun low across the chest. Aiming (synced `aiming`) or
+## shooting (`_fired_at`, every machine), a long gun now goes up into the right shoulder: the butt
+## into the pocket under the shoulder joint, the barrel along his look (pitch too - the trunk and
+## the neck bend with it), both arms reach it by IK and the hands turn with the gun. Each shot kicks
+## it back into the shoulder and the muzzle up (with the gun's own `kick`). Only the picture: nothing
+## new goes over the net, the movements themselves stay as they are.
+const SHOULDER_IN := 0.16          # s to bring it up (and down again)
+const SHOULDER_HOLD := 0.9         # s after the last shot it stays up without aiming
+const SHOULDER_POCKET := Vector3(-0.05, -0.04, 0.03)      # from the shoulder joint: x right, y up, z forward (along the look)
+const SHOULDER_BEND := [["spine", 0.45], ["neck", 0.3]]   # how much of the look up/down each bone takes
+const MODE_BEND := {"hip": [["spine", 0.2], ["neck", 0.5]], "pistol": [["spine", 0.35], ["neck", 0.35]]}
+const TUBE_POCKET := Vector3(0.08, 0.11, 0.0)       # the tube's axis over the shoulder, beside the head
+const TUBE_REST := 0.42                             # where along the tube (from its back end) it lies on it
+const HIP_POCKET := Vector3(0.2, 0.12, 0.3)         # the right hand's grip from the hips (x right, y up, z forward)
+const HIP_PITCH := 0.45                             # from the hip the barrel follows the look only this far up/down
+const PISTOL_POCKET := Vector3(0.05, -0.07, 0.48)   # the grip from the neck: out in front, under the eyes
+const KICK_BACK := 0.035           # m into the shoulder per shot (x the gun's kick, capped)
+const KICK_RISE := 0.07            # rad the muzzle rises per shot
+const KICK_TIME := 0.075           # s the kick dies away
+var _sh_k := 0.0
+static var _NO_SHOULDER := Game.cmd_arg("noshoulder", "") == "1"      # (A/B: as the movements hold it)
+
+func _shoulder_ok() -> bool:
+	if _sk == null or held == "" or held_l != "" or act != 0 or sprinting or prone or downed or dead or emote != 0 or panic != "":
+		return false
+	if _body_want in FULL_BODY or not _mixamo_hold() or _NO_SHOULDER or _hold_mode() == "":
+		return false
+	if Game.tweaks.get("shoulder/" + held, true) == false:
+		return false      # (a gun can be left as the movement holds it: tweak "shoulder/<gun>": false)
+	return aiming or Time.get_ticks_msec() / 1000.0 - _fired_at < SHOULDER_HOLD
+
+## How the gun in the hand is brought up (2026-11-16): "rifle" butt in the shoulder, "tube" the
+## rocket launcher lying on the shoulder, "hip" the braced heavies (cannons, miniguns) from the hip,
+## "pistol" a handgun in both outstretched hands under the eyes; "" = as the movement holds it.
+func _hold_mode() -> String:
+	if Game.ITEMS.get(held, {}).get("type", "") != "weapon":
+		return ""
+	if held == "rocket_launcher":
+		return "tube"
+	if held in HEAVY:
+		return "hip"
+	if Game.two_handed(held):
+		return "rifle"
+	return ""      # pistols: as the motion holds them (Ari 2026-11-16: the outstretched hold looked bad)
+
+## 0..1: how much of the last shot's kick is still in the gun
+func _kick_now() -> float:
+	var since := Time.get_ticks_msec() / 1000.0 - _fired_at
+	if since < 0.0 or since > 0.5:
+		return 0.0
+	var up := clampf(since / 0.018, 0.0, 1.0)      # (in at once, out slowly)
+	return up * exp(-since / KICK_TIME)
+
+## The trunk and the neck follow the look up and down (and lean back a little in the kick).
+func _aim_bend() -> void:
+	if _sk == null:
+		return
+	var right := body.global_transform.basis.x.normalized()
+	var axis := (_sk.global_transform.basis.inverse() * right).normalized()
+	var sgn := signf(_sk.global_transform.basis.determinant())
+	var kick := _kick_now() * clampf(float(Game.ITEMS.get(held, {}).get("kick", 1.0)), 0.5, 2.0)
+	var bend: Array = MODE_BEND.get(_hold_mode(), SHOULDER_BEND)
+	for pair in bend:
+		var i := _bone(pair[0])
+		if i < 0:
+			continue
+		var a: float = clampf(pitch, -1.0, 1.0) * float(pair[1]) * _sh_k
+		if pair[0] == "spine":
+			a += 0.035 * kick * _sh_k
+		var par := _sk.get_bone_parent(i)
+		var pg := _sk.get_bone_global_pose(par).basis.get_rotation_quaternion() if par >= 0 else Quaternion()
+		var r := Quaternion(axis, a * sgn)
+		_sk.set_bone_pose_rotation(i, (pg.inverse() * r * pg) * _sk.get_bone_pose_rotation(i))
+
+## Where the gun goes in the shoulder (world), blended with how the movement holds it (@a w) by
+## _sh_k; the arms are brought to it. @a rh / @a lh: the hands' bones now (world).
+func _shoulder_gun(w: Transform3D, rh: Vector3, lh: Vector3, m: Node3D) -> Transform3D:
+	var ui := _bone("upperarm.R")
+	var mode := _hold_mode()
+	if ui < 0 or mode == "":
+		return w
+	var skt := _sk.global_transform
+	var sh := (skt * _sk.get_bone_global_pose(ui)).origin
+	var D := aim_dir()
+	if mode == "hip":
+		var fl := Vector3(D.x, 0.0, D.z).normalized()
+		var p := clampf(asin(clampf(D.y, -1.0, 1.0)), -HIP_PITCH, HIP_PITCH)
+		D = (fl * cos(p) + Vector3.UP * sin(p)).normalized()
+	var right := D.cross(Vector3.UP)
+	if right.length() < 0.05:
+		right = body.global_transform.basis.x
+	right = right.normalized()
+	var up := right.cross(D).normalized()
+	var flat := Vector3(D.x, 0.0, D.z).normalized()
+	if not _stock_box.has(held):
+		_stock_box[held] = ArmIK._aabb(m)
+	var box: AABB = _stock_box[held]
+	# which point of the gun goes where
+	var anchor: Vector3      # (in the holder's space)
+	var pocket: Vector3
+	var extra := Game._v3(Game.tweaks.get("shoulder_at/" + held, null), Vector3.ZERO)
+	match mode:
+		"tube":
+			anchor = m.transform * Vector3(box.get_center().x, box.position.y + box.size.y * 0.62, lerpf(box.end.z, box.position.z, TUBE_REST))      # (the axis: the grips hang under it)
+			var pk := TUBE_POCKET + extra
+			pocket = sh + right * pk.x + Vector3.UP * pk.y + D * pk.z
+		"hip":
+			anchor = w.affine_inverse() * rh
+			var hi := _bone("hips")
+			var hp: Vector3 = (skt * _sk.get_bone_global_pose(hi)).origin if hi >= 0 else global_position + Vector3.UP
+			var pk := HIP_POCKET + extra
+			pocket = hp + right * pk.x + Vector3.UP * pk.y + flat * pk.z
+		"pistol":
+			anchor = w.affine_inverse() * rh
+			var ni := _bone("neck")
+			var nk: Vector3 = (skt * _sk.get_bone_global_pose(ni)).origin if ni >= 0 else sh
+			var pk := PISTOL_POCKET + extra
+			pocket = nk + right * pk.x + up * pk.y + D * pk.z
+		_:
+			anchor = m.transform * Vector3(box.get_center().x, box.position.y + box.size.y * 0.55, box.end.z)
+			var pk := SHOULDER_POCKET + extra
+			pocket = sh + right * pk.x + up * pk.y + D * pk.z
+	# the gun's own frame now (barrel, its up) -> the look
+	var gb := (w.basis * m.transform.basis).orthonormalized()
+	var R := Basis.looking_at(D, up) * Basis.looking_at(-gb.z, gb.y).inverse()
+	var W := Transform3D(R * w.basis, w.origin)
+	W.origin = pocket - W.basis * anchor
+	# the kick: back into the shoulder, the muzzle up (turning about the butt)
+	var kick := _kick_now() * clampf(float(Game.ITEMS.get(held, {}).get("kick", 1.0)), 0.5, 2.0)
+	if mode == "hip":
+		kick *= 0.5        # (the weight of it takes most of the kick)
+	if kick > 0.001:
+		W.origin -= D * KICK_BACK * kick
+		var piv := pocket - D * KICK_BACK * kick
+		W = Transform3D(Basis(right, KICK_RISE * kick), piv - Basis(right, KICK_RISE * kick) * piv) * W
+	var F := w.interpolate_with(W, _sh_k)
+	F.basis = F.basis.orthonormalized().scaled(w.basis.get_scale())
+	# the hands where they held it, on the moved gun; the elbows bend as the movement had them
+	var to_f := F * w.affine_inverse()
+	var l_at := to_f * lh
+	if mode != "rifle":
+		# the heavies and the handguns: the left hand on the gun's own fore grip (Dílna "grip/<gun>")
+		var g := ArmIK.grips(held, m)
+		if g.has("l"):
+			l_at = F * (m.transform * (g["l"] as Vector3))
+	var hr := _hand_r
+	var hl := _bone("hand.L")
+	var old_r := _sk.get_bone_global_pose(hr).basis.orthonormalized()
+	var old_l := _sk.get_bone_global_pose(hl).basis.orthonormalized() if hl >= 0 else Basis()
+	var er := _bone("forearm.R")
+	var el := _bone("forearm.L")
+	var r_pole := Vector3.DOWN * 0.25 + right * 0.1
+	if mode == "pistol":
+		r_pole = Vector3.DOWN * 0.3 + right * 0.15
+	if er >= 0:
+		ArmIK.solve(_sk, "R", to_f * rh, (skt * _sk.get_bone_global_pose(er)).origin + r_pole)
+	if el >= 0 and hl >= 0:
+		ArmIK.solve(_sk, "L", l_at, (skt * _sk.get_bone_global_pose(el)).origin + Vector3.DOWN * 0.3 - right * (0.1 if mode == "pistol" else 0.0))
+	# the hands turn with the gun
+	var sb := skt.basis
+	var rs := (sb.inverse() * to_f.basis.orthonormalized() * sb).orthonormalized()
+	_hand_turn(hr, rs * old_r)
+	if hl >= 0 and mode == "rifle":
+		_hand_turn(hl, rs * old_l)
+	return F
+
+## Sets bone @a i so its pose in the skeleton is @a g (rotation only).
+func _hand_turn(i: int, g: Basis) -> void:
+	var par := _sk.get_bone_parent(i)
+	var pg := _sk.get_bone_global_pose(par).basis.orthonormalized() if par >= 0 else Basis()
+	_sk.set_bone_pose_rotation(i, (pg.inverse() * g).get_rotation_quaternion())
 
 ## Where a long gun goes (its holder, world): the right hand holds the grip at @a origin, the model's
 ## own barrel (its -Z) along @a B (towards the left hand, B's +Y up). Then Ari's correction from the
@@ -877,6 +1061,18 @@ static func afk_gun_xform(B: Basis, origin: Vector3, m: Node3D, sc: Vector3, ite
 		return w
 	var grip := Transform3D(B, origin)
 	return grip * adj * grip.affine_inverse() * w
+
+## (2026-11-16) The butt of a long gun (world): the back end of its outline, a little under the middle.
+func stock_point(m: Node3D) -> Vector3:
+	if not _stock_box.has(held):
+		_stock_box[held] = ArmIK._aabb(m)
+	var box: AABB = _stock_box[held]
+	return m.global_transform * Vector3(box.get_center().x, box.position.y + box.size.y * 0.55, box.end.z)
+var _stock_box := {}
+
+## Where he looks (world): the head turns with the pitch, the body with the yaw.
+func aim_dir() -> Vector3:
+	return -head.global_transform.basis.z.normalized()
 
 ## The held thing: where it is locked to the hand, and how it sat when it was put there.
 var _lock_rel := Transform3D()
@@ -1561,7 +1757,9 @@ func weapon() -> Dictionary:
 func has_scanner() -> bool:
 	if drone_radar():
 		return true
-	for s in ["rh", "lh"]:
+	# 0.72 (Ari): with the helmet display (research) a detector on the belt is enough
+	var slots := ["rh", "lh", "b0", "b1", "b2", "b3"] if Game.has_research("detektor_opasek") else ["rh", "lh"]
+	for s in slots:
 		var it := item_in(s)
 		if not it.is_empty() and it["id"] == "scanner":
 			return true
@@ -1944,7 +2142,9 @@ func _physics_process(delta: float) -> void:
 	_mantle_cd = maxf(0.0, _mantle_cd - delta)
 	# stance
 	if downed:
-		panic = ""
+		if panic != "":
+			panic = ""
+			_daze_end()
 		_downed(delta)
 		return
 	if panic != "":
@@ -2395,6 +2595,8 @@ func shield_face(_from: Vector3) -> Vector3:
 	var fw: Vector3 = -global_transform.basis.z
 	return global_position + Vector3(0, 1.3 if not crouching else 0.9, 0) + fw * 0.55
 var _shield_k := 0.0
+const FLOOR_PAUSE := 8.0
+var _floored_t := -99.0
 var _shield_knock := 0.0     # knocked aside by a blow: it cannot come back up for a moment
 const SHIELD_HP := 420.0
 func _actions(delta: float) -> void:
@@ -4469,7 +4671,8 @@ func _spawn_throwable(kind: String, from: Vector3, vel: Vector3, thrower: String
 	else:
 		# a frag grenade - or the plasma one (X-WEP-010): a PL-MAG burst in one go, a hotter, wider ball
 		var pg := kind == "plasma_grenade"
-		var R := 5.5 if pg else 5.0
+		# (frag 0.72: 6.5 m instead of 5 m, a bigger fireball and it sets things alight more often)
+		var R := 5.5 if pg else FRAG_R
 		mi.material_override = Game.color_mat(Color(0.3, 0.9, 0.45), true) if pg else Game.color_mat(Color(0.25, 0.3, 0.2))
 		rb.add_to_group("live_nade")      # (the aliens near by may see it and get out of the way)
 		get_tree().create_timer(2.5).timeout.connect(func():
@@ -4477,15 +4680,21 @@ func _spawn_throwable(kind: String, from: Vector3, vel: Vector3, thrower: String
 				return
 			var p := rb.global_position
 			rb.queue_free()
-			_explosion_fx(p)
+			_explosion_fx(p, 1.0 if pg else 1.25)
 			if pg:
 				_plasma_burst_fx(p)
 			if multiplayer.is_server():
-				mission.noise(p, 40.0)
-				mission.blast_shock(p, 10.0)
-				mission.blast_breakables(p, 4.0, 220.0 if pg else 160.0)
+				mission.noise(p, 40.0 if pg else 45.0)
+				mission.blast_shock(p, 10.0 if pg else 12.0)
+				mission.blast_breakables(p, 4.0 if pg else 5.5, 220.0 if pg else 160.0)
 				if pg:
 					mission.plasma_burst(p)
+				else:
+					# wood and crates around catch fire (each 40 %, at most 2), and the spot itself
+					# often does too - nearly always by something that burns, now and then on bare ground
+					var lit: int = mission.ignite_around(p, R, FRAG_FIRE_NEAR, 2)
+					if randf() < (FRAG_FIRE_WOOD if lit > 0 or mission._flammable_near(p, R) else FRAG_FIRE_BARE):
+						mission.ignite(p, 0.9)
 				for a in mission.aliens():
 					var d: float = a.global_position.distance_to(p)
 					if pg:
@@ -4512,6 +4721,11 @@ func _spawn_throwable(kind: String, from: Vector3, vel: Vector3, thrower: String
 							if mission.blocked_from(p + Vector3(0, 0.4, 0), pl.global_position + Vector3(0, 1.0, 0)):
 								hurt *= 0.35
 						pl.hurt.rpc_id(pl.get_multiplayer_authority(), hurt, p, false, "plasma" if pg else "blast"))
+
+const FRAG_R := 6.5             # frag grenade blast radius (5.0 before 0.72)
+const FRAG_FIRE_NEAR := 0.4     # each piece of wood/crate within the radius catches fire
+const FRAG_FIRE_WOOD := 0.85    # a fire on the spot when something burnable is near (explode(): 0.75)
+const FRAG_FIRE_BARE := 0.3     # ... and on bare ground (explode(): 0.12)
 
 ## A thrown thing that passed through a floor or a wall in one physics step goes back onto that
 ## surface (bounced off it, slower). A flare that has come to rest (or after 4 s) stays put: the
@@ -4582,17 +4796,17 @@ func _plasma_burst_fx(p: Vector3) -> void:
 	tw.tween_property(l, "light_energy", 0.0, 0.6)
 	tw.chain().tween_callback(func(): ball.queue_free(); l.queue_free())
 
-func _explosion_fx(p: Vector3) -> void:
+func _explosion_fx(p: Vector3, size := 1.0) -> void:
 	Game.play_at(mission, "explosion_big", p, 4)
 	var l := OmniLight3D.new()
 	l.light_color = Color(1.0, 0.6, 0.2)
 	l.light_energy = 8.0
-	l.omni_range = 14.0
+	l.omni_range = 14.0 * size
 	mission.add_child(l)
 	l.global_position = p + Vector3.UP
 	var ball := MeshInstance3D.new()
 	var sm := SphereMesh.new()
-	sm.radius = 1.8; sm.height = 3.6; sm.radial_segments = 8; sm.rings = 4
+	sm.radius = 1.8 * size; sm.height = 3.6 * size; sm.radial_segments = 8; sm.rings = 4
 	ball.mesh = sm
 	ball.material_override = Game.color_mat(Color(1.0, 0.55, 0.15), true)
 	mission.add_child(ball)
@@ -4661,7 +4875,8 @@ func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
 				_shield_knock = 1.2
 				stamina = maxf(0.0, stamina - 25.0)
 				_vm_kick = 1.0
-				if raw > 40.0 and randf() < 0.35 and not prone:
+				if raw > 40.0 and randf() < 0.35 and not prone and mission.t >= _floored_t:
+					_floored_t = mission.t + FLOOR_PAUSE      # (not knocked flat again the moment he is up)
 					prone = true
 					crouching = false
 					Game.play_at(mission, "prone", global_position, -4)
@@ -4771,12 +4986,18 @@ func revived(by: String) -> void:
 	bleeding = 0
 	crouching = true
 	stim_until = mission.t + STIM_TIME
+	_ko_free_t = mission.t + (KO_IMMUNE_SOLO if _solo() else KO_IMMUNE)
 	mission.hud.message("%s tě ošetřil. Jsi zraněný, ale na nohou." % by, 4.0)
 
 ## (0.60) Stood up again (the Strážce, MED-01, a teammate): for a few seconds the stimulant
 ## halves what hits him - time to crawl into cover, not a shield to fight from.
 const STIM_TIME := 4.0
 var stim_until := -1.0
+## (2026-11-17) after being stood up, a knock-out (Ještěřan's blow, Levit's tentacles) cannot put
+## him down again for a while - otherwise two of them take turns and he never gets up.
+const KO_IMMUNE := 15.0
+const KO_IMMUNE_SOLO := 25.0
+var _ko_free_t := -99.0
 
 ## How far in front of the one who drags the dragged one sits (his jacket in the other's hands).
 const DRAG_GAP := 0.5
@@ -5031,7 +5252,7 @@ func psi_attack(roll: float) -> void:
 	if roll < resist or panic != "" or not daze_ok():
 		mission.hud.message("Cizí hlas v hlavě. Odolal jsi.", 3.0)
 		return
-	var k := DAZE_HOME_TIME if home_ground() else 1.0
+	var k := daze_k()
 	if roll > 0.75 and not weapon().is_empty():
 		panic = "berserk"
 		panic_t = 5.0 * k
@@ -5053,7 +5274,7 @@ func psi_free() -> void:
 		panic_t = 0.0
 		stress = minf(stress, 55.0)
 		panic_cd = 25.0
-		_daze_free_t = mission.t + daze_immune()
+		_daze_end()
 		mission.hud.message("Vzpamatoval ses.", 2.0)
 
 ## A Líhavec in sight, close: the fear grows before it even touches you.
@@ -5081,13 +5302,15 @@ func ohar_roar(roll: float) -> void:
 		mission.hud.message("Řev ti projel až do morku. Ustál jsi to.", 2.0)
 		return
 	panic = "drop"
-	panic_t = randf_range(1.4, 2.2) * (DAZE_HOME_TIME if home_ground() else 1.0)
+	panic_t = randf_range(1.4, 2.2) * daze_k()
 	mission.hud.message("ŘEV TĚ OCHROMIL!", 2.0)
 	Game.play_ui(self, "heartbeat", 0)
 
 ## The grey officer's illusion: for a while one teammate looks like a grey to you.
 ## You can see something is wrong (the violet haze) - but not what.
 var _illusion_t := 0.0
+const ILLUSION_PAUSE := 20.0
+var _illusion_free_t := -99.0
 var _illusion_of: Node = null
 var _illusion_m: Node3D
 var _illusion_anim: AnimationPlayer
@@ -5098,7 +5321,8 @@ func psi_illusion(ally: String, secs: float, roll: float) -> void:
 	var brave := float(merc.get("bravery", 40)) / 100.0
 	var resist := brave * 0.5 + (0.3 if Game.has_talent(merc, "zelezne_nervy") else 0.0) + (0.3 if Game.has_research("psi_clona") else 0.0) + _psi_shield()
 	Game.play_ui(self, "psi_illusion", -4)
-	if roll < resist:
+	# (2026-11-17) one illusion at a time, and a pause after it - no endless violet haze
+	if roll < resist or _illusion_t > 0.0 or mission.t < _illusion_free_t:
 		mission.hud.psi_flash()
 		mission.hud.message("Něco se ti snažilo vlézt do hlavy. Odolal jsi.", 3.0)
 		return
@@ -5128,6 +5352,7 @@ func _illusion_tick(delta: float) -> void:
 	_illusion_t -= delta
 	if _illusion_t <= 0.0 or not is_instance_valid(_illusion_of) or _illusion_of.dead or dead:
 		_end_illusion()
+		_illusion_free_t = mission.t + ILLUSION_PAUSE
 		return
 	if _illusion_anim:
 		var sp := Vector2(_illusion_of.velocity.x, _illusion_of.velocity.z).length()
@@ -5156,6 +5381,15 @@ var ko := false
 @rpc("any_peer", "call_local", "reliable")
 func knock_out() -> void:
 	if not is_multiplayer_authority() or dead or downed or safe_out():
+		return
+	if mission and mission.t < _ko_free_t:
+		# (Ari 2026-11-17) just stood up again: the blow only staggers him - he is not put down
+		# again before he could crawl anywhere (and a Strážce's dose is not thrown away)
+		stamina = maxf(0.0, stamina - 30.0)
+		stress = minf(100.0, stress + 15.0)
+		_vm_kick = 1.0
+		Game.play_ui(self, "ko_hit", -6)
+		mission.hud.message("Rána tě srazila do kolen, ale ustál jsi ji.", 3.0)
 		return
 	hp = 0
 	downed = true
@@ -5236,7 +5470,34 @@ var _daze_free_t := -99.0
 func daze_ok() -> bool:
 	return mission == null or mission.t >= _daze_free_t
 func daze_immune() -> float:
-	return DAZE_HOME_IMMUNE if home_ground() else DAZE_IMMUNE
+	return (DAZE_HOME_IMMUNE if home_ground() else DAZE_IMMUNE) + (DAZE_SOLO_IMMUNE if _solo() else 0.0)
+
+## (Ari 2026-11-17, "no perma-stun, nothing that stacks - alone it would be mad") every way the
+## merc stops obeying goes through here: a freeze never adds to another (a new one cannot start
+## while one runs, nor in the pause after it), one freeze lasts at most DAZE_MAX, and freezes that
+## come one after another (within DAZE_CHAIN s of the last) give an ever longer pause - so even
+## under a pack of Ohaři and a Mysloděj the merc plays most of the time. Alone (nobody to pull you
+## out) the freezes are shorter and the pause longer.
+const DAZE_MAX := 5.0
+const DAZE_CHAIN := 45.0
+const DAZE_CHAIN_STEP := 0.5     # each freeze in a row: +50 % pause ...
+const DAZE_CHAIN_MAX := 3        # ... up to 2.5x
+const DAZE_SOLO_TIME := 0.75
+const DAZE_SOLO_IMMUNE := 4.0
+var _daze_chain := 0
+var _daze_end_t := -999.0
+## How long a freeze lasts against its base time (home ground, alone; `home` false = a fear panic,
+## which is the merc's own nerves - the base does not soften that, being alone does).
+func daze_k(home := true) -> float:
+	return (DAZE_HOME_TIME if home and home_ground() else 1.0) * (DAZE_SOLO_TIME if _solo() else 1.0)
+func _solo() -> bool:
+	return mission != null and mission.has_method("solo") and mission.solo()
+## A freeze is over: the pause before the next one may take him (longer for a chain).
+func _daze_end() -> void:
+	var t: float = mission.t if mission else 0.0
+	_daze_chain = mini(_daze_chain + 1, DAZE_CHAIN_MAX) if t - _daze_end_t < DAZE_CHAIN else 0
+	_daze_end_t = t
+	_daze_free_t = t + daze_immune() * (1.0 + DAZE_CHAIN_STEP * _daze_chain)
 func home_ground() -> bool:
 	return String(Net.mission_params.get("type", "")) in ["base", "home"]
 
@@ -5257,11 +5518,11 @@ func _panic_check(delta: float) -> void:
 	var r := randf()
 	if Game.veteran() and r < 0.2 and not weapon().is_empty():
 		panic = "berserk"
-		panic_t = 3.0
+		panic_t = 3.0 * daze_k(false)
 		mission.hud.message("ŠÍLÍŠ! Střílíš naslepo!", 3.0)
 	elif r < 0.6 and not item_in("rh").is_empty():
 		panic = "drop"
-		panic_t = 3.0
+		panic_t = 3.0 * daze_k(false)
 		var it: Dictionary = inv["rh"]
 		inv.erase("rh")
 		_update_held()
@@ -5269,7 +5530,7 @@ func _panic_check(delta: float) -> void:
 		mission.hud.message("PANIKA! Zbraň ti vypadla z rukou. (F ji zvedne)", 3.5)
 	else:
 		panic = "flee"
-		panic_t = 4.0
+		panic_t = 4.0 * daze_k(false)
 		_panic_dir = Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
 		var near: Node = null
 		for a in mission.aliens():
@@ -5283,7 +5544,7 @@ func _panic_check(delta: float) -> void:
 	Game.play_ui(self, "heartbeat", 0)
 
 func _panic_tick(delta: float) -> void:
-	panic_t -= delta
+	panic_t = minf(panic_t, DAZE_MAX) - delta
 	crouching = panic == "drop"
 	head.position.y = lerp(head.position.y, 1.0 if crouching else 1.6, delta * 8.0)
 	velocity.x = 0; velocity.z = 0
@@ -5307,7 +5568,7 @@ func _panic_tick(delta: float) -> void:
 		panic = ""
 		stress = 55.0
 		panic_cd = 25.0
-		_daze_free_t = mission.t + daze_immune()
+		_daze_end()
 		mission.hud.message("Vzpamatoval ses.", 2.0)
 
 ## Money for what the mercenary found (alien packs), paid with his share after the mission.

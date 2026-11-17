@@ -4,10 +4,10 @@ extends Control
 
 const BG := Color(0.02, 0.03, 0.07)
 const PANEL := Color(0.10, 0.115, 0.13, 0.95)
-const FRAME := Color(0.45, 0.78, 0.86)
-const TEXT := Color(0.84, 0.89, 0.92)
-const ACCENT := Color(1.0, 0.74, 0.32)
-const RED := Color(1.0, 0.4, 0.3)
+const FRAME := Color(0.67, 0.70, 0.74)   # 0.72: neutral secondary text (was cyan)
+const TEXT := UiSkin.TEXT
+const ACCENT := UiSkin.ACC
+const RED := UiSkin.BAD
 const SPEEDS := [0.0, 5.0 / 1440.0, 1.0 / 24.0, 6.0 / 24.0]   # days per second
 const SPEED_NAMES := ["Stop", "5 min", "1 h", "6 h"]
 
@@ -58,7 +58,7 @@ func _ready() -> void:
 	_toast.position = Vector2(8, 334)
 	_toast.size = Vector2(415, 16)
 	_toast.add_theme_font_size_override("font_size", 9)
-	_toast.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	_toast.add_theme_color_override("font_color", UiSkin.WARN)
 	add_child(_toast)
 	Net.note.connect(_on_note)
 	Net.stock_changed.connect(_live_dirty)
@@ -89,6 +89,7 @@ func _ready() -> void:
 	hum.bus = "Ambient"
 	add_child(hum)
 	hum.play()
+	_hum = hum
 	Campaign.craft_arrived.connect(_on_arrived)
 	Campaign.craft_ambushed.connect(_on_ambush)
 	# a craft that was waiting at the target when the game was saved
@@ -100,6 +101,13 @@ func _ready() -> void:
 			if c.get("state", "") == "ambush":
 				(func(): _on_ambush(c)).call_deferred()
 				break
+	_arrival_checks()
+	_autotest.call_deferred()
+
+var _hum: AudioStreamPlayer
+## What a globe coming on screen shows first: the report from a mission, the end of the campaign, the
+## victory (from _ready, and again when the parked globe comes back - 0.72).
+func _arrival_checks() -> void:
 	if Net.last_result != "":
 		var lr := Net.last_result
 		if lr.begins_with("KONEC"):
@@ -108,7 +116,7 @@ func _ready() -> void:
 		else:
 			_alert("NÁVRAT Z MISE\n" + lr)
 		Net.last_result = ""
-	elif Campaign.is_over():
+	elif Campaign.is_over() and _end_screen == null:
 		# a lost campaign (also a co-op mate back from the fallen base): the end screen
 		_show_end.call_deferred()
 	if Campaign.won() and not Campaign.data.get("won_shown", false) and not Campaign.is_over():
@@ -117,7 +125,6 @@ func _ready() -> void:
 		Game.play_music("victory", false)
 		_show_end.call_deferred()
 		_alert("VÍTĚZSTVÍ\nVelký mozek je mrtvý a velín na Marsu utichl. UFO padají z nebe jako mrtví ptáci, Šediváci v lesích jen stojí a dívají se do tmy.\nVojáci přežili noc, která neměla konec.\n\nOPERACE X - ENEMY BEYOND\nPocta UFO: Enemy Unknown - fanouškovská hra, ne na prodej.\nNápad a hra: Ari (Ivo Arielistelos Florek).\nKampaň můžeš hrát dál.")
-	_autotest.call_deferred()
 
 # ---- the globe -------------------------------------------------------------------------------
 func _build_globe() -> void:
@@ -422,9 +429,23 @@ func _process(delta: float) -> void:
 	base_marker.visible = not Campaign.base_picking()
 	_pick_tick()
 	_ready_tick()
+	_one_window()
 	_sync_markers()
 	_sync_reports()
 	_update_text()
+
+## 0.72 (one window at a time): while a window is open over the globe, Velín and the report list
+## step aside instead of lying under it; they come back when it closes.
+func _one_window() -> void:
+	var open: bool = popup != null and is_instance_valid(popup) and not popup.get_meta("keep_side", false)
+	if not open:
+		for c in get_children():
+			if c is BaseScreen or c is ResearchScreen or c is Encyclopedia:
+				open = true
+				break
+	if _side_panel:
+		_side_panel.visible = not open
+	report_box.visible = not open
 
 ## List of reports on the left: click = select and turn the globe there.
 func _sync_reports() -> void:
@@ -531,10 +552,19 @@ func _unhandled_input(event: InputEvent) -> void:
 func _game_menu() -> void:
 	var box := _overlay("HERNÍ MENU", 260)
 	_btn(box, "Pokračovat", _close_popup, 10)
+	_btn(box, "Nastavení (myš, zvuk, mikrofon)", _settings_menu, 10)
 	if Campaign.viewer:
-		_btn(box, "Zpět do lobby", func(): get_tree().change_scene_to_file("res://scenes/Main.tscn"), 10)
+		_btn(box, "Zpět do lobby", func(): Game.globe_to_menu(self), 10)
 	else:
 		_btn(box, "Uložit a odejít do hlavního menu", _quit, 10)
+
+## 0.72 (Ari): the settings (microphone above all) also from the globe - in co-op too.
+## Nothing stops: the campaign runs on underneath, as it does with any other window.
+func _settings_menu() -> void:
+	var box := _overlay("NASTAVENÍ", 360)
+	_lbl(box, "Hra běží dál - čas na glóbu se nezastaví.", FRAME, 8)
+	preload("res://scripts/hud.gd").settings_ui(_scroll(box, 250))
+	_btn(box, "Zpět", _game_menu, 10)
 
 func _input(event: InputEvent) -> void:
 	if popup != null:
@@ -768,14 +798,16 @@ func _btn(parent: Node, s: String, cb: Callable, size := 9) -> Button:
 	var b := Button.new()
 	b.text = s
 	b.add_theme_font_size_override("font_size", size)
-	UiSkin.button(b)
+	UiSkin.auto(b)
 	b.focus_mode = Control.FOCUS_NONE
 	b.pressed.connect(cb)
 	parent.add_child(b)
 	return b
 
+var _side_panel: Control
 func _build_side() -> void:
 	var p := PanelContainer.new()
+	_side_panel = p
 	_style(p)
 	p.position = Vector2(431, 0)
 	p.size = Vector2(209, 360)
@@ -809,7 +841,7 @@ func _build_side() -> void:
 	if Campaign.viewer:
 		# a co-op client: the host's globe, read-only; buying with own money
 		_lbl(side, "Díváš se na základnu hostitele. Misi spouští on.", FRAME, 8)
-		entries += [["Peníze v týmu", func(): _menu_screen("money")], ["Zpět do lobby", func(): get_tree().change_scene_to_file("res://scenes/Main.tscn")],
+		entries += [["Peníze v týmu", func(): _menu_screen("money")], ["Zpět do lobby", func(): Game.globe_to_menu(self)],
 			["Na základnu (sám)", _go_base]]
 	else:
 		_btn(side, "VYSLAT (tým / stíhačku)", _launch, 10)
@@ -926,7 +958,7 @@ func _ready_tick() -> void:
 	if key != _ready_key:
 		_ready_key = key
 		_ready_btn.text = "[X] PŘIPRAVEN" if me else "[  ] PŘIPRAVEN"
-		_ready_btn.add_theme_color_override("font_color", Color(0.5, 1.0, 0.55) if me else TEXT)
+		_ready_btn.add_theme_color_override("font_color", UiSkin.OK if me else TEXT)
 		var n := Net.roster.size()
 		var t := "Připraveni %d/%d" % [n - waiting.size(), n]
 		if waiting.is_empty():
@@ -936,7 +968,7 @@ func _ready_tick() -> void:
 		else:
 			t += "\nčeká se na %d" % waiting.size()
 		_ready_lbl.text = t
-		_ready_lbl.add_theme_color_override("font_color", Color(0.5, 1.0, 0.55) if waiting.is_empty() else (ACCENT if Net.ready_wait != "" else TEXT))
+		_ready_lbl.add_theme_color_override("font_color", UiSkin.OK if waiting.is_empty() else (ACCENT if Net.ready_wait != "" else TEXT))
 		if popup and popup.has_meta("ready_wait"):
 			_show_gate()
 	# host: the start goes as soon as everybody is ready
@@ -965,6 +997,7 @@ func _gate(what: String, go: Callable, back := Callable()) -> void:
 func _show_gate() -> void:
 	var box := _overlay("ČEKÁ SE NA TÝM", 330)
 	popup.set_meta("ready_wait", true)
+	popup.set_meta("keep_side", true)
 	popup.position.x = (431.0 - 330.0) / 2.0     # (over the globe: the team's PŘIPRAVEN stays in sight)
 	_lbl(box, _gate_what, TEXT, 9)
 	var waiting := Net.not_ready()
@@ -1297,8 +1330,40 @@ func _quit() -> void:
 
 func _menu_screen(which: String) -> void:
 	Campaign.save()
-	Game.open_screen = which
-	get_tree().change_scene_to_file("res://scenes/Main.tscn")
+	# 0.72: the globe waits parked (no loading on the way there or back) - Game.globe_to_menu
+	Game.globe_to_menu(self, which)
+
+# ---- 0.72: parked while a menu screen is up (Game.globe_to_menu / goto_globe) ----------------------
+var _park_links := []
+## Taken out of the tree whole: the overlay closes, the signals of the game's singletons are let go
+## (nothing reaches a globe that is not on screen), the hum stops by itself.
+func park() -> void:
+	_close_popup()
+	_park_links.clear()
+	for c in get_incoming_connections():
+		var sig: Signal = c["signal"]
+		var src := sig.get_object()
+		if src == Net or src == Campaign or src == Game:
+			_park_links.append([sig, c["callable"]])
+	for l in _park_links:
+		if (l[0] as Signal).is_connected(l[1]):
+			(l[0] as Signal).disconnect(l[1])
+
+## Back on screen: the same globe as it was left (turned, zoomed, selected), the singletons heard again,
+## and what happened meanwhile shown as on a fresh arrival (the end of the campaign, a report).
+func unpark() -> void:
+	for l in _park_links:
+		if not (l[0] as Signal).is_connected(l[1]):
+			(l[0] as Signal).connect(l[1])
+	_park_links.clear()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if _hum and not _hum.playing:
+		_hum.play()
+	Game.play_music("game_over" if Campaign.data.get("lost", false) else "geoscape")
+	report_key = ""
+	_live_dirty()
+	_arrival_checks()
+	if Game.autotest() != "": print("[GEO] globe back from the menu (parked, no loading)")
 
 # ---- overlays ---------------------------------------------------------------------------------------
 func _overlay(title: String, w := 400.0) -> VBoxContainer:
@@ -1819,6 +1884,13 @@ func _build_menu(idx: int) -> void:
 	_show_base(idx)
 
 # ---- tests -----------------------------------------------------------------------------------------
+## (tests) the first free place next to a finished room.
+func _free_cell() -> int:
+	for i in Campaign.data["base"].size():
+		if String(Campaign.data["base"][i]["type"]) == "" and Campaign.can_build_at(i):
+			return i
+	return 2
+
 func _ui_check(tag: String) -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -2208,11 +2280,19 @@ func _autotest() -> void:
 					Campaign.data["credits"] = int(Campaign.data["credits"]) + 4000
 					Campaign.make("pancir"); Campaign.make("laser_rifle"); Campaign.make("mine")
 					_show_workshop()],
-				["geo_archive", _show_archive], ["geo_log", _show_log], ["geo_build", func(): _build_menu(2)], ["geo_hangar", func(): _show_base(1)], ["geo_jets", _show_hangar],
-				["geo_menu", _game_menu], ["geo_menu_viewer", func(): Campaign.viewer = true; _game_menu(); Campaign.viewer = false],
+				["geo_archive", _show_archive], ["geo_log", _show_log], ["geo_build", func(): _build_menu(2)], ["geo_build_pick", func():
+					_build_menu(_free_cell())
+					for c in get_children(): if c is BaseScreen: c._set_pick("laborator")],
+				["geo_build_poor", func():
+					var keep := int(Campaign.data["credits"])
+					Campaign.data["credits"] = 120
+					_build_menu(_free_cell())
+					for c in get_children(): if c is BaseScreen: c._set_pick("plazma_vez" if Campaign.facility_open("plazma_vez") else "radar")
+					Campaign.data["credits"] = keep], ["geo_hangar", func(): _show_base(1)], ["geo_jets", _show_hangar],
+				["geo_menu", _game_menu], ["geo_settings", _settings_menu], ["geo_menu_viewer", func(): Campaign.viewer = true; _game_menu(); Campaign.viewer = false],
 				["geo_alert", func(): _alert("VELMI DLOUHÉ HLÁŠENÍ\n" + "Tohle je velmi dlouhý text upozornění, který by se měl zalomit. ".repeat(8))]]:
 			e[1].call()
-			if String(e[0]) in ["geo_base", "geo_build", "geo_hangar"]:
+			if String(e[0]) in ["geo_base", "geo_build", "geo_build_pick", "geo_build_poor", "geo_hangar"]:
 				await get_tree().create_timer(2.5).timeout      # (the plan is built and photographed first)
 			await _ui_check(e[0])
 			_close_popup()

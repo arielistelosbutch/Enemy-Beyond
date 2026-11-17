@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.71 prototyp"
-const VERSION_NUM := "0.71"
+const VERSION := "0.72 prototyp"
+const VERSION_NUM := "0.72"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -583,10 +583,14 @@ const LoadingScreen := preload("res://scripts/loading.gd")
 var _loading: Node = null
 const LOAD_WHAT := {"Mission.tscn": "Příprava mise", "Geoscape.tscn": "Velín", "Intercept.tscn": "Stíhačka startuje",
 	"Escort.tscn": "Doprovod transportu"}
-## Changes the scene behind the loading screen: shows it, lets it be drawn (the building of a mission
-## blocks the screen - what is drawn last stays up), changes, and lets it fade into the new scene.
+## Changes the scene behind the loading screen: shows it, lets it be drawn, loads the scene file and
+## what it needs on a loader thread (the bar moves, the game does not freeze), changes, and lets it fade
+## into the new scene. (0.72, Ari: "loading zasekne celou hru, hráči ani neví, že probíhá") What the new
+## scene then builds in its _ready (a mission's map) reports through load_step() - the bar goes on
+## moving and the window keeps answering while the map is being built.
 func load_scene(path: String, what := "", short := false) -> void:
 	var tree := get_tree()
+	drop_parked()
 	if not is_instance_valid(_loading):
 		_loading = LoadingScreen.new()
 		# (0.7x) the walk down into our base is no mission: its own title, the short wait
@@ -597,10 +601,140 @@ func load_scene(path: String, what := "", short := false) -> void:
 				await tree.process_frame      # (no drawing there - frame_post_draw never comes)
 			else:
 				await RenderingServer.frame_post_draw
-	tree.change_scene_to_file(path)
-	await tree.scene_changed
+	var ps: PackedScene = null
+	if ResourceLoader.load_threaded_request(path, "PackedScene", true) == OK:
+		var prog := []
+		while ResourceLoader.load_threaded_get_status(path, prog) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			if is_instance_valid(_loading):
+				_loading.set_progress(LOAD_FILE_PART * float(prog[0] if not prog.is_empty() else 0.0))
+			await tree.process_frame
+		if ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_LOADED:
+			ps = ResourceLoader.load_threaded_get(path) as PackedScene
 	if is_instance_valid(_loading):
+		_loading.set_progress(LOAD_FILE_PART)
+	_pump_ms = Time.get_ticks_msec()
+	if ps:
+		tree.change_scene_to_packed(ps)
+	else:
+		tree.change_scene_to_file(path)
+	await tree.scene_changed
+	if Game.autotest() != "":
+		print("[LOAD] %s: drawn %d times while building, longest still %d ms" % [path.get_file(), load_pumps, load_gap_ms])
+	load_pumps = 0
+	load_gap_ms = 0
+	if is_instance_valid(_loading):
+		_loading.set_progress(1.0)
 		_loading.scene_ready()
+
+## The part of the bar the scene file itself takes (the rest is what the scene builds: load_step).
+const LOAD_FILE_PART := 0.08
+## Where a mission's build is on the bar (load_step, 0..1 of the build): the map's tiles, then the rest
+## of the map (zfix, merging, paths), then the mission's own setup (paths cache, actors, HUD).
+const BUILD_MAP_FROM := 0.06
+const BUILD_TILES_TO := 0.62
+const BUILD_MAP_TO := 0.86
+var _pump_ms := 0
+var load_pumps := 0          # (tests) how many times the screen was drawn from inside a build
+var load_gap_ms := 0         # (tests) the longest time the screen stood still inside a build
+## (0.72) A scene being built behind the loading screen says how far it is (0..1 of its own work).
+## The bar moves, and every ~40 ms the screen is drawn and the window's messages are taken in, so
+## the game neither looks nor is "not responding" while a big map is put together on the main thread.
+## Nothing when no loading screen is up (the tests, a scene opened directly).
+func load_step(frac: float) -> void:
+	if not is_instance_valid(_loading) or _loading.is_done():
+		return
+	if frac >= 0.0:      # (a negative step only keeps the screen alive, the bar stays)
+		_loading.set_progress(LOAD_FILE_PART + (1.0 - LOAD_FILE_PART) * clampf(frac, 0.0, 1.0))
+	var now := Time.get_ticks_msec()
+	if now - _pump_ms < 40:
+		return
+	var dt := float(now - _pump_ms) / 1000.0
+	load_gap_ms = maxi(load_gap_ms, now - _pump_ms)
+	if now - _pump_ms > 250 and Game.autotest() == "loadprog": print("[LOAD] still %d ms before %.2f" % [now - _pump_ms, frac])
+	_pump_ms = now
+	load_pumps += 1
+	_loading.tick(minf(dt, 0.1))
+	if DisplayServer.get_name() == "headless":
+		return
+	DisplayServer.process_events()
+	RenderingServer.force_draw(true, dt)
+	if Game.autotest() == "loadprog" and load_pumps in [10, 30]:
+		get_viewport().get_texture().get_image().save_png("user://loadprog_%d.png" % load_pumps)
+
+# ---- 0.72: the strategy part stays up (Ari: "rozdělit na battle scene a strategy scene, nahrávání jen
+# při změně scény") ----------------------------------------------------------------------------------
+## The globe and the menu screens are one part of the game: from the globe to the soldier, his kit,
+## the money, the lobby... the globe is not thrown away but parked (taken out of the tree whole, with
+## its turned globe, zoom and selection) and the menu comes up at once; Back puts the same globe back
+## at once - no loading screen. Only a mission, an air fight, an escort (the battle part) or another
+## campaign build anew (load_scene drops the parked globe).
+const GLOBE_SCENE := "res://scenes/Geoscape.tscn"
+const MENU_SCENE := "res://scenes/Main.tscn"
+var _parked_globe: Node = null
+var _parked_cid := ""
+
+func _campaign_key() -> String:
+	return "%s|%s" % [str(Campaign.data.get("cid", "")), str(Campaign.viewer)]
+
+## The globe asks for a menu screen ("merc", "loadout", "money", "mods", "lobby" or "" = what the menu
+## would open by itself, e.g. the lobby of a co-op mate).
+func globe_to_menu(geo: Node, screen := "") -> void:
+	open_screen = screen
+	_swap_to_menu.call_deferred(geo)
+
+func _swap_to_menu(geo: Node) -> void:
+	var tree := get_tree()
+	if not is_instance_valid(geo) or not geo.is_inside_tree():
+		return
+	drop_parked()
+	if geo.has_method("park"):
+		geo.park()
+	_parked_globe = geo
+	_parked_cid = _campaign_key()
+	tree.root.remove_child(geo)
+	var mm := (load(MENU_SCENE) as PackedScene).instantiate()
+	tree.root.add_child(mm)
+	tree.current_scene = mm
+
+## Is there a parked globe of this same campaign to go back to?
+func globe_parked() -> bool:
+	return is_instance_valid(_parked_globe) and (Campaign.active or Campaign.viewer) and _campaign_key() == _parked_cid
+
+## Back to the globe: the parked one when it is still this campaign's (at once), else built anew.
+func goto_globe() -> void:
+	if globe_parked():
+		_unpark_globe.call_deferred()
+	else:
+		load_scene(GLOBE_SCENE)
+
+func _unpark_globe() -> void:
+	if not globe_parked():
+		load_scene(GLOBE_SCENE)
+		return
+	var tree := get_tree()
+	var geo := _parked_globe
+	_parked_globe = null
+	var cur := tree.current_scene
+	if cur and cur != geo:
+		if cur.get_parent():
+			cur.get_parent().remove_child(cur)
+		cur.queue_free()
+	tree.root.add_child(geo)
+	tree.current_scene = geo
+	if geo.has_method("unpark"):
+		geo.unpark()
+
+## A parked globe is no good any more (a mission, another campaign, the main menu itself).
+func drop_parked() -> void:
+	if is_instance_valid(_parked_globe):
+		_parked_globe.free()
+	_parked_globe = null
+
+func _on_scene_changed() -> void:
+	# any real change of the scene (to a mission, an air fight, the main menu from the globe's Quit)
+	# ends the strategy part's parked globe - only our own swaps keep it
+	if is_instance_valid(_parked_globe):
+		drop_parked()
 
 ## Still covering the screen (the mission's briefing waits with its typing until it is gone).
 func loading_busy() -> bool:
@@ -627,23 +761,26 @@ func _ready() -> void:
 		difficulty = cmd_arg("difficulty", "")
 	_setup_input()
 	load_merc()
+	get_tree().scene_changed.connect(_on_scene_changed)
 
-## M: the microphone stays open (talks whenever you speak) until M again. (Tab held = talk.)
+## M: the microphone stays open (talks whenever you speak) until M again. (T held = talk aloud, Tab = the radio; in menus both talk.)
 var mic_live := false
 signal mic_toggled(on: bool)
 func _input(event: InputEvent) -> void:
-	if event.is_action_pressed("mic_toggle") and not event.is_echo():
+	if event.is_action_pressed("mic_toggle") and not event.is_echo() and not binding_key:
 		var fo := get_viewport().gui_get_focus_owner()
 		if fo is LineEdit or fo is TextEdit:
 			return
 		mic_live = not mic_live
 		mic_toggled.emit(mic_live)
 
-func _setup_input() -> void:
-	var keys := {
+## The default keys (physical). 0.72 (Ari): everyone can rebind them in the settings (KEY_ROWS),
+## the player's own choice is kept in settings.cfg [keys] and overrides these.
+const KEY_DEFAULTS := {
 		"move_forward": [KEY_W, KEY_UP], "move_back": [KEY_S, KEY_DOWN],
 		"move_left": [KEY_A], "move_right": [KEY_D],
 		"sprint": [KEY_SHIFT], "crouch": [KEY_C, KEY_CTRL], "jump": [KEY_SPACE],
+		# (0.72 Ari) vysílačka na Tab (i K), mluvit nahlas T; v menu a lobby mluví Tab i T
 		# (0.70 Ari) Q/E = náklon za roh, F = použít, svítilna L, dávky B, mina 8, rychlá výměna kolečkem
 		"reload": [KEY_R], "flashlight": [KEY_L], "use": [KEY_F], "heal": [KEY_X],
 		"grenade": [KEY_G], "flare": [KEY_7], "swap": [], "inventory": [KEY_I],
@@ -651,16 +788,85 @@ func _setup_input() -> void:
 		"pause": [KEY_ESCAPE], "prone": [KEY_Z, KEY_Y], "melee": [KEY_V], "smoke": [KEY_H], "mine": [KEY_8],
 		"primary": [KEY_1], "secondary": [KEY_2],
 		"belt1": [KEY_3], "belt2": [KEY_4], "belt3": [KEY_5], "belt4": [KEY_6],
-		"talk": [KEY_TAB], "radio_talk": [KEY_T, KEY_K], "mic_toggle": [KEY_M], "nvg": [KEY_N], "firemode": [KEY_B], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
+		"talk": [KEY_T], "radio_talk": [KEY_TAB, KEY_K], "mic_toggle": [KEY_M], "nvg": [KEY_N], "firemode": [KEY_B], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
 	}
-	for action in keys:
+
+## What the settings offer to rebind, in this order: [action, Czech name] (a header row has no name).
+## Esc (pause), the mouse buttons and the wheel stay fixed.
+const KEY_ROWS := [
+	["", "POHYB"], ["move_forward", "Dopředu"], ["move_back", "Dozadu"], ["move_left", "Vlevo"], ["move_right", "Vpravo"],
+	["sprint", "Sprint"], ["jump", "Skok"], ["crouch", "Kleknout"], ["prone", "Lehnout"],
+	["lean_left", "Náklon vlevo (držet)"], ["lean_right", "Náklon vpravo (držet)"],
+	["", "BOJ"], ["reload", "Přebít"], ["melee", "Rána zblízka"], ["firemode", "Dávky / druh nábojů"],
+	["grenade", "Granát"], ["smoke", "Kouřový granát"], ["flare", "Světlice"], ["mine", "Mina"],
+	["primary", "Primární zbraň"], ["secondary", "Sekundární zbraň"],
+	["belt1", "Opasek 1"], ["belt2", "Opasek 2"], ["belt3", "Opasek 3"], ["belt4", "Opasek 4"],
+	["", "VĚCI A AKCE"], ["use", "Použít (dveře, sebrat, táhnout)"], ["heal", "Lékárnička"], ["inventory", "Výstroj"],
+	["flashlight", "Svítilna"], ["nvg", "Noktovizor"], ["drop", "Zahodit"], ["ready", "Připraven (v lodi)"],
+	["salute", "Kolo emocí"], ["atease", "Pohov"],
+	["", "HLAS"], ["talk", "Mluvit nahlas (držet)"], ["radio_talk", "Vysílačka (držet)"], ["mic_toggle", "Mikrofon stále zapnutý"],
+	["", "STÍHAČKA"], ["decoy", "Návnady"],
+]
+## Actions that never sound at the same moment may share a key (the decoy only flies in a dogfight).
+const KEY_OWN_GROUP := {"decoy": "air"}
+var key_binds := {}          # action -> [physical keycode, ...] the player chose (missing = default)
+var binding_key := false     # a settings button is waiting for a key: the game must not react to it
+
+func keys_of(action: String) -> Array:
+	return key_binds.get(action, KEY_DEFAULTS.get(action, []))
+
+## The key's name for texts ("T", "Tab", "Shift"...); "-" when nothing is bound.
+func key_name(action: String) -> String:
+	var ks := keys_of(action)
+	if ks.is_empty():
+		return "-"
+	return key_label(int(ks[0]))
+
+static func key_label(k: int) -> String:
+	var n := OS.get_keycode_string(k)
+	return {"Escape": "Esc", "Backspace": "Backspace", "Enter": "Enter", "Space": "Mezerník", "Ctrl": "Ctrl", "Up": "Šipka nahoru", "Down": "Šipka dolů", "Left": "Šipka vlevo", "Right": "Šipka vpravo", "Kp Enter": "Num Enter"}.get(n, n)
+
+## Puts key slot i (0 or 1) of an action to k (0 = empty). The same key leaves any other action
+## of the same group (on foot / in the air), so one key never does two things at once.
+func rebind(action: String, i: int, k: int) -> void:
+	var mine := keys_of(action).duplicate()
+	while mine.size() <= i:
+		mine.append(0)
+	mine[i] = k
+	mine = mine.filter(func(x): return int(x) != 0)
+	key_binds[action] = mine
+	if k != 0:
+		var grp: String = KEY_OWN_GROUP.get(action, "foot")
+		for row in KEY_ROWS:
+			var other: String = row[0]
+			if other == "" or other == action or KEY_OWN_GROUP.get(other, "foot") != grp:
+				continue
+			if k in keys_of(other):
+				key_binds[other] = keys_of(other).filter(func(x): return int(x) != k)
+	_apply_keys()
+	save_settings()
+
+func reset_keys() -> void:
+	key_binds = {}
+	_apply_keys()
+	save_settings()
+
+## Writes the keys into the InputMap (the mouse buttons are added separately and stay).
+func _apply_keys() -> void:
+	for action in KEY_DEFAULTS:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)
-		for k in keys[action]:
+		for ev in InputMap.action_get_events(action):
+			if ev is InputEventKey:
+				InputMap.action_erase_event(action, ev)
+		for k in keys_of(action):
 			var ev := InputEventKey.new()
-			ev.physical_keycode = k
+			ev.physical_keycode = int(k)
 			InputMap.action_add_event(action, ev)
-	# Tab is held to talk: it must not also jump between the buttons of a menu
+
+func _setup_input() -> void:
+	_apply_keys()
+	# Tab is held for the radio (in menus: to talk): it must not also jump between the buttons of a menu
 	for ui in ["ui_focus_next", "ui_focus_prev"]:
 		if InputMap.has_action(ui):
 			for ev in InputMap.action_get_events(ui):
@@ -719,6 +925,49 @@ func roll_levels(r: RandomNumberGenerator) -> Dictionary:
 		out[st] = r.randi_range(1, 6) + r.randi_range(1, 6) - 2
 	return out
 
+## (0.72, Ari: "kluci si hodí třikrát, smažou vojáka a jedou znovu") The dice belong to the player's
+## profile (merc.cfg), not to the creation screen: 3 rolls, kept across leaving the screen, dismissing
+## and "Nahradit novým"; the last roll stays (`dice["last"]`). New rolls only for a real need: a soldier
+## lost on a campaign mission (fallen, missing, the crash rule) or a roster slot never used before
+## (`dice["peak"]` = the most soldiers ever at once). The points are always free (a fixed 30).
+const DICE_ROLLS := 3
+var dice := {"left": DICE_ROLLS, "last": {}, "peak": 1}
+
+func dice_left() -> int:
+	return int(dice.get("left", DICE_ROLLS))
+
+## One roll from the profile's budget (saved at once, so quitting the game does not give it back).
+func dice_roll() -> Dictionary:
+	if dice_left() <= 0:
+		return dice_last()
+	var r := RandomNumberGenerator.new()
+	r.randomize()
+	var lv := roll_levels(r)
+	dice["left"] = dice_left() - 1
+	dice["last"] = lv.duplicate()
+	save_merc()
+	return lv
+
+func dice_last() -> Dictionary:
+	return (dice.get("last", {}) as Dictionary).duplicate()
+
+## A fresh set of rolls for the next new soldier (never in a quick mission - nothing counts there).
+func dice_grant() -> void:
+	if skirmish:
+		return
+	dice["left"] = DICE_ROLLS
+	dice["last"] = {}
+
+## The soldier was made (with the dice or the points): his roll is used up, the next one starts empty.
+func dice_used(by_dice: bool) -> void:
+	if by_dice:
+		dice["last"] = {}
+
+## A recruit in the place of a soldier lost on a mission (fallen, missing): the dice come back.
+func lost_merc() -> Dictionary:
+	dice_grant()
+	return new_merc()
+
 func set_levels(m: Dictionary, lv: Dictionary) -> void:
 	m["levels"] = lv.duplicate()
 	for st in STAT_ORDER:
@@ -746,7 +995,11 @@ const TOPS := [["jacket", "Bunda"], ["rolled", "Ohrnuté rukávy"], ["tee", "Tri
 const PANTS := [["pads", "Maskáče s chrániči"], ["cargo", "Maskáče"], ["plain", "Rovné kalhoty"], ["plain_pads", "Rovné s chrániči"]]
 const VESTS := [["harness", "Popruhy"], ["carrier", "Nosič plátů"], ["rig", "Hrudní nosič"], ["none", "Jen opasek"]]
 const PAINTS := [["none", "Bez barvy"], ["eyes", "Pod očima"], ["stripes", "Pruhy na lících"], ["band", "Pás přes oči"], ["full", "Celý obličej"]]
-const TATTOOS := [["none", "Bez tetování"], ["skull", "Lebka"], ["anchor", "Kotva"], ["x", "Znak X"], ["tribal", "Pásy"], ["sleeve", "Rukáv"]]
+const TATTOOS := [["none", "Bez tetování"], ["skull", "Lebka"], ["anchor", "Kotva"], ["x", "Znak X"], ["tribal", "Pásy"], ["sleeve", "Rukáv"],
+	# 0.72 (Ari): díly Look_Tat_<id> v merc.glb (tools/blender/tattoo_art.py), nové jen NA KONEC
+	["zoldneri", "Žoldnéři"], ["mama", "Máma"], ["invaders", "Invaders must die"], ["krava", "Pomstím tě"],
+	["vetrelec", "Mrtvý vetřelec"], ["pivo", "Pivo"], ["tmy", "Bojím se tmy"], ["krull", "Krull"],
+	["ignorbris", "Ignorbris"], ["lovec", "Lovec UFO"]]
 const GLASSES := [["none", "Bez brýlí"], ["shades", "Sluneční brýle"], ["ballistic", "Střelecké brýle"]]
 const NECKS := [["none", "Nic"], ["shemagh", "Šátek kolem krku"], ["mask", "Šátek přes obličej"], ["tags", "Psí známky"]]
 const MOUTHS := [["none", "Nic"], ["cigar", "Doutník"], ["match", "Sirka"]]
@@ -849,6 +1102,8 @@ func apply_look(model: Node, look: Dictionary) -> void:
 		"Look_MouthCigar": mouth == "cigar", "Look_MouthMatch": mouth == "match",
 		"Gear_Beret": gear == "beret", "Gear_Boonie": gear == "boonie", "Gear_Bandana": gear == "bandana", "Gear_Headset": gear == "headset",
 	}
+	for ti in range(6, TATTOOS.size()):
+		on["Look_Tat_" + str(TATTOOS[ti][0])] = tattoo == TATTOOS[ti][0]
 	if top == "jacket":
 		for k in on:
 			if k.begins_with("Look_Tat"):
@@ -1120,6 +1375,12 @@ func load_merc() -> void:
 		mercs = cf.get_value("merc", "roster", [])
 		active = int(cf.get_value("merc", "active", 0))
 		on_mission = String(cf.get_value("merc", "on_mission", ""))
+		var dc = cf.get_value("merc", "dice") if cf.has_section_key("merc", "dice") else null
+		if dc is Dictionary:
+			dice = dc
+		else:
+			# a profile from before 0.72: as many slots as he has soldiers now count as used
+			dice = {"left": DICE_ROLLS, "last": {}, "peak": maxi(1, (cf.get_value("merc", "roster", []) as Array).size())}
 		if mercs.is_empty():
 			var one: Dictionary = cf.get_value("merc", "data", {})
 			if not one.is_empty():
@@ -1131,7 +1392,7 @@ func load_merc() -> void:
 		for i in mercs.size():
 			var lost: Dictionary = mercs[i]
 			if String(lost.get("name", "")) == on_mission:
-				var fresh := new_merc()
+				var fresh := lost_merc()
 				fresh["money"] = maxi(0, int(lost.get("money", 0)) - 250)
 				mercs[i] = fresh
 				crash_note = "Hra skončila uprostřed mise. %s zůstal na místě - NEZVĚSTNÝ (odškodné rodině -250 kr; úspory převzal nový voják %s)." % [on_mission, String(fresh["name"])]
@@ -1210,6 +1471,7 @@ func save_merc() -> void:
 	cf.set_value("merc", "roster", mercs)
 	cf.set_value("merc", "active", active)
 	cf.set_value("merc", "on_mission", on_mission)
+	cf.set_value("merc", "dice", dice)
 	cf.save("user://merc.cfg")
 
 ## Another mercenary from the roster goes on the next mission (the purse goes with the player).
@@ -1231,6 +1493,10 @@ func hire_merc() -> int:
 		return -1
 	var m := new_merc()
 	mercs.append(m)
+	# (0.72) a slot never used before brings its own rolls; one freed by dismissing does not
+	if mercs.size() > int(dice.get("peak", 1)):
+		dice["peak"] = mercs.size()
+		dice_grant()
 	save_merc()
 	return mercs.size() - 1
 
@@ -1278,6 +1544,10 @@ func load_settings() -> void:
 		invert_y = cf.get_value("controls", "invert_y", false)
 		fov = cf.get_value("controls", "fov", 75.0)
 		cam_bob = cf.get_value("controls", "cam_bob", 1.0)
+		key_binds = {}
+		for a in cf.get_value("keys", "binds", {}):
+			if KEY_DEFAULTS.has(a):
+				key_binds[a] = Array(cf.get_value("keys", "binds", {})[a]).map(func(x): return int(x))
 		retro = false       # (the PS1 look is gone since 0.50: a modern picture)
 		wobble = false
 		volumetric = cf.get_value("video", "volumetric", true)
@@ -1311,6 +1581,7 @@ func save_settings() -> void:
 	cf.set_value("controls", "invert_y", invert_y)
 	cf.set_value("controls", "fov", fov)
 	cf.set_value("controls", "cam_bob", cam_bob)
+	cf.set_value("keys", "binds", key_binds)
 	cf.set_value("video", "retro", retro)
 	cf.set_value("video", "wobble", wobble)
 	cf.set_value("video", "volumetric", volumetric)
@@ -1594,7 +1865,7 @@ var shadows := 1           # 0.62 výkon: stíny 0 = nízké, 1 = střední, 2 =
 var fullscreen := false
 var seen_version := ""     # the newest version whose "what's new" the player has seen
 var intro_seen := false    # (0.70) the intro film played once on this machine (then only from the menu)
-var voice_mode := "ptt"    # "off", "ptt" (hold Tab), "open" (voice activation)
+var voice_mode := "ptt"    # "off", "ptt" (hold Tab / T), "open" (voice activation)
 var mic_gate := 0.03       # voice activation threshold (open mic)
 var friendly_fire := true   # host's choice: bullets hit teammates too
 var mic_gain := 1.0        # own microphone loudness (x0.5 .. x4)
@@ -2181,7 +2452,41 @@ func ui_audit(root: Node, tag: String) -> int:
 			if "text" in ctl:
 				txt = String(ctl.get("text")).replace("\n", " / ").left(60)
 			print("[UI] %s: %s %s - %s  \"%s\"" % [tag, ctl.get_class(), ctl.name, why, txt])
+	bad += _ui_overlaps(root, tag)
 	print("[UI] %s: %d problém(ů)" % [tag, bad])
+	return bad
+
+## 0.72 (one window at a time): two windows lying over each other. A window = a visible
+## PanelContainer that is not inside another one; a window that is meant to sit on top of
+## everything (a dialog over its own screen) carries meta "overlay".
+func _ui_overlaps(root: Node, tag: String) -> int:
+	var wins: Array[Control] = []
+	for c in root.find_children("*", "PanelContainer", true, false):
+		var ctl: Control = c
+		if not ctl.is_visible_in_tree() or ctl.size.x < 4 or ctl.size.y < 4 or ctl.has_meta("overlay"):
+			continue
+		var inner := false
+		var alpha := ctl.modulate.a * ctl.self_modulate.a
+		var an := ctl.get_parent()
+		while an:
+			if an is CanvasItem:
+				alpha *= (an as CanvasItem).modulate.a
+			if an is CanvasLayer and not (an as CanvasLayer).visible:
+				alpha = 0.0
+			if an is PanelContainer or an is ScrollContainer or an.has_meta("overlay"):
+				inner = true
+				break
+			an = an.get_parent()
+		if not inner and alpha > 0.05:
+			wins.append(ctl)
+	var bad := 0
+	for i in wins.size():
+		for j in range(i + 1, wins.size()):
+			var a := wins[i].get_global_rect().grow(-1.0)
+			var b := wins[j].get_global_rect().grow(-1.0)
+			if a.intersects(b):
+				bad += 1
+				print("[UI] %s: okno %s leží přes okno %s (%s / %s)" % [tag, wins[i].get_path(), wins[j].get_path(), wins[i].get_global_rect(), wins[j].get_global_rect()])
 	return bad
 
 # ---- updates from GitHub ------------------------------------------------------------------

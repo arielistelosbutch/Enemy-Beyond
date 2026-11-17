@@ -26,7 +26,7 @@ const TIPS := [
 	"Před misí zkontroluj výstroj: co nevezmeš, na místě nenajdeš.",
 	"Díly na zbrani mají svou váhu. Přetížený voják je pomalý.",
 	"Mrtvý voják se nevrací. Nový začíná od nuly.",
-	"Vysílačka v ruce: drž T a mluv s týmem na dálku.",
+	"Vysílačka: drž Tab a mluv s týmem na dálku.",
 	"Úspěšná mise přinese kořist pro výzkum. Těla, zbraně, trosky.",
 	"Strážce v singlu hlídá záda, ale za tebe bojovat nebude.",
 	"Šablona vojáka a sada výstroje ušetří čas, když někdo padne.",
@@ -56,6 +56,13 @@ var _min := MIN_OTHER
 var _line: Label
 var _what: Label
 var _frames_after := 0
+# 0.72: the bar of real progress (what is loaded and built). Drawn straight through the RenderingServer
+# on its own canvas item: inside a map being built nothing deferred runs (a Label or a ProgressBar would
+# not redraw), only direct drawing reaches the frame Game.load_step forces.
+var _bar_slot: Control
+var _bar_ci := RID()
+var _target := 0.0
+var _shown := 0.0
 
 static func pictures() -> Array:
 	var out := []
@@ -144,12 +151,19 @@ func setup(what: String, mission: bool) -> void:
 	set_what(what)
 	_line = Label.new()
 	_line.add_theme_font_size_override("font_size", 9)
-	_line.add_theme_color_override("font_color", Color(0.80, 0.90, 1.0))
+	_line.add_theme_color_override("font_color", Color(0.80, 0.83, 0.86))
 	_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_line.custom_minimum_size.x = 120
 	col.add_child(_line)
 	_line.text = line()
+	_bar_slot = Control.new()
+	_bar_slot.custom_minimum_size = Vector2(120, 9)
+	_bar_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_bar_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(_bar_slot)
+	_bar_ci = RenderingServer.canvas_item_create()
+	RenderingServer.canvas_item_set_parent(_bar_ci, _bar_slot.get_canvas_item())
 	_root.modulate.a = 0.0
 
 ## What is loading ("MISE", "GLÓBUS"...). The blinking dots belong to the same text, padded with
@@ -173,11 +187,51 @@ func scene_ready() -> void:
 	_done = true
 	_frames_after = 0
 
+## How far the loading is, 0..1 (the bar only ever goes forward).
+func set_progress(f: float) -> void:
+	_target = maxf(_target, clampf(f, 0.0, 1.0))
+
+func progress() -> float:
+	return _shown
+
+## The new scene runs (the build is over - Game.load_step stops pumping).
+func is_done() -> bool:
+	return _done
+
+func _exit_tree() -> void:
+	if _bar_ci.is_valid():
+		RenderingServer.free_rid(_bar_ci)
+		_bar_ci = RID()
+
+func _draw_bar() -> void:
+	if not _bar_ci.is_valid() or _bar_slot == null:
+		return
+	var w := _bar_slot.size.x
+	if w < 10.0:
+		return
+	RenderingServer.canvas_item_clear(_bar_ci)
+	var h := 4.0
+	var y := 3.0
+	var tw := 34.0                      # room for "100 %" on the right
+	var bw := maxf(10.0, w - tw)
+	RenderingServer.canvas_item_add_rect(_bar_ci, Rect2(0, y, bw, h), Color(0.08, 0.11, 0.14, 0.9))
+	RenderingServer.canvas_item_add_rect(_bar_ci, Rect2(0, y, bw * _shown, h), Color(0.45, 0.78, 1.0))
+	var f: Font = UiSkin.font()
+	if f:
+		f.draw_string(_bar_ci, Vector2(bw + 4.0, y + h + 2.0), "%d %%" % int(round(_shown * 100.0)), HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color(0.80, 0.83, 0.86))
+
 func busy() -> bool:
 	return _fade_out < 0.0 or _fade_out < FADE_OUT * 0.5
 
 func _process(delta: float) -> void:
+	tick(delta)
+
+## One step of the screen (from _process, and from Game.load_step while a scene is being built).
+func tick(delta: float) -> void:
 	delta = minf(delta, 0.1)       # (the frame that built the mission is long - do not jump the fade)
+	# the bar follows the real progress quickly, never past it
+	_shown = move_toward(_shown, _target, maxf(delta * 2.5, (_target - _shown) * 0.35))
+	_draw_bar()
 	_t += delta
 	_slide_t += delta
 	_set_dots(1 + int(_t * 2.5) % 3)

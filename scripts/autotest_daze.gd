@@ -69,3 +69,92 @@ static func run(at: Node, p: Node) -> void:
 		wall_ok = str(seen or p.stress < 1.0)
 	at.out("RESULT dazetest home %s frozen %.0f %% freezes %d cooldown %s wall %s" % [p.home_ground() if p.has_method("home_ground") else "?", share * 100.0, freezes, cd_ok, wall_ok])
 	at.get_tree().quit()
+
+## chaintest (Ari 2026-11-17: „ať se nedá dostat do trvalého omráčení, nic se nesčítá – v singlu by to
+## bylo šílené“): 60 s všeho najednou – řev Ohaře a psi útok každých 0,25 s, strach pořád na 100 –
+## a měří nejdelší souvislé ochromení, podíl času bez ovládání celkem a v nejhorších 30 s. Pak
+## knock-out hned po zvednutí (nesmí ho znovu složit), dva záblesky po sobě (bílá se nesčítá) a dvě
+## iluze po sobě (druhá neprojde). Výsledek „RESULT chaintest …“.
+static func chain(at: Node, p: Node) -> void:
+	if p == null: return
+	at._skip_brief()
+	if at.step > 0 or not at.m().started(): return
+	at.step = 1
+	var m: Node = at.m()
+	m.hud.inventory_open = false
+	p.hp = 5000.0
+	p.max_hp = 5000.0
+	for a in m.aliens():
+		a.set_physics_process(false)
+		a.global_position += Vector3(0, -200, 0)
+	await at.get_tree().create_timer(0.5).timeout
+	var t := 0.0
+	var next := 0.0
+	var run := 0.0
+	var longest := 0.0
+	var frozen := 0.0
+	var freezes := 0
+	var was := false
+	var hist: Array = []        # frozen flag per frame with its dt (for the worst 30 s)
+	while t < 60.0:
+		await at.get_tree().physics_frame
+		var dt: float = at.get_physics_process_delta_time()
+		t += dt
+		p.stress = 100.0
+		p.panic_cd = 0.0
+		if t >= next:
+			next += 0.25
+			p.ohar_roar(0.99)
+			p.psi_attack(0.99)
+		var now: bool = p.panic != ""
+		if now:
+			frozen += dt
+			run += dt
+			longest = maxf(longest, run)
+		else:
+			run = 0.0
+		if now and not was:
+			freezes += 1
+		was = now
+		hist.append([dt, now])
+	var worst := 0.0
+	var win := 0.0
+	var span := 0.0
+	var i0 := 0
+	for i in hist.size():
+		span += hist[i][0]
+		if hist[i][1]: win += hist[i][0]
+		while span > 30.0:
+			span -= hist[i0][0]
+			if hist[i0][1]: win -= hist[i0][0]
+			i0 += 1
+		worst = maxf(worst, win)
+	# knock-out right after being stood up
+	p.knock_out()
+	var ko1: bool = p.downed
+	p.revived("Test")
+	await at.get_tree().physics_frame
+	p.knock_out()
+	var ko2: bool = p.downed
+	if ko2:
+		p.revived("Test")
+	# two flashes in a row: never whiter than the first, gone after a while
+	m.hud.blind_flash(1.0)
+	var b1: float = m.hud.blind_level()
+	m.hud.blind_flash(1.0)
+	m.hud.blind_flash(1.0)
+	var b2: float = m.hud.blind_level()
+	await at.get_tree().create_timer(8.0).timeout
+	var b3: float = m.hud.blind_level()
+	# two illusions: the second is ignored
+	var ill := "-"
+	var mates: Array = m.players().filter(func(o): return o != p)
+	if not mates.is_empty():
+		p.psi_illusion(String(mates[0].name), 3.0, 0.0)
+		var on1: bool = p._illusion_t > 0.0
+		var t1: float = p._illusion_t
+		await at.get_tree().create_timer(0.3).timeout
+		p.psi_illusion(String(mates[0].name), 20.0, 0.0)
+		ill = str(on1 and p._illusion_t <= t1)
+	at.out("RESULT chaintest solo %s longest %.1f s frozen %.0f %% worst30 %.1f s freezes %d ko_first %s ko_again %s blind %.2f/%.2f/%.2f illusion %s" % [p._solo(), longest, 100.0 * frozen / 60.0, worst, freezes, ko1, ko2, b1, b2, b3, ill])
+	at.get_tree().quit()

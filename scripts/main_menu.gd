@@ -4,9 +4,9 @@ const MapGen := preload("res://scripts/map_gen.gd")
 
 const BG := Color(0.04, 0.045, 0.05)
 const PANEL := Color(0.10, 0.115, 0.13)
-const FRAME := Color(0.45, 0.78, 0.86)
-const TEXT := Color(0.84, 0.89, 0.92)
-const ACCENT := Color(1.0, 0.74, 0.32)
+const FRAME := Color(0.67, 0.70, 0.74)   # 0.72: neutral secondary text (was cyan)
+const TEXT := UiSkin.TEXT
+const ACCENT := UiSkin.ACC
 
 var _box: VBoxContainer
 var _confirm_new := false
@@ -98,7 +98,7 @@ func _back() -> void:
 		_show_lobby()
 	elif _back_target == "geo":
 		_back_target = ""
-		Game.load_scene("res://scenes/Geoscape.tscn")
+		Game.goto_globe()          # 0.72: the parked globe comes back at once (no loading)
 	elif _back_target == "quick":
 		_back_target = ""
 		_show_quick()
@@ -109,52 +109,46 @@ func _back() -> void:
 		_show_main()
 
 # ---- helpers -----------------------------------------------------------------
-## The game's name on a steel nameplate at the left, with the version and a blinking terminal line.
+## The game's name at the top left (0.72 clean look: no plate, just type), with the version.
 func _build_logo() -> void:
 	var holder := Control.new()      # not a PanelContainer: screens clear those
 	holder.name = "Logo"
 	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(holder)
-	var plate := PanelContainer.new()
-	plate.add_theme_stylebox_override("panel", UiSkin.inset(6))
-	plate.position = Vector2(10, 10)
-	plate.custom_minimum_size = Vector2(150, 0)
-	holder.add_child(plate)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 0)
-	plate.add_child(v)
-	for e in [["OPERACE", 20, UiSkin.TEXT], ["X", 34, UiSkin.AMBER], ["ENEMY BEYOND", 10, UiSkin.DIM]]:
-		var l := Label.new()
-		l.text = e[0]
-		l.add_theme_font_override("font", UiSkin.font(true))
-		l.add_theme_font_size_override("font_size", e[1])
-		l.add_theme_color_override("font_color", e[2])
-		l.add_theme_constant_override("line_spacing", -4)
-		v.add_child(l)
-	var line := ColorRect.new()
-	line.color = UiSkin.GLOW
-	line.custom_minimum_size = Vector2(0, 1)
-	v.add_child(line)
+	v.position = Vector2(16, 12)
+	v.custom_minimum_size = Vector2(140, 0)
+	holder.add_child(v)
+	var name_l := Label.new()
+	name_l.text = "OPERACE X"
+	name_l.add_theme_font_override("font", UiSkin.font(true))
+	name_l.add_theme_font_size_override("font_size", 22)
+	name_l.add_theme_color_override("font_color", UiSkin.TEXT)
+	v.add_child(name_l)
 	var sub := Label.new()
-	sub.text = "TERMINÁL X-NET  v" + Game.VERSION_NUM
+	sub.text = "ENEMY BEYOND  ·  v" + Game.VERSION_NUM
+	sub.add_theme_font_override("font", UiSkin.caps_font())
 	sub.add_theme_font_size_override("font_size", 7)
-	sub.add_theme_color_override("font_color", UiSkin.GLOW)
+	sub.add_theme_color_override("font_color", UiSkin.ACC)
 	v.add_child(sub)
-	var cur := Label.new()
-	cur.add_theme_font_size_override("font_size", 7)
-	cur.add_theme_color_override("font_color", UiSkin.DIM)
-	v.add_child(cur)
-	var tw := cur.create_tween().set_loops()
-	tw.tween_callback(func(): cur.text = "> SPOJENÍ NAVÁZÁNO _")
-	tw.tween_interval(0.6)
-	tw.tween_callback(func(): cur.text = "> SPOJENÍ NAVÁZÁNO")
-	tw.tween_interval(0.6)
 
 
 ## The full-width screens (soldiers, recruiting, upgrades) cover the logo; the small ones show it.
 const TITLE_PIC := "res://assets/ui/titulni_obrazovka.png"
 var _title: TextureRect
 var _title_mode := false        # the main screen: the picture in full, the buttons in a row under the logo
+
+## 0.72: one thing at a time - the name gives way to any window that would lie over it.
+func _logo_clear(p: Control) -> void:
+	var l: Control = get_node_or_null("Logo")
+	if l == null or not is_instance_valid(p) or not p.is_inside_tree():
+		return
+	await get_tree().process_frame
+	if not is_instance_valid(p) or not p.is_inside_tree() or not l.visible:
+		return
+	if p.get_global_rect().intersects(Rect2(Vector2(16, 12), Vector2(140, 36))):
+		l.visible = false
 
 func _logo(on: bool) -> void:
 	var l := get_node_or_null("Logo")
@@ -187,6 +181,7 @@ func _panel(title: String) -> void:
 	p.position = Vector2(170, 8)
 	p.custom_minimum_size = Vector2(300, 0)
 	add_child(p)
+	_logo_clear.call_deferred(p)
 	# the content scrolls when it would not fit on the screen
 	_menu_prev_want = Vector2.ZERO
 	_scroll = ScrollContainer.new()
@@ -215,7 +210,7 @@ func _button(text: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.add_theme_font_size_override("font_size", 11)
-	UiSkin.button(b)
+	UiSkin.auto(b)
 	b.custom_minimum_size.y = 17
 	b.pressed.connect(cb)
 	_box.add_child(b)
@@ -313,20 +308,21 @@ func _show_quick() -> void:
 
 func _show_main(msg := "") -> void:
 	Game.end_skirmish()
+	Game.drop_parked()        # (0.72: the main menu itself - a globe left parked is no longer wanted)
 	_panel("OPERACE X - Enemy Beyond")
 	_label("Pocta UFO: Enemy Unknown  -  %s" % Game.VERSION, FRAME, 9).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# started straight from the zip (Windows unpacks it into a temporary folder):
 	# settings, updates and the microphone may not work - say so
 	var exe := OS.get_executable_path().to_lower()
 	if not OS.has_feature("editor") and (exe.contains("\\temp\\") or exe.contains("/temp/") or exe.contains(".zip")):
-		var w := _label("Hra běží přímo ze zipu. Nejdřív zip rozbal (pravé tlačítko > Extrahovat vše) a spusť EnemyBeyond.exe z rozbalené složky, jinak nemusí fungovat mikrofon, nastavení ani aktualizace.", Color(1, 0.45, 0.35), 9)
+		var w := _label("Hra běží přímo ze zipu. Nejdřív zip rozbal (pravé tlačítko > Extrahovat vše) a spusť EnemyBeyond.exe z rozbalené složky, jinak nemusí fungovat mikrofon, nastavení ani aktualizace.", UiSkin.BAD, 9)
 		w.custom_minimum_size = Vector2(300, 0)
 	_upd_label = _label("", ACCENT, 9)
 	_upd_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_upd_label.custom_minimum_size = Vector2(300, 0)
 	if Game.crash_note != "":
 		# (0.57) the game went down mid-mission last time: say once what it cost
-		var cn := _label(Game.crash_note, Color(1, 0.45, 0.35), 9)
+		var cn := _label(Game.crash_note, UiSkin.BAD, 9)
 		cn.custom_minimum_size = Vector2(300, 0)
 		Game.crash_note = ""
 	_upd_btn = _button("Restartovat a hrát novou verzi", func(): Game.restart_game())
@@ -358,7 +354,7 @@ func _show_main(msg := "") -> void:
 			row.add_child(bt)
 			(bt as Button).custom_minimum_size.x = 84
 	if msg != "":
-		_label(msg, Color(1, 0.5, 0.4), 10)
+		_label(msg, UiSkin.BAD, 10)
 
 ## The campaign: carry on, found a new one (its difficulty is fixed until it ends), or join a friend's.
 func _show_campaign(msg := "") -> void:
@@ -375,15 +371,17 @@ func _show_campaign(msg := "") -> void:
 	if not past.is_empty():
 		_button("Skončené kampaně (%d)" % past.size(), _show_past)
 	if not Game.merc.get("created", true):
-		_label("Nemáš vlastního vojáka - vytvoř si ho v \"Moji vojáci\".", Color(1.0, 0.75, 0.4), 9)
+		_label("Nemáš vlastního vojáka - vytvoř si ho v \"Moji vojáci\".", UiSkin.WARN, 9)
 	_label("Vojáci rostou jen v kampani: mise, žold, zranění i smrt. Co-op kampaň si pamatuje hostitel - hraje se s jeho záznamem o každém vojákovi.", FRAME, 8).custom_minimum_size = Vector2(300, 0)
 	_button("Zpět", _show_main)
 	if msg != "":
-		_label(msg, Color(1, 0.5, 0.4), 10)
+		_label(msg, UiSkin.BAD, 10)
 
 ## (0.7x) The record of ended campaigns (lost or won): one line each, a click opens its end screen.
 func _show_past() -> void:
 	_panel("SKONČENÉ KAMPANĚ")
+	if Campaign.past_campaigns().is_empty():
+		_label("Zatím žádná kampaň neskončila.", FRAME, 9)
 	for s in Campaign.past_campaigns().slice(0, 8):
 		var d: Dictionary = s
 		var diff := String(d.get("diff", ""))
@@ -411,9 +409,9 @@ func _show_new_campaign() -> void:
 	for d in ["easy", "normal", "veteran"]:
 		var dd: String = d
 		_button(("> " if _new_diff == dd else "") + Game.DIFF_NAMES[dd], func(): _new_diff = dd; _show_new_campaign())
-	_label(info[_new_diff], Color(1, 0.55, 0.4) if _new_diff == "veteran" else TEXT, 8).custom_minimum_size = Vector2(300, 0)
+	_label(info[_new_diff], UiSkin.BAD if _new_diff == "veteran" else TEXT, 8).custom_minimum_size = Vector2(300, 0)
 	if Campaign.has_save():
-		_label("Pozor: stará kampaň bude přepsána.", Color(1, 0.5, 0.4), 9)
+		_label("Pozor: stará kampaň bude přepsána.", UiSkin.BAD, 9)
 	_button("ZAČÍT KAMPAŇ", func():
 		Campaign.new_campaign(_new_diff)
 		Game.load_scene("res://scenes/Geoscape.tscn"))
@@ -494,7 +492,7 @@ func _show_merc() -> void:
 			b.custom_minimum_size = Vector2(210, 18)
 			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			if sick:
-				b.add_theme_color_override("font_color", Color(1, 0.5, 0.4))
+				b.add_theme_color_override("font_color", UiSkin.BAD)
 			if i == Game.active:
 				b.add_theme_color_override("font_color", ACCENT)
 		else:
@@ -524,7 +522,7 @@ func _show_merc() -> void:
 	var nxt := "" if rk + 1 >= Game.RANK_XP.size() else " / %d" % Game.RANK_XP[rk + 1]
 	_rlabel(right, "%s   ·   zkušenosti %d%s   ·   mise %d, zabití %d" % [Game.RANKS[rk].to_upper(), xp, nxt, int(m.get("missions", 0)), int(m.get("kills", 0))], ACCENT, 9)
 	if Game.heal_days_left(m) > 0.0:
-		_rlabel(right, "%s - chybí mu %d zdraví. Na misi nemůže, dokud se v kampani neuzdraví." % [Game.sick_text(m), ceili(float(m.get("injury", 0)))], Color(1, 0.5, 0.4), 8)
+		_rlabel(right, "%s - chybí mu %d zdraví. Na misi nemůže, dokud se v kampani neuzdraví." % [Game.sick_text(m), ceili(float(m.get("injury", 0)))], UiSkin.BAD, 8)
 	for st in Game.STAT_ORDER:
 		var key: String = st
 		var srow := HBoxContainer.new()
@@ -561,7 +559,7 @@ func _show_merc() -> void:
 	var tb := _small_btn(trow, "Talenty" + (" (volné body: %d)" % int(m.get("talent_points", 0)) if int(m.get("talent_points", 0)) > 0 else ""), _show_talents)
 	tb.custom_minimum_size = Vector2(150, 18)
 	if int(m.get("talent_points", 0)) > 0:
-		tb.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
+		tb.add_theme_color_override("font_color", UiSkin.OK)
 	_small_btn(trow, "Úpravy zbraní", func(): _mods_from = "merc"; _show_mods()).custom_minimum_size = Vector2(150, 18)
 	var brow := HBoxContainer.new()
 	brow.add_theme_constant_override("separation", 4)
@@ -578,7 +576,7 @@ func _show_merc() -> void:
 			_show_merc())
 		fb.custom_minimum_size = Vector2(96, 18)
 		if _confirm_fire:
-			fb.add_theme_color_override("font_color", Color(1, 0.5, 0.4))
+			fb.add_theme_color_override("font_color", UiSkin.BAD)
 	else:
 		_small_btn(brow, "Nahradit novým", func(): _show_create(true)).custom_minimum_size = Vector2(96, 18)
 	_small_btn(brow, "Zpět", _back).custom_minimum_size = Vector2(80, 18)
@@ -616,7 +614,7 @@ func _show_talents() -> void:
 	var who := Label.new()
 	who.text = "%s  -  %s   ·   volné body: %d" % [str(m.get("name", "?")), Game.RANKS[Game.rank_of(m)], pts]
 	who.add_theme_font_size_override("font_size", 9)
-	who.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6) if pts > 0 else TEXT)
+	who.add_theme_color_override("font_color", UiSkin.OK if pts > 0 else TEXT)
 	head.add_child(who)
 	var grid := HBoxContainer.new()
 	grid.add_theme_constant_override("separation", 6)
@@ -654,8 +652,8 @@ func _show_talents() -> void:
 				Game.pick_talent(id)
 				_show_talents())
 			tb.custom_minimum_size = Vector2(148, 44)
-			tb.add_theme_color_override("font_color", {"owned": Color(0.45, 1.0, 0.5), "open": ACCENT,
-				"nopoint": TEXT, "rank": Color(0.55, 0.6, 0.65), "locked": Color(0.4, 0.43, 0.46)}[st])
+			tb.add_theme_color_override("font_color", {"owned": UiSkin.OK, "open": ACCENT,
+				"nopoint": TEXT, "rank": UiSkin.DIM, "locked": Color(UiSkin.DIM, 0.6)}[st])
 			tb.mouse_entered.connect(func(): _talent_hint(id))
 	_talent_info = Label.new()
 	_talent_info.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -794,7 +792,7 @@ func _show_mods() -> void:
 				_show_mods())
 			nb.custom_minimum_size = Vector2(30, 18)
 			if not fit.has(slot):
-				nb.add_theme_color_override("font_color", Color(0.45, 0.95, 0.75))
+				nb.add_theme_color_override("font_color", UiSkin.OK)
 			nb.mouse_entered.connect(func(): _mods_hint("Nic v tomhle místě: zbraň je lehčí, nic tu nepřekáží."))
 		for m in opts:
 			var mid: String = m
@@ -817,7 +815,7 @@ func _show_mods() -> void:
 				_show_mods())
 			bb.custom_minimum_size = Vector2(0, 18)
 			if on:
-				bb.add_theme_color_override("font_color", Color(0.45, 0.95, 0.75))
+				bb.add_theme_color_override("font_color", UiSkin.OK)
 			elif own:
 				bb.add_theme_color_override("font_color", TEXT)
 			else:
@@ -993,7 +991,6 @@ func _show_news() -> void:
 var _cr: Dictionary           # the merc being made
 var _cr_full := true          # false = only the looks (an existing merc)
 var _cr_mode := "points"      # points / dice
-var _cr_rolls := 3
 var _cr_auto_name := true
 var _cr_vp: SubViewport
 var _cr_model: Node3D
@@ -1013,13 +1010,18 @@ func _show_create(full: bool) -> void:
 	_cr_presets = full and not Game.presets("merc").is_empty()
 	if full:
 		_cr = Game.new_merc()
-		_cr_mode = "points"
-		_cr_rolls = 3
 		_cr_auto_name = true
-		var lv := {}
-		for st in Game.STAT_ORDER:
-			lv[st] = 5
-		Game.set_levels(_cr, lv)
+		# (0.72) the rolls are the profile's: a roll made before (left the screen, dismissed) stays
+		var last := Game.dice_last()
+		if not last.is_empty():
+			_cr_mode = "dice"
+			Game.set_levels(_cr, last)
+		else:
+			_cr_mode = "points"
+			var lv := {}
+			for st in Game.STAT_ORDER:
+				lv[st] = 5
+			Game.set_levels(_cr, lv)
 	else:
 		_cr = Game.merc.duplicate(true)
 		if not _cr.has("look"):
@@ -1031,6 +1033,8 @@ func _free_preview() -> void:
 		_cr_vp.queue_free()
 	_cr_vp = null
 	_cr_model = null
+	_cr_clip = {}
+	_cr_sk = null
 
 func _build_create() -> void:
 	_logo(false)
@@ -1138,6 +1142,7 @@ func _build_create() -> void:
 		_cr["created"] = true
 		if _cr_full:
 			_cr["made"] = _cr_mode      # 0.60: a template keeps the levels only of a points-made soldier
+			Game.dice_used(_cr_mode == "dice")
 			_cr["money"] = int(Game.merc.get("money", 0))
 			Game.merc = _cr
 		else:
@@ -1208,7 +1213,7 @@ func _build_merc_presets(right: VBoxContainer) -> void:
 		_build_create())
 	sb.custom_minimum_size = Vector2(130, 16)
 	if _cr_note != "":
-		_rlabel(right, _cr_note, Color(0.6, 1.0, 0.6), 8)
+		_rlabel(right, _cr_note, UiSkin.OK, 8)
 
 func _apply_merc_preset(pr: Dictionary) -> void:
 	var lk: Dictionary = pr.get("look", {})
@@ -1250,23 +1255,31 @@ func _build_stats(right: VBoxContainer) -> void:
 				lv[st] = 5
 			Game.set_levels(_cr, lv)
 			_build_create())
-		bp.custom_minimum_size = Vector2(130, 0)
-		var bd := _small_btn(mrow, ("● " if _cr_mode == "dice" else "") + "Hodit kostkami (zbývá %d)" % _cr_rolls, func():
-			if _cr_rolls <= 0:
+		bp.custom_minimum_size = Vector2(110, 0)
+		var bd := _small_btn(mrow, ("● " if _cr_mode == "dice" else "") + "Hodit kostkami (zbývá %d)" % Game.dice_left(), func():
+			if Game.dice_left() <= 0:
 				return
-			_cr_rolls -= 1
 			_cr_mode = "dice"
-			var r := RandomNumberGenerator.new(); r.randomize()
-			Game.set_levels(_cr, Game.roll_levels(r))
+			Game.set_levels(_cr, Game.dice_roll())
 			_build_create())
-		bd.custom_minimum_size = Vector2(170, 0)
-		bd.disabled = _cr_rolls <= 0
+		bd.custom_minimum_size = Vector2(150, 0)
+		bd.disabled = Game.dice_left() <= 0
+		if bd.disabled:
+			bd.tooltip_text = "Hody došly. Nové hody dostaneš za vojáka ztraceného na misi nebo za nové místo v soupisce."
+		# (0.72) the last roll can be taken back after a look at the points (no new roll for it)
+		var last := Game.dice_last()
+		if _cr_mode == "points" and not last.is_empty():
+			var bl := _small_btn(mrow, "Vzít poslední hod", func():
+				_cr_mode = "dice"
+				Game.set_levels(_cr, Game.dice_last())
+				_build_create())
+			bl.custom_minimum_size = Vector2(100, 0)
 		var used := 0
 		for st in Game.STAT_ORDER:
 			used += int(_cr["levels"][st])
 		var info := "Body: rozdej %d bodů mezi vlastnosti (0-10 každá). Zbývá: %d" % [Game.LEVEL_POOL, Game.LEVEL_POOL - used] if _cr_mode == "points" \
-			else "Kostky: každá vlastnost 2k6-2 (0-10, nejčastěji 5). Součet: %d (průměr 30). Hod nejde upravit - jen hodit znovu." % used
-		_rlabel(right, info, Color(0.6, 1.0, 0.6), 8)
+			else "Kostky: každá vlastnost 2k6-2 (0-10, nejčastěji 5). Součet: %d (průměr 30). Hod nejde upravit. Hody (%d) patří profilu - odchod ani propuštění vojáka je nevrátí; nové jen za vojáka ztraceného na misi." % [used, Game.DICE_ROLLS]
+		_rlabel(right, info, UiSkin.OK, 8)
 	for st in Game.STAT_ORDER:
 		var key: String = st
 		var srow := HBoxContainer.new()
@@ -1412,11 +1425,23 @@ func _build_preview(parent: Node, editing := true) -> void:
 		if not String(mi.name) in ["Gear_Helmet", "Gear_Cap", "Gear_Torch"]:
 			mi.visible = String(mi.name) in ["Gear_Belt0", "Gear_Belt1", "Gear_Holster"]
 	var an: AnimationPlayer = _cr_model.find_child("AnimationPlayer", true, false)
-	if an:
+	# (Ari 0.71) a calm stance from the afk pack (the base people's idle, arms down, else pohov);
+	# the model's own "idle" holds an invisible rifle - arms forward looked odd in the creator
+	_cr_clip = {}
+	for id in CR_POSES:
+		_cr_clip = AnimClips.get_clip(id)
+		if not _cr_clip.is_empty():
+			break
+	_cr_sk = _cr_model.find_child("Skeleton3D", true, false)
+	_cr_clip_t = 0.0
+	if an and (_cr_clip.is_empty() or _cr_sk == null):
 		an.get_animation("idle").loop_mode = Animation.LOOP_LINEAR
 		an.play("idle")
+	elif an:
+		an.stop()
 	_cr_model.rotation.y = _cr_rot
 	_cr_vp = vp
+	_cr_pose_tick(0.0)
 	_refresh_preview()
 	var tr := TextureRect.new()
 	tr.texture = vp.get_texture()
@@ -1455,6 +1480,31 @@ func _place_cam() -> void:
 		_cr_cam.position = Vector3(0, 1.2, 3.4)
 		_cr_cam.look_at(Vector3(0, 1.0, 0))
 
+## The creator's stance: an afk clip played in place on the preview soldier (like the transport does).
+const CR_POSES := ["tp_npc_idle", "tp_atease_vse"]
+var _cr_clip := {}
+var _cr_sk: Skeleton3D
+var _cr_clip_t := 0.0
+func _cr_pose_tick(delta: float) -> void:
+	if _cr_clip.is_empty() or _cr_sk == null or not is_instance_valid(_cr_sk):
+		return
+	_cr_clip_t += delta
+	var len_ := float(_cr_clip.get("delka", 1.0))
+	var t := AnimClips.clip_time(_cr_clip, _cr_clip_t)
+	if _cr_clip.get("smycka", false) and len_ > 0.2:
+		t = 0.04 + fmod(_cr_clip_t, len_ - 0.08)      # (without the first and last key: no hop each loop)
+	var p := AnimClips.pose(_cr_clip, t)
+	for bn in p:
+		var i := _cr_sk.find_bone(bn)
+		if i >= 0:
+			_cr_sk.set_bone_pose_rotation(i, _cr_sk.get_bone_rest(i).basis.get_rotation_quaternion() * Quaternion.from_euler(p[bn]))
+	if AnimClips.has_track(_cr_clip, "root@pos"):
+		var ri := _cr_sk.find_bone("root")
+		if ri >= 0:
+			var v := AnimClips.sample(_cr_clip, "root@pos", t)
+			# (in place and in the middle of the picture: only the height follows the clip)
+			_cr_sk.set_bone_pose_position(ri, _cr_sk.get_bone_rest(ri).origin + Vector3(0, float(v[1]), 0))
+
 func _refresh_preview() -> void:
 	if _cr_model and is_instance_valid(_cr_model):
 		Game.apply_look(_cr_model, _cr["look"])
@@ -1485,6 +1535,7 @@ func _process(delta: float) -> void:
 			p.position.y = 354.0 - p.size.y
 	if _cr_model and is_instance_valid(_cr_model) and _cr_vp and is_instance_valid(_cr_vp):
 		_cr_model.rotation.y = lerp_angle(_cr_model.rotation.y, _cr_rot, delta * 5.0)
+		_cr_pose_tick(delta)
 		if not _cr_lock:
 			_cr_rot += delta * (0.12 if _cr_face else 0.25)
 
@@ -1564,7 +1615,7 @@ func _show_loadout() -> void:
 		var gn := Label.new()
 		gn.text = _gear_note
 		gn.add_theme_font_size_override("font_size", 8)
-		gn.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
+		gn.add_theme_color_override("font_color", UiSkin.OK)
 		_box.add_child(gn)
 		_gear_note = ""
 	var row := HBoxContainer.new()
@@ -1661,7 +1712,7 @@ func _show_loadout() -> void:
 		UiSkin.item_icon(b, item, 26)
 		b.disabled = int(left[item]) <= 0
 	var cap := int(Game.merc.get("strength", 30))
-	var wl := _label("Váha %d / síla %d%s" % [weight, cap, "  PŘETÍŽEN - budeš pomalejší" if weight > cap else ""], Color(1, 0.5, 0.4) if weight > cap else TEXT, 9)
+	var wl := _label("Váha %d / síla %d%s" % [weight, cap, "  PŘETÍŽEN - budeš pomalejší" if weight > cap else ""], UiSkin.BAD if weight > cap else TEXT, 9)
 	var hl := _label("Sklad = vezmi. Tělo = vrať. Opasek je rychlý, batoh pomalý.", FRAME, 8)
 	var bottom := HBoxContainer.new()
 	_box.add_child(bottom)
@@ -1713,7 +1764,7 @@ func _connecting(ip: String) -> void:
 	if my_try != _join_try or not is_instance_valid(st) or Net.roster.size() > 0:
 		return
 	st.text = "Hostitel %s neodpovídá. Zkontroluj IP adresu, jestli hostitel spustil hru a jestli ho nepouští firewall (port %d). Můžeš dál čekat nebo připojování zrušit." % [ip, Net.PORT]
-	st.add_theme_color_override("font_color", Color(1, 0.6, 0.4))
+	st.add_theme_color_override("font_color", UiSkin.WARN)
 	st.custom_minimum_size = Vector2(300, 0)
 
 func _show_lobby() -> void:
@@ -1738,7 +1789,7 @@ func _show_lobby() -> void:
 	else:
 		_label("Čekáme, až hostitel spustí misi. Mezitím si připrav výstroj a domluvte se (mikrofon funguje i tady).", FRAME, 9)
 		if Campaign.viewer:
-			_button("Základna a glóbus hostitele", func(): _back_target = "lobby"; get_tree().change_scene_to_file("res://scenes/Geoscape.tscn"))
+			_button("Základna a glóbus hostitele", func(): _back_target = "lobby"; Game.goto_globe())
 	_button("Výstroj na misi", func(): _back_target = "lobby"; _show_loadout())
 	_button("Můj voják (talenty, vzhled)", func(): _back_target = "lobby"; _show_merc())
 	_button("Úpravy zbraní za peníze (svítilna, laser, tlumič...)", func(): _back_target = "lobby"; _show_mods())
@@ -1829,18 +1880,18 @@ func _refresh_lobby() -> void:
 			bits.append(MIC_TEXT[mic_s])
 		var col := FRAME
 		if id != 1 and ping >= 0:
-			col = Color(0.55, 0.9, 0.5) if ping < 80 else (Color(1, 0.85, 0.4) if ping < 160 else Color(1, 0.45, 0.35))
+			col = UiSkin.OK if ping < 80 else (UiSkin.WARN if ping < 160 else UiSkin.BAD)
 			if shaky and ping < 160:
-				col = Color(1, 0.85, 0.4)
+				col = UiSkin.WARN
 		if mic_s == "dead":
-			col = Color(1, 0.6, 0.35)
+			col = UiSkin.WARN
 		(r["info"] as Label).text = "   ".join(bits)
 		(r["info"] as Label).add_theme_color_override("font_color", col)
 		var kb: Button = r["kick"]
 		if kb and is_instance_valid(kb):
 			var armed := Time.get_ticks_msec() - int(_kick_arm.get(id, -100000)) < 3000
 			kb.text = "Opravdu?" if armed else "Vyhodit"
-			kb.add_theme_color_override("font_color", Color(1, 0.45, 0.35) if armed else TEXT)
+			kb.add_theme_color_override("font_color", UiSkin.BAD if armed else TEXT)
 	var bars := int(clampf(Game.mic_level * 60.0, 0.0, 12.0))
 	var mic := "Mikrofon vypnutý (Nastavení)" if Game.voice_mode == "off" else "Tvůj mikrofon: [%s%s] %s" % ["|".repeat(bars), " ".repeat(12 - bars),
 		"VYSÍLÁŠ" if Net.get_node("LobbyVoice").talking else ("drž Tab" if Game.voice_mode == "ptt" else "ticho")]
@@ -1904,7 +1955,7 @@ func _show_main_msg(t: String) -> void:
 	if _status and is_instance_valid(_status):
 		_status.text = t
 	else:
-		_label(t, Color(1, 0.5, 0.4), 9)
+		_label(t, UiSkin.BAD, 9)
 
 # ---- headless tests -------------------------------------------------------------
 func _autotest() -> void:
@@ -1933,6 +1984,13 @@ func _autotest() -> void:
 			else:
 				Campaign.load_campaign()
 			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+		"loadprog":
+			# 0.72: the globe parked behind the menu screens, the loading bar while a mission is built
+			if get_tree().root.has_node("LoadProgTest"):
+				return
+			var lt := Node.new()
+			lt.set_script(load("res://scripts/autotest_load.gd"))
+			get_tree().root.add_child.call_deferred(lt)
 		"menuflicker":
 			# every menu panel must settle: its size may not keep changing frame after frame
 			if not Campaign.has_save():
@@ -1965,7 +2023,12 @@ func _autotest() -> void:
 			# every menu screen, checked for text sticking out of the screen
 			var shots := [["main", func(): _show_main("Tohle je dlouhá zpráva hlavního menu, která by se měla zalomit a nevylézt z okna ven.")],
 				["quick", _show_quick], ["campaign", func(): _show_campaign()], ["newcamp", _show_new_campaign], ["editor", _show_editor], ["merc", func(): Game.merc["created"] = true; _show_merc()],
-				["create", func(): _show_create(true)], ["look", func(): _show_create(false)],
+				["create", func(): _show_create(true)],
+				["create_dice", func():
+					var keep: Dictionary = Game.dice.duplicate(true)
+					Game.dice = {"left": 0, "last": Game.roll_levels(RandomNumberGenerator.new()), "peak": 1}
+					_show_create(true); _cr_mode = "points"; _build_create()
+					Game.dice = keep], ["look", func(): _show_create(false)],
 				["settings", _show_settings],
 				["loadout", _show_loadout], ["join", _show_join], ["connecting", func(): _connecting("192.168.0.99")], ["news", _show_news], ["mods", _show_mods], ["talents", _show_talents], ["money", _show_money], ["lobby", _show_lobby], ["past", _show_past],
 				["update", func(): Game.upd_state = "full"; Game.upd_version = "0.14"; _show_main()],
@@ -2146,14 +2209,14 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "leaktest", "leakmap", "ufohull", "wedgetest", "leantest", "pockettest", "leaveany", "safeend", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "ceiltest", "interiors", "spectate", "dazetest", "echotest", "dirtshot", "flaretest":
+		"town", "zoo", "terror", "shouldershot", "radiosprint", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "rooftest", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "leaktest", "leakmap", "ufohull", "wedgetest", "leantest", "pockettest", "leaveany", "safeend", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "reinfcap", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "ceiltest", "rainshot", "interiors", "spectate", "dazetest", "chaintest", "echotest", "dirtshot", "flaretest", "fragtest":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
 				"hour": float(Game.cmd_arg("hour", "14.0" if Game.cmd_arg("day", "0") == "1" else "23.0")), "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "testroom": Game.autotest() == "testroom", "terrain": Game.cmd_arg("terrain", "temperate"), "size": Game.cmd_arg("size", "medium"), "ufo": Game.cmd_arg("ufo", ""), "crew_of": Game.cmd_arg("crewof", ""), "group": Game.cmd_arg("group", ""), "research": Array(Game.cmd_arg("research", "").split(",", false)),
 				"habits": {String(Game.merc.get("name", "")): Game.cmd_arg("habits", "").split(",", false)} if Game.cmd_arg("habits", "") != "" else {},
 				"styles": {String(Game.merc.get("name", "")): Array(Game.cmd_arg("styles", "").split(",", false))} if Game.cmd_arg("styles", "") != "" else {}})
-		"basewalk", "basepass", "basenade", "basefly", "blastdoor", "npcshot", "baseshot", "echobase", "wallshot", "dazebase":
+		"basewalk", "basepass", "basenade", "basefly", "blastdoor", "npcshot", "baseshot", "echobase", "wallshot", "dazebase", "chainbase":
 			Net.play_solo()
 			var b := []
 			for i in 24:

@@ -4,10 +4,10 @@ class_name Encyclopedia
 ## a title, the text, and the thing itself turning slowly on a steel plate (an autopsy lies
 ## on the table). Opened from the command screen or from a research project.
 
-const TEXT := Color(0.84, 0.89, 0.92)
-const TITLE := Color(0.45, 0.95, 0.75)
+const TEXT := UiSkin.TEXT
+const TITLE := UiSkin.ACC
 const DIM := Color(0.45, 0.5, 0.55)
-const ACCENT := Color(1.0, 0.74, 0.32)
+const ACCENT := UiSkin.ACC
 
 var all: Array = []
 var cat := ""
@@ -510,7 +510,7 @@ static func hide_unknown(t: String) -> String:
 
 static func db_bbcode(t: String) -> String:
 	var amber := ACCENT.to_html(false)
-	var cyan := Color(0.45, 0.78, 0.86).to_html(false)
+	var cyan := UiSkin.ACC.to_html(false)
 	var dim := DIM.to_html(false)
 	t = t.replace("[", "[lb]")
 	var paras := t.split("\n\n")
