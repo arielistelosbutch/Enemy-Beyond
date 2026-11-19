@@ -2285,6 +2285,7 @@ func _physics_process(delta: float) -> void:
 			mission.noise(global_position, (1.0 if prone else (2.0 if crouching else (14.0 if sprint else 6.0))) * quiet * mission.step_noise())
 	# actions
 	fire_cd -= delta
+	_pulse_tick(delta)
 	spread_bloom = max(0.0, spread_bloom - delta * 3.0)
 	spin = max(0.0, spin - delta * 0.8)
 	_act_tick()
@@ -2334,6 +2335,15 @@ func _physics_process(delta: float) -> void:
 			semi = not semi
 			Game.play_ui(self, "clink", -6)
 			mission.hud.message("Jednotlivé rány." if semi else "Dávky.", 1.2)
+		elif not fw.is_empty() and Game.ITEMS[fw["id"]].has("pulses"):
+			# (0.72.3 Ari) LR-01: one full pulse, or the cell split into a short burst of weaker pulses
+			fw["pulse"] = not fw.get("pulse", false)
+			Game.play_ui(self, "clink", -6)
+			mission.hud.message(pulse_name(fw) + ".", 1.2)
+		elif not fw.is_empty():
+			# (0.72.3 Ari: "B nepřepíná") a gun without a selector says so instead of doing nothing
+			Game.play_ui(self, "clink", -12)
+			mission.hud.message(firemode_none(fw["id"]), 1.6)
 	_nvg_battery(delta)
 	if Input.is_action_just_pressed("nvg") and not inv_open:
 		var nv := find_item(func(it): return it["id"] == "nvg")
@@ -2399,6 +2409,20 @@ func _evac_input(at_ship: bool, inv_open: bool) -> void:
 var semi := false
 var _burst_n := 0      # pulses in the current PM-01 burst
 var _pulled := false    # the trigger was pulled anew and no shot has come of it yet (the spin-up guns)
+
+## B on a gun with nothing to switch: what it says (lasers fire single charged pulses by design).
+static func firemode_none(id: String) -> String:
+	var r: Dictionary = Game.ITEMS[id]
+	if r.get("laser", false):
+		return "%s nemá přepínač: střílí jednotlivé pulzy, mezi nimi se dobíjí článek." % r["short"]
+	return "%s nemá přepínač režimu střelby." % r["short"]
+
+## LR-01's selector: "Jednotlivé rány" / "Dávka (5 pulzů)".
+func pulse_name(it: Dictionary) -> String:
+	if it.get("pulse", false):
+		var n := int(Game.ITEMS[it["id"]]["pulses"])
+		return "Dávka (%d %s)" % [n, "pulzy" if n < 5 else "pulzů"]
+	return "Jednotlivé rány"
 
 func burst_name(it: Dictionary) -> String:
 	var bl: Array = Game.ITEMS[it["id"]].get("bursts", [0])
@@ -2489,6 +2513,45 @@ var _since_shot := 9.0
 const PC_FOLLOW := 5.0      # PC-01: a second pulse within this many seconds hits a weakened plate
 const PLASMA_CYCLE := 0.5      # PP-01 incident: a spent PL-MAG is not a dead gun - the swap waits this long after a shot
 var _laser_hold := false      # a laser charged while the trigger was down: no shot until it is pulled again
+## (0.72.3) LR-01 burst: one charge split into PULSES weaker pulses fired PULSE_GAP apart
+const PULSE_GAP := 0.09
+const PULSE_DMG := 0.26       # of a full shot, per pulse (5 x 0.26 = 1.3 if every pulse hits)
+const PULSE_SPREAD := 1.5     # each pulse scatters more (and the kicks add up)
+const PULSE_HEAT := 0.35      # emitter heat per pulse, of a full shot (a burst heats 1.75x)
+const PULSE_KICK := 0.6
+var _pulse_left := 0
+var _pulse_t := 0.0
+var _pulse_slot := ""
+var _pulse_k := 1.0           # 1 = a normal shot; PULSE_DMG while a burst fires (read in _shoot)
+
+## Fires the next pulse of a running LR-01 burst (the cell is spent only by the last one).
+func _pulse_tick(delta: float) -> void:
+	if _pulse_left <= 0:
+		return
+	var w := item_in(_pulse_slot)
+	if w.is_empty() or downed or dead or not w.get("pulse", false) or int(w.get("loaded", 0)) <= 0 or _mg_hot:
+		_pulse_left = 0
+		return
+	_pulse_t -= delta
+	if _pulse_t > 0.0:
+		return
+	_pulse_t = PULSE_GAP
+	_pulse_left -= 1
+	_fire_pulse(_pulse_slot, w, Game.ITEMS[w["id"]], _pulse_left == 0)
+
+var pulses_fired := 0         # (autotest) LR-01 burst pulses so far
+
+func _fire_pulse(slot: String, w: Dictionary, rule: Dictionary, last: bool) -> void:
+	pulses_fired += 1
+	_pulse_k = PULSE_DMG
+	_shoot(slot, w, rule)
+	_pulse_k = 1.0
+	if not last:
+		w["loaded"] = int(w["loaded"]) + 1      # only the last pulse empties the cell
+		w.erase("drained")
+		fire_cd = PULSE_GAP * float(_pulse_left + 1)
+	else:
+		fire_cd = float(rule["rate"])
 
 func _laser_charge(delta: float) -> void:
 	_since_shot += delta
@@ -2717,6 +2780,13 @@ func _use_hand(slot: String, pressed: bool, just: bool, delta: float) -> void:
 							mission.hud.message("Laser je vybitý - nabíjí se doplna (%d/%d)" % [int(it.get("loaded", 0)), Game.mag_size(it["id"])], 1.5)
 				elif rule.get("laser", false) and _laser_hold and not fresh:
 					pass      # charged while the trigger was held: it waits for a new pull
+				elif int(it.get("loaded", 0)) > 0 and it.get("pulse", false) and rule.has("pulses"):
+					if _pulse_left <= 0:
+						_pulse_slot = slot
+						_pulse_left = int(rule["pulses"]) - 1
+						_pulse_t = PULSE_GAP
+						_fire_pulse(slot, it, rule, _pulse_left == 0)
+					_pulled = false
 				elif int(it.get("loaded", 0)) > 0:
 					_shoot(slot, it, rule)
 					_burst_n += 1
@@ -2946,14 +3016,14 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 	_since_shot = 0.0
 	fire_cd = rule["rate"] / (2.0 if slot == "lh" and not gun_in("rh").is_empty() else 1.0)
 	_vm_kick = 1.0
-	kick_mult = float(rule.get("kick", 1.0))
-	var spread := deg_to_rad(current_spread())
+	kick_mult = float(rule.get("kick", 1.0)) * (PULSE_KICK if _pulse_k < 1.0 else 1.0)
+	var spread := deg_to_rad(current_spread()) * (PULSE_SPREAD if _pulse_k < 1.0 else 1.0)
 	var grip := Game.has_mod(wp["id"], "rukojet", merc) or Game.has_mod(wp["id"], "pazba", merc) or Game.has_mod(wp["id"], "tlumeni", merc) or Game.has_mod(wp["id"], "brzda", merc) or Game.has_mod(wp["id"], "ergo", merc) or Game.has_mod(wp["id"], "kompenzator", merc)
 	if grip:
 		kick_mult *= 0.5
 	spread_bloom = min(5.0, spread_bloom + 0.7 * kick_mult * (0.6 if grip else 1.0) * (0.5 if Game.has_mod(wp["id"], "stabilizator", merc) else 1.0))
 	if rule.has("heat"):
-		mg_heat += float(rule["heat"]) * (0.6 if Game.has_mod(wp["id"], "chladic", merc) else 1.0) * Game.part_mult(wp["id"], "heat", merc)
+		mg_heat += float(rule["heat"]) * (PULSE_HEAT if _pulse_k < 1.0 else 1.0) * (0.6 if Game.has_mod(wp["id"], "chladic", merc) else 1.0) * Game.part_mult(wp["id"], "heat", merc)
 		if mg_heat >= 1.0 and not _mg_hot:
 			_mg_hot = true
 			Game.play_at(self, "hiss", global_position + Vector3.UP, -2)
@@ -2976,7 +3046,7 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 			get_tree().create_timer(randf_range(0.35, 0.6)).timeout.connect(func(): if is_instance_valid(self): Game.play_at(mission, "casing", cpos, -16))
 	var tracers := []
 	var pellets := int(rule.get("pellets", 1))
-	var base_dmg := float(rule.get("damage", 0)) * Game.part_mult(wp["id"], "dmg", merc)
+	var base_dmg := float(rule.get("damage", 0)) * Game.part_mult(wp["id"], "dmg", merc) * _pulse_k
 	if shell == "slugs":
 		pellets = 1            # one heavy lead slug: goes where you aim, and deep
 		base_dmg = 95.0

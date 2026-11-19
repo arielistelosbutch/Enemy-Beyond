@@ -3045,6 +3045,20 @@ func _lasertest(p: Node) -> void:
 	var waiting: bool = int(p.inv["rh"]["loaded"]) == 0
 	await get_tree().create_timer(1.0 / float(r["recharge"]) + 0.3).timeout
 	var ready: bool = int(p.inv["rh"]["loaded"]) == 1 and not p.inv["rh"].get("drained", false)
+	# (0.72.3 Ari) B switches LR-01 to a burst: one pull = 5 pulses, the cell empty after the last
+	Input.action_press("firemode")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	Input.action_release("firemode")
+	var sel: bool = p.inv["rh"].get("pulse", false)
+	var heat0: float = p.mg_heat
+	p.pulses_fired = 0
+	Input.action_press("fire")
+	await get_tree().create_timer(0.7).timeout
+	Input.action_release("fire")
+	var n_p: int = p.pulses_fired
+	var burst: bool = sel and n_p == int(r["pulses"]) and int(p.inv["rh"]["loaded"]) == 0 and p.inv["rh"].get("drained", false) and p.mg_heat > heat0
+	out("[LASER] burst sel %s pulses %d loaded %d" % [sel, n_p, int(p.inv["rh"]["loaded"])])
 	var mr: Dictionary = Game.ITEMS["laser_minigun"]
 	p.inv["rh"] = {"id": "laser_minigun", "loaded": Game.mag_size("laser_minigun")}
 	p._update_held()
@@ -3074,7 +3088,30 @@ func _lasertest(p: Node) -> void:
 	var off: bool = kn.get("edge_off", false) and p._edge_strike(38.0, 66.0) == 38.0
 	p._edge_switch(kn)
 	var edge: bool = hits == [66.0, 66.0, 66.0, 38.0] and off and p._edge_strike(38.0, 66.0) == 66.0
-	out("RESULT lasertest drained %s waiting %s ready %s mg_dry %s mg_full %s edge %s" % [drained, waiting, ready, mg_dry, mg_full, edge])
+	# (0.72.3 Ari: "pušky mají vystřílet celý zásobník") PR-01: held trigger empties the PL-MAG
+	# without overheating, single shots on B
+	p.inv["rh"] = {"id": "plasma_rifle", "loaded": Game.mag_size("plasma_rifle")}
+	p._update_held()
+	p.semi = false
+	p._mg_hot = false
+	p.mg_heat = 0.0
+	p.fire_cd = 0.0
+	Input.action_press("fire")
+	await get_tree().create_timer(2.6).timeout
+	Input.action_release("fire")
+	var pr_left := int(p.inv["rh"]["loaded"])
+	var pr_hot: bool = p._mg_hot
+	p.inv["rh"]["loaded"] = Game.mag_size("plasma_rifle")
+	p.semi = true
+	p.mg_heat = 0.0
+	Input.action_press("fire")
+	await get_tree().create_timer(0.8).timeout
+	Input.action_release("fire")
+	var pr_semi: int = Game.mag_size("plasma_rifle") - int(p.inv["rh"]["loaded"])
+	p.semi = false
+	out("[LASER] PR-01 auto left %d hot %s, semi shots %d" % [pr_left, pr_hot, pr_semi])
+	var pr_auto: bool = pr_left == 0 and not pr_hot and pr_semi == 1
+	out("RESULT lasertest drained %s waiting %s ready %s burst %s pr_auto %s mg_dry %s mg_full %s edge %s" % [drained, waiting, ready, burst, pr_auto, mg_dry, mg_full, edge])
 	get_tree().quit()
 
 ## (0.72, Ari) reinforcements at most twice per mission: beacons, the late ship and a Bijec officer

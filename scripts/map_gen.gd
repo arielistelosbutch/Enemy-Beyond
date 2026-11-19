@@ -761,6 +761,8 @@ func _rects(n: Node) -> Array:
 		var a: AABB = c.global_transform * (_shape_aabb[c.shape] as AABB)
 		if a.end.y < 0.3 or a.size.x * a.size.z < 0.01:
 			continue          # ground, floors, kerbs: you can stand there
+		if a.position.y > 2.0:
+			continue          # (0.72.3) overhead: a ceiling or a roof slab - since roof slabs are solid (_roof_slab) they pushed every bench and drum out of the hangar
 		out.append(Rect2(a.position.x, a.position.z, a.size.x, a.size.z))
 	return out
 
@@ -1776,9 +1778,12 @@ func _house(o: Vector3) -> void:
 	_bookshelf(c + Vector3(7.6, 0.1, 2.2), PI / 2)
 	_kitchen(c + Vector3(0.45, 0.1, 4.4), false, 1.2)
 	# the yard: a well, firewood, washing on the line or the hen house
-	_prop("well", o + Vector3(1.0, 0, 10.9), rng.randf() * TAU)
+	var well_yaw := rng.randf() * TAU
+	if biome not in ["town", "industrial", "base"]:          # (0.72.3) a well only in the country, not in a town street
+		_prop("well", o + Vector3(1.0, 0, 10.9), well_yaw)
 	_prop("woodpile", o + Vector3(11.2, 0, 3.2), PI / 2)     # (0.70: off the middle - it is solid now and stood in the next house's side door; 0.72.1 a bit further, its loose logs reached the door)
-	if rng.randf() < 0.5:
+	# (0.72.3: hens only in the country - no hen house in a town or an army base)
+	if rng.randf() < 0.5 or biome in ["town", "industrial", "base"]:
 		_prop("laundry", o + Vector3(6.5, 0, 10.9), 0.0, false)
 	else:
 		_prop("coop", o + Vector3(6.5, 0, 10.8), PI)
@@ -1888,18 +1893,8 @@ func _barn(o: Vector3) -> void:
 		box(c + Vector3([1.2, 2.7, w - 1.3][i], 0.6, d - 1.5), Vector3(1.4, 1.2, 1.4), Game.mat("hay", 1.0))    # by the walls, not in the doorway
 	_cover(c + Vector3(3.0, 0, d - 3.0)); _cover(c + Vector3(7.5, 0, 2.0))
 	info["waypoints"].append(c + Vector3(w / 2, 0, d / 2))
-	# a handheld radio on the floor - someone called for help from here
-	var r := c + Vector3(6.5, 0, 5.0)
-	box(r + Vector3(0, 0.08, 0), Vector3(0.12, 0.16, 0.06), Game.color_mat(Color(0.1, 0.1, 0.1)), false, 0.6)
-	box(r + Vector3(0.03, 0.22, 0), Vector3(0.015, 0.14, 0.015), Game.color_mat(Color(0.1, 0.1, 0.1)), false)
-	var led := OmniLight3D.new()
-	led.light_color = Color(1.0, 0.2, 0.1)
-	led.light_energy = 0.4
-	led.omni_range = 1.2
-	root.add_child(led)
-	led.position = r + Vector3(0, 0.25, 0)
-	info["sounds"].append({"name": "static", "pos": r + Vector3(0, 0.2, 0), "db": -18.0})
-	info["barn"] = r
+	# (0.72.3: the handheld radio on the floor and its hiss are gone - Ari: it has no business there any more)
+	info["barn"] = c + Vector3(6.5, 0, 5.0)
 
 # ---- new tiles (0.23): two floors, ruins, gardens, creeks, industry, mountains, a fuel station ----
 func _lamp(p: Vector3, energy := 1.1, rng_ := 5.5, col := Color(1.0, 0.78, 0.5)) -> void:
@@ -2475,7 +2470,7 @@ func _trusses(c: Vector3, w: float, d: float, h: float) -> void:
 	for i in 2:
 		box(c + Vector3(w * (0.3 + i * 0.4), h - 0.02, d / 2), Vector3(1.2, 0.03, d * 0.7), Game.color_mat(Color(0.35, 0.4, 0.5), true), false)
 
-## The hangar: a wide open gate, the Sokol on its stand, workbenches and fuel drums.
+## The hangar: a wide open gate, an empty floor, workbenches and fuel drums.
 func _hangar(o: Vector3) -> void:
 	_ground(o, "concrete")
 	var c := o + Vector3(0.4, 0, 1.0)
@@ -2495,19 +2490,15 @@ func _hangar(o: Vector3) -> void:
 		box(c + Vector3(1.2 + k * 1.1 + 0.55, 2.35, -0.17), Vector3(0.55, 0.22, 0.04), Game.color_mat(Color(0.85, 0.7, 0.1)) if k % 2 == 0 else Game.color_mat(Color(0.08, 0.08, 0.08)), false)
 	box(c + Vector3(w / 2, 4.5, -0.17), Vector3(1.6, 1.0, 0.04), Game.color_mat(Color(0.85, 0.85, 0.8)), false)
 	_trusses(c, w, d, h)
-	var jet: Node3D = Game.model("sokol")
-	root.add_child(jet)
-	jet.position = c + Vector3(w / 2, 1.0, d / 2 + 0.5)
-	jet.rotation.y = PI
-	_solid_mesh(jet)       # 0.70: you walked through its wings and tail
-	box(c + Vector3(w / 2, 0.5, d / 2 + 0.5), Vector3(2.2, 1.0, 5.5), Game.mat("metal", 0.5))   # the stand (cover)
+	# (0.72.3: no Sokol any more - Ari: it did not fit, its nose stuck out of the back door, and the
+	# workbenches and drums, pushed off its outline by _untangle, ended up outside the walls. Empty.)
 	for i in 3:
 		_prop("workbench", c + Vector3(0.75, 0, 2.5 + i * 2.4), -PI / 2, false)
 	for i in 4:
 		_drum(c + Vector3(w - 0.8, 0, 1.5 + i * 0.75))
 	for lx in [3.0, 8.0]:
 		_lamp(c + Vector3(lx, h - 0.6, d / 2), 1.6, 10.0, Color(0.85, 0.9, 1.0))
-	_cover(c + Vector3(w / 2 + 1.6, 0, d / 2)); _cover(c + Vector3(w / 2 - 1.6, 0, d / 2)); _cover(c + Vector3(2.0, 0, 4.0))
+	_cover(c + Vector3(2.0, 0, 4.0))
 	info["waypoints"].append(c + Vector3(w / 2, 0, 2.0))
 	info["waypoints"].append(c + Vector3(3.0, 0, d - 1.5))
 

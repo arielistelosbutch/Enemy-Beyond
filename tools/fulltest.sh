@@ -40,6 +40,7 @@ run menu_ui     300 x "\[UI\] ready: 0"                    --autotest=ui
 run mods_ui     200 x "\[MODS\] bought true"              --autotest=modsui
 run talent_ui   200 x "\[TALENT\] skip true chain true rank true spent true eye true drone true" --autotest=talentui
 run dice        60 s "RESULT dicetest ok"                tools/test/dicetest.gd
+run firemode    60 s "RESULT firemode ok"                tools/test/firemodetest.gd
 run mtypes      60 s "RESULT missiontypes ok"            tools/test/missiontypes.gd
 run convoy      300 h "RESULT convoytest saved true banner true .* finished true" --autotest=convoytest --mtype=convoy --biome=forest --hold=90
 run convoy_fail 300 h "Vetřelci rozbili náklad konvoje"  --autotest=convoytest --mtype=convoy --biome=farm --group=bijci --fail=1
@@ -52,6 +53,7 @@ run presets     200 x "\[PRESET\] first false list true merc true levels true di
 run sights     1000 x "scope mode=scope on=true"          --autotest=sightshot --day=1 --fast=1
 run menu_flick  200 x "RESULT menuflicker 0"               --autotest=menuflicker
 run geo_ui      300 x "\[UI\] geo_ency_grey: 0"            --autotest=uigeo
+run geo_events  150 x "RESULT geoevents shown true rows 3 stopped true back true full 8 viewer 1 bar true" --autotest=geoevents
 run geo_models  120 x "RESULT geomodels ships 5 crafts 3 models 8"   --autotest=geomodels
 run base_pick   120 x "RESULT basepick picking true frozen true bloc na place Texas credits 1200->1500 near [1-9][0-9]/40 running true"   --autotest=basepick
 run mission_ui  250 x "\[UI\] m_result: 0"                 --autotest=uimission
@@ -227,7 +229,7 @@ run nadtest    150 h "RESULT nadtest husk true still true blast true direct true
 run ohntest    150 h "RESULT ohntest knows true charged true hurt true" --autotest=ohntest --mtype=landed
 run mystest    150 h "RESULT mystest moved true again false alive true" --autotest=mystest --mtype=landed
 run koltest    200 h "RESULT koltest found true up true top [0-9.]+ down true" --autotest=koltest --mtype=terror --biome=town
-run lasertest  120 h "RESULT lasertest drained true waiting true ready true mg_dry true mg_full true edge true" --autotest=lasertest --mtype=landed
+run lasertest  120 h "RESULT lasertest drained true waiting true ready true burst true pr_auto true mg_dry true mg_full true edge true" --autotest=lasertest --mtype=landed
 run lcshot     150 h "RESULT lcshot hit true shards true hum true ready true" --autotest=lcshot --mtype=landed
 run plasmatest 150 h "RESULT plasmatest pistol 20 hot true interlock true cannon 4 minigun true rifle 10 grenade true seared true mags_left 0" --autotest=plasmatest --mtype=landed
 run shieldtest 100 h "RESULT shieldtest low 10 up 2 broke true after [0-9]+ plasma 4 knock true vest 16/13 worn true" --autotest=shieldtest --mtype=landed

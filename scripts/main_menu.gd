@@ -2484,7 +2484,7 @@ func _autotest() -> void:
 			get_tree().change_scene_to_file("res://scenes/TileEditor.tscn")
 		"modeler", "modclick", "modspeed":
 			get_tree().change_scene_to_file("res://scenes/Modeler.tscn")
-		"geo", "campaign", "campair", "uigeo", "encyshot", "striketest", "geomodels", "basepick", "carttest", "gameover":
+		"geo", "campaign", "campair", "uigeo", "geoevents", "encyshot", "striketest", "geomodels", "basepick", "carttest", "gameover":
 			# (the test machine's merc may still be on the sick bay from an earlier test run)
 			for k in ["heal_days", "injury", "sick", "heal_cid", "heal_seen"]:
 				Game.merc.erase(k)

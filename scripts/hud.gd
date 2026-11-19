@@ -1048,6 +1048,8 @@ func _hand_text(c: Control, p: Node, slot: String, at: Vector2) -> void:
 	var mode := ("  ·  1×" if p.semi else "  ·  dávka") if rule.get("modes", false) else ""
 	if rule.has("bursts"):
 		mode = "  ·  %s" % p.burst_name(it)
+	if rule.has("pulses"):
+		mode = "  ·  %s" % ("dávka" if it.get("pulse", false) else "1×")
 	if rule.has("ammo_alt"):
 		mode = "  ·  %s" % Game.ITEMS[String(it.get("sel", rule["ammo"]))]["short"]
 	_text(c, at, label + ((rule["short"] + " (neznámá)") if Game.alien_unknown(it["id"]) else rule["name"]) + mode, Color(0.80, 0.83, 0.86), 9)

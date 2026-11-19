@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.72.2
+# Operace X - Enemy Beyond — prototyp 0.72.3
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,14 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.72.3
+- Laserová puška LR-01 umí na B přepnout na dávku pěti pulzů (slabší jednotlivé zásahy, víc tepla). Zbraně bez přepínače mi na B řeknou, proč nepřepínají.
+- Plazmová puška PR-01 má volič jako obyčejná puška: v dávce vystřílím celý zásobník za dvě vteřiny těsně pod přehřátím, jednotlivé rány jsou přesnější.
+- Na glóbu se při každém zastavení času ukáže okno CO SE STALO se vším najednou: dokončený výzkum, výroba a stavba, spatřené a přistálé UFO, nové mise, incidenty. Tlačítko u řádku mě vezme na místo, POKRAČOVAT (Enter) pustí čas dál. Spoluhráč v co-opu vidí stejné okno.
+- Ve Velínu je vidět, jak pokračuje výzkum a výroba: název, procenta, kolik zbývá a pruh postupu. Dokončená výroba teď zastaví čas.
+- Opravené grafické chyby: ve stodole už neleží vysílačka, kurníky a studny jsou jen na vesnici, kurník má rampu správně, vrak náklaďáku nemá podivně odklopenou kapotu, náboje v nosiči brokovnice nesvítí, hangár je prázdný bez Sokola.
+- Ponky, sudy a další věci už nejsou vystrkané ven z budov s plochou střechou.
 
 ## Novinky 0.72.2
 - Celé rozhraní je v novém stylu Čistý taktický: nahoře drobečková navigace se stavem, dole lišta kláves, žádné krabice v krabicích a jedna zlatá barva.
