@@ -321,10 +321,11 @@ def pocitac():
 def nosic():
     """Shotgun side saddle: six shells on the left of the receiver. Origin = the receiver face, to -X."""
     reset(); m = M(); p = []
+    hull = mat2("ShellHull", (0.45, 0.07, 0.05), 0.55)      # (0.72.3: was LedRed - the shells glowed)
     p.append(bx(m["black"], (-0.004, 0.0, 0.0), (0.008, 0.11, 0.05), 0.002))
     for i in range(6):
         y = -0.045 + i * 0.018
-        p.append(smooth(cyl(m["red"], (-0.017, y, 0.004), 0.0095, 0.05, verts=12)))
+        p.append(smooth(cyl(hull, (-0.017, y, 0.004), 0.0095, 0.05, verts=12)))
         p.append(smooth(cyl(m["brass"], (-0.017, y, -0.024), 0.0098, 0.01, verts=12)))
     p.append(bx(m["black"], (-0.01, 0.0, 0.006), (0.006, 0.112, 0.016), 0.001))
     out(p, "Nosic")

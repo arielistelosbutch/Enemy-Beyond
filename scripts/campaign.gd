@@ -760,7 +760,8 @@ func advance(days: float) -> bool:
 	var stop := false
 	data["day"] = float(data["day"]) + days
 	_deliveries()
-	_workshop_tick(days)
+	if _workshop_tick(days):
+		stop = true          # (0.7x: "Výroba dokončena" stops the clock too, like research)
 	# research
 	var r: Dictionary = data["research"]
 	if r["current"] != "":
@@ -865,6 +866,7 @@ func advance(days: float) -> bool:
 		else:
 			var m := generate_mission()
 			data["missions"].append(m)
+			_log("Radar: %s - %s" % [MTYPES[m["type"]]["name"], m["place"]])
 			mission_found.emit(m)
 		stop = true
 	if float(data.get("vrak_signal", -1.0)) > 0.0 and float(data["day"]) >= float(data["vrak_signal"]):
@@ -1044,6 +1046,7 @@ func _cell_incident() -> void:
 
 func _log(s: String) -> void:
 	data["log"].append("[%s] %s" % [date_text().split("  ")[0], s])
+	data["log_n"] = int(data.get("log_n", 0)) + 1      # (0.7x: how many ever - the globe's events count new ones)
 	if data["log"].size() > 40:
 		data["log"].pop_front()
 
@@ -2201,7 +2204,7 @@ func _pay(al: int, mk: int) -> void:
 func _queue(item: String, days: float, extra := {}) -> void:
 	if not data.has("orders"):
 		data["orders"] = []
-	var o := {"item": item, "work": days, "at": 0.0, "made": true}
+	var o := {"item": item, "work": days, "total": days, "at": 0.0, "made": true}
 	o.merge(extra)
 	data["orders"].append(o)
 	_workshop_eta()
@@ -2218,7 +2221,7 @@ func _made_orders() -> Array:
 	return (data.get("orders", []) as Array).filter(func(o): return o.get("made", false))
 
 ## Work on the queue: the first piece, then the next one.
-func _workshop_tick(days: float) -> void:
+func _workshop_tick(days: float) -> bool:
 	var rate := workshop_rate()
 	var now := float(data["day"])
 	var done := []
@@ -2254,6 +2257,21 @@ func _workshop_tick(days: float) -> void:
 		if not l.is_empty():
 			_log("Dílna dokončila: " + ", ".join(l) + ".")
 	_workshop_eta()
+	return not done.is_empty()
+
+## (0.7x) What the workshop works on now, for the globe: name, share done (0..1), hours left of this
+## piece, how many more pieces wait behind it. Empty when it makes nothing.
+func workshop_now() -> Dictionary:
+	var made := _made_orders()
+	if made.is_empty():
+		return {}
+	var o: Dictionary = made[0]
+	var w := float(o.get("work", 0.0))
+	if not o.has("total") or float(o["total"]) < w:
+		o["total"] = maxf(w, 0.01)        # (older saves: counted from now)
+	var rate := workshop_rate()
+	return {"name": queue_name(String(o["item"])), "pct": clampf(1.0 - w / float(o["total"]), 0.0, 1.0),
+		"hours": (w / rate * 24.0) if rate > 0.0 else -1.0, "more": made.size() - 1}
 
 ## When each piece will be done (game day), at today's pace.
 func _workshop_eta() -> void:

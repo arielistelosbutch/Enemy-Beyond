@@ -503,7 +503,7 @@ def coop():
     door.rotation_euler = (0, 0, -1.9)
     apply_xf(door)
     vis.append(door)
-    vis.append(bx(m["wood"], (0.5, 0.98, 0.35), (0.3, 0.62, 0.03), 0.005, rot=(0.75, 0, 0)))   # ramp with slats
+    vis.append(bx(m["wood"], (0.5, 0.98, 0.35), (0.3, 0.62, 0.03), 0.005, rot=(-0.75, 0, 0)))  # ramp with slats (0.72.3: high end at the hole, was the wrong way round)
     for k in range(4):
         vis.append(box(m["dwood"], (0.5, 0.82 + k * 0.12, 0.5 - k * 0.11), (0.3, 0.02, 0.02)))
     # the lean-to roof: tile rows

@@ -63,21 +63,31 @@ func _ready() -> void:
 	Net.note.connect(_on_note)
 	Net.stock_changed.connect(_live_dirty)
 	Campaign.changed.connect(_live_dirty)
-	Campaign.mission_found.connect(func(m): Game.play_ui(self, "radar_alert", -4); _alert("RADAR: %s\n%s\n%s" % [Campaign.MTYPES[m["type"]]["name"], m["place"], Campaign.MTYPES[m["type"]]["text"]]); selected = int(m["id"]); _focus(m))
-	Campaign.flight_found.connect(func(f): Game.play_ui(self, "radar_ping", -4); _alert("RADAR: UFO V LETU\n%s nad oblastí %s.\nVyber ho na glóbu a vyšli stíhačky, než zmizí." % [Campaign.UFO_NAMES[f["kind"]], Campaign.nearest_place(float(f["lat"]), float(f["lon"]))]); selected = int(f["id"]); _focus(f))
+	# (0.7x) what happens while the clock runs goes into one window of events (_show_events)
+	Campaign.mission_found.connect(func(m):
+		Game.play_ui(self, "radar_alert", -4)
+		selected = int(m["id"]); _focus(m)
+		var mid := int(m["id"])
+		_event("RADAR - NOVÁ MISE", Campaign.MTYPES[m["type"]]["name"], "%s\n%s" % [m["place"], Campaign.MTYPES[m["type"]]["text"]], ACCENT,
+			["Ukázat na glóbu", func(): _show_on_globe(mid)]))
+	Campaign.flight_found.connect(func(f):
+		Game.play_ui(self, "radar_ping", -4)
+		selected = int(f["id"]); _focus(f)
+		var fid := int(f["id"])
+		_event("UFO SPATŘENO", Campaign.UFO_NAMES[f["kind"]], "Nad oblastí %s. Vyber ho na glóbu a vyšli stíhačky, než zmizí." % Campaign.nearest_place(float(f["lat"]), float(f["lon"])), UiSkin.WARN,
+			["Ukázat na glóbu", func(): _show_on_globe(fid)]))
 	Campaign.research_done.connect(func(id):
 		Game.play_ui(self, "research_done", -3)
-		_alert("VÝZKUM DOKONČEN\n%s\n%s" % [Campaign.RESEARCH[id]["name"], Campaign.RESEARCH[id]["desc"]])
 		var ent: String = EncyData.for_research(id)
-		if ent != "" and popup:
-			var box: VBoxContainer = popup.get_child(0)
-			_btn(box, "Otevřít v encyklopedii", func(): _show_archive(ent), 9))
+		_event("VÝZKUM DOKONČEN", Campaign.RESEARCH[id]["name"], Campaign.RESEARCH[id]["desc"], UiSkin.OK,
+			["Encyklopedie", func(): _show_archive(ent)] if ent != "" else ["Výzkum", _show_research]))
 	Campaign.report.connect(func(txt):
 		Game.play_ui(self, "warning_alarm" if String(txt).begins_with("KONEC") or "MÍNUSU" in String(txt) else "money", -6)
 		if String(txt).begins_with("KONEC") and Campaign.is_over():
 			_show_end()          # (0.7x: the end of the campaign has its own screen)
 		else:
-			_alert(txt))
+			var rp := String(txt).split("\n", true, 1)
+			_event("HLÁŠENÍ", rp[0], rp[1] if rp.size() > 1 else "", UiSkin.BAD if "MÍNUSU" in String(txt) else ACCENT, []))
 	Net.base_changed.connect(func():
 		# a co-op mate: the host's campaign ended while we look at his globe
 		if Campaign.viewer and Campaign.is_over() and _end_screen == null:
@@ -102,6 +112,7 @@ func _ready() -> void:
 				(func(): _on_ambush(c)).call_deferred()
 				break
 	_arrival_checks()
+	_viewer_mark = _log_now()
 	_autotest.call_deferred()
 
 var _hum: AudioStreamPlayer
@@ -415,8 +426,13 @@ func _process(delta: float) -> void:
 	gmat.set_shader_parameter("sun_dir", latlon_to_local(Campaign.SUN_LAT, sun_lon))     # (the missions use the same sun: Campaign.sun_at)
 	# time
 	if popup == null and not Campaign.viewer and not Campaign.data.get("lost", false) and not Campaign.base_picking():
+		var was := speed
+		var mark := _log_now()
 		if Campaign.advance(SPEEDS[speed] * delta):
 			speed = 0
+			if was > 0:
+				_speed_before = was
+		_events_from_log(mark, false)
 	if Campaign.viewer:
 		# the host's clock runs on between his packets (each packet sets it right again)
 		Campaign.data["day"] = float(Campaign.data["day"]) + Net.geo_speed * delta
@@ -429,6 +445,11 @@ func _process(delta: float) -> void:
 	base_marker.visible = not Campaign.base_picking()
 	_pick_tick()
 	_ready_tick()
+	if Campaign.viewer:
+		_events_from_log(_viewer_mark, true)
+		_viewer_mark = _log_now()
+	if popup == null and not _events.is_empty() and _end_screen == null and not Campaign.base_picking():
+		_show_events()
 	_one_window()
 	_sync_markers()
 	_sync_reports()
@@ -541,6 +562,11 @@ func _gui_input(event: InputEvent) -> void:
 ## 0.66 (Ari): the game menu only through Esc or straight from the globe - Esc closes an open
 ## window first (one level up), on the bare globe it opens the game menu.
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode in [KEY_ENTER, KEY_KP_ENTER] \
+			and popup != null and is_instance_valid(popup) and popup.get_meta("events", false) and not Campaign.viewer:
+		get_viewport().set_input_as_handled()
+		_events_go_on()
+		return
 	if not (event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_ESCAPE or event.is_action("pause"))):
 		return
 	get_viewport().set_input_as_handled()
@@ -872,6 +898,7 @@ func _build_side() -> void:
 	UiSkin.title(title, 12)
 	_build_ready()
 	status_lbl = _lbl(side, "", TEXT, 8)
+	_build_work()
 	var row := HBoxContainer.new()
 	side.add_child(row)
 	for i in (0 if Campaign.viewer else SPEEDS.size()):
@@ -908,11 +935,8 @@ func _build_side() -> void:
 
 func _update_text() -> void:
 	var d: Dictionary = Campaign.data
-	var r: Dictionary = d["research"]
-	var rs := "nic"
-	if r["current"] != "":
-		var rr: Dictionary = Campaign.RESEARCH[r["current"]]
-		rs = "%s %d %%" % [rr["name"], int(float(r["progress"]) / Campaign.research_days(r["current"]) * 100)]
+	var rs := ""
+	_update_work()
 	if not Campaign.kondor_ready():
 		rs += "   Kondor za %d h" % Campaign.kondor_hours()
 	var co := "\nOsobní majetek: %d kr" % Net.my_money()
@@ -930,7 +954,7 @@ func _update_text() -> void:
 				order.append(a)
 			seen_air[a] = int(seen_air.get(a, 0)) + 1
 		co += "\nVe vzduchu: " + ", ".join(order.map(func(a): return a if int(seen_air[a]) == 1 else "%d× %s" % [seen_air[a], a.left(1).to_lower() + a.substr(1)]))
-	status_lbl.text = "%s\nRozpočet základny: %d kr   Důvěra: %d %%\nMk-115: %d g   Výzkum: %s   Rychlost: %s%s" % [Campaign.date_text(), int(d["credits"]), int(d["trust"]), Campaign.moskovium(), rs, SPEED_NAMES[speed], co]
+	status_lbl.text = "%s\nRozpočet základny: %d kr   Důvěra: %d %%\nMk-115: %d g%s   Rychlost: %s%s" % [Campaign.date_text(), int(d["credits"]), int(d["trust"]), Campaign.moskovium(), rs, SPEED_NAMES[speed], co]
 	var fl := _selected_flight()
 	if not fl.is_empty():
 		var left2: float = (float(fl["until"]) - float(d["day"])) * 24.0
@@ -1409,6 +1433,7 @@ func unpark() -> void:
 			(l[0] as Signal).connect(l[1])
 	_park_links.clear()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_viewer_mark = _log_now()
 	if _hum and not _hum.playing:
 		_hum.play()
 	Game.play_music("game_over" if Campaign.data.get("lost", false) else "geoscape")
@@ -1586,6 +1611,228 @@ func _show_hangar() -> void:
 	if not Campaign.viewer:
 		_btn(row, "Výzbroj a dílna...", func(): _show_base(1), 9)
 	_btn(row, "Zavřít", _close_popup, 9)
+
+# ---- (0.7x) events: what stopped the clock, in one window -------------------------------------------
+## Ari 2026-11-18: the clock stops whenever something happens - now a window says what. Everything that
+## happened in one stop (research done, workshop done, UFO seen, a mission, a building...) is one list.
+## The host / solo: the rich events from the signals + the log lines of advance(); a co-op viewer: the
+## host's log lines as they come (only the kinds below). Enter = go on at the speed before, Esc = close.
+var _events: Array = []          # [{cat, title, text, col, act: [label, callable] or []}]
+var _speed_before := 1
+var _viewer_mark := 0
+const EVENT_EVERY := 8           # (more in one window would not fit: the rest is in Hlášení)
+
+## log lines the signals already said better (host/solo)
+const LOG_BY_SIGNAL := ["Výzkum dokončen", "Radar:", "UFO, které nikdo", "UFO přistálo a technici"]
+## [start or part of the line, category, colour key]
+const LOG_KINDS := [["Výzkum dokončen", "VÝZKUM DOKONČEN", "ok"], ["Dílna dokončila", "VÝROBA DOKONČENA", "ok"],
+	["Do hangáru přibyla", "VÝROBA DOKONČENA", "ok"], ["Dostavěno", "STAVBA DOKONČENA", "ok"],
+	["Radar: UFO v letu", "UFO SPATŘENO", "warn"], ["Radar:", "RADAR - NOVÁ MISE", "acc"],
+	["UFO, které nikdo", "UFO PŘISTÁLO", "warn"], ["UFO přistálo", "UFO PŘISTÁLO", "warn"],
+	["UFO opustilo", "UFO MIMO DOSAH", "dim"], ["bez odpovědi", "MISE PROPÁSNUTA", "bad"],
+	["Incident", "INCIDENT", "bad"], ["návrh je hotový", "PRÁCE PRO DÍLNU", "acc"]]
+
+## (0.7x, Ari: "proces výroby na glóbu by taky mohl být vidět") under the date: what the laboratory and
+## the workshop work on, a thin bar each, and how long it still takes.
+var _work_rows := {}
+func _build_work() -> void:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 1)
+	side.add_child(box)
+	for k in ["research", "workshop"]:
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 4)
+		box.add_child(line)
+		var head := _lbl(line, "Výzkum" if k == "research" else "Výroba", UiSkin.DIM, 7)
+		UiSkin.eyebrow(head, UiSkin.DIM, 7)
+		head.custom_minimum_size = Vector2(38, 0)
+		head.autowrap_mode = TextServer.AUTOWRAP_OFF
+		var what := _lbl(line, "", TEXT, 8)
+		what.autowrap_mode = TextServer.AUTOWRAP_OFF
+		what.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		what.clip_text = true
+		what.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var left := _lbl(line, "", UiSkin.DIM, 7)
+		left.autowrap_mode = TextServer.AUTOWRAP_OFF
+		left.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		var bar := ProgressBar.new()
+		bar.show_percentage = false
+		bar.min_value = 0.0
+		bar.max_value = 1.0
+		bar.custom_minimum_size = Vector2(0, 2)
+		var bg := StyleBoxFlat.new()
+		bg.bg_color = UiSkin.LINE
+		var fill := StyleBoxFlat.new()
+		fill.bg_color = UiSkin.ACC
+		bar.add_theme_stylebox_override("background", bg)
+		bar.add_theme_stylebox_override("fill", fill)
+		box.add_child(bar)
+		_work_rows[k] = {"what": what, "left": left, "bar": bar}
+
+static func _left_text(hours: float) -> String:
+	if hours < 0.0:
+		return "stojí"
+	if hours < 1.0:
+		return "%d min" % maxi(1, int(hours * 60.0))
+	if hours < 48.0:
+		return "%d h" % int(ceil(hours))
+	return "%d d" % int(ceil(hours / 24.0))
+
+func _update_work() -> void:
+	if _work_rows.is_empty():
+		return
+	var r: Dictionary = Campaign.data["research"]
+	var rw: Dictionary = _work_rows["research"]
+	if String(r["current"]) != "":
+		var need := Campaign.research_days(r["current"])
+		var pace := (1.0 + 0.5 * (Campaign.count("laborator") - 1)) * Campaign.bloc_k("research")
+		var share := clampf(float(r["progress"]) / need, 0.0, 1.0)
+		rw["what"].text = "%s  %d %%" % [Campaign.RESEARCH[r["current"]]["name"], int(share * 100)]
+		rw["left"].text = _left_text((need - float(r["progress"])) / pace * 24.0 if pace > 0.0 else -1.0)
+		rw["bar"].value = share
+	else:
+		rw["what"].text = "nic (vyber ve Výzkumu)"
+		rw["left"].text = ""
+		rw["bar"].value = 0.0
+	var ww: Dictionary = _work_rows["workshop"]
+	var o := Campaign.workshop_now()
+	if not o.is_empty():
+		ww["what"].text = "%s  %d %%%s" % [o["name"], int(float(o["pct"]) * 100), ("  +%d" % int(o["more"])) if int(o["more"]) > 0 else ""]
+		ww["what"].tooltip_text = "Ve frontě dílny ještě %d kusů." % int(o["more"]) if int(o["more"]) > 0 else ""
+		ww["left"].text = _left_text(float(o["hours"]))
+		ww["bar"].value = float(o["pct"])
+	else:
+		ww["what"].text = "dílna stojí" if Campaign.workshop_lines() > 0 else "bez dílny"
+		ww["left"].text = ""
+		ww["bar"].value = 0.0
+
+func _log_now() -> int:
+	return int(Campaign.data.get("log_n", 0))
+
+func _event(cat: String, title: String, text: String, col: Color, act: Array) -> void:
+	_events.append({"cat": cat, "title": title, "text": text, "col": col, "act": act})
+
+## The log lines written since mark (a count from _log_now) as events.
+func _events_from_log(mark: int, viewer: bool) -> void:
+	var log: Array = Campaign.data.get("log", [])
+	var n := mini(_log_now() - mark, log.size())
+	if n <= 0:
+		return
+	for line in log.slice(log.size() - n):
+		var txt := String(line)
+		if txt.begins_with("["):
+			txt = txt.substr(txt.find("]") + 1).strip_edges()
+		var kind: Array = []
+		for k in LOG_KINDS:
+			if txt.begins_with(k[0]) or (not String(k[0]).begins_with("Radar") and String(k[0]) in txt):
+				kind = k
+				break
+		if not viewer:
+			var said := false
+			for p in LOG_BY_SIGNAL:
+				if txt.begins_with(p):
+					said = true
+			if said:
+				continue
+		elif kind.is_empty():
+			continue          # (a viewer: the host's own clicks are not news)
+		var col: Color = {"ok": UiSkin.OK, "warn": UiSkin.WARN, "bad": UiSkin.BAD, "dim": UiSkin.DIM, "acc": ACCENT}.get(kind[2] if not kind.is_empty() else "acc", ACCENT)
+		var cat: String = kind[1] if not kind.is_empty() else "HLÁŠENÍ"
+		var title := txt
+		var cut := txt.find(": ")
+		if cut > 0:
+			for pre in ["Výzkum dokončen", "Dílna dokončila", "Dostavěno", "Radar", "Incident"]:
+				if txt.begins_with(pre):
+					title = txt.substr(cut + 2)
+		if title.ends_with(".") and not title.ends_with("..."):
+			title = title.left(-1)
+		var act: Array = []
+		if cat == "VÝROBA DOKONČENA":
+			act = ["Zbrojnice", _show_armory]
+		elif cat == "STAVBA DOKONČENA":
+			act = ["Základna", _show_base]
+		_event(cat, title, "", col, act)
+
+func _show_on_globe(id: int) -> void:
+	_close_popup()
+	for m in Campaign.data["missions"] + Campaign.data.get("flights", []):
+		if int(m["id"]) == id:
+			selected = id
+			_focus(m)
+			return
+
+## The window: every event a row - a coloured mark, what kind, the line, and one way to go there.
+func _show_events() -> void:
+	var evs := _events.slice(0, EVENT_EVERY)
+	var more := _events.size() - evs.size()
+	_events.clear()
+	if Game.autotest() != "" and not Game.autotest() in ["geoevents", "uigeo"]:
+		return          # (the other tests drive the clock themselves: no window in their way)
+	var box := _overlay("CO SE STALO" if evs.size() > 1 else String(evs[0]["cat"]), 380)
+	popup.set_meta("events", true)
+	var when := _lbl(box, Campaign.date_text(), UiSkin.DIM, 7)
+	when.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var sc := ScrollContainer.new()
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.custom_minimum_size = Vector2(364, 0)
+	box.add_child(sc)
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 5)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(list)
+	for e in evs:
+		var row := HBoxContainer.new()
+		row.name = "EventRow"
+		row.add_theme_constant_override("separation", 6)
+		list.add_child(row, true)
+		var bar := ColorRect.new()          # (the coloured mark: green done, yellow UFO, red bad, gold news)
+		bar.color = e["col"]
+		bar.custom_minimum_size = Vector2(2, 0)
+		row.add_child(bar)
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 0)
+		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(col)
+		if evs.size() > 1:
+			UiSkin.eyebrow(_lbl(col, e["cat"], e["col"], 7), e["col"], 7)
+		var tl := _lbl(col, e["title"], TEXT, 9)
+		tl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if String(e["text"]) != "":
+			var dl := _lbl(col, e["text"], UiSkin.DIM, 8)
+			dl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if not (e["act"] as Array).is_empty():
+			var go: Array = e["act"]
+			var b := _btn(row, go[0], func(): _close_popup(); go[1].call(), 8)
+			UiSkin.ghost(b)
+			b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if more > 0:
+		_lbl(box, "... a %d dalších - viz Hlášení." % more, UiSkin.DIM, 8)
+	# the list scrolls when it is long; the window never runs off the screen
+	await get_tree().process_frame
+	if is_instance_valid(sc) and is_instance_valid(list):
+		sc.custom_minimum_size.y = minf(list.size.y, 236.0)
+	var brow := HBoxContainer.new()
+	brow.add_theme_constant_override("separation", 6)
+	brow.alignment = BoxContainer.ALIGNMENT_CENTER
+	if not is_instance_valid(box):
+		return
+	box.add_child(brow)
+	if not Campaign.viewer:
+		var go_on := _btn(brow, "POKRAČOVAT", _events_go_on, 10)
+		UiSkin.primary(go_on)
+		go_on.tooltip_text = "Zavřít a pustit čas rychlostí jako předtím (Enter)."
+	var ok := _btn(brow, "Zavřít" if not Campaign.viewer else "OK", _close_popup, 10)
+	UiSkin.ghost(ok)
+
+var _log_lines_before := 0
+func _event_rows() -> int:
+	if popup == null or not popup.get_meta("events", false):
+		return 0
+	return popup.find_children("EventRow*", "", true, false).size()
+
+func _events_go_on() -> void:
+	_close_popup()
+	speed = clampi(_speed_before, 1, SPEEDS.size() - 1)
 
 func _show_log() -> void:
 	var box := _overlay("HLÁŠENÍ", 460)
@@ -2426,6 +2673,68 @@ func _autotest() -> void:
 			if markers[id].has_meta("craft"):
 				n3d += 1
 		print("RESULT geomodels ships %d crafts %d models %d" % [fl.size(), Campaign.crafts().size(), n3d])
+		get_tree().quit()
+		return
+	if Game.autotest() == "geoevents":
+		# (0.7x) the clock stops and a window says what happened; the workshop's progress under the date
+		await get_tree().create_timer(1.0).timeout
+		_close_popup()
+		speed = 0
+		var d: Dictionary = Campaign.data
+		d["missions"].clear()
+		d["flights"].clear()
+		d["next_mission"] = 999.0
+		_events.clear()
+		# a long piece in the workshop: the bar moves
+		Campaign._queue("grenade", 2.0)
+		Campaign._queue("grenade", 2.0)
+		Campaign.advance(0.5)
+		_update_text()
+		var ww: Dictionary = _work_rows["workshop"]
+		var bar1: float = ww["bar"].value
+		print("[EV] work '%s' left '%s' bar %.2f" % [ww["what"].text, ww["left"].text, bar1])
+		await _ui_check("geo_work")
+		# three things at once: research, the workshop, a building
+		d["research"]["current"] = "pitva"
+		d["research"]["progress"] = Campaign.research_days("pitva") - 0.0001
+		for o in d["orders"]:
+			o["work"] = 0.0001
+		for c in d["base"]:
+			if String(c["type"]) == "":
+				c["type"] = "laborator"
+				c["days"] = 0.0001
+				break
+		_log_lines_before = _log_now()
+		speed = 3
+		var t0 := Time.get_ticks_msec()
+		while not (popup != null and popup.get_meta("events", false)) and Time.get_ticks_msec() - t0 < 8000:
+			await get_tree().process_frame
+		var shown: bool = popup != null and popup.get_meta("events", false)
+		var rows := _event_rows()
+		await _ui_check("geo_events")
+		var stopped := speed == 0
+		_events_go_on()
+		var back := speed == 3 and popup == null
+		speed = 0
+		# a full window: no more than EVENT_EVERY rows, the rest in Hlášení
+		for i in 12:
+			_event("UFO SPATŘENO", "Průzkumník %d" % i, "Nad oblastí Velké Meziříčí. Vyber ho na glóbu a vyšli stíhačky, než zmizí.", UiSkin.WARN, ["Ukázat na glóbu", func(): pass])
+		_show_events()
+		await get_tree().create_timer(0.2).timeout
+		var full := _event_rows()
+		await _ui_check("geo_events_full")
+		_close_popup()
+		# a co-op viewer: the host's log lines become the window too
+		Campaign.viewer = true
+		_viewer_mark = _log_now()
+		Campaign._log("Výzkum dokončen: Laserové zbraně")
+		Campaign._log("Hostitel koupil 2× Granát.")
+		await get_tree().create_timer(0.3).timeout
+		var vrows := _event_rows()
+		await _ui_check("geo_events_viewer")
+		_close_popup()
+		Campaign.viewer = false
+		print("RESULT geoevents shown %s rows %d stopped %s back %s full %d viewer %d bar %s" % [shown, rows, stopped, back, full, vrows, bar1 > 0.0 and bar1 < 1.0])
 		get_tree().quit()
 		return
 	if Game.autotest() == "uigeo":

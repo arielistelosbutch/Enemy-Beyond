@@ -604,7 +604,9 @@ def truck_wreck():
     K._two_tone(cab, m["char"], m["soot"], 0.3)
     v.append(cab)
     v.append(K.box_loft(m["rust"], [(3.1, 0, 0.95, 2.1, 0.9), (3.7, 0, 0.9, 2.0, 0.8), (3.8, 0, 0.82, 1.9, 0.6)], b=0.08))
-    v.append(jitter(K.bx(m["rust2"], (0, 3.45, 1.48), (1.9, 0.6, 0.05), 0.01, rot=(0.35, 0.05, 0)), 0.01, 2))   # sprung bonnet lid
+    # (0.72.3: the sprung bonnet lid is gone - tilted up over the bonnet it read as a windscreen flipped forward)
+    v.append(K.bx(m["dsteel"], (0, 3.115, 1.62), (1.78, 0.03, 0.62), 0.01))                                  # the windscreen hole: a frame
+    v.append(K.bx(m["soot"], (0, 3.13, 1.62), (1.62, 0.02, 0.48), 0.005))                                   # and the burnt-out dark behind it
     v.append(K.beam(m["soot"], (-0.95, 3.1, 1.6), (-0.9, 2.85, 2.15), 0.08, 0.08))                           # empty windscreen frame
     v.append(K.beam(m["soot"], (0.95, 3.1, 1.6), (0.9, 2.85, 2.15), 0.08, 0.08))
     v.append(K.beam(m["soot"], (-0.9, 2.85, 2.15), (0.9, 2.85, 2.15), 0.08, 0.08))
