@@ -2723,7 +2723,7 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "shouldershot", "radiosprint", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "rooftest", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "leaktest", "leakmap", "ufohull", "wedgetest", "leantest", "pockettest", "leaveany", "safeend", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "reinfcap", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "ceiltest", "rainshot", "lamptest", "wxtest", "wxshot", "tracktest", "lensshot", "interiors", "spectate", "dazetest", "chaintest", "echotest", "dirtshot", "flaretest", "civpanic", "nvgtest", "civstuck", "civlooks", "fragtest", "convoytest", "bugtest", "quartest":
+		"town", "zoo", "terror", "shouldershot", "radiosprint", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "rooftest", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "leaktest", "leakmap", "ufohull", "wedgetest", "leantest", "pockettest", "leaveany", "safeend", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "reinfcap", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "ceiltest", "rainshot", "lamptest", "wxtest", "wxshot", "tracktest", "lensshot", "interiors", "spectate", "dazetest", "chaintest", "echotest", "dirtshot", "flaretest", "civpanic", "nvgtest", "civstuck", "civlooks", "fragtest", "claytest", "convoytest", "bugtest", "quartest":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
@@ -2877,6 +2877,7 @@ func _autotest() -> void:
 			# a defence won: the campaign goes on
 			var bid := func() -> int:
 				Campaign.data["next_raid"] = float(Campaign.data["day"])
+				Campaign.data["raids"] = 0
 				Campaign.data["trust"] = 60
 				Campaign.advance(0.01)
 				for mm in Campaign.data["missions"]:
@@ -2893,7 +2894,7 @@ func _autotest() -> void:
 			# nobody went: game over too
 			Campaign.new_campaign()
 			Campaign.data["base_pick"] = false
-			Campaign.data["day"] = 40.0
+			Campaign.data["day"] = 80.0
 			var id3: int = bid.call()
 			Campaign.advance(0.3)
 			print("RESULT basedef raids %d first %.1f won_lost %s fail_lost %s konec %s ignored %s ignored_lost %s" % [raids.size(), raids[0][0] if not raids.is_empty() else -1.0, lost_won, lost_fail, t2.begins_with("KONEC"), id3 >= 0, Campaign.data["lost"]])
@@ -2964,7 +2965,7 @@ func _autotest() -> void:
 			print("RESULT workshoptest %s" % " ".join(w.map(func(x): return "ok" if x else "NO")))
 			get_tree().quit()
 		"wrecks":
-			# a Diskoll blown up on three won missions: the scraps make one whole for the laboratory
+			# a Diskoll blown up on two won missions (0.80; was three): the scraps make one whole for the laboratory
 			Campaign.new_campaign()
 			var res := []
 			for i in 3:

@@ -65,9 +65,9 @@ run voice       200 h "RESULT voice: snippets \[1\]"       --autotest=voice
 run voicedsp    120 h "RESULT voicedsp ok"                 --autotest=voicedsp
 run basewalk    400 x "RESULT basewalk 16"                 --autotest=basewalk
 run base_attack 400 x "RESULT basewalk 16"                 --autotest=basewalk --attack=1
-run base_fly    300 h "RESULT basefly top [0-2]\.[0-9]+ inside 0 .* unreachable 0" --autotest=basefly --attack=1 --crew=levit,levit,levit_velitel,grey
+run base_fly    300 h "RESULT basefly top [0-9.]+ above 0 inside 0 .* unreachable 0" --autotest=basefly --attack=1 --crew=levit,levit,levit_velitel,grey
 run gameover    150 x "RESULT gameover shown true had_save true save_gone true closed true archived [1-9][0-9]* ufo 1 races 6 fallen 15 why base bad 0" --autotest=gameover
-run base_def    120 h "RESULT basedef raids ([5-9]|1[0-6]) .* won_lost false fail_lost true konec true ignored true ignored_lost true" --autotest=basedef
+run base_def    120 h "RESULT basedef raids [1-2] first ([7-9][0-9]|1[0-9][0-9])\.[0-9] won_lost false fail_lost true konec true ignored true ignored_lost true" --autotest=basedef
 run alienbase   400 x "RESULT abase"                       --autotest=abase --mtype=alienbase
 run fire        450 x "RESULT fireshot"                    --autotest=fireshot
 run doors       300 x "RESULT doorshot"                    --autotest=doorshot --biome=farm
@@ -191,13 +191,14 @@ run civanim     150 h "RESULT civanim [0-9]+ civilians afk idle,walk,run,lurk co
 run civdeath    150 h "RESULT civdeath 10 deaths bad 0" --autotest=civdeath --mtype=terror
 # 0.66 Facelift I: the drone's radar in solo, the transport after a mission, the people of the base, the loading screen
 run flare       200 h "RESULT flaretest life (59|6[0-9]) lit true moved 0.00" --autotest=flaretest --mtype=crash --biome=farm
+run claymore    200 h "RESULT claytest placed 1 faces true levit_over true fired true walker_hit true levit_in_wedge [1-9][0-9]* behind_6m 0" --autotest=claytest --mtype=crash --biome=farm --crew=grey,grey,levit --seed=3
 run frag        200 h "RESULT fragtest wood [5-8]/8 bare [0-8]/8 hurt6m [1-9]" --autotest=fragtest --mtype=crash --biome=farm --crew=grey,grey
 run radar       150 h "RESULT radar solo true scanner true kit_scanner false kit_radio false" --autotest=radartest --mtype=crash --biome=farm --day=1
 run rampcheck   200 h "RESULT rampcheck shut true open true" --autotest=rampcheck --prep=1
 run transport   150 h "RESULT transport closed true"     --autotest=transport --mtype=crash --biome=farm --day=1
 run uifit       150 x "RESULT uifit bad 0"               --autotest=uifit --mtype=crash --biome=farm --day=1
 run npcbase     150 h "RESULT npc moved [1-9]"           --autotest=npcshot --shots=0 --wait=25
-run baseshot    150 x "RESULT baseshot builders 3"     --autotest=baseshot
+run baseshot    150 x "RESULT baseshot builders 3 inside 0" --autotest=baseshot
 # 0.70 Facelift II: the echo of the place (a reverb on the sounds the game has), dirt and blood, the wall of the fallen, the intro
 run echo_farm   150 h "RESULT echo kinds room,metal,[a-z]*,room open true bus Room" --autotest=echotest --mtype=landed --biome=farm --day=1
 run echo_base   150 h "RESULT echo kinds metal,metal,metal open false bus Room" --autotest=echobase
@@ -256,7 +257,7 @@ run latetest   120 h "RESULT latetest pack [2-9] nemesis [1-9][0-9]* marked true
 run reinfcap   120 h "RESULT reinfcap calls 2 max 2 added [2-9] officer 0 waves [01]" --autotest=reinfcap --mtype=sabotage --biome=farm --late=1 --seed=5
 run maptown   220 x "RESULT topshot untangled" --autotest=topshot --mtype=crash --biome=town --hour=13 --seed=11 --late=1
 run mapdesert 220 x "RESULT topshot untangled" --autotest=topshot --mtype=crash --biome=desert --terrain=desert --hour=13 --seed=7 --late=1
-run wrecks      60 h "RESULT wrecks \[\[1, 0, false\], \[2, 0, false\], \[0, 1, true\]\]" --autotest=wrecks
+run wrecks      60 h "RESULT wrecks \[\[1, 0, false\], \[0, 1, true\], \[1, 1, true\]\]" --autotest=wrecks
 run ui_bigpack  200 x "m_result: 0 probl"                  --autotest=uimission --research=batohy
 run rooftest   250 h "RESULT rooftest slabs [1-9][0-9]* holes 0" --autotest=rooftest --mtype=terror --biome=town --seed=3
 # 2026-11-17 déšť: GPU kapky běží pořád (i z budovy je vidět venku), střecha je zastaví; xvfb s Vulkanem navíc fotí rain_inside*.png

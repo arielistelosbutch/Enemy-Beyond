@@ -160,7 +160,7 @@ func _init() -> void:
 	var crafts := ["ufo_scout", "ufo_raider", "ufo_harvester", "ufo_battleship", "ufo_supply", "sokol", "jestrab", "pelikan", "heli", "dropship"]
 	var all := []
 	var views := {"nvg": Vector3(0.8, 0.45, -0.9), "stit": Vector3(0.25, 0.3, 1.0), "radio": Vector3(1, 0.5, 0.6), "medkit": Vector3(1, 0.6, 0.5),
-		"vesta": Vector3(0.45, 0.25, -1.0), "pancir": Vector3(0.45, 0.25, -1.0), "a_pack": Vector3(0.6, 0.35, 1.0)}
+		"mine": Vector3(0.7, 0.55, -1.0), "vesta": Vector3(0.45, 0.25, -1.0), "pancir": Vector3(0.45, 0.25, -1.0), "a_pack": Vector3(0.6, 0.35, 1.0)}
 	for id in items:
 		all.append([id, ITEM_SIZE, views.get(id, Vector3(1, 0.35, 0.18))])
 	for id in crafts:

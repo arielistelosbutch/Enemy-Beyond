@@ -336,7 +336,19 @@ static func baseshot(at: Node, p: Node) -> void:
 	for c in m.get_children():
 		if c.get_script() == m.BaseNpc and c.builder:
 			builders.append(c)
-	at.out("RESULT baseshot builders %d" % builders.size())
+	# nobody stands inside a crate or a wall: a body-sized ball at the hips touches nothing solid
+	var inside := 0
+	var space: PhysicsDirectSpaceState3D = m.get_world_3d().direct_space_state
+	for n in builders:
+		var q := PhysicsShapeQueryParameters3D.new()
+		var sh := SphereShape3D.new()
+		sh.radius = 0.28
+		q.shape = sh
+		q.collision_mask = 1
+		q.transform = Transform3D(Basis(), n.global_position + Vector3(0, 0.9, 0))
+		if not space.intersect_shape(q, 4).is_empty():
+			inside += 1
+	at.out("RESULT baseshot builders %d inside %d" % [builders.size(), inside])
 	p.body.visible = false
 	m.hud.visible = false
 	var cam := Camera3D.new()

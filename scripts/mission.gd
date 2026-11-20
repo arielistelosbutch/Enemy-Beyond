@@ -2603,20 +2603,71 @@ func smoke_blocks(a: Vector3, b: Vector3) -> bool:
 			return true
 	return false
 
-var mines := []      # [{node, pos, by, armed_at}]
-func add_mine(p: Vector3, by: String) -> void:
+var mines := []      # [{node, pos, by, armed_at, led, dir, a, b}]
+## (0.80 Ari: miny nahradit tím, co v roce 1990 opravdu bylo) MC-18, směrová mina typu Claymore:
+## postaví se čelem tam, kam voják kouká, nástražný drát vede napříč 1,6 m před ní (2,8 m dlouhý,
+## u země). Kdo přes něj přejde - vetřelec, voják, civilista - ji odpálí; co se vznáší (Levit,
+## Diskoll...), přeletí drát bez dotyku. Výbuch letí dopředu v klínu (střepiny, i do výšky, takže
+## zasáhnou i vznášející se), za a vedle miny jen blízko. Kdo neví, kde drát je, nevidí ho.
+const CLAY_WIRE := 1.6       # drát před minou (m)
+const CLAY_HALF := 1.4       # půlka délky drátu
+const CLAY_R := 16.0         # dosah střepin vpředu
+const CLAY_CONE := 0.79      # cos(~38°) plný účinek, do cos(60°) slábne
+const CLAY_BACK := 3.0       # zpět a do stran jen tlaková vlna
+func add_mine(p: Vector3, by: String, face := Vector3.ZERO) -> void:
 	var m := Game.model("mine")
 	add_child(m)
 	var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 0.5, 0), p + Vector3(0, -3, 0), 1)
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	m.global_position = hit.position if hit else p
+	var dir := Vector3(face.x, 0, face.z)
+	if dir.length() < 0.01:
+		dir = Vector3(0, 0, -1)
+	dir = dir.normalized()
+	m.rotation.y = atan2(-dir.x, -dir.z)
 	var led := OmniLight3D.new()
 	led.light_color = Color(1, 0.1, 0.05)
-	led.light_energy = 0.5
-	led.omni_range = 1.0
+	led.light_energy = 0.3
+	led.omni_range = 0.6
 	m.add_child(led)
-	led.position.y = 0.1
-	mines.append({"node": m, "pos": m.global_position, "by": by, "armed_at": t + 2.0, "led": led})
+	led.position.y = 0.16
+	var side := Vector3(-dir.z, 0, dir.x)
+	var mid: Vector3 = m.global_position + dir * CLAY_WIRE
+	var a: Vector3 = mid - side * CLAY_HALF
+	var b: Vector3 = mid + side * CLAY_HALF
+	# the wire itself: a dark thread 12 cm above the ground, from the mine out to the two pegs
+	var wire_mat := Game.color_mat(Color(0.05, 0.05, 0.04))
+	for seg in [[m.global_position + Vector3(0, 0.15, 0), a], [a, b]]:
+		var w := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		var from: Vector3 = seg[0] if seg[0] != a else a + Vector3(0, 0.12, 0)
+		var to: Vector3 = seg[1] + Vector3(0, 0.12, 0)
+		bm.size = Vector3(0.004, 0.004, from.distance_to(to))
+		w.mesh = bm
+		w.material_override = wire_mat
+		w.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		m.add_child(w)
+		w.global_position = (from + to) / 2.0
+		if from.distance_to(to) > 0.01:
+			w.look_at_from_position(w.global_position, to, Vector3.UP if absf((to - from).normalized().y) < 0.95 else Vector3.RIGHT)
+		for peg in ([a, b] if seg[0] == a else []):
+			var pg := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = 0.008; cm.bottom_radius = 0.004; cm.height = 0.2
+			pg.mesh = cm
+			pg.material_override = wire_mat
+			m.add_child(pg)
+			pg.global_position = peg + Vector3(0, 0.08, 0)
+	mines.append({"node": m, "pos": m.global_position, "by": by, "armed_at": t + 2.0, "led": led, "dir": dir, "a": a, "b": b})
+
+func _on_wire(mn: Dictionary, pos: Vector3, r: float) -> bool:
+	var a: Vector3 = mn["a"]; var b: Vector3 = mn["b"]
+	if absf(pos.y - a.y) > 1.2:
+		return false
+	var p2 := Vector2(pos.x, pos.z); var a2 := Vector2(a.x, a.z); var b2 := Vector2(b.x, b.z)
+	var ab := b2 - a2
+	var k := clampf((p2 - a2).dot(ab) / ab.length_squared(), 0.0, 1.0)
+	return (a2 + ab * k).distance_to(p2) < r
 
 func _mines_tick() -> void:
 	for mn in mines.duplicate():
@@ -2626,22 +2677,65 @@ func _mines_tick() -> void:
 		mn["led"].visible = fmod(t, 1.0) < 0.15 and t > mn["armed_at"]
 		if not multiplayer.is_server() or t < mn["armed_at"]:
 			continue
-		# (0.57, MN-01's entry) a pressure plate: only a foot (or a claw) on it sets it off - what floats
-		# over it (Levit, Nádor, Mysloděj, Diskoll) passes untouched; and it does not ask whose foot it is
+		# a foot (or a claw) catches the wire; what floats over it passes, and it does not ask whose foot it is
 		var hit := false
 		for a in aliens():
 			if not a.dead and not a.R.has("hover") and not a.airborne and not a.flying \
-					and a.global_position.distance_to(mn["pos"]) < 1.0 + float(a.R.get("r", 0.4)) * 0.5:
+					and _on_wire(mn, a.global_position, 0.25 + float(a.R.get("r", 0.4)) * 0.5):
 				hit = true
 				break
 		if not hit:
 			for pl in players() + civilians():
-				if not pl.dead and pl.global_position.distance_to(mn["pos"]) < 0.8:
+				if not pl.dead and _on_wire(mn, pl.global_position, 0.3):
 					hit = true
 					break
 		if hit:
 			_mine_gone.rpc(mines.find(mn))
-			explode(mn["pos"], 3.8, 120.0, mn["by"], true)
+			claymore_blast(mn["pos"], mn["dir"], mn["by"])
+
+## Host: the MC-18 goes off - a wedge of steel balls forward, a short blast round it.
+func claymore_blast(p: Vector3, dir: Vector3, by: String) -> void:
+	var c := p + Vector3(0, 0.15, 0)
+	_boom.rpc(c, false)
+	noise(c, 40.0)
+	blast_shock(c, 8.0)
+	blast_breakables(c, CLAY_BACK, 90.0)
+	blast_breakables(c + dir * 4.0, 3.0, 70.0)
+	if randf() < (0.4 if _flammable_near(c, 3.0) else 0.08):
+		ignite(c)
+	var shooter: Node = actors.get_node_or_null(by)
+	var space := get_world_3d().direct_space_state
+	var hurt := func(at: Vector3) -> float:
+		var to: Vector3 = at - c
+		var d := to.length()
+		var dmg := 0.0
+		if d < CLAY_BACK:
+			dmg = 70.0 * (1.0 - d / CLAY_BACK)
+		var flat := Vector3(to.x, 0, to.z)
+		if d < CLAY_R and flat.length() > 0.05:
+			var cs: float = flat.normalized().dot(dir)
+			if cs > 0.5 and absf(to.y) < 1.0 + d * 0.25:
+				var cone := clampf((cs - 0.5) / (CLAY_CONE - 0.5), 0.0, 1.0)
+				# (the steel fans out upward too: a bump in the ground does not stop it all - two rays)
+				var o := c + Vector3(0, 0.2, 0)
+				if space.intersect_ray(PhysicsRayQueryParameters3D.create(o, at, Game.WORLD)).is_empty() \
+						or space.intersect_ray(PhysicsRayQueryParameters3D.create(o, at + Vector3(0, 0.6, 0), Game.WORLD)).is_empty():
+					dmg = maxf(dmg, (150.0 * (1.0 - d / CLAY_R) + 25.0) * cone)
+		return dmg
+	for a in aliens():
+		if a.dead:
+			continue
+		var dm: float = hurt.call(a.global_position + Vector3(0, 0.8, 0))
+		if dm > 0.0:
+			hit_kind = "explosion"
+			a.damage(dm, c, shooter)
+			hit_kind = ""
+	for pl in players():
+		if pl.dead:
+			continue
+		var dm2: float = hurt.call(pl.global_position + Vector3(0, 0.8, 0))
+		if dm2 > 0.0:
+			pl.hurt.rpc_id(pl.get_multiplayer_authority(), dm2 * 0.6, c, false, "blast")
 
 @rpc("authority", "call_local", "reliable")
 func _mine_gone(i: int) -> void:

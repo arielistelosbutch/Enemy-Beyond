@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.72.3
+# Operace X - Enemy Beyond — prototyp 0.72.4
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,15 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.72.4
+- Kampaň má pozvolnější tempo: radar hlásí zhruba polovinu UFO, takže stihnu víc vyzkoumat mezi misemi.
+- Útok na základnu přijde nejdřív 70. den a nejvýš dvakrát za kampaň (s laserovými nebo plazmovými věžemi jen jednou). Bitevní loď nad základnou nejdřív 120. den, nejvýš dvakrát, s maskovacím jádrem vůbec.
+- Základna dostává z odměn misí dvě třetiny, žold vojáků se nemění. Černý trh platí na začátku plnou cenu, později s válkou a s každým stejným prodaným kusem méně.
+- Finální výzkum „Kdo stojí za invazí?“ chce jen pitvy hlavních ras (Šedivák, Levit, Ještěřan, Bijec, Mysloděj) a rozbor Kolosu. Na rozbor Diskollu i Kolosu stačí dvě trosky.
+- Místo nášlapné miny mám směrovou minu MC-18 Claymore (klávesa 8): nový model, postavím ji čelem tam, kam koukám, a kdo jde po zemi a strhne nástražný drát, dostane klín střepin. Co se vznáší, drát přeletí, ale v klínu ho střepiny trefí.
+- Detektor jde ztlumit klávesou O: nepípá, vetřelci ho neslyší a displej dál ukazuje body s nápisem TICHO.
+- Opravené texty v encyklopedii (plazmové zbraně a počty ran), bedny na stavbě základny už nepadají na dělníky.
 
 ## Novinky 0.72.3
 - Laserová puška LR-01 umí na B přepnout na dávku pěti pulzů (slabší jednotlivé zásahy, víc tepla). Zbraně bez přepínače mi na B řeknou, proč nepřepínají.
