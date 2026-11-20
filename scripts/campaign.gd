@@ -255,8 +255,8 @@ const RESEARCH := {
 		"desc": "Skoro jen mozek. Zápis v encyklopedii - a psionický útok od té doby bolí méně. Vede k psionické cloně a ke zprávě z Marsu."},
 	# 0.57: the last research - only when every alien has been on the table
 	"kdo_invaze": {"name": "Kdo stojí za invazí?", "cost": 1000, "days": 8.0, "branch": "psi", "icon": "race_myslodej",
-		"needs": {"research": ["pitva", "pitva_levit", "pitva_ohar", "pitva_jestetan", "pitva_lihnoun", "pitva_bijec", "pitva_nador", "pitva_ohnivec", "pitva_myslodej", "rozbor_diskoll", "rozbor_kolos"]},
-		"desc": "Všechny jejich rasy prošly laboratoří. Teď je čas složit to dohromady: kdo jim velí? Zápis v encyklopedii."},
+		"needs": {"research": ["pitva", "pitva_levit", "pitva_jestetan", "pitva_bijec", "pitva_myslodej", "rozbor_kolos"]},
+		"desc": "Jejich hlavní rasy a stroje prošly laboratoří. Teď je čas složit to dohromady: kdo jim velí? Zápis v encyklopedii."},
 	# 0.57: the final research - it finds the central mind under the Martian surface and opens the last mission
 	"ruda_planeta": {"name": "Rudá planeta", "cost": 1500, "days": 8.0, "branch": "psi", "icon": "mars",
 		"needs": {"research": ["kdo_invaze", "orel"]},
@@ -274,7 +274,7 @@ const RESEARCH := {
 		"desc": "X-PSI-002, Projekt Tichá mysl. Lodní ochranné pole CPS-01 pro Pelikán: Mars je obehnaný psionickou obranou, kterou žádná posádka bez ochrany nepřeletí."},
 	# weapons
 	"zenijni": {"name": "Ženijní výbava", "cost": 150, "days": 2.0, "needs": {}, "branch": "zbrane", "icon": "mine",
-		"desc": "Odemkne nášlapné miny ve zbrojnici."},
+		"desc": "X-EXP-001. Směrová mina MC-18 typu Claymore: postaví se na nožičky čelem k nepříteli a před ni se natáhne nástražný drát. Kdo o něj zakopne, dostane plný klín střepin. Odemkne ji ve zbrojnici."},
 	"tezke": {"name": "Těžké zbraně", "cost": 300, "days": 4.0, "needs": {}, "branch": "zbrane", "icon": "autocannon",
 		"desc": "Odemkne těžký kanón, minigun, odstřelovací pušku a průbojné a zápalné rakety."},
 	"rozbor_plazma": {"name": "Zbraně vetřelců", "cost": 250, "days": 3.0, "needs": {"loot": ["a_pistol", "a_rifle", "a_heavy"]}, "branch": "zbrane", "icon": "a_pistol",
@@ -296,15 +296,15 @@ const RESEARCH := {
 	"plazma": {"name": "Plazmové zbraně", "cost": 700, "mk": 30, "days": 8.0, "needs": {"research": ["laser", "vyslech", "moskovium"], "loot": "a_rifle"}, "branch": "zbrane", "icon": "plasma_cell",
 		"desc": "X-WEP-007. Jejich plazma v lidských zbraních. Žádné dobíjení jako u laseru, ale skutečná munice: univerzální plazmový zásobník PL-MAG-01. Otevře výzkum jednotlivých plazmových zbraní."},
 	"plazma_pistole": {"name": "Plazmová pistole PP-01", "cost": 500, "mk": 10, "days": 5.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_pistol",
-		"desc": "X-WEP-008. UAI PP-01, lidský rám kolem jejich plazmového emitoru. Bez čekání na článek, ale jen 10 ran na zásobník PL-MAG-01. Při rychlé palbě se přehřívá."},
+		"desc": "X-WEP-008. UAI PP-01, lidský rám kolem jejich plazmového emitoru. Bez čekání na článek, 20 ran na zásobník PL-MAG-01. Při rychlé palbě se přehřívá."},
 	"plazma_puska": {"name": "Plazmová puška PR-01", "cost": 700, "mk": 20, "days": 6.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_rifle",
-		"desc": "X-WEP-009. UAI PR-01, hlavní plazmová puška pěchoty. Nejsilnější rána pušky, další bez čekání na článek, ale jen 5 ran na zásobník PL-MAG-01. Při rychlé palbě se přehřívá."},
+		"desc": "X-WEP-009. UAI PR-01, hlavní plazmová puška pěchoty. Nejsilnější rána pušky, další bez čekání na článek, 10 ran na zásobník PL-MAG-01. Při rychlé palbě se přehřívá."},
 	"plazma_granat": {"name": "Plazmový granát PG-01", "cost": 500, "mk": 15, "days": 5.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_grenade",
 		"desc": "X-WEP-010. UAI PG-01: celý zásobník PL-MAG-01 uvolněný naráz. Výroba každého granátu spotřebuje jeden zásobník ze skladu. Ve středu ničivý, k okraji rychle slábne, kryt chrání. Spálí i kořist."},
 	"plazma_kanon": {"name": "Plazmový kanón PC-01", "cost": 1000, "mk": 40, "days": 8.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_cannon",
-		"desc": "X-WEP-011. UAI PC-01, těžký přenosný plazmový kanón. Půl zásobníku PL-MAG-01 na ránu - dva ničivé výstřely, druhý rychle po prvním. Velmi těžký."},
+		"desc": "X-WEP-011. UAI PC-01, těžký přenosný plazmový kanón. Čtvrt zásobníku PL-MAG-01 na ránu - čtyři ničivé výstřely. Velmi těžký."},
 	"plazma_minigun": {"name": "Plazmový minigun PM-01", "cost": 1100, "mk": 40, "days": 8.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_minigun",
-		"desc": "X-WEP-012. UAI PM-01, šest rotujících plazmových emitorů. 20 pulzů na zásobník PL-MAG-01, krátká, prodloužená nebo úplná dávka. Velmi těžký, při přehřátí se rotor zastaví."},
+		"desc": "X-WEP-012. UAI PM-01, šest rotujících plazmových emitorů. 50 pulzů na zásobník PL-MAG-01, krátká, prodloužená nebo úplná dávka. Velmi těžký, při přehřátí se rotor zastaví."},
 	# materials and gear
 	"vesta": {"name": "Keramické vložky", "cost": 200, "days": 3.0, "needs": {}, "branch": "material", "icon": "vesta",
 		"desc": "Tvrdé keramické pláty do vest ARM-01. Vesta pak zastaví víc ran a střepin."},
@@ -431,7 +431,7 @@ const SHOP_AL := {"pancir": 6, "laser_cannon": 4, "plasma_rifle": 4, "plasma_can
 ## What the team brings home from a won mission (collected automatically).
 ## Machines that blow up when they fall: what is left are scraps. After this many won missions
 ## with one shot down the workshop puts a whole one together (that counts as the body for research).
-const WRECKS := {"diskoll": 3, "kolos": 3}
+const WRECKS := {"diskoll": 2, "kolos": 2}      # (0.80: was 3 each)
 
 const LOOT_NAMES := {"a_pistol": "Plazmová pistole vetřelců", "a_rifle": "Plazmová puška vetřelců", "a_heavy": "Těžká plazma vetřelců",
 	"slitiny": "Vetřelecké slitiny", "moskovium": "Moskovium 115"}
@@ -857,7 +857,8 @@ func advance(days: float) -> bool:
 	data["next_mission"] = float(data["next_mission"]) - days
 	if float(data["next_mission"]) <= 0:
 		var radars := count("radar")
-		data["next_mission"] = rng.randf_range(0.6, 1.6) / (1.0 + 0.4 * radars)
+		# (0.80 Ari: "je toho hodně, člověk pak toho nestihne tolik vyzkoumat") half as often as before 0.80
+		data["next_mission"] = rng.randf_range(RADAR_EVERY[0], RADAR_EVERY[1]) / (1.0 + 0.4 * radars)
 		if rng.randf() < 0.5:
 			var f := generate_flight()
 			data["flights"].append(f)
@@ -903,10 +904,13 @@ func advance(days: float) -> bool:
 	# (Ari 2026-11-13: rare, but a lost defence ends the campaign) from the second month on they
 	# know where we are (sooner if a wreck gave us away): now and then they come for the base -
 	# first raid 8-16 days later, then every 3-5 weeks early in the war, 2-3 weeks late in it
-	if (float(data["day"]) > BASE_RAID_FROM or float(data.get("vrak_signal", 0.0)) < 0.0) and not data.get("won", false):
-		data["next_raid"] = float(data.get("next_raid", float(data["day"]) + rng.randf_range(8.0, 16.0)))
+	# (0.80 Ari: "stačí blbá náhoda a hráč to projede") not before the middle of the war, at most
+	# RAIDS_MAX a campaign, and with towers over the entrance (a good defence) just the one
+	if float(data["day"]) > BASE_RAID_FROM and not data.get("won", false) and int(data.get("raids", 0)) < raids_max():
+		data["next_raid"] = maxf(float(data.get("next_raid", float(data["day"]) + rng.randf_range(4.0, 14.0))), BASE_RAID_FROM)
 		if float(data["day"]) >= float(data["next_raid"]):
-			data["next_raid"] = float(data["day"]) + rng.randf_range(lerpf(22.0, 14.0, war_stage()), lerpf(34.0, 22.0, war_stage())) * (1.6 if count("maskovani") > 0 else 1.0)
+			data["raids"] = int(data.get("raids", 0)) + 1
+			data["next_raid"] = float(data["day"]) + rng.randf_range(35.0, 50.0) * (1.6 if count("maskovani") > 0 else 1.0)
 			var already := false
 			for mm in data["missions"]:
 				if mm["type"] == "base":
@@ -978,15 +982,20 @@ func defence_hits() -> int:
 ## Analýza UFO - Bitevní loď: late in the war a battleship comes for the base itself. It flies in
 ## for some hours (the jets can meet it), hangs over the hills and fires once - the base is gone.
 ## Only the masking core hides us from it; the towers may bring it down before it fires.
+const STRIKE_FROM := 120.0      # (0.80: was the 4th month, every 25-40 days)
+const STRIKES_MAX := 2
 func _strike_tick(days: float) -> bool:
 	var stop := false
-	if int(data.get("month", 0)) >= 4 and not data.get("won", false):
-		data["next_strike"] = float(data.get("next_strike", float(data["day"]) + rng.randf_range(4.0, 12.0)))
+	# (0.80 Ari: "musí to začínat pozvolna a sílit postupně") not before STRIKE_FROM, at most
+	# STRIKES_MAX a campaign, never with the masking core up
+	if float(data["day"]) >= STRIKE_FROM and not data.get("won", false) and int(data.get("strikes", 0)) < STRIKES_MAX:
+		data["next_strike"] = maxf(float(data.get("next_strike", float(data["day"]) + rng.randf_range(4.0, 12.0))), STRIKE_FROM)
 		if float(data["day"]) >= float(data["next_strike"]):
-			data["next_strike"] = float(data["day"]) + rng.randf_range(25.0, 40.0)
+			data["next_strike"] = float(data["day"]) + rng.randf_range(35.0, 50.0)
 			if count("maskovani") > 0:
 				_log("Radar: Bitevní loď prošla nad střední Evropou a zmizela. Základnu nenašla.")
 			else:
+				data["strikes"] = int(data.get("strikes", 0)) + 1
 				var a := rng.randf_range(0.0, TAU)
 				var id := int(data["next_id"])
 				data["next_id"] = id + 1
@@ -1523,7 +1532,7 @@ const HABIT_TEXT := {"sniper": "odstřelovačku - budou se k němu stahovat zbl�
 	"magnum": "revolver - budou držet odstup", "rocket_launcher": "raketomet - nebudou se shlukovat", "autocannon": "kanón - budou se víc krýt",
 	"minigun": "minigun - budou se skrývat a chodit zezadu", "stun_baton": "obušek - nepustí ho k sobě", "stit": "štít - budou střílet z boku a zezadu",
 	"pancir": "pancéřové vesty - přinesou těžké zbraně a granáty", "flare": "světlice - budou se držet mimo světlo",
-	"smoke_grenade": "kouř - budou čekat, až se rozplyne", "mine": "miny - budou chodit jinudy", "grenade": "granáty - nebudou se shlukovat",
+	"smoke_grenade": "kouř - budou čekat, až se rozplyne", "mine": "Claymore - budou chodit jinudy", "grenade": "granáty - nebudou se shlukovat",
 	"laser_rifle": "laser - budou se víc krýt", "laser_cannon": "laserový kanón - nebudou se shlukovat", "plasma_rifle": "plazmu - budou se víc krýt"}
 
 func _learn_habits(kits: Dictionary) -> void:
@@ -1710,7 +1719,14 @@ func mission_params(m: Dictionary) -> Dictionary:
 
 ## The base fell to a raid (lost defence, the team fled, or nobody went): the campaign is over
 ## (Ari 2026-11-13: "pokud to hráči nedají, konec hry"). Returns the KONEC text for the report.
-const BASE_RAID_FROM := 30.0
+const BASE_RAID_FROM := 70.0      # (0.80: was 30) about halfway to Mars
+const RAIDS_MAX := 2               # (0.80) raids a campaign at most (shot down or not)...
+func raids_max() -> int:           # ...and only one when towers guard the entrance
+	return 1 if count("laser_vez") + count("plazma_vez") > 0 and int(data.get("raids", 0)) >= 1 else RAIDS_MAX
+## (0.80 Ari) how often the radar finds something, in days (was 0.6-1.6), and the base's share of a
+## mission's reward (was 1.0: the budget had 15-35 thousand from the 3rd month on)
+const RADAR_EVERY := [1.2, 3.2]
+const BASE_PAY := 0.67
 func _base_fell(why: String) -> String:
 	_game_over("base")
 	_log("Základna (%s) padla. %s Projekt X skončil." % [base_place(), why])
@@ -1880,7 +1896,7 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 	var info: Dictionary = MTYPES[m["type"]]
 	# the mercenaries take their share of the reward (paid to them after the mission)
 	# the base's part of the reward (the mercenaries' pay goes to them, see the mission's end)
-	var money := int(((int(int(m["reward"]) * 0.6) if success else 0) + kills * 40 + captures * 160 + civ_saved * 60) * q)
+	var money := int(((int(int(m["reward"]) * 0.6) if success else 0) + kills * 40 + captures * 160 + civ_saved * 60) * q * BASE_PAY)
 	data["credits"] = int(data["credits"]) + money
 	var dt: int = (int(info["trust"]) if success else (-2 if m["type"] == "bug" else -6)) + civ_saved * 2 - civ_dead
 	data["trust"] = clampi(int(data["trust"]) + dt, 0, 100)
@@ -2462,8 +2478,23 @@ func sell(item: String) -> bool:
 	changed.emit()
 	return true
 
+## (0.80 Ari) the black market was a money press (40-200 thousand by the end): early on, when a lost
+## mission hurts, it pays in full; by the late war half (war_stage), and every piece of the same kind
+## sold in the last week pays 15 % less (the market fills up), never under 40 %.
+const MARKET_LATE := 0.5
+const MARKET_FILL := 0.85
+const MARKET_DAYS := 7.0
+func _sold_recently(k: String) -> int:
+	var n := 0
+	for e in data.get("sold", []):
+		if String(e[1]) == k and float(data["day"]) - float(e[0]) < MARKET_DAYS:
+			n += 1
+	return n
+
 func loot_sell_price(k: String) -> int:
-	return int(float(LOOT_SELL.get(k, 0)) * econ())
+	var late := lerpf(1.0, MARKET_LATE, war_stage())
+	var fill := maxf(0.4, pow(MARKET_FILL, _sold_recently(k)))
+	return int(float(LOOT_SELL.get(k, 0)) * econ() * late * fill)
 
 ## Sells one piece of the loot (alien weapons, alloys) on the black market.
 func sell_loot(k: String) -> bool:
@@ -2472,6 +2503,9 @@ func sell_loot(k: String) -> bool:
 		return false
 	found[k] = int(found[k]) - 1
 	data["credits"] = int(data["credits"]) + loot_sell_price(k)
+	var sold: Array = (data.get("sold", []) as Array).filter(func(e): return float(data["day"]) - float(e[0]) < MARKET_DAYS)
+	sold.append([float(data["day"]), k])
+	data["sold"] = sold
 	save()
 	changed.emit()
 	return true

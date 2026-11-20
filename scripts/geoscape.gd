@@ -2508,6 +2508,8 @@ func _autotest() -> void:
 		for core in [false, true]:
 			Campaign.data["lost"] = false
 			Campaign.data["month"] = 4
+			Campaign.data["day"] = maxf(float(Campaign.data["day"]), Campaign.STRIKE_FROM)
+			Campaign.data["strikes"] = 0
 			Campaign.data["next_strike"] = float(Campaign.data["day"])
 			Campaign.data["flights"] = []
 			Campaign.data["missions"] = []

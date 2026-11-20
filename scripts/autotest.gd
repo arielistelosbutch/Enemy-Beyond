@@ -124,6 +124,7 @@ func _process(delta: float) -> void:
 		"basenade": _basenade(p)
 		"flaretest": _flaretest(p)
 		"fragtest": _fragtest(p)
+		"claytest": _claytest(p)
 		"basefly": _basefly(p)
 		"coophealhost", "coophealclient": _coopheal(p)
 		"pothost", "potclient": _potcoop(p)
@@ -620,7 +621,7 @@ func _arsenal(p: Node) -> void:
 		elif _ars_i == ARS.size():
 			m().add_smoke(a.global_position)
 			out("smoke blocks: %s" % m().smoke_blocks(p.global_position + Vector3.UP, a.global_position + Vector3.UP))
-			m().add_mine(a.global_position, p.name)
+			m().add_mine(a.global_position + Vector3(0, 0, 1.6), p.name, Vector3(0, 0, -1))      # (0.80 Claymore: the wire under him)
 			_ars_i += 1
 	var id2: String = p.item_in("rh").get("id", "")
 	var reach := 1.2 if Game.ITEMS.get(id2, {}).get("type", "") == "melee" else 7.0
@@ -2025,6 +2026,76 @@ func _basenade(p: Node) -> void:
 	out("RESULT basenade ok")
 ## Frag grenade (0.72, Ari: "a bigger blast and more chance to set things alight"): grenades
 ## dropped by wood/crates and on bare ground, how often a fire starts; an alien 6 m away is hurt.
+## (0.80) Claymore MC-18: the soldier sets it facing where he looks, the wire runs across 1.6 m in
+## front; a hovering Levit floats over the wire, a Šedivák walking on it sets it off; who stands in
+## the wedge is hit hard, who stands behind the mine 6 m away is not.
+func _claytest(p: Node) -> void:
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.inventory_open = false
+	p.hp = 5000.0
+	var greys: Array = []
+	var lev: Node = null
+	for a in m().aliens():
+		if a.race == "levit" and lev == null:
+			lev = a
+		elif a.race == "grey" and greys.size() < 2:
+			greys.append(a)
+		else:
+			a.queue_free()
+	for a in greys + [lev]:
+		if a:
+			a.set_physics_process(false)
+			a.global_position = p.global_position + Vector3(0, -200, 40 + randf() * 5)
+	p.inv["b0"] = {"id": "mine"}
+	# face a way with 12 m of open ground (the crash site has fences and wreckage round it)
+	var ss: PhysicsDirectSpaceState3D = m().get_world_3d().direct_space_state
+	p.rotation.y = 0.0
+	for k in 16:
+		var yaw := k * TAU / 16.0
+		var fw := Vector3(-sin(yaw), 0, -cos(yaw))
+		var o: Vector3 = p.global_position + Vector3(0, 0.6, 0)
+		if ss.intersect_ray(PhysicsRayQueryParameters3D.create(o, o + fw * 12.0, Game.WORLD)).is_empty() \
+				and ss.intersect_ray(PhysicsRayQueryParameters3D.create(o + Vector3(0, 0.5, 0), o + fw * 12.0 + Vector3(0, 0.5, 0), Game.WORLD)).is_empty():
+			p.rotation.y = yaw
+			break
+	p.head.rotation.x = -0.2
+	await get_tree().physics_frame
+	p._throw("mine", "b0")
+	await get_tree().create_timer(4.5).timeout
+	var n: int = m().mines.size()
+	if n == 0:
+		out("RESULT claytest placed 0")
+		get_tree().quit()
+		return
+	var mn: Dictionary = m().mines[0]
+	var fwd: Vector3 = -p.global_transform.basis.z
+	fwd.y = 0
+	var faces: bool = (mn["dir"] as Vector3).dot(fwd.normalized()) > 0.95
+	var mid: Vector3 = (mn["a"] + mn["b"]) / 2.0
+	p.global_position = mn["pos"] - (mn["dir"] as Vector3) * 9.0 + Vector3(0, 0.3, 0) + Vector3(-(mn["dir"] as Vector3).z, 0, (mn["dir"] as Vector3).x) * 4.0
+	var lev_over := "-"
+	if lev:
+		lev.global_position = mid + Vector3(0, 0.1, 0)
+		await get_tree().create_timer(1.0).timeout
+		lev_over = str(m().mines.size() == 1)
+		lev.global_position = mn["pos"] + (mn["dir"] as Vector3) * 7.0 + Vector3(0, 0.2, 0)
+	var behind: Node = greys[1] if greys.size() > 1 else null
+	if behind:
+		behind.global_position = mn["pos"] - (mn["dir"] as Vector3) * 6.0 + Vector3(0, 0.2, 0)
+	var h_b: float = behind.hp if behind else 0.0
+	var h_l: float = lev.hp if lev else 0.0
+	var walker: Node = greys[0]
+	walker.global_position = mid + Vector3(0, 0.2, 0)
+	await get_tree().create_timer(1.0).timeout
+	var gone: bool = m().mines.is_empty()
+	var w_dead: bool = walker.dead or walker.hp < 30.0
+	var b_hurt: float = (h_b - behind.hp) if behind and not behind.dead else (999.0 if behind else -1.0)
+	var l_hurt: float = (h_l - lev.hp) if lev and not lev.dead else (999.0 if lev else -1.0)
+	out("RESULT claytest placed %d faces %s levit_over %s fired %s walker_hit %s levit_in_wedge %.0f behind_6m %.0f" % [n, faces, lev_over, gone, w_dead, l_hurt, b_hurt])
+	get_tree().quit()
+
 func _fragtest(p: Node) -> void:
 	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
 		return
@@ -2186,6 +2257,7 @@ func _basefly(p: Node) -> void:
 	m().waves_left = 0
 	var top := 0.0
 	var inside := 0
+	var above := 0
 	var flights := 0
 	var was := {}
 	var ss: PhysicsDirectSpaceState3D = p.get_world_3d().direct_space_state
@@ -2202,13 +2274,20 @@ func _basefly(p: Node) -> void:
 			if a.flying and not was.get(a.name, false):
 				flights += 1
 			was[a.name] = a.flying
+			# (0.80) the big hangar is 10 m tall: flying high in it is fine, over the base's roof is not
+			if a.global_position.y > 2.5:
+				var rq := PhysicsRayQueryParameters3D.create(a.global_position + Vector3(0, 0.5, 0), a.global_position + Vector3(0, 40, 0), Game.WORLD)
+				if ss.intersect_ray(rq).is_empty():
+					above += 1
+					if above == 1:
+						out("[FLY] over the roof: %s at %s jet %s" % [a.name, str(a.global_position.snapped(Vector3.ONE * 0.1)), str(a._jet)])
 			top = maxf(top, a.global_position.y)
 			var q := PhysicsPointQueryParameters3D.new()
 			q.position = a.global_position + Vector3(0, 1.0, 0)
 			q.collision_mask = Game.WORLD
 			if not ss.intersect_point(q, 1).is_empty():
 				inside += 1
-	out("RESULT basefly top %.2f inside %d flights %d hp %.0f unreachable %d" % [top, inside, flights, p.hp, lost])
+	out("RESULT basefly top %.2f above %d inside %d flights %d hp %.0f unreachable %d" % [top, above, inside, flights, p.hp, lost])
 	get_tree().quit()
 
 func _basewalk(p: Node) -> void:
@@ -3671,15 +3750,16 @@ func _weaktest(p: Node) -> void:
 	my.damage(40.0, my.global_position + Vector3(0, 1, 3), null)
 	await get_tree().create_timer(0.5).timeout
 	r.append("mys free %s cd %s" % [p.panic == "", my.psi_cd >= 8.0])
-	# mines: a pressure plate - the floating disc passes over, the Bijec's foot sets it off
+	# mines: a tripwire - the floating disc passes over, the Bijec's foot sets it off
 	dk.set_physics_process(false)
 	b.set_physics_process(false)
 	for oa in m().aliens():
 		if oa != dk and oa != b and not oa.dead:
 			oa.global_position += Vector3(0, -300, 0)      # (the others away: one came to look at the bodies and stepped on the disc's mine)
 			oa.set_physics_process(false)
-	m().add_mine(dk.global_position, p.name)
-	m().add_mine(b.global_position, p.name)
+	# (0.80) Claymore: the tripwire runs 1.6 m in front of the mine, under each of them
+	m().add_mine(dk.global_position + Vector3(0, 0, 1.6), p.name, Vector3(0, 0, -1))
+	m().add_mine(b.global_position + Vector3(0, 0, 1.6), p.name, Vector3(0, 0, -1))
 	var n0: int = m().mines.size()
 	await get_tree().create_timer(2.8).timeout
 	r.append("mines %d->%d" % [n0, m().mines.size()])

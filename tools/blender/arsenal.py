@@ -276,7 +276,8 @@ def hands(kind):
     o = join(p, "Hands_" + kind)
     export_glb(os.path.join(OUTDIR, "hands_%s.glb" % kind), [o])
 
-for f in (shotgun, magnum, autocannon, minigun, rocket, baton, knife, smoke, mine, handheld, plasma_rifle):
+# (0.80) mine.glb = Claymore from claymore.py, the old disc mine() is not exported any more
+for f in (shotgun, magnum, autocannon, minigun, rocket, baton, knife, smoke, handheld, plasma_rifle):
     f()
 TWO_HANDED = ["rifle", "shotgun", "autocannon", "minigun", "rocket_launcher", "plasma_rifle"]
 for k in TWO_HANDED:

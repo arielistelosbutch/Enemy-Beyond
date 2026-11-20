@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.72.3 prototyp"
-const VERSION_NUM := "0.72.3"
+const VERSION := "0.72.4 prototyp"
+const VERSION_NUM := "0.72.4"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -46,7 +46,7 @@ const ITEMS := {
 	"grenade": {"name": "Granát", "short": "Granát", "weight": 2, "type": "grenade"},
 	"plasma_grenade": {"name": "Plazmový granát PG-01", "short": "PG-01", "weight": 2, "type": "grenade"},
 	"smoke_grenade": {"name": "Kouřový granát", "short": "Kouř", "weight": 1, "type": "grenade"},
-	"mine": {"name": "Nášlapná mina", "short": "Mina", "weight": 3, "type": "grenade"},
+	"mine": {"name": "Směrová mina MC-18 Claymore", "short": "Claymore", "weight": 3, "type": "grenade"},
 	"flare": {"name": "Světlice", "short": "Světlice", "weight": 1, "type": "flare"},
 	"medkit": {"name": "Lékárnička", "short": "Lékárnička", "weight": 3, "type": "medkit", "uses": 3},
 	# the aliens' own guns, picked up from the dead: no magazines - a charge cell that has to be
@@ -788,7 +788,7 @@ const KEY_DEFAULTS := {
 		"pause": [KEY_ESCAPE], "prone": [KEY_Z, KEY_Y], "melee": [KEY_V], "smoke": [KEY_H], "mine": [KEY_8],
 		"primary": [KEY_1], "secondary": [KEY_2],
 		"belt1": [KEY_3], "belt2": [KEY_4], "belt3": [KEY_5], "belt4": [KEY_6],
-		"talk": [KEY_T], "radio_talk": [KEY_TAB, KEY_K], "mic_toggle": [KEY_M], "nvg": [KEY_N], "firemode": [KEY_B], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
+		"talk": [KEY_T], "radio_talk": [KEY_TAB, KEY_K], "mic_toggle": [KEY_M], "nvg": [KEY_N], "scan_mute": [KEY_O], "firemode": [KEY_B], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
 	}
 
 ## What the settings offer to rebind, in this order: [action, Czech name] (a header row has no name).
@@ -798,11 +798,11 @@ const KEY_ROWS := [
 	["sprint", "Sprint"], ["jump", "Skok"], ["crouch", "Kleknout"], ["prone", "Lehnout"],
 	["lean_left", "Náklon vlevo (držet)"], ["lean_right", "Náklon vpravo (držet)"],
 	["", "BOJ"], ["reload", "Přebít"], ["melee", "Rána zblízka"], ["firemode", "Dávky / druh nábojů"],
-	["grenade", "Granát"], ["smoke", "Kouřový granát"], ["flare", "Světlice"], ["mine", "Mina"],
+	["grenade", "Granát"], ["smoke", "Kouřový granát"], ["flare", "Světlice"], ["mine", "Claymore"],
 	["primary", "Primární zbraň"], ["secondary", "Sekundární zbraň"],
 	["belt1", "Opasek 1"], ["belt2", "Opasek 2"], ["belt3", "Opasek 3"], ["belt4", "Opasek 4"],
 	["", "VĚCI A AKCE"], ["use", "Použít (dveře, sebrat, táhnout)"], ["heal", "Lékárnička"], ["inventory", "Výstroj"],
-	["flashlight", "Svítilna"], ["nvg", "Noktovizor"], ["drop", "Zahodit"], ["ready", "Připraven (v lodi)"],
+	["flashlight", "Svítilna"], ["nvg", "Noktovizor"], ["scan_mute", "Ztlumit detektor"], ["drop", "Zahodit"], ["ready", "Připraven (v lodi)"],
 	["salute", "Kolo emocí"], ["atease", "Pohov"],
 	["", "HLAS"], ["talk", "Mluvit nahlas (držet)"], ["radio_talk", "Vysílačka (držet)"], ["mic_toggle", "Mikrofon stále zapnutý"],
 	["", "STÍHAČKA"], ["decoy", "Návnady"],
@@ -1521,6 +1521,7 @@ var difficulty := "normal"
 var mouse_sens := 1.0      # multiplier
 var invert_y := false
 var fov := 75.0
+var scan_muted := false  # (0.80 Ari) detektor ztlumený klávesou O: nepípá, vetřelci ho neslyší, displej svítí
 var cam_bob := 1.0     # (0.68+) how much the camera moves with steps and breath (0 = off)
 const HEAL_MINUTES_PER_HP := 10.0   # veteran: wounds heal in real time, like X-COM's days
 
@@ -1544,6 +1545,7 @@ func load_settings() -> void:
 		invert_y = cf.get_value("controls", "invert_y", false)
 		fov = cf.get_value("controls", "fov", 75.0)
 		cam_bob = cf.get_value("controls", "cam_bob", 1.0)
+		scan_muted = cf.get_value("controls", "scan_muted", false)
 		key_binds = {}
 		for a in cf.get_value("keys", "binds", {}):
 			if KEY_DEFAULTS.has(a):
@@ -1581,6 +1583,7 @@ func save_settings() -> void:
 	cf.set_value("controls", "invert_y", invert_y)
 	cf.set_value("controls", "fov", fov)
 	cf.set_value("controls", "cam_bob", cam_bob)
+	cf.set_value("controls", "scan_muted", scan_muted)
 	cf.set_value("keys", "binds", key_binds)
 	cf.set_value("video", "retro", retro)
 	cf.set_value("video", "wobble", wobble)

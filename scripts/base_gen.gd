@@ -783,8 +783,29 @@ func _construction(a: Vector3, w: float, h: float) -> void:
 			box(p + Vector3(0, y + 1.5, 0), Vector3(3.0, 0.08, 0.8), _col(Color(0.5, 0.4, 0.3)), false)
 		for sx in [-1.4, 1.4]:
 			box(p + Vector3(sx, 1.5, 0), Vector3(0.06, 3.0, 0.06), pipe, false)
+	# (Ari: "nestojí ten dělník v bedně?") the crates keep clear of the builders and what they work at
+	var keep := []
+	for j in _jobs(w):
+		var fwd := Vector3(-sin(float(j[2])), 0, -cos(float(j[2])))
+		keep.append([j[1], 1.5])
+		keep.append([(j[1] as Vector3) + fwd * 0.9, 1.5])
+	var placed := []
 	for k in 5:
-		_crate(a + Vector3(rng.randf_range(2, w - 2), 0, rng.randf_range(3, w - 2)), rng.randf_range(0.85, 1.1), rng.randf() * TAU)
+		var q := Vector3.ZERO
+		for t in 30:
+			q = Vector3(rng.randf_range(2, w - 2), 0, rng.randf_range(3, w - 2))
+			var ok := true
+			for kp in keep:
+				if q.distance_to(kp[0]) < float(kp[1]):
+					ok = false
+			for c in placed:
+				if q.distance_to(c) < 1.3:
+					ok = false
+			if ok:
+				break
+		placed.append(q)
+		keep.append([q, 1.3])
+		_crate(a + q, rng.randf_range(0.85, 1.1), rng.randf() * TAU)
 	box(a + Vector3(w / 2, 0.01, w - 1.5), Vector3(4.0, 0.02, 0.3), Game.color_mat(Color(0.9, 0.75, 0.1)), false)
 
 # ---- alarms, cables, the globe on the screens, the range ----------------------------------------
@@ -989,6 +1010,10 @@ func _blockade(c: Vector3, along_x: bool, inward: float) -> void:
 	root.add_child(sb)
 	sb.position = c + Vector3(0, 1.5, 0)
 
+## Where the builders work (in the room, from its inner corner): job, place, which way he faces.
+func _jobs(w: float) -> Array:
+	return [["weld", Vector3(w * 0.3, 0, w * 0.35), PI * 0.5], ["hammer", Vector3(w * 0.65, 0, w * 0.4), -PI * 0.3], ["drill", Vector3(w * 0.5, 0, w * 0.7), PI]]
+
 ## The builders: (0.69, Ari: "dělníci mají být technici, ne vesničani") the base's own technicians
 ## (scripts/base_npc.gd, blue overalls, the gold X) with yellow hard hats - one welding kneeling at a
 ## steel beam (sparks, blue flicker), one hammering at a concrete pillar, one on a jackhammer. Each keeps
@@ -997,8 +1022,7 @@ func _blockade(c: Vector3, along_x: bool, inward: float) -> void:
 func _workers(a: Vector3, w: float) -> void:
 	if attack:
 		return
-	var jobs := [["weld", Vector3(w * 0.3, 0, w * 0.35), PI * 0.5], ["hammer", Vector3(w * 0.65, 0, w * 0.4), -PI * 0.3], ["drill", Vector3(w * 0.5, 0, w * 0.7), PI]]
-	for j in jobs:
+	for j in _jobs(w):
 		var at: Vector3 = a + (j[1] as Vector3)
 		var yaw := float(j[2])
 		var fwd := Vector3(-sin(yaw), 0, -cos(yaw))

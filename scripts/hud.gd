@@ -1128,11 +1128,15 @@ func _scanner_update(delta: float) -> void:
 	_scan_near = near
 	if near < SCAN_RANGE and _ping_t <= 0:
 		_ping_t = lerpf(0.22, 1.4, near / SCAN_RANGE)
-		Game.play_ui(mission(), "scanner_close", -16 + (SCAN_RANGE - near) / 2.5)
+		if Game.scan_muted and not p.drone_radar():
+			# (0.80 Ari) ztlumený: nepípá a nic neslyší ani okolí
+			_beep_noise_cd = 2.0
+		else:
+			Game.play_ui(mission(), "scanner_close", -16 + (SCAN_RANGE - near) / 2.5)
 		# (0.57, MD-01's entry) the beeping carries a few metres: what hunts by ear may hear it
 		# (0.66: the drone's radar in solo is quiet - it sits in the drone, not in the hand)
 		_beep_noise_cd -= _ping_t
-		if _beep_noise_cd <= 0.0 and not p.drone_radar():
+		if _beep_noise_cd <= 0.0 and not p.drone_radar() and not Game.scan_muted:
 			_beep_noise_cd = 2.0
 			mission().noise(p.global_position, 6.0)
 	if _scan_t > 0:
@@ -1187,7 +1191,7 @@ func _draw_scanner(c: Control, center: Vector2, r: float, p: Node) -> void:
 		if v.length() > r: continue
 		c.draw_circle(center + v, 2.3, Color(UiSkin.ACC_HI, clampf(b["t"], 0, 1)))
 	c.draw_circle(center, 1.5, Color(1, 1, 1))
-	_text(c, center + Vector2(-r, r + 10), ("STRÁŽCE  " if p.drone_radar() else "DETEKTOR  ") + (("%d m" % int(snappedf(_scan_near, 2.0))) if _scan_near < SCAN_RANGE else "--"), FRAME, 8)
+	_text(c, center + Vector2(-r, r + 10), ("STRÁŽCE  " if p.drone_radar() else ("DETEKTOR (TICHO)  " if Game.scan_muted else "DETEKTOR  ")) + (("%d m" % int(snappedf(_scan_near, 2.0))) if _scan_near < SCAN_RANGE else "--"), FRAME, 8)
 
 # ---- drawing helpers ---------------------------------------------------------------------
 ## (0.70+) Dead, watching a living teammate (scripts/spectator.gd): only who it is and the keys -
@@ -1570,7 +1574,7 @@ func _keys_text(p: Node) -> String:
 		k.call("secondary") + "    sekundární zbraň (%s)" % hand.call("side") if p.item_in("rh").get("home", "") != "side" else k.call("secondary") + "    sekundární zbraň - znovu ji uklidí",
 		"Kolečko  primární do rukou / znovu: zpět, co jsi držel",
 		"%s %s %s %s  věc z opasku do rukou / nabít" % [k.call("belt1"), k.call("belt2"), k.call("belt3"), k.call("belt4")],
-		"%s granát z opasku (%d výbušné)   %s kouřový %d   %s mina %d   %s světlice %d" % [k.call("grenade"), p.inv.values().filter(func(it): return it["id"] == "grenade").size(), k.call("smoke"), p.inv.values().filter(func(it): return it["id"] == "smoke_grenade").size(), k.call("mine"), p.inv.values().filter(func(it): return it["id"] == "mine").size(), k.call("flare"), p.inv.values().filter(func(it): return it["id"] == "flare").size()],
+		"%s granát z opasku (%d výbušné)   %s kouřový %d   %s Claymore %d   %s světlice %d" % [k.call("grenade"), p.inv.values().filter(func(it): return it["id"] == "grenade").size(), k.call("smoke"), p.inv.values().filter(func(it): return it["id"] == "smoke_grenade").size(), k.call("mine"), p.inv.values().filter(func(it): return it["id"] == "mine").size(), k.call("flare"), p.inv.values().filter(func(it): return it["id"] == "flare").size()],
 		k.call("drop") + "  zahodit, co máš v ruce",
 		k.call("heal") + "    lékárnička - do rukou, pak ošetří (%s)" % where.call("medkit"),
 		k.call("use") + "    táhnout padlého / sebrat / civilista / dveře",

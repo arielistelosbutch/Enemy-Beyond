@@ -2345,6 +2345,12 @@ func _physics_process(delta: float) -> void:
 			Game.play_ui(self, "clink", -12)
 			mission.hud.message(firemode_none(fw["id"]), 1.6)
 	_nvg_battery(delta)
+	# (0.80 Ari) MD-01 "podporuje omezení hlasitosti, při kterém zůstává aktivní vizuální signalizace"
+	if Input.is_action_just_pressed("scan_mute") and not inv_open and has_scanner() and not drone_radar():
+		Game.scan_muted = not Game.scan_muted
+		Game.save_settings()
+		Game.play_ui(self, "clink", -12)
+		mission.hud.message("Detektor ztlumen, jen displej." if Game.scan_muted else "Detektor pípá.", 1.6)
 	if Input.is_action_just_pressed("nvg") and not inv_open:
 		var nv := find_item(func(it): return it["id"] == "nvg")
 		if nv != "" and float(item_in(nv).get("batt", NVG_BATT)) <= 0.0 and not mission.nvg_on:
@@ -4631,8 +4637,10 @@ func _throw(kind: String, from_slot := "") -> void:
 		mission.hud.message("Nemáš: %s" % Game.ITEMS[kind]["name"], 1.5)
 		return
 	var t := 0.4 if (slot == "lh" or slot == "rh") else Game.fetch_time(kind, slot) + 0.3
+	if kind == "mine":
+		t += 1.4      # (0.80) the Claymore: legs into the ground, aim it, run the tripwire out
 	busy_stand = slot.begins_with("p")
-	_start_busy(t, "Házím" if kind != "mine" else "Pokládám minu", func():
+	_start_busy(t, "Házím" if kind != "mine" else "Stavím Claymore", func():
 		busy_stand = false
 		if not inv.has(slot):
 			return
@@ -4644,7 +4652,7 @@ func _throw(kind: String, from_slot := "") -> void:
 		if Game.has_talent(merc, "granatnik"):
 			v = dir * 19.0 + Vector3.UP * 4.0
 		if kind == "mine":
-			v = dir * 3.0 + Vector3.UP * 1.0
+			v = Vector3(dir.x, 0, dir.z).normalized() * 1.6 + Vector3.UP * 0.6
 		_spawn_throwable.rpc(kind, from, v, name))
 
 ## G: the grenade at hand - in the hand, then on the belt (left to right: a frag or a smoke one,
@@ -4709,11 +4717,12 @@ func _spawn_throwable(kind: String, from: Vector3, vel: Vector3, thrower: String
 		var mm := Game.model("mine")
 		rb.add_child(mm)
 		mm.position.y = -0.05
+		mm.rotation.y = atan2(-vel.x, -vel.z)
 		get_tree().create_timer(1.2).timeout.connect(func():
 			if is_instance_valid(rb):
 				var p := rb.global_position
 				rb.queue_free()
-				mission.add_mine(p, thrower))
+				mission.add_mine(p, thrower, vel))
 		return
 	if kind == "flare":
 		rb.add_to_group("flare")      # (a Ještěřan close to it is dazzled)
