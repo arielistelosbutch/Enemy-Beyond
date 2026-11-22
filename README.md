@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.72.4
+# Operace X - Enemy Beyond — prototyp 0.72.5
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,22 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.72.5
+- Strážní věž ST-01 (klávesa 9): postavím ji před sebe a hlídá výseč před sebou. Střílí jen na to, co se hýbe, a výzkumem dostane laser nebo plazmu. F u věže ji doplní nebo složí.
+- Nový štít BSH-02 ze slitin vetřelců: odolnější, plazma ho tolik neničí. Odemkne ho výzkum laserů a vyrábí se v dílně ze slitin.
+- Tlumiče na pistoli a pušce konečně fungují: rána je tichá a s malým zábleskem, a vetřelec zasažený ze tmy neví, kde přesně stojím, ani nevaruje ostatní. Kočičí krok je tišší.
+- Jezdec Zesílení mého mikrofonu opravdu zesiluje (25–400 %), omezovač hlídá, aby hlas nepraskal.
+- Detektor s displejem v helmě už neukazuje spoluhráče, jen civilisty a vetřelce.
+- Kulky od řídicího jádra základny vetřelců viditelně odletí v jiskrách – na jádro platí výbuch.
+- Osobní sklad patří mně, ne vojákovi: když pošlu vojáka na marodku, propustím ho nebo padne, věci přejdou na vojáka, za kterého hraju.
+- Po neúspěšné misi si přivezu všechno, co mám u sebe, když odletím živý. Ztratí se jen to, co zůstalo venku.
+- Dílna sčítá stejné zakázky do jednoho řádku (Laserová puška 3×) a zakázky jdou zrušit s vrácením peněz i materiálu.
+- Místnosti na základně jdou zbourat (vratka) nebo přestavět na jinou.
+- V okně CO SE STALO je tlačítko Zpomalit čas.
+- V souboji stíhaček slyším střelbu a rakety spoluhráčů. V doprovodu transportu mají stíhačky výzbroj z hangáru (i Jestřáb).
+- Karta vojáka ukazuje zajaté vetřelce a za Kapitánem jsou nové hodnosti Major, Podplukovník, Plukovník a Generál.
+- Méně sekání při střelbě z kulometu ve městě (oheň, cesty, hluk). Hra si do souboru zapisuje záznam výkonu (F9 zapne/vypne, F8 značka), abych mohl poslat, kde se sekalo.
 
 ## Novinky 0.72.4
 - Kampaň má pozvolnější tempo: radar hlásí zhruba polovinu UFO, takže stihnu víc vyzkoumat mezi misemi.

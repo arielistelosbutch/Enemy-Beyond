@@ -715,7 +715,7 @@ func _show_merc() -> void:
 	var rk := Game.rank_of(m)
 	var nxt := "" if rk + 1 >= Game.RANK_XP.size() else " / %d" % Game.RANK_XP[rk + 1]
 	var sub := Label.new()
-	sub.text = "%s · zkušenosti %d%s · %d misí · %d zabití" % [Game.RANKS[rk], xp, nxt, int(m.get("missions", 0)), int(m.get("kills", 0))]
+	sub.text = "%s · zkušenosti %d%s · %d misí · %d zabití · %d zajatých" % [Game.RANKS[rk], xp, nxt, int(m.get("missions", 0)), int(m.get("kills", 0)), int(m.get("captures", 0))]
 	UiSkin.eyebrow(sub)
 	sub.autowrap_mode = TextServer.AUTOWRAP_WORD
 	sub.custom_minimum_size = Vector2(200, 0)
@@ -2723,7 +2723,7 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "shouldershot", "radiosprint", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "rooftest", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "leaktest", "leakmap", "ufohull", "wedgetest", "leantest", "pockettest", "leaveany", "safeend", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "reinfcap", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "ceiltest", "rainshot", "lamptest", "wxtest", "wxshot", "tracktest", "lensshot", "interiors", "spectate", "dazetest", "chaintest", "echotest", "dirtshot", "flaretest", "civpanic", "nvgtest", "civstuck", "civlooks", "fragtest", "claytest", "convoytest", "bugtest", "quartest":
+		"town", "zoo", "terror", "shouldershot", "radiosprint", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "rooftest", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "leaktest", "leakmap", "ufohull", "wedgetest", "leantest", "pockettest", "leaveany", "safeend", "failkit", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "reinfcap", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "ceiltest", "rainshot", "lamptest", "wxtest", "wxshot", "tracktest", "lensshot", "interiors", "spectate", "dazetest", "chaintest", "echotest", "dirtshot", "flaretest", "civpanic", "nvgtest", "civstuck", "civlooks", "fragtest", "claytest", "sentrytest", "convoytest", "bugtest", "quartest", "quiettest", "scantest", "gunlag":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
@@ -2765,7 +2765,15 @@ func _autotest() -> void:
 				await get_tree().create_timer(0.2).timeout
 			await get_tree().create_timer(0.5).timeout
 			Net.start_intercept({"intercept": true, "id": -1, "ufo": Game.cmd_arg("ufo", "harvester"), "pilots": Net.roster.keys()})
-		"airclient":
+		"escorthost":
+			# (0.72.5) the escort in co-op: the hangar's weapons reach both pilots (params from the host)
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			while Net.roster.size() < 2:
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(0.5).timeout
+			Net.start_escort({"escort": true, "craft": -1, "transport": "heli", "escort_n": 2, "pilots": Net.roster.keys(), "driver": 0,
+				"gun": Game.cmd_arg("gun", "laser"), "heavy": Game.cmd_arg("heavy", "plasma_cannon"), "hawks": int(Game.cmd_arg("hawks", "1")), "plasma_mags": 20})
+		"airclient", "escortclient":
 			Game.merc["name"] = "Wingman"
 			await get_tree().create_timer(1.0).timeout
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
@@ -3020,6 +3028,53 @@ func _autotest() -> void:
 				while not Campaign.viewer:
 					await get_tree().create_timer(0.2).timeout
 			get_tree().change_scene_to_file("res://scenes/Geoscape.tscn")
+		"sickhost":
+			# (0.72.x, Ari: the kit vanished when the soldier went to the sick bay) the client's
+			# soldier comes home wounded, he plays another one: the host must see the locker on him
+			Campaign.new_campaign("normal")
+			Game.merc["name"] = "Hostitel"
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			var t0 := Time.get_ticks_msec()
+			var got := {}
+			while Time.get_ticks_msec() - t0 < 40000:
+				await get_tree().create_timer(0.2).timeout
+				for id in Net.roster:
+					if id != 1 and str(Net.roster[id]["merc"].get("name", "")) == "Bravo":
+						got = Net.roster[id]["merc"]
+				if not got.is_empty():
+					break
+			var rec: Dictionary = (Campaign.data.get("mercs", {}) as Dictionary).get(str(got.get("uid", "")), {})
+			print("RESULT sickhost bravo %s locker %d record %d" % [not got.is_empty(), int((got.get("locker", {}) as Dictionary).get("grenade", 0)), int((rec.get("locker", {}) as Dictionary).get("grenade", 0))])
+			await get_tree().create_timer(2.0).timeout
+			get_tree().quit()
+		"sickclient":
+			var bak = FileAccess.get_file_as_bytes("user://merc.cfg") if FileAccess.file_exists("user://merc.cfg") else null
+			var a := Game.new_merc("Alfa")
+			var b := Game.new_merc("Bravo")
+			a["locker"] = {"grenade": 2, "medkit": 1}
+			Game.mercs = [a, b]
+			Game.active = 0
+			Game.merc = a
+			await get_tree().create_timer(1.0).timeout
+			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+			while not Campaign.viewer:
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(0.5).timeout
+			var lk0 := int((Game.merc.get("locker", {}) as Dictionary).get("grenade", 0))
+			Game.wound(Game.merc, 40.0, str(Campaign.data.get("cid", "")), float(Campaign.data.get("day", 0.0)))
+			var sick := Net.sick_in_team().size()
+			var st0 := int(Game.stash_for(false).get("grenade", 0))
+			Game.switch_merc(1)
+			await get_tree().create_timer(2.5).timeout
+			print("RESULT sickclient alfa %d sick %d bravo %d alfa_left %d stash %d -> %d" % [lk0, sick, int((Game.merc.get("locker", {}) as Dictionary).get("grenade", 0)),
+				(Game.mercs[0].get("locker", {}) as Dictionary).size(), st0, int(Game.stash_for(false).get("grenade", 0))])
+			if bak == null:
+				DirAccess.remove_absolute(ProjectSettings.globalize_path("user://merc.cfg"))
+			else:
+				var fa := FileAccess.open("user://merc.cfg", FileAccess.WRITE)
+				fa.store_buffer(bak)
+				fa.close()
+			get_tree().quit()
 		"readyhost", "gohost":
 			Campaign.new_campaign("normal")
 			Game.merc["name"] = "Hostitel"
@@ -3146,7 +3201,7 @@ func _autotest() -> void:
 			await get_tree().create_timer(1.0).timeout
 			print("[LB] client goes down to the base alone")
 			Net.start_local_base({"type": "home", "type_name": "Základna", "base": Campaign.data["base"].duplicate(true), "grid_w": Campaign.GRID_W, "grid_h": Campaign.GRID_H, "transport": "heli", "live": [], "research": [], "night": false, "hour": 12.0, "blips": []})
-		"coophealhost", "aimphost", "safeouthost", "hullhost", "pothost", "leakhost":
+		"coophealhost", "aimphost", "safeouthost", "hullhost", "pothost", "leakhost", "quiethost":
 			if Game.autotest() == "aimphost":
 				Game.seed_override = int(Game.cmd_arg("seed", "4242"))     # (the same map for the old and the new AI)
 			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
@@ -3158,11 +3213,11 @@ func _autotest() -> void:
 				mp["cid"] = "pottest"      # (0.70: the pay is counted only in a campaign mission)
 				mp["reward"] = 200
 			Net.start_mission(mp)
-		"coophealclient", "aimpclient", "safeoutclient", "hullclient", "potclient", "leakclient":
+		"coophealclient", "aimpclient", "safeoutclient", "hullclient", "potclient", "leakclient", "quietclient":
 			Game.merc["name"] = "Klient" if Game.cmd_arg("ci", "1") == "1" else "Klient" + Game.cmd_arg("ci", "1")
 			await get_tree().create_timer(1.0 + 0.5 * int(Game.cmd_arg("ci", "1"))).timeout
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
-		"nadehost", "flarehost":
+		"nadehost", "flarehost", "sentryhost":
 			# (Ari 2026-11-10) the whole team in the base together, grenades in the velín
 			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
 			while Net.roster.size() < 2:
@@ -3184,7 +3239,7 @@ func _autotest() -> void:
 			var rad := Game.autotest() == "nmradarhost"
 			Net.start_mission({"type": "radar" if rad else "bug", "type_name": "Test", "place": "Test", "biome": "base" if rad else "forest", "size": "large" if rad else "medium",
 				"ufo": "raider", "crew_of": "raider", "extra_aliens": 1, "id": -1, "night": true, "hour": 23.0})
-		"nadeclient", "flareclient", "nmradarclient", "nmbugclient":
+		"nadeclient", "flareclient", "nmradarclient", "nmbugclient", "sentryclient":
 			Game.merc["name"] = "Klient"
 			await get_tree().create_timer(1.0).timeout
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))

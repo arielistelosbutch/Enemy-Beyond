@@ -201,10 +201,74 @@ static func run() -> void:
 	# and the mirror images of our 16 -> 48 kHz upsampling
 	var q := _quality()
 	print("[VOICEDSP] quality: signal/distortion %.1f dB, upsampling images %.1f dB, upsampling cpu %.1f ms per second" % [q[0], q[1], q[2]])
-	var ok: bool = res[true][0] > res[false][0] + 10.0 and q[0] > 32.0 and q[1] < -40.0 and q[2] < 60.0 and res[true][1] >= 0.0 and res[true][1] < 0.12 \
+	# (0.72.5) the "my microphone" slider must really change the loudness (the AGC used to undo it)
+	var gs := _gain_sweep()
+	print("[VOICEDSP] gain: x0.5 %.1f dB, x2 %+.1f dB, x4 %+.1f dB (vs 100 %%), peak at x4 %.2f, signal/distortion at x2 %.1f dB, at x4 %.1f dB, quiet mic x4 %+.1f dB" % gs)
+	var gain_ok: bool = gs[0] < -4.5 and gs[1] > 5.0 and gs[2] > 7.5 and gs[3] <= 0.9 and gs[4] > 25.0 and gs[5] > 18.0 and gs[6] > 9.0
+	var ok: bool = gain_ok and res[true][0] > res[false][0] + 10.0 and q[0] > 32.0 and q[1] < -40.0 and q[2] < 60.0 and res[true][1] >= 0.0 and res[true][1] < 0.12 \
 		and first_len >= int(R * 0.18) and tail >= int(R * 0.25) and rx.rescued == 12 and rx.late == 1 \
 		and bad[0] == 0 and bad[1] == 0 and calm[0] == 0 and calm[1] == 0 and calm[5] < 0.12 and ms < 40.0 and absi(got - R * 3) < 400
 	print("RESULT voicedsp %s" % ("ok" if ok else "CHYBA"))
+
+## A vowel (150 Hz with harmonics, syllables) at amplitude a.
+static func _vowel(n: int, a: float) -> PackedFloat32Array:
+	var R := DSP.RATE
+	var x := PackedFloat32Array()
+	x.resize(n)
+	for i in n:
+		var t := float(i) / R
+		var v := 0.0
+		for h in range(1, 30):
+			var f := 150.0 * h
+			if f > 6500.0:
+				break
+			v += sin(TAU * f * t + h * 0.7) / h * (1.0 + 2.0 * exp(-pow((f - 700.0) / 300.0, 2)))
+		x[i] = v * a * (0.6 + 0.4 * sin(TAU * 1.5 * t))
+	return x
+
+## Distortion of y against x per 10 ms frame (a level change is not distortion).
+static func _sdr(x: PackedFloat32Array, y: PackedFloat32Array, from_f: int) -> float:
+	var sig := 0.0
+	var err := 0.0
+	for f in range(from_f, x.size() / DSP.FRAME):
+		var o := f * DSP.FRAME
+		var xy := 0.0
+		var xx := 0.0
+		for k in DSP.FRAME:
+			xy += x[o + k] * y[o + k]
+			xx += x[o + k] * x[o + k]
+		var g := xy / maxf(xx, 1e-9)
+		for k in DSP.FRAME:
+			var e := y[o + k] - g * x[o + k]
+			sig += g * g * x[o + k] * x[o + k]
+			err += e * e
+	return 10.0 * log(sig / maxf(err, 1e-12)) / log(10.0)
+
+## (0.72.5) [x0.5 dB, x2 dB, x4 dB vs 100 %, peak at x4, SDR x2, SDR x4, quiet mic x4 dB]
+## through the whole send chain (AGC, slider, limiter, mu-law), the 100 % level as 0 dB.
+static func _gain_sweep() -> Array:
+	var R := DSP.RATE
+	var x := _vowel(R * 3, 0.08)
+	var quiet := _vowel(R * 3, 0.004)        # a very quiet microphone (the AGC tops out)
+	var lvl := {}
+	var pk := 0.0
+	var sdr := {}
+	for g in [0.5, 1.0, 2.0, 4.0]:
+		var d := DSP.new()
+		d.gain = g
+		var y := DSP.decode(DSP.encode(d.process_mono(x, false, 0.03)))
+		lvl[g] = _rms(y, R, R * 3)
+		sdr[g] = _sdr(x, y, R / DSP.FRAME)
+		if g == 4.0:
+			for i in range(R, y.size()):
+				pk = maxf(pk, absf(y[i]))
+	var qlv := {}
+	for g in [1.0, 4.0]:
+		var d := DSP.new()
+		d.gain = g
+		qlv[g] = _rms(DSP.decode(DSP.encode(d.process_mono(quiet, false, 0.03))), R, R * 3)
+	var db := func(a: float, b: float) -> float: return 20.0 * log(a / maxf(b, 1e-9)) / log(10.0)
+	return [db.call(lvl[0.5], lvl[1.0]), db.call(lvl[2.0], lvl[1.0]), db.call(lvl[4.0], lvl[1.0]), pk, sdr[2.0], sdr[4.0], db.call(qlv[4.0], qlv[1.0])]
 
 ## [signal/distortion dB, image level dB, upsampling ms per second of voice]
 static func _quality() -> Array:

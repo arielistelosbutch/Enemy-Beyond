@@ -163,6 +163,12 @@ func hear(pos: Vector3, radius: float) -> void:
 		radius *= 1.6      # it lives by its ears
 	if global_position.distance_to(pos) > radius:
 		return
+	var _now := Time.get_ticks_msec()      # (0.72.5) dávka ze stejného místa = jedna reakce za 0,5 s
+	if _now - _heard_ms < HEAR_SAME_MS and pos.distance_to(_heard_pos) < 4.0 and radius <= _heard_r + 0.5:
+		return
+	_heard_ms = _now
+	_heard_pos = pos
+	_heard_r = radius
 	alert = true
 	last_seen = pos
 	heard_t = 6.0
@@ -251,6 +257,7 @@ func lurk_at(pos: Vector3) -> void:
 func damage(dmg: float, from: Vector3, by: Node) -> void:
 	if dead:
 		return
+	var quiet := quiet_hit(by)
 	hp -= taken(dmg)
 	alert = true
 	if hp <= 0:
@@ -262,6 +269,14 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 		return
 	_hurt_voice.rpc()
 	last_seen = from
+	if quiet:
+		# (0.72.5) hit from the dark by someone it did not see: it goes to look, it does not know whom
+		last_seen = quiet_guess(by)
+		if state != S.COMBAT:
+			state = S.INVESTIGATE
+			lurking = false
+			_go(_snap(last_seen))
+		return
 	match race:
 		"lihnoun":
 			# badly hurt: melt back into the dark and come again later
@@ -301,6 +316,11 @@ func _retreat(secs: float) -> void:
 
 # ---- brain (host) ---------------------------------------------------------------------------
 func _think(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_think(delta)
+	PerfLog.took("AI vetřelců na blízko", _pt)
+
+func _pl_think(delta: float) -> void:
 	AS.tick(self, delta)       # (0.63: packs - round the prey and in together)
 	strike_cd -= delta
 	repath_t -= delta

@@ -160,21 +160,9 @@ func _fit_pods(node: Node3D, is_hawk := false) -> void:
 			pod.scale = Vector3.ONE * len * float(e[2])
 			pod.position = Vector3(box.get_center().x + sx * span * float(e[1]), box.position.y + box.size.y * 0.36, box.get_center().z - len * 0.05)
 
-## X-AIR-001: alloy plates in our hulls - every hit takes a quarter less (a third more hits to go down).
-func armor_k() -> float:
-	return 0.75 if params.get("jet_armor", false) else 1.0
-
-func _ready() -> void:
-	Game.play_music("interception")
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	params = Net.mission_params
-	kind = params.get("ufo", "raider")
-	var k: Dictionary = UFO_KINDS[kind]
-	ufo_hp = k["hp"]
-	ufo_max = k["hp"]
-	if kind == "battleship":
-		field = FIELD_MAX
-	_world()
+## The guns fitted in the hangar (params "gun", "heavy", "plasma_mags"): the air fight and the
+## transport escort (0.72.5: the escort used to fly with the factory cannon and missiles).
+func _loadout() -> void:
 	gun = String(params.get("gun", Game.cmd_arg("gun", "cannon")))
 	heavy = String(params.get("heavy", Game.cmd_arg("heavy", "missiles")))
 	if not GUN_INFO.has(gun): gun = "cannon"
@@ -193,6 +181,23 @@ func _ready() -> void:
 	ammo0 = ammo
 	heavy0 = heavy_ammo
 	missiles = heavy_ammo if heavy == "missiles" else 0
+
+## X-AIR-001: alloy plates in our hulls - every hit takes a quarter less (a third more hits to go down).
+func armor_k() -> float:
+	return 0.75 if params.get("jet_armor", false) else 1.0
+
+func _ready() -> void:
+	Game.play_music("interception")
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	params = Net.mission_params
+	kind = params.get("ufo", "raider")
+	var k: Dictionary = UFO_KINDS[kind]
+	ufo_hp = k["hp"]
+	ufo_max = k["hp"]
+	if kind == "battleship":
+		field = FIELD_MAX
+	_world()
+	_loadout()
 	var n_hawks := int(params.get("hawks", int(Game.cmd_arg("hawks", "0"))))
 	net = Net.is_online() and params.has("pilots")
 	if net:
@@ -1015,6 +1020,8 @@ func _fx_tracer(from: Vector3, dir: Vector3) -> void:
 @rpc("any_peer", "unreliable")
 func _fx_shot(from: Vector3, dir: Vector3, g: String) -> void:
 	_tracer(from, dir, true, g)
+	# (0.72.5) the wingman's guns are heard too (each packet = every 3rd round, as for my own guns)
+	_far_sound({"cannon": "cannon_jet", "laser": "laser", "plasma": "plasma"}.get(g, "cannon_jet"), from, -8.0)
 
 @rpc("any_peer", "reliable")
 func _fx_heavy(from: Vector3, dir: Vector3, h: String) -> void:
@@ -1026,6 +1033,20 @@ func _fx_heavy(from: Vector3, dir: Vector3, h: String) -> void:
 @rpc("any_peer", "reliable")
 func _fx_missile(from: Vector3, vel: Vector3) -> void:
 	_missile_node(from, vel, true)
+	_far_sound("missile_launch", from, -2.0)
+
+## (0.72.5) Another pilot's gun or missile: the same sound as my own, quieter with distance from the
+## camera (the jets fly hundreds of metres apart, so a 3D player with its 80 m range would be silent).
+## Fades by 6 dB per doubling past 60 m, down to -30 dB at most; nothing past 2.5 km.
+var sfx_heard := {}
+func _far_sound(sname: String, at: Vector3, vol: float) -> void:
+	var cam := get_viewport().get_camera_3d()
+	var d := cam.global_position.distance_to(at) if cam != null else 0.0
+	if d > 2500.0:
+		return
+	var drop := 0.0 if d <= 60.0 else 20.0 * log(d / 60.0) / log(10.0)
+	Game.play_ui(self, sname, vol - minf(drop, 30.0))
+	sfx_heard[sname] = int(sfx_heard.get(sname, 0)) + 1
 
 @rpc("authority", "call_local", "reliable")
 func _end_all(o: String) -> void:
@@ -1713,12 +1734,18 @@ func _process(_d: float) -> void:
 		print("RESULT airwing others_hp %s" % [others_hp])
 		if DisplayServer.get_name() != "headless":
 			get_viewport().get_texture().get_image().save_png("user://airwing_host.png")
+	var pics := DisplayServer.get_name() != "headless"      # (no pictures without a window - the image is null)
 	for st in [5, 8, 20]:
 		if t >= st and not _shot_done.has(st):
 			_shot_done[st] = true
-			get_viewport().get_texture().get_image().save_png("user://40_air_%d.png" % st)
-	if outcome != "" and end_t > 1.0 and end_t < 1.05:
+			if pics: get_viewport().get_texture().get_image().save_png("user://40_air_%d.png" % st)
+	if pics and outcome != "" and end_t > 1.0 and end_t < 1.05:
 		get_viewport().get_texture().get_image().save_png("user://41_air_end.png")
+	# (0.72.5) what the wingman's guns sounded like here - said as soon as the fight ends (the host
+	# may quit and drop the client before the client's own end)
+	if Game.autotest() in ["airhost", "airclient"] and (outcome != "" or t > 100) and not _shot_done.has("sfx"):
+		_shot_done["sfx"] = true
+		print("RESULT airsfx %s shots %d missiles %d" % [Game.autotest(), int(sfx_heard.get("cannon_jet", 0)) + int(sfx_heard.get("laser", 0)) + int(sfx_heard.get("plasma", 0)), int(sfx_heard.get("missile_launch", 0))])
 	if Game.autotest() in ["air", "airhost", "airclient"] and ((outcome != "" and end_t > 2.0) or t > 100):
 		print("[AIR-%s] end outcome=%s ufo_hp=%.0f me_hp=%.0f others=%s" % [Game.autotest(), outcome, ufo_hp, jet_hp, others.keys()])
 		get_tree().quit()

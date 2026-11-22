@@ -100,6 +100,8 @@ func _physics_process(dt: float) -> void:
 		if multiplayer.is_server() and hit.collider and hit.collider.has_method("is_player"):
 			var pl: Node = hit.collider
 			pl.hurt.rpc_id(pl.get_multiplayer_authority(), base, shooter_pos, kind == "acid", "heat" if kind == "lava" else (("laser" if red else "plasma") if kind == "plasma" else ""))
+		if multiplayer.is_server() and hit.collider and hit.collider.has_method("sentry_hit"):
+			hit.collider.sentry_hit(base)
 		if multiplayer.is_server() and hit.collider and hit.collider.has_meta("break"):
 			mission.hit_breakable(int(hit.collider.get_meta("break")), base, "plasma")
 		if kind == "plasma" and power >= 1.9 and multiplayer.is_server():

@@ -26,6 +26,7 @@ var next_alien_id := 0
 var civs_total := 0
 var crew_names := []
 var crew_group := ""
+var hit_quiet := false      # (0.72.5) the hit right now is silent: a silenced shot, a knife, a baton
 var hit_kind := ""          # what is hitting an alien right now: bullet / plasma / explosion        # races on this mission (for the result / archive)
 var t := 0.0
 var combat_t := -100.0     # last time an alien fired
@@ -177,6 +178,11 @@ func _ramp_tick() -> void:
 	Game.ship_ramp(_ramp_ship, open)
 
 func _prep_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_prep_tick(delta)
+	PerfLog.took("mise._prep_tick", _pt)
+
+func _pl_prep_tick(delta: float) -> void:
 	_ramp_tick()
 	if not go or prep_left <= 0.0 and _door == null:
 		return
@@ -223,6 +229,11 @@ func alien_db() -> float:
 ## Solo: the helper drone (made when the lone mercenary is on the ground).
 var guard_drone: Node = null
 func _guard_drone_tick() -> void:
+	var _pt := PerfLog.t0()
+	_pl_guard_drone_tick()
+	PerfLog.took("mise._guard_drone_tick", _pt)
+
+func _pl_guard_drone_tick() -> void:
 	if guard_drone != null or not solo() or home() or local() or finished:
 		return
 	if local_player() == null:
@@ -454,6 +465,11 @@ func critters_here() -> bool:
 ## Now and then something out there: a dog in the village, an owl, a cow in the barn.
 var _critter_t := 25.0
 func _critters(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_critters(delta)
+	PerfLog.took("mise._critters", _pt)
+
+func _pl_critters(delta: float) -> void:
 	_critter_t -= delta
 	if _critter_t > 0.0:
 		return
@@ -482,6 +498,11 @@ func _critters(delta: float) -> void:
 var _hatch_t := 0.0
 var _hatch_busy := {}
 func _hatch_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_hatch_tick(delta)
+	PerfLog.took("mise._hatch_tick", _pt)
+
+func _pl_hatch_tick(delta: float) -> void:
 	_hatch_t -= delta
 	if _hatch_t > 0.0:
 		return
@@ -527,6 +548,11 @@ func _ship_engine() -> void:
 var _drone: AudioStreamPlayer
 var _drone_t := 0.0
 func _drone_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_drone_tick(delta)
+	PerfLog.took("mise._drone_tick", _pt)
+
+func _pl_drone_tick(delta: float) -> void:
 	_drone_t -= delta
 	if _drone == null or _drone_t > 0.0:
 		return
@@ -745,6 +771,11 @@ var _nvg_lights: Array = []
 var _nvg_scan := 0.0
 var _nvg_eval := 0.0
 func _nvg_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_nvg_tick(delta)
+	PerfLog.took("mise._nvg_tick", _pt)
+
+func _pl_nvg_tick(delta: float) -> void:
 	if not nvg_on or _nvg_mat == null:
 		nvg_wash = 0.0
 		_nvg_kick = 0.0
@@ -1292,6 +1323,12 @@ func spawn_alien(race: String, pos: Vector3) -> void:
 		crew_names.append(race)
 
 func _spawn(data: Variant) -> Node:
+	var _pt := PerfLog.t0()
+	var _pr = _pl_spawn(data)
+	PerfLog.took("vznik postavy", _pt)
+	return _pr
+
+func _pl_spawn(data: Variant) -> Node:
 	if data["kind"] == "player":
 		var p := CharacterBody3D.new()
 		p.set_script(PlayerScript)
@@ -1464,6 +1501,11 @@ func local_player() -> Node:
 
 ## A sound the aliens may hear (any machine may report; the host decides).
 func noise(pos: Vector3, radius: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_noise(pos, radius)
+	PerfLog.took("hluk (slyší vetřelci a civilisté)", _pt)
+
+func _pl_noise(pos: Vector3, radius: float) -> void:
 	if multiplayer.is_server():
 		for a in aliens():
 			a.hear(pos, radius)
@@ -1478,6 +1520,11 @@ func _noise(pos: Vector3, radius: float) -> void:
 
 # ---- the end ------------------------------------------------------------------------
 func _process(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_process(delta)
+	PerfLog.took("_process mission", _pt)
+
+func _pl_process(delta: float) -> void:
 	_prep_tick(delta)
 	_nav_tick(delta)
 	if home():
@@ -1568,10 +1615,17 @@ func _moths(l: Light3D) -> Node3D:
 
 var _elec_t := 0.0
 func _electric(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_electric(delta)
+	PerfLog.took("mise._electric", _pt)
+
+var _moths_made := 0
+func _pl_electric(delta: float) -> void:
 	_elec_t -= delta
 	if _elec_t > 0:
 		return
 	_elec_t = 0.07
+	_moths_made = 0
 	# (2026-11-17, Ari) by day nobody leaves the lamps on: street lamps, lights in houses, the
 	# bulbs and the moths around them stay dark (dawn and dusk: on while it is still dim)
 	var daylight := phase() == "den" or (phase() != "noc" and twilight() > 0.6)
@@ -1603,7 +1657,8 @@ func _electric(delta: float) -> void:
 		elif randf() < 0.01:
 			e = base * 0.3     # a tired battery, an old wire
 		l.light_energy = e
-		if not l.has_meta("moths"):
+		if not l.has_meta("moths") and _moths_made < 2:      # (0.72.5) nejvýš 2 roje za krok, ne všechny lampy naráz
+			_moths_made += 1
 			var made = _moths(l)
 			l.set_meta("moths", made if made != null else false)     # (null would erase the meta: no moths here)
 		var mo = l.get_meta("moths", false)
@@ -1690,6 +1745,11 @@ func _build_rain(snow: bool, amount := 700) -> void:
 
 var _roof_t := 0.0
 func _storm_fx(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_storm_fx(delta)
+	PerfLog.took("mise._storm_fx", _pt)
+
+func _pl_storm_fx(delta: float) -> void:
 	# wind for trees, wheat and grass: a slow swell, a shove with every lightning
 	var ws := (1.0 + 0.45 * sin(t * 0.13) + 0.25 * sin(t * 0.41 + 1.0)) * _wind_base + (0.8 if _flash_t > 0 else 0.0)
 	RenderingServer.global_shader_parameter_set("wind_strength", ws)
@@ -1736,6 +1796,11 @@ func _storm_fx(delta: float) -> void:
 ## machine fades it in itself (WeatherFx.shift) - nobody is told, they see and hear it.
 @rpc("authority", "call_local", "reliable")
 func _weather_shift(to: String) -> void:
+	var _pt := PerfLog.t0()
+	_pl_weather_shift(to)
+	PerfLog.took("změna počasí", _pt)
+
+func _pl_weather_shift(to: String) -> void:
 	if wx and WEATHER_NAMES.has(to):
 		wx.shift(to)
 
@@ -1768,6 +1833,11 @@ func _blackout() -> void:
 
 ## Things only a frightened mercenary sees and hears. Local, never synced.
 func _hallucinate(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_hallucinate(delta)
+	PerfLog.took("mise._hallucinate", _pt)
+
+func _pl_hallucinate(delta: float) -> void:
 	var p := local_player()
 	if p == null or p.dead or p.downed or p.cam == null:
 		return
@@ -1822,6 +1892,11 @@ func _hallucinate(delta: float) -> void:
 
 # ---- the director: builds tension instead of throwing enemies at you ----------------
 func _director(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_director(delta)
+	PerfLog.took("mise._director", _pt)
+
+func _pl_director(delta: float) -> void:
 	var ps := []
 	for p in players():
 		if not p.dead:
@@ -2053,6 +2128,11 @@ func blast_shock(p: Vector3, radius: float) -> void:
 ## Host: damage around a point (rockets, autocannon shells, mines).
 @rpc("any_peer", "call_local", "reliable")
 func explode(p: Vector3, radius: float, dmg: float, by: String, big: bool) -> void:
+	var _pt := PerfLog.t0()
+	_pl_explode(p, radius, dmg, by, big)
+	PerfLog.took("výbuch", _pt)
+
+func _pl_explode(p: Vector3, radius: float, dmg: float, by: String, big: bool) -> void:
 	if not multiplayer.is_server():
 		return
 	_boom.rpc(p, big)
@@ -2074,6 +2154,10 @@ func explode(p: Vector3, radius: float, dmg: float, by: String, big: bool) -> vo
 		var d2: float = pl.global_position.distance_to(p)
 		if d2 < radius * 0.9 and not pl.dead:
 			pl.hurt.rpc_id(pl.get_multiplayer_authority(), dmg * 0.6 * (1.0 - d2 / radius), p, false, "blast")
+	for st in sentries():
+		var d3: float = (st as Node3D).global_position.distance_to(p)
+		if d3 < radius:
+			st.sentry_hit(dmg * (1.0 - d3 / radius) + 8.0)
 
 # ---- destruction: planks, fences, crates and windows break; brick and sheet metal only to
 # explosives and plasma (like the old game, the ground itself stays) ------------------------------
@@ -2088,6 +2172,11 @@ var _nav_dirty := 0.0
 
 @rpc("any_peer", "call_local", "reliable")
 func hit_breakable(i: int, dmg: float, kind: String) -> void:
+	var _pt := PerfLog.t0()
+	_pl_hit_breakable(i, dmg, kind)
+	PerfLog.took("zásah zdi", _pt)
+
+func _pl_hit_breakable(i: int, dmg: float, kind: String) -> void:
 	if not multiplayer.is_server() or i < 0 or i >= map.get("breakables", []).size():
 		return
 	var n0 = map["breakables"][i]
@@ -2104,6 +2193,11 @@ func hit_breakable(i: int, dmg: float, kind: String) -> void:
 
 ## A wooden building whose walls are mostly gone loses its roof (it does not hang in the air).
 func _roofs_check() -> void:
+	var _pt := PerfLog.t0()
+	_pl_roofs_check()
+	PerfLog.took("kontrola střech", _pt)
+
+func _pl_roofs_check() -> void:
 	var arr: Array = map.get("breakables", [])
 	for r in map.get("wood_roofs", []):
 		if not is_instance_valid(r["node"]):
@@ -2112,16 +2206,25 @@ func _roofs_check() -> void:
 		if n.has_meta("falling"):
 			continue
 		var rect: Rect2 = r["rect"]
+		# (0.72.5 výkon) které dřevěné kusy pod střechou stojí, se spočítá jednou (dřív se při každém
+		# rozbitém prkně procházely všechny kusy mapy pro každou střechu: 3–9 ms na kus ve městě)
+		if not r.has("walls"):
+			var ws := []
+			for i in arr.size():
+				var b = arr[i]
+				if not is_instance_valid(b) or String(b.get_meta("break_kind", "")) != "wood":
+					continue
+				var bp: Vector3 = (b as Node3D).global_position
+				if bp.y > n.global_position.y + 0.5 or not rect.has_point(Vector2(bp.x, bp.z)):
+					continue
+				ws.append(i)
+			r["walls"] = ws
 		var total := 0
 		var gone := 0
-		for b in arr:
+		for i in r["walls"]:
+			var b = arr[i]
 			if not is_instance_valid(b):
-				continue
-			if String(b.get_meta("break_kind", "")) != "wood":
-				continue
-			var bp: Vector3 = (b as Node3D).global_position
-			if bp.y > n.global_position.y + 0.5 or not rect.has_point(Vector2(bp.x, bp.z)):
-				continue
+				continue        # (stejně jako dřív: už uklizený kus se nepočítá)
 			total += 1
 			if b.get_meta("broken", false):
 				gone += 1
@@ -2131,6 +2234,7 @@ func _roofs_check() -> void:
 			var tw := create_tween()
 			tw.tween_property(n, "position:y", n.position.y - 2.4, 0.9).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 			tw.parallel().tween_property(n, "rotation:z", randf_range(-0.25, 0.25), 0.9)
+			tw.tween_callback(func(): if _nav_cache: _nav_cache.touch(n))     # (0.72.5: spadlá střecha je jinde)
 			tw.tween_interval(6.0)
 			tw.tween_callback(n.queue_free)
 			tw.tween_callback(func(): _nav_dirty = 1.0)     # (0.70) the paths learn the fallen roof is gone
@@ -2168,6 +2272,11 @@ func blast_breakables(p: Vector3, radius: float, dmg: float) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func _break(i: int) -> void:
+	var _pt := PerfLog.t0()
+	_pl_break(i)
+	PerfLog.took("rozbití kusu", _pt)
+
+func _pl_break(i: int) -> void:
 	var n0 = map["breakables"][i]
 	if not is_instance_valid(n0) or n0.get_meta("broken", false):
 		return
@@ -2250,7 +2359,7 @@ func _lamp_out(n: Node3D) -> void:
 		l.set_meta("shot", true)
 		l.visible = false
 		for k in ["lens", "moths"]:
-			var o = l.get_meta(k, null)
+			var o = l.get_meta(k) if l.has_meta(k) else null     # (get_meta s výchozím null hlásí chybu do logu)
 			if is_instance_valid(o):
 				(o as Node3D).visible = false
 	var parts := CPUParticles3D.new()
@@ -2288,6 +2397,11 @@ func merge_dirty(g) -> void:
 	_mg_dirty[g] = true
 
 func _merge_flush() -> void:
+	var _pt := PerfLog.t0()
+	_pl_merge_flush()
+	PerfLog.took("přestavba sloučené zdi", _pt)
+
+func _pl_merge_flush() -> void:
 	for g in _mg_dirty:
 		if is_instance_valid(g):
 			preload("res://scripts/map_gen.gd").merge_build(g)
@@ -2295,6 +2409,11 @@ func _merge_flush() -> void:
 
 ## Host: after things broke, the aliens learn the new ways through (rebuilt in the background).
 func _nav_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_nav_tick(delta)
+	PerfLog.took("mise._nav_tick", _pt)
+
+func _pl_nav_tick(delta: float) -> void:
 	if _nav_dirty <= 0.0:
 		return
 	_nav_dirty -= delta
@@ -2337,6 +2456,11 @@ var smokes := []     # [{pos, until}]
 const SMOKE_R := 4.5
 
 func add_smoke(p: Vector3) -> void:
+	var _pt := PerfLog.t0()
+	_pl_add_smoke(p)
+	PerfLog.took("kouř", _pt)
+
+func _pl_add_smoke(p: Vector3) -> void:
 	var c := CPUParticles3D.new()
 	smokes.append({"pos": p, "until": t + 28.0, "born": t, "node": c})
 	c.amount = 90
@@ -2418,6 +2542,11 @@ func ignite(p: Vector3, size := 1.0) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func _fire_on(id: int, p: Vector3, size: float, life: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_fire_on(id, p, size, life)
+	PerfLog.took("oheň", _pt)
+
+func _pl_fire_on(id: int, p: Vector3, size: float, life: float) -> void:
 	var n := Node3D.new()
 	add_child(n)
 	n.global_position = p
@@ -2517,6 +2646,11 @@ func _fire_off(id: int) -> void:
 
 ## Every machine: the flames flicker. The host: burns, spreads, ends.
 func _fires_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_fires_tick(delta)
+	PerfLog.took("mise._fires_tick", _pt)
+
+func _pl_fires_tick(delta: float) -> void:
 	_smoke_tick()
 	var wn := wind_now()
 	for f in fires.values():
@@ -2545,14 +2679,17 @@ func _fires_tick(delta: float) -> void:
 				a.damage(5.0, p, null)
 				hit_kind = ""
 		# wood and crates nearby char and give way; the fire creeps onto them
+		# (0.72.5 výkon) dřív každý oheň každých 0,5 s procházel všechny rozbitelné kusy mapy
+		# (ve městě tisíce, 15-30 ms na snímek při pár ohních); hořlavé kusy v dosahu se teď
+		# najdou jednou, když oheň vzplane, a dál se prochází jen ty.
 		var arr: Array = map.get("breakables", [])
-		for i in arr.size():
-			var b = arr[i]
+		if not f.has("near"):
+			f["near"] = _fire_near(p, arr)
+		for i in f["near"]:
+			var b = arr[i] if i < arr.size() else null
 			if not is_instance_valid(b) or b.get_meta("broken", false):
 				continue
 			var kind := String(b.get_meta("break_kind", ""))
-			if not kind in ["wood", "crate", "glass"]:
-				continue
 			var bp: Vector3 = (b as Node3D).global_position
 			var d := Vector2(bp.x - p.x, bp.z - p.z).length()
 			if d < 2.6:
@@ -2561,6 +2698,20 @@ func _fires_tick(delta: float) -> void:
 				ignite(Vector3(bp.x, p.y, bp.z), clampf(float(f["size"]) * randf_range(0.8, 1.1), 0.7, 1.4))
 		if t > float(f["until"]):
 			_fire_off.rpc(id)
+
+## Indexy hořlavých kusů (dřevo, bedny, sklo) do 4,8 m od ohně - jednou za život ohně.
+func _fire_near(p: Vector3, arr: Array) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for i in arr.size():
+		var b = arr[i]
+		if not is_instance_valid(b):
+			continue
+		if not String(b.get_meta("break_kind", "")) in ["wood", "crate", "glass"]:
+			continue
+		var bp: Vector3 = (b as Node3D).global_position
+		if Vector2(bp.x - p.x, bp.z - p.z).length() < 4.8:
+			out.append(i)
+	return out
 
 ## (2026-11-17) The wind of the mission (WeatherFx: one direction from the seed, the weather gives the
 ## strength): it carries the smoke, bends the flames and spreads a fire downwind.
@@ -2670,6 +2821,11 @@ func _on_wire(mn: Dictionary, pos: Vector3, r: float) -> bool:
 	return (a2 + ab * k).distance_to(p2) < r
 
 func _mines_tick() -> void:
+	var _pt := PerfLog.t0()
+	_pl_mines_tick()
+	PerfLog.took("mise._mines_tick", _pt)
+
+func _pl_mines_tick() -> void:
 	for mn in mines.duplicate():
 		if not is_instance_valid(mn["node"]):
 			mines.erase(mn)
@@ -2736,6 +2892,46 @@ func claymore_blast(p: Vector3, dir: Vector3, by: String) -> void:
 		var dm2: float = hurt.call(pl.global_position + Vector3(0, 0.8, 0))
 		if dm2 > 0.0:
 			pl.hurt.rpc_id(pl.get_multiplayer_authority(), dm2 * 0.6, c, false, "blast")
+
+# ---- (0.80) ST-01, strážní věž (scripts/sentry.gd) ----------------------------------------
+const SentryScript := preload("res://scripts/sentry.gd")
+var _sentry_n := 0
+## Host: a player has set a turret down; research decides what it carries.
+@rpc("any_peer", "call_local", "reliable")
+func req_sentry(pos: Vector3, face: Vector3, by: String, rounds: int, was: String) -> void:
+	if not multiplayer.is_server():
+		return
+	var k := "rifle"
+	if Game.has_research("vez_plazma"):
+		k = "plasma"
+	elif Game.has_research("vez_laser"):
+		k = "laser"
+	if was != k:
+		rounds = -1          # (a turret folded up before the new barrel came: it starts afresh)
+	_sentry_n += 1
+	_sentry_add.rpc("Sentry_%d" % _sentry_n, pos, face, k, by, rounds)
+
+@rpc("authority", "call_local", "reliable")
+func _sentry_add(nm: String, pos: Vector3, face: Vector3, k: String, by: String, rounds: int) -> void:
+	if has_node(nm):
+		return
+	var s := SentryScript.new()
+	s.name = nm
+	add_child(s)
+	var q := PhysicsRayQueryParameters3D.create(pos + Vector3(0, 0.6, 0), pos + Vector3(0, -3, 0), Game.WORLD)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	s.global_position = hit.position if hit else pos
+	s.setup(self, k, by, face, rounds)
+	Game.play_at(self, "clink", s.global_position + Vector3(0, 0.4, 0), -6)
+
+func sentries() -> Array:
+	return get_tree().get_nodes_in_group("sentry").filter(func(n): return is_instance_valid(n) and not n.is_queued_for_deletion() and not n._gone)
+
+func sentry_near(pos: Vector3) -> Node:
+	for s in sentries():
+		if (s as Node3D).global_position.distance_to(pos) < 1.6:
+			return s
+	return null
 
 @rpc("authority", "call_local", "reliable")
 func _mine_gone(i: int) -> void:
@@ -2817,6 +3013,11 @@ func alive_aliens() -> int:
 	return n
 
 func _judge() -> void:
+	var _pt := PerfLog.t0()
+	_pl_judge()
+	PerfLog.took("mise._judge", _pt)
+
+func _pl_judge() -> void:
 	var ps := players()
 	if ps.is_empty():
 		return
@@ -2974,7 +3175,11 @@ func _end(success: bool, why: String, airlift := false, abandoned := false) -> v
 		Game.on_mission = ""        # (0.57) he came to the end of it (saved with him below)
 		Game.merc["missions"] = int(Game.merc.get("missions", 0)) + 1
 		Game.merc["kills"] = int(Game.merc.get("kills", 0)) + me.kills
-		Game.merc["captures"] = int(Game.merc.get("captures", 0)) + me.captures
+		# (2026-11-22) a captive counts for the soldier who stunned it once it is on the way to the
+		# cell: the mission is won (a failure leaves the captives behind). The host credits the stun
+		# (alien._credit_capture), so in co-op it is the right player's number.
+		if success:
+			Game.merc["captures"] = int(Game.merc.get("captures", 0)) + me.captures
 		# (0.70) the pay: one pot for the whole team (pay, kills, captures, revives, civilians saved,
 		# the packs found), split evenly - see team_pot
 		var pot := team_pot(success, q, me if _walked_out else null)
@@ -3225,7 +3430,7 @@ func fallen_list() -> Array:
 			continue
 		var mm: Dictionary = p.merc if p.get("merc") is Dictionary else {}
 		out.append({"n": String(p.display_name), "f": String(mm.get("look", {}).get("flag", "")), "m": what + (" - " + where if where != "" else ""),
-			"k": int(p.kills), "mia": not p.dead})
+			"k": int(p.kills), "c": int(p.captures), "mia": not p.dead})
 	return out
 
 func left_behind(p: Node) -> bool:
@@ -3258,6 +3463,7 @@ func leave_from_menu() -> void:
 		_walking_out.rpc_id(1)      # (0.69) at once - not after the result screen and the loading
 
 var _walked_out := false
+var _out_safe := {}       # host: co-op players who walked out standing at the transport
 
 ## Host: a co-op player walked out of the mission (he is in the lobby now, still connected).
 @rpc("any_peer", "call_remote", "reliable")
@@ -3286,6 +3492,8 @@ func _walking_out() -> void:
 		return
 	_out_peers[id] = true
 	_deserters += 1
+	if not left_behind(n):
+		_out_safe[id] = true     # he walked out from the transport: his kit goes home with him
 	hud_note.rpc("%s opustil misi." % String(n.display_name))
 	for a in aliens():
 		if is_instance_valid(a.get("target")) and a.target == n:
@@ -3309,6 +3517,11 @@ func _leave(why: String) -> void:
 ## Host: how close each mercenary is to being spotted (the eye on his HUD).
 var _watch_t := 0.0
 func _watch_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_watch_tick(delta)
+	PerfLog.took("mise._watch_tick", _pt)
+
+func _pl_watch_tick(delta: float) -> void:
 	_watch_t -= delta
 	if _watch_t > 0:
 		return
@@ -3847,6 +4060,11 @@ func _door_state(i: int, side: float, slam: bool) -> void:
 ## for a while (BLAST_PRY; a Bijec or several of them faster), with blows the whole corridor hears.
 var _door_t := 0.0
 func _doors_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_doors_tick(delta)
+	PerfLog.took("mise._doors_tick", _pt)
+
+func _pl_doors_tick(delta: float) -> void:
 	_door_t -= delta
 	if _door_t > 0.0 or doors.is_empty():
 		return
@@ -4115,6 +4333,11 @@ func _beacon_gone(i: int) -> void:
 
 ## Host, every frame: timers of the objectives.
 func _objectives_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_objectives_tick(delta)
+	PerfLog.took("mise._objectives_tick", _pt)
+
+func _pl_objectives_tick(delta: float) -> void:
 	if not started():
 		return
 	for i in _plant_t.keys():
@@ -4336,6 +4559,11 @@ func _build_nest() -> void:
 
 ## Host: a Líhavec out of a carrier (dead or turning) - his body stays down.
 func hatch_from(c: Node) -> void:
+	var _pt := PerfLog.t0()
+	_pl_hatch_from(c)
+	PerfLog.took("vylíhnutí z civilisty", _pt)
+
+func _pl_hatch_from(c: Node) -> void:
 	if not multiplayer.is_server() or finished or not is_instance_valid(c) or c.has_meta("hatched"):
 		return
 	c.set_meta("hatched", true)
@@ -4900,6 +5128,11 @@ var _supply_drops := 0
 var _nem_done := false
 ## Host, every frame of a running mission.
 func _late_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_late_tick(delta)
+	PerfLog.took("mise._late_tick", _pt)
+
+func _pl_late_tick(delta: float) -> void:
 	if not multiplayer.is_server() or not started() or home() or mtype() in ["base", "mars"]:
 		return
 	if not _nem_done and t > 4.0:
@@ -5010,13 +5243,15 @@ func report_kit_now(ids: Array) -> void:
 		var id := multiplayer.get_remote_sender_id()
 		kits_now[id if id != 0 else 1] = ids
 
-## Host, at the end: what each one lost - {peer: {item: n}}. Won and home alive: what he used up or
-## left lying; otherwise everything he took (it stays out there).
+## Host, at the end: what each one lost - {peer: {item: n}}. Home alive (won or not): what he used
+## up or left lying; left behind (dead, down outside): everything he took (it stays out there).
 func gear_lost(success: bool) -> Dictionary:
 	var out := {}
 	for peer in kits:
 		var pl: Node = actors.get_node_or_null("P%d" % peer)
-		var home: bool = success and pl != null and not left_behind(pl)
+		# (0.7x, Ari: "odletí bez úspěchu a věci se vytratí") who flies home alive brings back what
+		# he still carries, won or lost; only who stays out there (dead, left lying) loses it all
+		var home: bool = (pl != null and not left_behind(pl)) or _out_safe.has(peer)
 		var now: Array = (kits_now.get(peer, []) as Array).duplicate() if home else []
 		var lost := {}
 		for i in kits[peer]:

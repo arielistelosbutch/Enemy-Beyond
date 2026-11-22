@@ -8,6 +8,9 @@ extends RefCounted
 ##  - every 10 ms: the room noise floor is tracked; below it the signal is pulled down
 ##    (expander, max -24 dB) so fans, keyboards and hiss do not go out between words
 ##  - automatic level only from speech (silence is no longer pumped up)
+##  - (0.72.5) the "my microphone" slider multiplies AFTER the automatic level (before, the AGC
+##    pulled every gain back to the same loudness, so the slider did almost nothing), then a
+##    gain-riding limiter holds the peaks under CEIL without bending the wave (no clipping)
 ##  - voice activation from the noise floor (adapts to a loud or quiet room) + the threshold
 ##    from the settings; while a teammate is heard the threshold rises (speakers -> echo)
 ##  - 0.2 s of pre-roll (the first syllable is no longer cut off) and 0.3 s of tail after Tab
@@ -20,7 +23,10 @@ const PRE_ROLL := 0.2
 const PTT_TAIL := 0.3
 const VAD_HOLD := 0.6
 const TARGET := 0.12               # speech RMS after the automatic level
-const KNEE := 0.5                  # the limiter starts here (speech peaks are ~0.4-0.6)
+const KNEE := 0.85                 # last-resort soft clip above this (the limiter keeps under CEIL)
+const CEIL := 0.8                  # (0.72.5) limiter: peaks are held here by turning the gain down
+const GAIN_MIN := 0.25             # (0.72.5) slider range of Game.mic_gain (25 % .. 400 %)
+const GAIN_MAX := 4.0
 const UP := 3                      # (0.71) playback at 48 kHz: we upsample ourselves (Up)
 
 ## Mic bus: high-pass, low-pass, capture (all native). Returns the capture effect.
@@ -67,12 +73,15 @@ var voiced := false               # speech somewhere in the last processed block
 var voiced_ms := -100000          # when speech was last heard (settings screen)
 var level := 0.0                  # RMS after processing (meter)
 var _gain := 1.0                  # expander
+var gain := 1.0                   # (0.72.5) the slider: loudness after the automatic level
+var lim := 1.0                    # (0.72.5) limiter gain (1 = not limiting)
 var _rs_pos := 0.0
 var _rs_prev := 0.0
 var _pend := PackedFloat32Array()
 
 ## Raw stereo frames at in_rate -> processed mono at RATE (only whole 10 ms frames; the rest waits).
-func process(buf: PackedVector2Array, in_rate: float, gain: float, clean: bool, gate: float) -> PackedFloat32Array:
+func process(buf: PackedVector2Array, in_rate: float, out_gain: float, clean: bool, gate: float) -> PackedFloat32Array:
+	gain = clampf(out_gain, GAIN_MIN, GAIN_MAX)
 	var step := in_rate / float(RATE)
 	# resample by linear interpolation (the bus already low-passed it)
 	var pos := _rs_pos
@@ -80,7 +89,7 @@ func process(buf: PackedVector2Array, in_rate: float, gain: float, clean: bool, 
 	var n := buf.size()
 	var i := 0
 	while i < n:
-		var cur := (buf[i].x + buf[i].y) * 0.5 * gain
+		var cur := (buf[i].x + buf[i].y) * 0.5
 		while pos <= 1.0:
 			_pend.append(prev + (cur - prev) * pos)
 			pos += step
@@ -105,9 +114,11 @@ func _frames(clean: bool, gate: float) -> PackedFloat32Array:
 	for f in nf:
 		var o := f * FRAME
 		var e := 0.0
+		var pk := 0.0
 		for k in FRAME:
 			var v := _pend[o + k]
 			e += v * v
+			pk = maxf(pk, absf(v))
 		var rms := sqrt(e / FRAME)
 		# noise floor: follows quiet quickly, creeps up slowly (+1.7 dB/s) so speech does not lift it
 		if rms < floor_rms:
@@ -129,10 +140,19 @@ func _frames(clean: bool, gate: float) -> PackedFloat32Array:
 			g = 1.0 if r >= 1.0 else maxf(r * r, 0.063)
 		var g0 := _gain
 		_gain = lerpf(_gain, g, 0.7 if g > _gain else 0.12)     # opens in ~10 ms, closes in ~80 ms
+		# (0.72.5) limiter: when this frame's peak would go over CEIL, the gain goes down at once
+		# (for the whole frame), and comes back up slowly (~0.3 s) - loud, but the wave is not bent
+		var l0 := lim
+		var want_l := minf(1.0, CEIL / maxf(pk * agc * maxf(g0, _gain) * gain, 1e-6))
+		if want_l < lim:
+			lim = want_l
+			l0 = want_l
+		else:
+			lim = lerpf(lim, want_l, 0.035)
 		for k in FRAME:
-			var x := _pend[o + k] * agc * lerpf(g0, _gain, float(k) / FRAME)
-			# (0.71) limiter only on the peaks: the old x / (1 + 0.6|x|) bent every sample and
-			# distorted all speech (signal to distortion 22 dB -> now 42 dB, see autotest voiceq)
+			var x := _pend[o + k] * agc * gain * lerpf(g0, _gain, float(k) / FRAME) * lerpf(l0, lim, float(k) / FRAME)
+			# (0.71) no waveshaping of the speech itself: the old x / (1 + 0.6|x|) bent every sample
+			# (signal to distortion 22 dB); the soft clip below is only a last-resort safety
 			var ax := absf(x)
 			if ax > KNEE:
 				x = signf(x) * (KNEE + (1.0 - KNEE) * tanh((ax - KNEE) / (1.0 - KNEE)) * 0.98)

@@ -404,3 +404,93 @@ static func _verts(g) -> int:
 	for si in m.get_surface_count():
 		t += (m.surface_get_arrays(si)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
 	return t
+
+## gunlag (Ari 22. 11.: „propad FPS na teroru, prý při střelbě z kulometu"): voják s kulometem
+## (--gun=minigun) nejdřív 10 s stojí, pak 20 s střílí (na vetřelce, když je vidí, jinak do zdí
+## před sebou), pak zase 8 s stojí. Pro každou fázi vypíše čas snímku a co hra dělala nejdéle
+## (úseky ze záznamníku výkonu, scripts/perf_log.gd). Vetřelci nezemřou (--kill=1 ano).
+static var _gl := {"ph": -1, "fr": [], "t0": {}, "n0": {}, "rows": []}
+const GL_PH := [["klid", 10.0], ["střelba", 20.0], ["po střelbě", 8.0]]
+static func gunlag(at: Node, p: Node) -> void:
+	if p == null: return
+	at._skip_brief()
+	var now := Time.get_ticks_usec()
+	var dt := float(now - _last_us) / 1000.0 if _last_us > 0 else 0.0
+	_last_us = now
+	p.hp = 1.0e6
+	if at.t < 4.0: return
+	var gun := Game.cmd_arg("gun", "minigun")
+	if at.step == 0:
+		at.step = 1
+		p._click_lock = false
+		p.inv["rh"] = {"id": gun, "loaded": 100000}
+		p._update_held()
+		if Game.perf: Game.perf.set_on(true)
+		at.out("[GUNLAG] start %s: civilistů %d, vetřelců %d" % [gun, at.m().civilians().size(), at.m().aliens().size()])
+		at.set_meta("gl_t", at.t)
+	var tt: float = at.t - float(at.get_meta("gl_t"))
+	var ph := 0
+	var acc := 0.0
+	for i in GL_PH.size():
+		acc += float(GL_PH[i][1])
+		if tt < acc:
+			ph = i
+			break
+		ph = i + 1
+	if ph != int(_gl["ph"]):
+		if int(_gl["ph"]) >= 0:
+			_gl_report(at, int(_gl["ph"]))
+		_gl["ph"] = ph
+		_gl["fr"] = []
+		_gl["t0"] = PerfLog.tot.duplicate()
+		_gl["n0"] = PerfLog.tot_n.duplicate()
+		if ph >= GL_PH.size():
+			Input.action_release("fire"); Input.action_release("aim")
+			var r: Array = _gl["rows"]
+			var rec := false
+			if Game.perf and Game.perf._path != "":
+				Game.perf._flush()
+				var fa := FileAccess.open(Game.perf._path, FileAccess.READ)
+				rec = fa != null and fa.get_length() > 200
+			at.out("RESULT gunlag %s zaznam %s klid %.1f ms (max %.0f) strelba %.1f ms (99 %% %.0f, max %.0f) navic %.1f ms/snimek; nejdrazsi pri strelbe: %s" % [gun, rec, r[0][0], r[0][1], r[1][0], r[1][3], r[1][1], r[1][0] - r[0][0], r[1][2]])
+			at.get_tree().quit()
+			return
+	if dt > 0.0: (_gl["fr"] as Array).append(dt)
+	var shoot := ph == 1
+	var a: Node = at._nearest(p)
+	if a and Game.cmd_arg("kill", "0") != "1":
+		a.hp = maxf(a.hp, 50.0)
+	if shoot:
+		if a and p.global_position.distance_to(a.global_position) < 40.0 and Game.cmd_arg("walls", "0") != "1":
+			at._aim_at(p, a.global_position + Vector3(0, 0.9, 0))
+		else:
+			p.rotation.y += 0.004         # (sweeps the street and the houses round)
+			p.pitch = -0.05
+		Input.action_press("aim")
+		Input.action_press("fire")
+		var w: Dictionary = p.inv["rh"]
+		w["loaded"] = 100000
+		p.mg_heat = 0.0
+		p._mg_hot = false
+	else:
+		Input.action_release("fire")
+
+static func _gl_report(at: Node, ph: int) -> void:
+	var fr: Array = _gl["fr"]
+	var secs: float = float(GL_PH[ph][1])
+	var s := fr.duplicate(); s.sort()
+	var avg := _avg(fr, 0)
+	var mx := _max(fr, 0)
+	var p99: float = s[int(s.size() * 0.99)] if not s.is_empty() else 0.0
+	var d := {}
+	for k in PerfLog.tot:
+		var v := int(PerfLog.tot[k]) - int((_gl["t0"] as Dictionary).get(k, 0))
+		if v > 0: d[k] = v
+	var ks := d.keys()
+	ks.sort_custom(func(x, y): return d[x] > d[y])
+	var parts := PackedStringArray()
+	for k in ks.slice(0, 8):
+		parts.append("%s %.1f ms/s (%d/s)" % [k, d[k] / 1000.0 / secs, (int(PerfLog.tot_n[k]) - int((_gl["n0"] as Dictionary).get(k, 0))) / secs])
+	at.out("[GUNLAG] civilistů %d, vetřelců živých %d" % [at.m().civilians().size(), at.m().alive_aliens()])
+	at.out("[GUNLAG] %-11s snímek %.1f ms, 99 %% %.1f, max %.0f ms | %s" % [GL_PH[ph][0], avg, p99, mx, ", ".join(parts)])
+	(_gl["rows"] as Array).append([avg, mx, ", ".join(parts.slice(0, 3)), p99])

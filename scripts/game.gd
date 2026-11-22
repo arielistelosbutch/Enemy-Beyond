@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.72.4 prototyp"
-const VERSION_NUM := "0.72.4"
+const VERSION := "0.72.5 prototyp"
+const VERSION_NUM := "0.72.5"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -48,6 +48,8 @@ const ITEMS := {
 	"smoke_grenade": {"name": "Kouřový granát", "short": "Kouř", "weight": 1, "type": "grenade"},
 	"mine": {"name": "Směrová mina MC-18 Claymore", "short": "Claymore", "weight": 3, "type": "grenade"},
 	"flare": {"name": "Světlice", "short": "Světlice", "weight": 1, "type": "flare"},
+	# (0.80) ST-01: postaví se na zem, čidlo pohybu a puška; výzkumem laser a plazma (scripts/sentry.gd)
+	"sentry": {"name": "Strážní věž ST-01", "short": "Věž", "weight": 9, "type": "sentry"},
 	"medkit": {"name": "Lékárnička", "short": "Lékárnička", "weight": 3, "type": "medkit", "uses": 3},
 	# the aliens' own guns, picked up from the dead: no magazines - a charge cell that has to be
 	# re-primed (slow and clumsy until research explains how), weak in human hands at first
@@ -59,6 +61,11 @@ const ITEMS := {
 		"cap": 5, "cells": 2, "damage": 110, "splash": 2.2, "spread": 0.9, "rate": 0.9, "auto": false, "sound": "plasma_heavy", "noise": 45.0, "muzzle": 0.7, "kick": 2.0, "reload": 4.0},
 	"a_pack": {"name": "Batoh vetřelce", "short": "Batoh vetřelce", "weight": 0, "type": "salvage"},
 	"stit": {"name": "Balistický štít", "short": "Štít", "weight": 6, "type": "shield"},
+	# 0.80 (Ari: "the lads want a better shield from the alien alloys") - it comes with the laser research:
+	# the laser finally cuts their alloy. Lighter, lasts longer, plasma and heat do not burn through as much.
+	"stit_x": {"name": "Štít ze slitin BSH-02", "short": "BSH-02", "weight": 5, "type": "shield", "hp": 760.0, "tweak_as": "stit",
+		"cover": {"plasma": 0.9, "laser": 0.93, "heat": 0.6, "blast": 0.45, "claw": 0.55, "blow": 0.8, "": 0.95},
+		"wear": {"plasma": 1.1, "heat": 1.5, "acid": 1.6, "": 1.0}},
 	"vesta": {"name": "Balistická vesta „Želva“", "short": "Vesta", "weight": 4, "type": "armor", "protect": 0.8},
 	"pancir": {"name": "Experimentální pancéřová vesta ARM-02", "short": "ARM-02", "weight": 5, "type": "armor", "protect": 0.66},
 	"scanner": {"name": "Detektor pohybu", "short": "Detektor", "weight": 4, "type": "scanner"},
@@ -96,7 +103,7 @@ const MODS := {
 	"laser": {"name": "Laserový zaměřovač", "price": 180, "slot": "bok_p", "w": 0.15, "desc": "Červená tečka: střelba od boku skoro o polovinu přesnější. Vetřelec, kterému tečka sedne na tělo, si tě ale všimne."},
 	"optika": {"name": "Optika 2x", "price": 220, "slot": "optika", "w": 0.5, "ads": 0.75, "draw": 1.1, "desc": "Dvojnásobné zvětšení v objektivu, o 40 % přesnější a klidnější mířidla. Do oka jde pomaleji a kolem objektivu toho vidíš míň."},
 	"kolimator_t": {"name": "Tovární kolimátor", "price": 0, "slot": "optika", "w": 0.3, "stock": true, "desc": "Průhled s červeným bodem, je na pušce z výroby. Bez zvětšení, ale rychle do oka: tečka sedí tam, kam letí kulka."},
-	"tlumic": {"name": "Tlumič", "price": 200, "slot": "hlaven", "w": 0.6, "ads": 0.92, "draw": 1.15, "sway": 1.05, "desc": "Výstřel slyší vetřelci jen na pětinu vzdálenosti. Zbraň je delší a vpředu těžší."},
+	"tlumic": {"name": "Tlumič", "price": 200, "slot": "hlaven", "w": 0.6, "ads": 0.92, "draw": 1.15, "sway": 1.05, "desc": "Výstřel slyší vetřelci jen na pětinu vzdálenosti a kdo tě nevidí, po zásahu neví, odkud rána přišla. Zbraň je delší a vpředu těžší."},
 	"bajonet": {"name": "Bajonet", "price": 130, "slot": "hlaven", "w": 0.45, "ads": 0.95, "draw": 1.1, "sway": 1.12, "desc": "Čepel pod hlavní: na V bodneš bajonetem místo rány pažbou, silný a dlouhý výpad. Vpředu těžší zbraň se ale víc klepe."},
 	"kolimator": {"name": "Kolimátor", "price": 150, "slot": "optika", "w": 0.1, "draw": 1.1, "desc": "Malý kolimátor na pistoli: tečka v okénku, mírně přesnější střelba. Z pouzdra jde o kus pomaleji."},
 	"nosic": {"name": "Nosič nábojů", "price": 90, "w": 0.25, "desc": "Pár nábojů na pouzdře přímo na zbrani: brokovnice se dobíjí rychleji."},
@@ -542,6 +549,8 @@ func _fetch_time(id: String, from_slot: String) -> float:
 ## hand only carries the shield. 1 = primary weapon, 2 = secondary (a sidearm), 3-6 = belt.
 func slot_refuse(slot: String, id: String) -> String:
 	var t: String = ITEMS.get(id, {}).get("type", "")
+	if t == "sentry" and slot.begins_with("b"):
+		return "Věž se nese v batohu (nebo v ruce)."
 	match slot:
 		"rh":
 			if t == "ammo": return "Náboje se do ruky neberou - nabíjí se klávesou R."
@@ -762,6 +771,31 @@ func _ready() -> void:
 	_setup_input()
 	load_merc()
 	get_tree().scene_changed.connect(_on_scene_changed)
+	debug = DebugMenu.new()
+	debug.name = "DebugMenu"
+	add_child(debug)
+	perf = PerfLogScript.new()
+	perf.name = "PerfLog"
+	add_child(perf)
+
+## (Ari 22. 11.) Záznamník výkonu (scripts/perf_log.gd): záseky do user://logs/vykon_*.txt, F9 zapne/vypne.
+const PerfLogScript := preload("res://scripts/perf_log.gd")
+var perf: Node = null
+var perf_log := true
+func set_perf_log(v: bool) -> void:
+	perf_log = v
+	if perf:
+		perf.set_on(v)
+	save_settings()
+
+## (0.80) The hidden test mode (scripts/debug_menu.gd): --debug=1 or Ctrl+Alt+Shift+D, then F10.
+const DebugMenu := preload("res://scripts/debug_menu.gd")
+var debug: Node = null
+func debug_on() -> bool:
+	return debug != null and debug.on
+
+func debug_god() -> bool:
+	return debug != null and debug.on and debug.god
 
 ## M: the microphone stays open (talks whenever you speak) until M again. (T held = talk aloud, Tab = the radio; in menus both talk.)
 var mic_live := false
@@ -788,7 +822,7 @@ const KEY_DEFAULTS := {
 		"pause": [KEY_ESCAPE], "prone": [KEY_Z, KEY_Y], "melee": [KEY_V], "smoke": [KEY_H], "mine": [KEY_8],
 		"primary": [KEY_1], "secondary": [KEY_2],
 		"belt1": [KEY_3], "belt2": [KEY_4], "belt3": [KEY_5], "belt4": [KEY_6],
-		"talk": [KEY_T], "radio_talk": [KEY_TAB, KEY_K], "mic_toggle": [KEY_M], "nvg": [KEY_N], "scan_mute": [KEY_O], "firemode": [KEY_B], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
+		"talk": [KEY_T], "radio_talk": [KEY_TAB, KEY_K], "mic_toggle": [KEY_M], "nvg": [KEY_N], "scan_mute": [KEY_O], "sentry": [KEY_9], "firemode": [KEY_B], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
 	}
 
 ## What the settings offer to rebind, in this order: [action, Czech name] (a header row has no name).
@@ -798,7 +832,7 @@ const KEY_ROWS := [
 	["sprint", "Sprint"], ["jump", "Skok"], ["crouch", "Kleknout"], ["prone", "Lehnout"],
 	["lean_left", "Náklon vlevo (držet)"], ["lean_right", "Náklon vpravo (držet)"],
 	["", "BOJ"], ["reload", "Přebít"], ["melee", "Rána zblízka"], ["firemode", "Dávky / druh nábojů"],
-	["grenade", "Granát"], ["smoke", "Kouřový granát"], ["flare", "Světlice"], ["mine", "Claymore"],
+	["grenade", "Granát"], ["smoke", "Kouřový granát"], ["flare", "Světlice"], ["mine", "Claymore"], ["sentry", "Strážní věž"],
 	["primary", "Primární zbraň"], ["secondary", "Sekundární zbraň"],
 	["belt1", "Opasek 1"], ["belt2", "Opasek 2"], ["belt3", "Opasek 3"], ["belt4", "Opasek 4"],
 	["", "VĚCI A AKCE"], ["use", "Použít (dveře, sebrat, táhnout)"], ["heal", "Lékárnička"], ["inventory", "Výstroj"],
@@ -964,9 +998,12 @@ func dice_used(by_dice: bool) -> void:
 		dice["last"] = {}
 
 ## A recruit in the place of a soldier lost on a mission (fallen, missing): the dice come back.
-func lost_merc() -> Dictionary:
+func lost_merc(from: Dictionary = {}) -> Dictionary:
 	dice_grant()
-	return new_merc()
+	var m := new_merc()
+	# (0.72.x) what is left in the player's own locker goes to the new recruit, like the savings
+	carry_gear(from if not from.is_empty() else merc, m)
+	return m
 
 func set_levels(m: Dictionary, lv: Dictionary) -> void:
 	m["levels"] = lv.duplicate()
@@ -1179,8 +1216,13 @@ func dress_hands(n: Node, look: Dictionary) -> void:
 						mi.set_surface_override_material(i, color_mat(sc))
 
 # ---- ranks, experience and permanent talents -------------------------------------------
-const RANKS := ["Nováček", "Vojín", "Svobodník", "Desátník", "Četař", "Rotný", "Rotmistr", "Poručík", "Kapitán"]
-const RANK_XP := [0, 120, 300, 550, 850, 1250, 1750, 2400, 3200]
+## (2026-11-22, Ari: "na Kapitána jsme došli všichni tři") the order of the Czechoslovak army of 1990:
+## NCOs up to Rotmistr, then officers. Above Kapitán: Major, Podplukovník, Plukovník, Generál - each
+## promotion is as before 2 stats + a talent point. New ranks only AT THE END (rank = index from xp,
+## the talent tree TREE_RANK points at indices), so nobody's rank changes, only the way up goes on.
+const RANKS := ["Nováček", "Vojín", "Svobodník", "Desátník", "Četař", "Rotný", "Rotmistr", "Poručík", "Kapitán",
+	"Major", "Podplukovník", "Plukovník", "Generál"]
+const RANK_XP := [0, 120, 300, 550, 850, 1250, 1750, 2400, 3200, 4200, 5400, 6800, 8500]
 const TALENTS := {
 	"pevna_ruka": ["Pevná ruka", "Zbraň se méně třese (−35 % chvění) a míříš o polovinu rychleji."],
 	"mezek": ["Mezek", "Unese o 15 kg víc."],
@@ -1363,6 +1405,67 @@ func gear_to(m: Dictionary, cid: String) -> bool:
 	m["locker"] = back
 	return true
 
+## (0.72.x, Ari: „při odeslání vojáka na marodku zmizí vybavení a nepřesune se do skladu") The own
+## locker is the PLAYER'S, like the purse: it goes with him to whichever soldier he plays now
+## (another one while this one is on the sick bay, a dismissed one's, the new recruit after a fallen
+## one). Before, it stayed with the soldier left behind - out of reach, so it looked lost.
+## Merges both lockers per campaign (gear_cid / lockers); `from` is left with none.
+func carry_gear(from: Dictionary, to: Dictionary) -> void:
+	if is_same(from, to):
+		return
+	var pool := {}      # cid -> {item: n}
+	for m in [to, from]:
+		_pool_add(pool, String(m.get("gear_cid", "")), m.get("locker", {}))
+		var ks: Dictionary = m.get("lockers", {})
+		for c in ks:
+			_pool_add(pool, String(c), ks[c])
+	var cur := String(from.get("gear_cid", ""))
+	if cur == "":
+		cur = String(to.get("gear_cid", ""))
+	if pool.has(""):
+		# (a locker from before 0.7x with no campaign known: it goes where he is now)
+		_pool_add(pool, cur, pool[""])
+		if cur != "":
+			pool.erase("")
+	var lk: Dictionary = pool.get(cur, {})
+	pool.erase(cur)
+	to["locker"] = lk
+	if cur != "":
+		to["gear_cid"] = cur
+	var kept := {}
+	for c in pool:
+		if c != "" and not (pool[c] as Dictionary).is_empty():
+			kept[c] = pool[c]
+	while kept.size() > LOCKERS_KEPT:
+		kept.erase(kept.keys()[0])
+	if kept.is_empty():
+		to.erase("lockers")
+	else:
+		to["lockers"] = kept
+	from["locker"] = {}
+	from.erase("lockers")
+
+func _pool_add(pool: Dictionary, cid: String, lk) -> void:
+	if not (lk is Dictionary) or (lk as Dictionary).is_empty():
+		return
+	var into: Dictionary = pool.get(cid, {})
+	for it in lk:
+		into[it] = int(into.get(it, 0)) + int(lk[it])
+	pool[cid] = into
+
+## (0.72.x) Only the soldier being played keeps the locker (older profiles could have it stuck on
+## a soldier on the sick bay or one swapped away).
+func gather_gear() -> bool:
+	if active >= mercs.size():
+		return false
+	var changed := false
+	for i in mercs.size():
+		var m: Dictionary = mercs[i]
+		if i != active and (not (m.get("locker", {}) as Dictionary).is_empty() or not (m.get("lockers", {}) as Dictionary).is_empty()):
+			carry_gear(m, mercs[active])
+			changed = true
+	return changed
+
 func _local_cid() -> String:
 	var cf := ConfigFile.new()
 	if cf.load("user://campaign.cfg") != OK:
@@ -1392,7 +1495,7 @@ func load_merc() -> void:
 		for i in mercs.size():
 			var lost: Dictionary = mercs[i]
 			if String(lost.get("name", "")) == on_mission:
-				var fresh := lost_merc()
+				var fresh := lost_merc(lost)
 				fresh["money"] = maxi(0, int(lost.get("money", 0)) - 250)
 				mercs[i] = fresh
 				crash_note = "Hra skončila uprostřed mise. %s zůstal na místě - NEZVĚSTNÝ (odškodné rodině -250 kr; úspory převzal nový voják %s)." % [on_mission, String(fresh["name"])]
@@ -1411,6 +1514,7 @@ func load_merc() -> void:
 				looked = true
 			if home_cid != "":
 				m["gear_cid"] = home_cid
+	gather_gear()
 	merc = mercs[active]
 	# wounds from before 0.26 healed in real time - let them be healed
 	for m in mercs:
@@ -1481,9 +1585,11 @@ func switch_merc(i: int) -> void:
 	var money := int(merc.get("money", 0))
 	merc["money"] = 0
 	mercs[active] = merc
+	var was: Dictionary = merc
 	active = i
 	merc = mercs[i]
 	merc["money"] = int(merc.get("money", 0)) + money
+	carry_gear(was, merc)      # (and the own locker - see carry_gear)
 	save_merc()
 	Net.reregister()
 
@@ -1506,14 +1612,16 @@ func dismiss_merc(i: int) -> void:
 		return
 	var money := int(mercs[i].get("money", 0))
 	var was_active := i == active
+	var gone: Dictionary = mercs[i]
 	mercs.remove_at(i)
 	if i < active:
 		active -= 1
 	active = clampi(active, 0, mercs.size() - 1)
 	merc = mercs[active]
+	carry_gear(gone, merc)     # (his own locker stays with the player)
 	if was_active:
 		merc["money"] = int(merc.get("money", 0)) + money
-		Net.reregister()
+	Net.reregister()
 	save_merc()
 
 # ---- difficulty: "normal" or "veteran" (the host's choice decides the mission) ----
@@ -1558,13 +1666,14 @@ func load_settings() -> void:
 		shadows = clampi(int(cf.get_value("video", "shadows", 1)), 0, 2)
 		detail = clampi(int(cf.get_value("video", "detail", 1)), 0, 2)
 		hud_min = bool(cf.get_value("video", "hud_min", false))
+		perf_log = bool(cf.get_value("video", "perf_log", true))
 		fullscreen = cf.get_value("video", "fullscreen", false)
 		seen_version = cf.get_value("game", "seen_version", "")
 		intro_seen = cf.get_value("game", "intro_seen", false)
 		voice_mode = cf.get_value("voice", "mode", "ptt")
 		mic_gate = cf.get_value("voice", "gate", 0.03)
 		mimic_ok = cf.get_value("voice", "mimic", true)
-		mic_gain = cf.get_value("voice", "gain", 1.0)
+		mic_gain = clampf(float(cf.get_value("voice", "gain", 1.0)), 0.25, 4.0)
 		mic_clean = cf.get_value("voice", "clean", true)
 		mic_device = cf.get_value("voice", "device", "")
 		friendly_fire = cf.get_value("game", "friendly_fire", true)
@@ -1593,6 +1702,7 @@ func save_settings() -> void:
 	cf.set_value("video", "shadows", shadows)
 	cf.set_value("video", "detail", detail)
 	cf.set_value("video", "hud_min", hud_min)
+	cf.set_value("video", "perf_log", perf_log)
 	cf.set_value("video", "fullscreen", fullscreen)
 	cf.set_value("game", "seen_version", seen_version)
 	cf.set_value("game", "intro_seen", intro_seen)
@@ -1871,7 +1981,7 @@ var intro_seen := false    # (0.70) the intro film played once on this machine (
 var voice_mode := "ptt"    # "off", "ptt" (hold Tab / T), "open" (voice activation)
 var mic_gate := 0.03       # voice activation threshold (open mic)
 var friendly_fire := true   # host's choice: bullets hit teammates too
-var mic_gain := 1.0        # own microphone loudness (x0.5 .. x4)
+var mic_gain := 1.0        # own microphone loudness after the automatic level (25 % .. 400 %)
 var mic_clean := true      # (0.62) pull the room noise down between words (voice_dsp.gd)
 var mic_device := ""       # input device name ("" = system default)
 var mic_level := 0.0       # live level for the meter (set by whoever reads the mic)
@@ -2034,8 +2144,11 @@ func color_mat(c: Color, emission := false, metal := 0.0, rough := 1.0) -> Shade
 var _models := {}
 func model(mname: String) -> Node3D:
 	if not _models.has(mname):
+		var _pt := PerfLog.t0()
 		var path := "res://assets/models/%s.glb" % {"hands_a_rifle": "hands_plasma_rifle", "hands_a_heavy": "hands_plasma_rifle"}.get(mname, mname)
 		_models[mname] = load(path) if ResourceLoader.exists(path) else null
+		PerfLog.took("načtení modelu", _pt)
+		PerfLog.ev("model " + mname)
 	if _models[mname] == null:
 		# no model for this thing (should not happen): a small grey box instead of a crash
 		var mi := MeshInstance3D.new()
@@ -2344,6 +2457,7 @@ const QUIET_SOUNDS := ["click", "clink", "rustle", "pickup", "pistol_slide", "ma
 func play_at(world: Node, sname: String, pos: Vector3, volume_db := 0.0, pitch := 1.0) -> void:
 	if world == null or not world.is_inside_tree():
 		return
+	PerfLog.ev("zvuk")
 	var p := AudioStreamPlayer3D.new()
 	p.stream = sound(sname)
 	p.volume_db = volume_db
@@ -2910,6 +3024,14 @@ func tweak_pose(key: String, want: Dictionary) -> Dictionary:
 
 ## A held item's model. Clubs (baton) are held upright, ready to come down.
 ## Knife: blade up in the fist. Radio: upright, antenna up. Plus the workshop tweak.
+## Any shield (BSH-01, BSH-02 from the alloys) - they share the left hand, the Dílna anchors and the rules.
+func is_shield(id: String) -> bool:
+	return String(ITEMS.get(id, {}).get("type", "")) == "shield"
+
+## Whose Dílna anchors (fp/, tp/, back/, hold/) an item uses: a variant of the same shape borrows them.
+func tweak_id(id: String) -> String:
+	return String(ITEMS.get(id, {}).get("tweak_as", id))
+
 func held_model(id: String, third := false) -> Node3D:
 	var m := model(id)
 	if ITEMS.get(id, {}).get("blunt", false):
@@ -2919,5 +3041,5 @@ func held_model(id: String, third := false) -> Node3D:
 		m.rotation.x = deg_to_rad(80.0 if third else 58.0)
 	elif id in ["radio", "flare", "scanner"]:
 		m.rotation.x = deg_to_rad(80.0 if id == "radio" else 35.0)
-	apply_item_tweak(m, ("tp/" if third else "fp/") + id)
+	apply_item_tweak(m, ("tp/" if third else "fp/") + tweak_id(id))
 	return m

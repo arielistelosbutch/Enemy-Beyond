@@ -165,6 +165,11 @@ func _ready() -> void:
 	_spawn_check()
 
 func _physics_process(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_physics_process(delta)
+	PerfLog.took("civilisté: pohyb (snímek)", _pt)
+
+func _pl_physics_process(delta: float) -> void:
 	if dead and not _death_done:
 		_death_start(cowering, true)     # (dead already when this machine joined: lies as he fell)
 	_animate(delta)
@@ -215,10 +220,28 @@ func _animate(delta: float) -> void:
 
 # ---- host brain -----------------------------------------------------------------------------
 func hear(pos: Vector3, radius: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_hear(pos, radius)
+	PerfLog.took("civilista slyší", _pt)
+
+const HEAR_SAME_MS := 500
+var _heard_ms := -100000
+var _heard_pos := Vector3.INF
+var _heard_r := 0.0
+func _pl_hear(pos: Vector3, radius: float) -> void:
 	if dead or st == C.FOLLOW or st == C.SAFE:
 		return
 	if global_position.distance_to(pos) >= radius * 0.6:
 		return
+	# (0.72.5 výkon, Ari: propady při střelbě z kulometu) dávka = až 20 ran za s ze stejného místa:
+	# reaguje se na první, další ze stejného místa (do 4 m), ne hlasitější, se do 0,5 s přeskočí
+	# (dřív každá rána znovu plánovala cestu / útěk)
+	var _now := Time.get_ticks_msec()
+	if _now - _heard_ms < HEAR_SAME_MS and pos.distance_to(_heard_pos) < 4.0 and radius <= _heard_r + 0.5:
+		return
+	_heard_ms = _now
+	_heard_pos = pos
+	_heard_r = radius
 	# the noise is one of the soldiers (steps, a shot): people don't run from their rescuers -
 	# a close shot makes them duck where they are
 	for p in mission.players():
@@ -250,6 +273,11 @@ func _danger() -> Node:
 	return null
 
 func _flee_from(p: Vector3) -> void:
+	var _pt := PerfLog.t0()
+	_pl_flee_from(p)
+	PerfLog.took("civilista utíká (výběr cesty)", _pt)
+
+func _pl_flee_from(p: Vector3) -> void:
 	terror = 1.0
 	if hidden or _hide_i >= 0:
 		_unhide()
@@ -314,6 +342,11 @@ func _cry() -> void:
 var _cry_t := -99.0
 
 func _think(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_think(delta)
+	PerfLog.took("AI civilistů", _pt)
+
+func _pl_think(delta: float) -> void:
 	if mission and not mission.started():
 		return
 	var dz := _danger()
@@ -568,6 +601,11 @@ func _vip_hurt(left: int) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func _die(seeded: bool) -> void:
+	var _pt := PerfLog.t0()
+	_pl_die(seeded)
+	PerfLog.took("smrt civilisty", _pt)
+
+func _pl_die(seeded: bool) -> void:
 	var low := cowering
 	if multiplayer.is_server() and (hidden or _hide_i >= 0):
 		_unhide()

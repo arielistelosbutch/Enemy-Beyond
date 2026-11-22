@@ -87,7 +87,7 @@ func setup(s: Dictionary, acts: Array) -> void:
 		_lbl(right, "%d %s%s" % [fallen, "voják" if fallen == 1 else ("vojáci" if fallen <= 4 else "vojáků"), (", z toho nezvěstní %d" % mia) if mia > 0 else ""], TEXT, 8)
 		for f in s.get("fallen_list", []):
 			var l := _lbl(right, "%s%s - %s, %s%s" % [String(f[0]), "  (NEZVĚSTNÝ)" if f[3] else "", String(f[4]), String(f[1]),
-				(", zabití %d" % int(f[2])) if int(f[2]) > 0 else ""], GOLD, 7)
+				((", zabití %d" % int(f[2])) if int(f[2]) > 0 else "") + ((", zajatí %d" % int(f[5])) if f.size() > 5 and int(f[5]) > 0 else "")], GOLD, 7)
 			l.custom_minimum_size = Vector2(290, 0)
 		if fallen > (s.get("fallen_list", []) as Array).size():
 			_lbl(right, "a dalších %d" % (fallen - (s.get("fallen_list", []) as Array).size()), DIM, 7)
@@ -95,7 +95,7 @@ func setup(s: Dictionary, acts: Array) -> void:
 	if not best.is_empty():
 		_head(right, "NEJLEPŠÍ VOJÁCI")
 		for b in best:
-			_row(right, String(b[0]) + (" †" if b[3] else ""), "zabití %d, mise %d" % [int(b[1]), int(b[2])])
+			_row(right, String(b[0]) + (" †" if b[3] else ""), "zabití %d, zajatí %d, mise %d" % [int(b[1]), int(b[4]) if b.size() > 4 else 0, int(b[2])])
 	buttons = HBoxContainer.new()
 	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
 	buttons.add_theme_constant_override("separation", 8)

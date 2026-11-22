@@ -37,6 +37,8 @@ func _ready() -> void:
 	limit = 120.0 if esc > 0 else 70.0
 	kind = "scout"
 	_world()
+	_loadout()         # (0.72.5) the weapons fitted in the hangar, as in the air fight
+	var n_hawks := int(params.get("hawks", int(Game.cmd_arg("hawks", "0"))))
 	# the transport
 	tr_node = Game.model(tr_kind if tr_kind == "heli" else "dropship")
 	add_child(tr_node)
@@ -61,11 +63,15 @@ func _ready() -> void:
 	# the Sokols around it
 	for i in pilots.size():
 		var pid: int = pilots[i]
-		var node := Game.model("sokol")
+		var node := Game.model("jestrab" if i < n_hawks else "sokol")
 		add_child(node)
+		_fit_pods(node, i < n_hawks)
 		node.position = Vector3((i - (pilots.size() - 1) / 2.0) * 50.0, 900 + i * 6.0, 60.0 + i * 15.0)
 		if pid == Net.my_id() or not net:
 			jet = node
+			hawk = i < n_hawks
+			if hawk:
+				jet_hp = 160.0
 		else:
 			others[pid] = {"node": node, "pos": node.position, "prev": node.position, "vel": Vector3.ZERO, "down": false, "name": Net.roster.get(pid, {}).get("name", "Sokol")}
 	for i in maxi(0, esc - pilots.size()):
@@ -369,9 +375,12 @@ func _projectiles(delta: float) -> void:
 			for i in swarm.size():
 				var s: Dictionary = swarm[i]
 				if s["alive"] and _seg_hits(n.global_position, nxt, (s["node"] as Node3D).global_position, 7.0):
-					_damage_swarm(i, CANNON_DMG)
+					_damage_swarm(i, float(tr.get("dmg", CANNON_DMG)))
 					tr["life"] = 0
 					break
+		if tr.get("big", false) and tr["life"] <= 0:
+			_flash(n.global_position, 14.0)
+			Game.play_ui(self, "explosion", -2)
 		n.global_position = nxt
 		if tr["life"] <= 0:
 			n.queue_free()
@@ -449,6 +458,12 @@ func _damage_swarm(i: int, d: float) -> void:
 		_hit_swarm_local(i, d)
 	if randf() < 0.3:
 		_flash((swarm[i]["node"] as Node3D).global_position, 2.0)
+
+## (0.72.5) the laser cannon's beam (intercept._fire_heavy) hits whichever attacker is the target.
+func _damage_ufo(d: float, _at: Vector3) -> void:
+	var i := swarm.find(_entry(ufo))
+	if i >= 0:
+		_damage_swarm(i, d)
 
 func _hit_swarm_local(i: int, d: float) -> void:
 	if i < 0 or i >= swarm.size() or not swarm[i]["alive"]:
@@ -572,6 +587,7 @@ func _finish() -> void:
 	if net and not multiplayer.is_server():
 		get_tree().change_scene_to_file("res://scenes/Main.tscn")
 		return
+	Campaign.spend_plasma_mags(plasma_mags_used())
 	Net.last_result = Campaign.escort_done(int(params.get("craft", -1)), outcome, tr_hp, lost_jets)
 	Game.load_scene("res://scenes/Geoscape.tscn")
 
@@ -616,16 +632,27 @@ func _draw_hud() -> void:
 var _ramp_shot := false
 var _order_sent := false
 var _order_done := false
+var _kit_said := false
 func _process(_d: float) -> void:
-	if Game.autotest() != "escort":
+	if not Game.autotest() in ["escort", "escorthost", "escortclient"]:
 		return
+	var pics := DisplayServer.get_name() != "headless"
 	if outcome != "" and end_t > 1.5:
 		print("[ESCORT-TEST] outcome=%s tr_hp=%.0f alive=%d" % [outcome, tr_hp, _alive().size()])
-		get_viewport().get_texture().get_image().save_png("user://escort_end.png")
+		if pics: get_viewport().get_texture().get_image().save_png("user://escort_end.png")
 		get_tree().quit()
 		return
-	if int(t * 10) == 60:
+	if pics and int(t * 10) == 60:
 		get_viewport().get_texture().get_image().save_png("user://escort_6.png")
+	# (0.72.5) the loadout from the hangar must reach the escort, on every pilot's computer
+	var kit_test := Game.autotest() != "escort" or Game.cmd_arg("kit", "") == "1"
+	if t > 7.0 and not _kit_said and kit_test:
+		_kit_said = true
+		print("RESULT escortkit %s gun %s heavy %s hawk %s fired %d heavy %d/%d" % [Game.autotest(), gun, heavy, hawk, _shots, heavy0 - heavy_ammo, heavy0])
+	# (the host stays a little longer, so the client is not thrown out before it reports)
+	if kit_test and t > (10.0 if Game.autotest() == "escorthost" else 7.2):
+		get_tree().quit()
+		return
 	if t > 2.0 and not _ramp_shot and Game.cmd_arg("rampshot", "") == "1":
 		_ramp_shot = true
 		# a look at the transport's rear (the ramp must be shut in the air)
@@ -657,5 +684,8 @@ func _process(_d: float) -> void:
 	var line := (-jet.global_transform.basis.z).angle_to(to) < deg_to_rad(4)
 	if line and to.length() < 600: Input.action_press("fire")
 	else: Input.action_release("fire")
-	if lock >= 1.0 and missiles > 0: Input.action_press("aim")
+	if heavy == "missiles":
+		if lock >= 1.0 and missiles > 0: Input.action_press("aim")
+		else: Input.action_release("aim")
+	elif line and to.length() < 900: Input.action_press("aim")
 	else: Input.action_release("aim")
