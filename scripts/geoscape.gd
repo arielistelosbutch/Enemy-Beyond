@@ -1305,7 +1305,9 @@ func _on_ambush(c: Dictionary) -> void:
 func _begin_escort(c: Dictionary) -> void:
 	_close_popup()
 	Campaign.save()
-	var ep := {"escort": true, "craft": int(c["id"]), "transport": c["kind"], "jet_armor": Campaign.built("pancir_letadel"), "escort_n": int(c.get("escort", 0)), "pilots": c.get("pilots", []), "driver": int(c.get("driver", 0))}
+	var ep := {"escort": true, "craft": int(c["id"]), "transport": c["kind"], "jet_armor": Campaign.built("pancir_letadel"), "escort_n": int(c.get("escort", 0)), "pilots": c.get("pilots", []), "driver": int(c.get("driver", 0)),
+		# (0.72.5) the guns fitted in the hangar fly along (before: factory cannon and missiles)
+		"gun": Campaign.jet_gun(), "heavy": Campaign.jet_heavy(), "hawks": Campaign.hawks(), "plasma_mags": int(Campaign.data["armory"].get("plasma_cell", 0))}
 	ep["night"] = Campaign.is_night(float(c.get("lon", Campaign.BASE_LON)), float(c.get("lat", Campaign.BASE_LAT)))      # day or night where they meet
 	if Net.is_online():
 		Net.start_escort(ep)
@@ -1821,6 +1823,11 @@ func _show_events() -> void:
 		var go_on := _btn(brow, "POKRAČOVAT", _events_go_on, 10)
 		UiSkin.primary(go_on)
 		go_on.tooltip_text = "Zavřít a pustit čas rychlostí jako předtím (Enter)."
+		# (Ari 2026-11-22) zavřít a pustit čas nejpomaleji, ať se dá v klidu reagovat
+		var slow := _btn(brow, "Zpomalit čas", _events_slow, 10)
+		slow.name = "EventSlow"
+		UiSkin.button(slow)
+		slow.tooltip_text = "Zavřít a pustit čas nejpomaleji (%s za sekundu)." % SPEED_NAMES[1]
 	var ok := _btn(brow, "Zavřít" if not Campaign.viewer else "OK", _close_popup, 10)
 	UiSkin.ghost(ok)
 
@@ -1833,6 +1840,12 @@ func _event_rows() -> int:
 func _events_go_on() -> void:
 	_close_popup()
 	speed = clampi(_speed_before, 1, SPEEDS.size() - 1)
+
+## (Ari 2026-11-22) the slowest running speed instead of the one before (only the host / solo has the
+## clock; a co-op viewer gets the host's speed through send_geo_live and has no such button)
+func _events_slow() -> void:
+	_close_popup()
+	speed = 1
 
 func _show_log() -> void:
 	var box := _overlay("HLÁŠENÍ", 460)
@@ -2138,7 +2151,7 @@ func _show_workshop() -> void:
 	# 0.72 (návrh A): what can be made as a table, the queue on the right
 	var lines := Campaign.workshop_lines()
 	var body := _full(["Základna", "Dílna"], "Dílny %d · tempo %d %% · kredity %d · slitiny %d · moskovium %d g" % [lines, int(round(Campaign.workshop_rate() * 100.0)), int(Campaign.data["credits"]), Campaign.alloys(), Campaign.moskovium()],
-		[["LTM", "zařadit do výroby"], ["", "Zbrojnice · Prodej"], ["Esc", "na glóbus"]])
+		[["LTM", "zařadit do výroby"], ["×", "zrušit zakázku"], ["", "Zbrojnice · Prodej"], ["Esc", "na glóbus"]])
 	_live_mark("workshop")
 	var cols := HBoxContainer.new()
 	cols.add_theme_constant_override("separation", 14)
@@ -2233,7 +2246,8 @@ func _show_workshop() -> void:
 	for o in Campaign.data.get("orders", []):
 		if o.get("made", false):
 			var it := String(o["item"])
-			q.append([float(o["at"]), Campaign.queue_name(it)])
+			var on := Campaign.order_n(o)
+			q.append([float(o["at"]), Campaign.queue_name(it) + (("  %d×" % on) if on > 1 else ""), o])
 	q.sort_custom(func(x, y): return x[0] < y[0])
 	if q.is_empty():
 		_lbl(right, "Dílna stojí - nic se nevyrábí.", UiSkin.DIM, 8).custom_minimum_size = Vector2(170, 0)
@@ -2246,6 +2260,21 @@ func _show_workshop() -> void:
 		nl2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var tl := _lbl(hb, _span(float(e[0]) - now), UiSkin.DIM, 7)
 		tl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		# (Ari 2026-11-22) take it back: one piece, or the whole line - everything paid comes back
+		var od: Dictionary = e[2]
+		if Campaign.order_n(od) > 1:
+			var b1 := UiSkin.chip(hb, "-1", "own", func():
+				if Campaign.cancel_order(od, false):
+					Game.play_ui(self, "money", -10)
+					_show_workshop())
+			b1.tooltip_text = "Zrušit jeden kus (vrátí se, co stál)."
+			b1.disabled = Campaign.viewer
+		var bx := UiSkin.chip(hb, "×", "own", func():
+			if Campaign.cancel_order(od, true):
+				Game.play_ui(self, "money", -10)
+				_show_workshop())
+		bx.tooltip_text = "Zrušit zakázku (vrátí se kredity, slitiny i Moskovium)."
+		bx.disabled = Campaign.viewer
 	if q.size() > 8:
 		_lbl(right, "a dalších %d" % (q.size() - 8), UiSkin.DIM, 7)
 
@@ -2717,6 +2746,16 @@ func _autotest() -> void:
 		var stopped := speed == 0
 		_events_go_on()
 		var back := speed == 3 and popup == null
+		# Zpomalit čas: the window closes and the clock runs at the slowest speed, not the one before
+		_event("VÝZKUM DOKONČEN", "Zkouška", "", UiSkin.OK, [])
+		_speed_before = 3
+		speed = 0
+		_show_events()
+		await get_tree().create_timer(0.2).timeout
+		var sb: Array = popup.find_children("EventSlow", "", true, false) if popup != null else []
+		if not sb.is_empty():
+			(sb[0] as Button).pressed.emit()
+		var slow := not sb.is_empty() and speed == 1 and popup == null
 		speed = 0
 		# a full window: no more than EVENT_EVERY rows, the rest in Hlášení
 		for i in 12:
@@ -2736,7 +2775,7 @@ func _autotest() -> void:
 		await _ui_check("geo_events_viewer")
 		_close_popup()
 		Campaign.viewer = false
-		print("RESULT geoevents shown %s rows %d stopped %s back %s full %d viewer %d bar %s" % [shown, rows, stopped, back, full, vrows, bar1 > 0.0 and bar1 < 1.0])
+		print("RESULT geoevents shown %s rows %d stopped %s back %s slow %s full %d viewer %d bar %s" % [shown, rows, stopped, back, slow, full, vrows, bar1 > 0.0 and bar1 < 1.0])
 		get_tree().quit()
 		return
 	if Game.autotest() == "uigeo":
@@ -2772,7 +2811,7 @@ func _autotest() -> void:
 					fd["slitiny"] = int(fd.get("slitiny", 0)) + 14
 					Campaign.data["found"] = fd
 					Campaign.data["credits"] = int(Campaign.data["credits"]) + 4000
-					Campaign.make("pancir"); Campaign.make("laser_rifle"); Campaign.make("mine")
+					Campaign.make("pancir"); Campaign.make("laser_rifle"); Campaign.make("laser_rifle"); Campaign.make("mine")
 					_show_workshop()],
 				["geo_archive", _show_archive], ["geo_log", _show_log], ["geo_build", func(): _build_menu(2)], ["geo_build_pick", func():
 					_build_menu(_free_cell())
@@ -2782,11 +2821,19 @@ func _autotest() -> void:
 					Campaign.data["credits"] = 120
 					_build_menu(_free_cell())
 					for c in get_children(): if c is BaseScreen: c._set_pick("plazma_vez" if Campaign.facility_open("plazma_vez") else "radar")
-					Campaign.data["credits"] = keep], ["geo_hangar", func(): _show_base(1)], ["geo_jets", _show_hangar],
+					Campaign.data["credits"] = keep],
+				["geo_room_sell", func():
+					_show_base(Campaign.GRID_W + 1)
+					for c in get_children(): if c is BaseScreen: c._do_demolish()],
+				["geo_rebuild", func():
+					_show_base(2)
+					for c in get_children(): if c is BaseScreen:
+						c._start_rebuild()
+						c._set_pick("sklad")], ["geo_hangar", func(): _show_base(1)], ["geo_jets", _show_hangar],
 				["geo_menu", _game_menu], ["geo_settings", _settings_menu], ["geo_menu_viewer", func(): Campaign.viewer = true; _game_menu(); Campaign.viewer = false],
 				["geo_alert", func(): _alert("VELMI DLOUHÉ HLÁŠENÍ\n" + "Tohle je velmi dlouhý text upozornění, který by se měl zalomit. ".repeat(8))]]:
 			e[1].call()
-			if String(e[0]) in ["geo_base", "geo_build", "geo_build_pick", "geo_build_poor", "geo_hangar"]:
+			if String(e[0]) in ["geo_base", "geo_build", "geo_build_pick", "geo_build_poor", "geo_room_sell", "geo_rebuild", "geo_hangar"]:
 				await get_tree().create_timer(2.5).timeout      # (the plan is built and photographed first)
 			await _ui_check(e[0])
 			_close_popup()

@@ -1124,7 +1124,7 @@ func _memorial(a: Vector3, w: float, fallen: Array) -> void:
 		_mini_flag(Vector3(px - 0.06, py, z - 0.085), String(f.get("f", "")))
 		var name := _engrave(String(f.get("n", "?")).to_upper() + ("   NEZVĚSTNÝ" if f.get("mia", false) else ""), 22, gold, HORIZONTAL_ALIGNMENT_LEFT)
 		name.position = Vector3(px - 0.13, py + 0.025, z - 0.085)
-		var sub := _engrave("%s  -  %s" % [String(f.get("d", "")), String(f.get("m", ""))], 14, gold.darkened(0.3), HORIZONTAL_ALIGNMENT_LEFT)
+		var sub := _engrave("%s  -  %s%s" % [String(f.get("d", "")), String(f.get("m", "")), ("  -  zajal %d" % int(f.get("c", 0))) if int(f.get("c", 0)) > 0 else ""], 14, gold.darkened(0.3), HORIZONTAL_ALIGNMENT_LEFT)
 		sub.position = Vector3(px - 0.13, py - 0.035, z - 0.085)
 	if list.size() > WALL_ROWS * 2:
 		var more := _engrave("... a dalších %d" % (list.size() - WALL_ROWS * 2), 16, gold.darkened(0.3))

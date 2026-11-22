@@ -776,6 +776,10 @@ func _draw_hud() -> void:
 	if p.busy > 0 and p.busy_total > 0 and (p.busy_text.begins_with("Ošetřuji") or p.busy_text.begins_with("Obvazuji") or p.busy_text.begins_with("Vyřezávám")):
 		c.draw_rect(Rect2(mid.x - 60, mid.y + 42, 120, 5), Color(0, 0, 0, 0.6))
 		c.draw_rect(Rect2(mid.x - 60, mid.y + 42, 120 * (1.0 - p.busy / p.busy_total), 5), Color(0.4, 1.0, 0.4))
+	if not p.downed and p.busy <= 0 and mission().sentry_near(p.global_position):
+		var st: Node = mission().sentry_near(p.global_position)
+		var am := ("  %d/%d" % [st.ammo, st.ammo_max()])
+		_prompt(("F - doplnit věž" if p.sentry_action(st) == "reload" else "F - složit věž") + am, TEXT)
 	if not p.downed and not mission().nearest_pickup(p.global_position).is_empty():
 		var it: Dictionary = mission().nearest_pickup(p.global_position)["item"]
 		_prompt("F - sebrat: " + Game.ITEMS[it["id"]]["name"], TEXT)
@@ -1098,7 +1102,8 @@ func _ammo_big(c: Control, at: Vector2, n: int, cap: int, spare: int) -> void:
 	_text(c, at + Vector2(bw + 3, -4), "+%d" % spare, FRAME, 8)
 
 # ---- motion scanner ----------------------------------------------------------------------
-## Like a real motion tracker it shows only "something moves" - teammates too -
+## Like a real motion tracker it shows only "something moves" - teammates too (until the
+## helmet display, see scan_movers) -
 ## and a frightened mercenary sees things that are not there.
 var SCAN_RANGE := 25.0
 var _ping_t := 0.0
@@ -1142,9 +1147,7 @@ func _scanner_update(delta: float) -> void:
 	if _scan_t > 0:
 		return
 	_scan_t = 0.5
-	var movers: Array = mission().aliens() + mission().players() + mission().civilians()
-	for a in movers:
-		if a == p or a.dead: continue
+	for a in scan_movers(p):
 		var pos: Vector3 = a.global_position
 		var last: Vector3 = _last_pos.get(a.name, pos)
 		_last_pos[a.name] = pos
@@ -1155,6 +1158,20 @@ func _scanner_update(delta: float) -> void:
 	if randf() < (0.015 if Game.has_research("detektor") else 0.03) * metal + p.stress / 100.0 * 0.2:
 		var ang := randf() * TAU
 		_blips.append({"pos": p.global_position + Vector3(cos(ang), 0, sin(ang)) * randf_range(6.0, SCAN_RANGE), "t": 1.0})
+
+## What the detector reacts to. (2026-11-22 Ari) With the helmet display (research
+## `detektor_opasek`) it is paired with the squad's own detectors and leaves them out:
+## only civilians and aliens move on it. Without it, teammates too (MD-01 can't tell).
+## The research comes from the mission's parameters, so in co-op it is the same for everyone.
+func scan_movers(p: Node) -> Array:
+	var m := mission()
+	var out: Array = m.aliens() + m.civilians()
+	if not scan_skips_allies():
+		out += m.players()
+	return out.filter(func(a): return a != p and not a.dead)
+
+static func scan_skips_allies() -> bool:
+	return Game.has_research("detektor_opasek")
 
 ## A musical sting the first time in a while you actually see one of them.
 func _sting_check(p: Node) -> void:
@@ -2022,16 +2039,16 @@ static func settings_ui(box: Control) -> void:
 	# own microphone: loudness, live level, test (you hear yourself half a second later)
 	var gl := Label.new()
 	gl.add_theme_font_size_override("font_size", 9)
-	gl.text = "Síla mého mikrofonu: x%.1f" % Game.mic_gain
+	gl.text = "Zesílení mého mikrofonu: %d %%" % roundi(Game.mic_gain * 100.0)
 	pg["voice"].add_child(gl)
 	var gs := HSlider.new()
-	gs.min_value = 0.5
+	gs.min_value = 0.25
 	gs.max_value = 4.0
-	gs.step = 0.1
+	gs.step = 0.05
 	gs.value = Game.mic_gain
 	gs.focus_mode = Control.FOCUS_NONE
 	gs.custom_minimum_size = Vector2(200, 12)
-	gs.value_changed.connect(func(v): Game.mic_gain = v; gl.text = "Síla mého mikrofonu: x%.1f" % v; Game.save_settings())
+	gs.value_changed.connect(func(v): Game.mic_gain = v; gl.text = "Zesílení mého mikrofonu: %d %%" % roundi(v * 100.0); Game.save_settings())
 	pg["voice"].add_child(gs)
 	# (0.62) room noise pulled down between words; how easily "always on" opens
 	var cl := CheckBox.new()
@@ -2163,6 +2180,15 @@ static func settings_ui(box: Control) -> void:
 	hq.item_selected.connect(func(i): Game.hud_min = i == 1; Game.save_settings())
 	hq.tooltip_text = "F1 ve hře skryje celý HUD (zůstane jen zaměřovač)."
 	pg["gfx"].add_child(hq)
+	# (Ari 22. 11.) záznamník výkonu: záseky do souboru, jen o hře, nic neposílá
+	var pl := CheckBox.new()
+	pl.focus_mode = Control.FOCUS_NONE
+	pl.add_theme_font_size_override("font_size", 9)
+	pl.text = "Záznam výkonu do souboru (F9, F8 = označit zásek)"
+	pl.button_pressed = Game.perf_log
+	pl.tooltip_text = "Když se hra sekne, zapíše do složky logs (vykon_*.txt), co se v tu chvíli dělo. Nic neposílá."
+	pl.toggled.connect(func(v): Game.set_perf_log(v))
+	pg["gfx"].add_child(pl)
 	_keys_ui(pg["keys"])
 
 ## 0.72 (Ari): everyone's own keys. Click a key and press the new one (Esc = keep the old one),

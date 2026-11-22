@@ -328,6 +328,11 @@ func _ready() -> void:
 		_go_lurk.call_deferred(false)
 
 func _physics_process(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_physics_process(delta)
+	PerfLog.took("vetřelci: pohyb a fyzika (snímek)", _pt)
+
+func _pl_physics_process(delta: float) -> void:
 	_eyeshine(delta)
 	_drip(delta)
 	_cloak_tick(delta)
@@ -1552,12 +1557,30 @@ func visible_to(p: Node) -> bool:
 const SMOKE_SEE := {"diskoll": 25.0, "kolos": 25.0, "ohnivec": 12.0, "grey": 8.0, "grey_velitel": 8.0}
 
 func hear(pos: Vector3, radius: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_hear(pos, radius)
+	PerfLog.took("vetřelec slyší", _pt)
+
+const HEAR_SAME_MS := 500
+var _heard_ms := -100000
+var _heard_pos := Vector3.INF
+var _heard_r := 0.0
+func _pl_hear(pos: Vector3, radius: float) -> void:
 	if dead or state == S.DRAG:
 		return
 	if mission.calm():
 		radius *= 0.5
 	if global_position.distance_to(pos) > radius:
 		return
+	# (0.72.5 výkon, Ari: propady při střelbě z kulometu) dávka = až 20 ran za s ze stejného místa:
+	# reaguje se na první, další ze stejného místa (do 4 m), ne hlasitější, se do 0,5 s přeskočí
+	# (dřív každá rána znovu plánovala cestu / útěk)
+	var _now := Time.get_ticks_msec()
+	if _now - _heard_ms < HEAR_SAME_MS and pos.distance_to(_heard_pos) < 4.0 and radius <= _heard_r + 0.5:
+		return
+	_heard_ms = _now
+	_heard_pos = pos
+	_heard_r = radius
 	if radius >= 25.0 and multiplayer.is_server() and global_position.distance_to(pos) < 130.0:
 		AT.heard_shot(self, pos)
 		AS.heat_note(self, null, pos)
@@ -1735,9 +1758,19 @@ func taken(dmg: float) -> float:
 		arm = lerpf(arm, 1.0, 0.5)    # the beam finds the joints between the plates (Pitva Bijce)
 	return dmg * (lerpf(arm, 1.0, 0.6) if armor_broken else arm) * k
 
+## (0.72.5) A silenced shot or a knife from the dark: when it did not see the shooter, it only
+## knows it was hit - roughly from over there, not exactly from where (nor does the squad).
+const QUIET_GUESS := 6.0
+func quiet_hit(by: Node) -> bool:
+	return mission != null and mission.hit_quiet and by != null and by.has_method("is_player") and not visible_to(by)
+
+func quiet_guess(by: Node) -> Vector3:
+	return by.global_position + Vector3(rng.randf_range(-QUIET_GUESS, QUIET_GUESS), 0, rng.randf_range(-QUIET_GUESS, QUIET_GUESS))
+
 func damage(dmg: float, from: Vector3, by: Node) -> void:
 	if dead:
 		return
+	var quiet := quiet_hit(by)      # (before alert: a hit from behind does not show it who)
 	# from the dark, unseen: an ambush hurts twice as much
 	if state != S.COMBAT and state != S.DRAG and by and by.has_method("is_player") and float(sus.get(String(by.name), 0.0)) < 1.0:
 		dmg *= 2.0
@@ -1756,12 +1789,19 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 	var shooter_known := by != null and by.has_method("is_player")
 	if shooter_known and multiplayer.is_server():
 		AD.style_hit(mission, by, global_position.distance_to(by.global_position), got)
-	if shooter_known:
+	var guess := quiet_guess(by) if quiet else Vector3.ZERO
+	if quiet:
+		# it was hit, it does not know by whom: a rough place to look at, for itself only
+		_hurt_by[String(by.name)] = mission.t
+		_seen_pos[String(by.name)] = [guess, mission.t]
+		_tlog("quiet hit")
+	elif shooter_known:
 		# it knows where that came from - and so do the others nearby
 		_hurt_by[String(by.name)] = mission.t
 		_know(by, 15.0)
 		target = by
-		_warn_squad(by, 40.0)
+		if not (mission.hit_quiet and hp <= 0.0):
+			_warn_squad(by, 40.0)      # (a knife that kills it: it calls nobody)
 	if dragging:
 		_release()
 	if hp <= 0 and R.has("regen") and not husk and mission.hit_kind != "explosion":
@@ -1781,7 +1821,8 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 		AS.leader_down(self)
 		if by and by.has_method("is_player"):
 			_credit.rpc_id(by.get_multiplayer_authority(), by.name)
-			_warn_squad(by, 30.0)     # one of theirs falls: the rest come for the killer
+			if not mission.hit_quiet:
+				_warn_squad(by, 30.0)     # one of theirs falls: the rest come for the killer (a silent kill: the dead do not call out)
 			if (race.ends_with("_velitel") or race == "myslodej") and not by.display_name in mission.officer_killers:
 				mission.officer_killers.append(by.display_name)
 		return
@@ -1797,7 +1838,7 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 		_mending = true
 		_mend_cd = 25.0
 		_tlog("mend: pulls back")
-	if R.has("teleport") and hp > 0.0 and _teleport_away(by.global_position if shooter_known else from):
+	if R.has("teleport") and hp > 0.0 and _teleport_away(guess if quiet else (by.global_position if shooter_known else from)):
 		return
 	# the Bijec's synthetic armour: hit hard enough and its systems fail (sparks, it stops shrugging off bullets)
 	if R.has("armor_break") and not armor_broken and hp < float(R["hp"]) * float(R["armor_break"]):
@@ -1805,7 +1846,7 @@ func damage(dmg: float, from: Vector3, by: Node) -> void:
 	if not R.has("no_pain"):
 		_flinch.rpc(from)       # (a Bijec does not even flinch)
 		_hurt_voice.rpc()
-	last_seen = by.global_position if shooter_known else from
+	last_seen = guess if quiet else (by.global_position if shooter_known else from)
 	_enter_combat(null)
 	if tac == "brute":
 		return               # pain only makes it angrier
@@ -1906,6 +1947,11 @@ func _ambush_note(player_name: String) -> void:
 var _disarray_t := 0.0
 @rpc("authority", "call_local", "reliable")
 func _die() -> void:
+	var _pt := PerfLog.t0()
+	_pl_die()
+	PerfLog.took("smrt vetřelce", _pt)
+
+func _pl_die() -> void:
 	if R.has("psi") and multiplayer.is_server():
 		for a in mission.aliens():
 			if a != self and not a.dead and a.global_position.distance_to(global_position) < 40.0:
@@ -2142,6 +2188,11 @@ func _husk_fx(down: bool) -> void:
 		pass
 
 func _think(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_think(delta)
+	PerfLog.took("AI vetřelců", _pt)
+
+func _pl_think(delta: float) -> void:
 	_think_dt = delta
 	AT.tick(self, delta)
 	AS.tick(self, delta)
@@ -2280,10 +2331,13 @@ func _call_squad(seen: Node) -> void:
 
 var _rally_t := 0.0
 ## Bullets cracking past: anything standing in the open dives for cover.
-func suppressed(from: Vector3) -> void:
+func suppressed(from: Vector3, quiet := false) -> void:
 	if dead or husk or R.get("dumb", false) or R.has("melee"):
 		return
 	alert = true
+	if quiet:
+		# (0.72.5) a silenced bullet cracks past: something is out there, roughly that way
+		from += Vector3(rng.randf_range(-QUIET_GUESS, QUIET_GUESS), 0, rng.randf_range(-QUIET_GUESS, QUIET_GUESS))
 	last_seen = from
 	if state != S.COMBAT:
 		_enter_combat(null)

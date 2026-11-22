@@ -72,6 +72,7 @@ func _process(delta: float) -> void:
 	match mode:
 		"solo", "campaign": _solo(p)
 		"perf": PERF.run(self, p)
+		"gunlag": PERF.gunlag(self, p)
 		"groundtest": GT.run(self, p)
 		"rainshot": RAIN.run(self, p)
 		"lamptest": WEATHER.lamps(self, p)
@@ -85,6 +86,9 @@ func _process(delta: float) -> void:
 		"shouldershot": preload("res://scripts/autotest_shoulder.gd").run(self, p)
 		"radiosprint": preload("res://scripts/autotest_shoulder.gd").radio(self, p)
 		"dazetest", "dazebase": preload("res://scripts/autotest_daze.gd").run(self, p)
+		"quiettest": preload("res://scripts/autotest_quiet.gd").run(self, p)
+		"scantest": preload("res://scripts/autotest_scan.gd").run(self, p)
+		"quiethost", "quietclient": preload("res://scripts/autotest_quiet.gd").pair(self, p)
 		"convoytest": preload("res://scripts/autotest_missions.gd").convoy(self, p)
 		"bugtest": preload("res://scripts/autotest_missions.gd").bug(self, p)
 		"quartest": preload("res://scripts/autotest_missions.gd").quar(self, p)
@@ -125,10 +129,12 @@ func _process(delta: float) -> void:
 		"flaretest": _flaretest(p)
 		"fragtest": _fragtest(p)
 		"claytest": _claytest(p)
+		"sentrytest": _sentrytest(p)
 		"basefly": _basefly(p)
 		"coophealhost", "coophealclient": _coopheal(p)
 		"pothost", "potclient": _potcoop(p)
 		"safeend": _safeend(p)
+		"failkit": _failkit(p)
 		"coopevachost", "coopevacclient": _coopevac(p)
 		"safeouthost", "safeoutclient": _safeout(p)
 		"coopwipehost", "coopwipeclient":
@@ -167,6 +173,47 @@ func _process(delta: float) -> void:
 						break
 				var lit: int = m().map.get("elec_lights", []).filter(func(l): return is_instance_valid(l) and l.get_meta("powered", false)).size()
 				out("RESULT nm %s radar %s lit %d bug %s gone %s banner %s" % [mode, m().radar_on, lit, m().bug_tagged, m().bug_gone, m().done_banner])
+				get_tree().quit()
+		"sentryhost", "sentryclient":
+			# (0.80) the client sets a turret down: the host has it too; the client folds it, gets it back
+			_skip_brief()
+			if p and m().started() and step == 0 and m().players().size() >= 2:
+				step = 1
+				p.hp = 5000.0
+				var host := mode == "sentryhost"
+				await get_tree().create_timer(3.0).timeout
+				if not host:
+					p.inv["p0"] = {"id": "sentry", "rounds": 33, "kind": "rifle"}
+					p._place_sentry()
+				var seen := false
+				var ammo := -1
+				for k in 14:
+					await get_tree().create_timer(0.5).timeout
+					if not m().sentries().is_empty():
+						seen = true
+						ammo = m().sentries()[0].ammo
+						break
+				await get_tree().create_timer(1.0).timeout
+				var gone := false
+				var back := false
+				if not host and seen:
+					var st: Node = m().sentries()[0]
+					p.global_position = st.global_position + Vector3(0.8, 0.3, 0)
+					for k2 in p.inv.keys():
+						if String(p.inv[k2].get("id", "")) == "rifle_clip":
+							p.inv.erase(k2)
+					p._use_sentry(st)
+				for k in 12:
+					await get_tree().create_timer(0.5).timeout
+					if seen and m().sentries().is_empty():
+						gone = true
+						break
+				await get_tree().create_timer(0.5).timeout
+				var sl: String = p.find_item(func(it): return it["id"] == "sentry")
+				back = sl != "" and int(p.inv[sl].get("rounds", -1)) == 33
+				out("RESULT coopsentry %s seen %s ammo %d folded %s back %s" % [mode, seen, ammo, gone, back])
+				if host:
+					await get_tree().create_timer(2.0).timeout
 				get_tree().quit()
 		"nadehost", "nadeclient", "flarehost", "flareclient":
 			_skip_brief()
@@ -2096,6 +2143,122 @@ func _claytest(p: Node) -> void:
 	out("RESULT claytest placed %d faces %s levit_over %s fired %s walker_hit %s levit_in_wedge %.0f behind_6m %.0f" % [n, faces, lev_over, gone, w_dead, l_hurt, b_hurt])
 	get_tree().quit()
 
+## (0.80) ST-01: set down, motion sensor (a still alien is safe, a moving one is shot), the arc,
+## no shooting through a friend, top-up with a magazine, fold up (back in the pack with its
+## rounds), a blast wrecks it. --tier=laser|plasma = with that research.
+func _sentrytest(p: Node) -> void:
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	m().hud.inventory_open = false
+	p.hp = 5000.0
+	var tier := Game.cmd_arg("tier", "")
+	if tier != "":
+		Net.mission_params["research"] = Net.mission_params.get("research", []) + (["strazni_vez", "vez_laser"] if tier == "laser" else ["strazni_vez", "vez_laser", "vez_plazma"])
+	var greys: Array = []
+	for a in m().aliens():
+		if a.race == "grey" and greys.size() < 2:
+			greys.append(a)
+		else:
+			a.queue_free()
+	for a in greys:
+		a.set_physics_process(false)
+		a._speed = 0.0
+		a.global_position = p.global_position + Vector3(0, -200, 40 + randf() * 5)
+	p.inv["p0"] = {"id": "sentry"}
+	var ss: PhysicsDirectSpaceState3D = m().get_world_3d().direct_space_state
+	p.rotation.y = 0.0
+	for k in 16:
+		var yaw := k * TAU / 16.0
+		var fw := Vector3(-sin(yaw), 0, -cos(yaw))
+		var o: Vector3 = p.global_position + Vector3(0, 0.9, 0)
+		if ss.intersect_ray(PhysicsRayQueryParameters3D.create(o, o + fw * 14.0, Game.WORLD)).is_empty() \
+				and ss.intersect_ray(PhysicsRayQueryParameters3D.create(o + Vector3(0, 0.5, 0), o + fw * 14.0 + Vector3(0, 0.5, 0), Game.WORLD)).is_empty():
+			p.rotation.y = yaw
+			break
+	p.head.rotation.x = 0.0
+	await get_tree().physics_frame
+	p._place_sentry()
+	await get_tree().create_timer(6.5).timeout
+	var st: Array = m().sentries()
+	if st.is_empty():
+		out("RESULT sentrytest placed 0")
+		get_tree().quit()
+		return
+	var s: Node = st[0]
+	var kind: String = s.kind
+	var fwd: Vector3 = -p.global_transform.basis.z
+	fwd.y = 0
+	fwd = fwd.normalized()
+	var faces: bool = (-s.global_transform.basis.z).dot(fwd) > 0.95
+	var side := Vector3(-fwd.z, 0, fwd.x)
+	# out of the way, behind and to the side
+	p.global_position = s.global_position - fwd * 3.0 + side * 3.0 + Vector3(0, 0.3, 0)
+	var g: Node = greys[0]
+	g.global_position = s.global_position + fwd * 10.0 + Vector3(0, 0.1, 0)
+	var a0: int = s.fired
+	await get_tree().create_timer(2.0).timeout
+	var still_shots: int = s.fired - a0
+	# the one behind it moves - outside the arc
+	var bk: Node = greys[1] if greys.size() > 1 else null
+	if bk:
+		bk.global_position = s.global_position - fwd * 8.0 + Vector3(0, 0.1, 0)
+		bk._speed = 1.5
+	var hb: float = bk.hp if bk else 0.0
+	g._speed = 1.5
+	var h0: float = g.hp
+	await get_tree().create_timer(4.0).timeout
+	var shots: int = s.fired - a0
+	var dealt: float = (h0 - g.hp) if not g.dead else 999.0
+	var behind_hit: float = (hb - bk.hp) if bk and not bk.dead else (999.0 if bk else -1.0)
+	var kills: int = p.kills
+	# a friend in the line of fire: it holds
+	var friendly := -1
+	var fr: Node = g if not g.dead else bk
+	if fr and not fr.dead:
+		fr.hp = 5000.0
+		fr._speed = 1.5
+		fr.global_position = s.global_position + fwd * 10.0 + Vector3(0, 0.1, 0)
+		p.global_position = s.global_position + fwd * 5.0 + Vector3(0, 0.3, 0)
+		await get_tree().create_timer(0.6).timeout
+		var a1: int = s.fired
+		await get_tree().create_timer(2.0).timeout
+		friendly = s.fired - a1
+	g.global_position = s.global_position + Vector3(0, -200, 0)
+	if bk:
+		bk.global_position = s.global_position + Vector3(0, -200, 0)
+	await get_tree().create_timer(0.5).timeout
+	# top up / fold up
+	p.global_position = s.global_position - fwd * 1.0 + Vector3(0, 0.3, 0)
+	var am: String = s.ammo_item()
+	var before: int = s.ammo
+	var topped := -1
+	if am != "":
+		p.inv["p1"] = {"id": am}
+		p._use_sentry(s)
+		await get_tree().create_timer(2.2).timeout
+		topped = s.ammo - before
+	var left: int = s.ammo
+	for k in p.inv.keys():
+		if String(p.inv[k].get("id", "")) == am:
+			p.inv.erase(k)
+	p._use_sentry(s)
+	await get_tree().create_timer(2.6).timeout
+	var slot: String = p.find_item(func(it): return it["id"] == "sentry")
+	var folded: bool = m().sentries().is_empty() and slot != ""
+	var kept: int = int(p.inv[slot].get("rounds", -1)) if slot != "" else -2
+	# again, and a blast wrecks it
+	p._place_sentry()
+	await get_tree().create_timer(6.5).timeout
+	var wrecked := false
+	if not m().sentries().is_empty():
+		var s2: Node = m().sentries()[0]
+		m().explode(s2.global_position + Vector3(0.5, 0.3, 0), 4.0, 260.0, "-", true)
+		await get_tree().create_timer(0.5).timeout
+		wrecked = m().sentries().is_empty()
+	out("RESULT sentrytest kind %s placed 1 faces %s still_shots %d shots %d dealt %.0f kills %d behind %.0f friendly %d topped %d folded %s kept %s left %d wrecked %s" % [kind, faces, still_shots, shots, dealt, kills, behind_hit, friendly, topped, folded, kept == left, left, wrecked])
+	get_tree().quit()
+
 func _fragtest(p: Node) -> void:
 	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
 		return
@@ -2444,6 +2607,39 @@ func _safeend(p: Node) -> void:
 	out("RESULT safeend finished %s hp %.1f -> %.1f shots %d stress_rise %.1f fall %.1f" % [m().finished, hp0, p.hp, shots, rise, fall])
 	get_tree().quit()
 
+## (0.7x, Ari: "odletí z mise bez úspěchu a věci se vytratí") a failed mission: who stands at the
+## transport keeps what he still carries, who stays out there (down, dead) loses all he took.
+func _failkit(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	var kit := ["rifle", "rifle_clip", "rifle_clip", "grenade", "vesta"]
+	var now := ["rifle", "rifle_clip", "vesta"]          # one clip and the grenade used up
+	m().kits[1] = kit.duplicate()
+	m().kits_now[1] = now.duplicate()
+	m().kits[77] = kit.duplicate()                       # a co-op player who walked out at the transport
+	m().kits_now[77] = now.duplicate()
+	m()._out_safe[77] = true
+	m().kits[78] = kit.duplicate()                       # ... and one who walked out in the field
+	m().kits_now[78] = now.duplicate()
+	p.global_position = m().map["evac"] + Vector3(0, 0.3, 0)
+	await get_tree().create_timer(0.3).timeout
+	var a: Dictionary = m().gear_lost(false)
+	var aboard: bool = int(a[1].get("rifle_clip", 0)) == 1 and int(a[1].get("grenade", 0)) == 1 and not a[1].has("rifle") and not a[1].has("vesta")
+	var walk_safe: bool = not a[77].has("rifle") and int(a[77].get("grenade", 0)) == 1
+	var walk_field: bool = int(a[78].get("rifle", 0)) == 1 and int(a[78].get("rifle_clip", 0)) == 2
+	var won: Dictionary = m().gear_lost(true)
+	var same_won: bool = won[1] == a[1]
+	# down far from the transport when it flies off: all of it stays there
+	p.global_position = m().map["evac"] + Vector3(40, 0.3, 0)
+	p.downed = true
+	m()._abandoned = true
+	var b: Dictionary = m().gear_lost(false)
+	var left: bool = int(b[1].get("rifle", 0)) == 1 and int(b[1].get("rifle_clip", 0)) == 2 and int(b[1].get("vesta", 0)) == 1
+	out("RESULT failkit aboard %s walk_safe %s walk_field %s same_as_won %s left_behind %s" % [aboard, walk_safe, walk_field, same_won, left])
+	get_tree().quit()
+
 ## (0.69, Ari: the game crashed flying home) a co-op mission won: the aliens gone, everyone at the
 ## Kondor, the transport for each, then out (each closes it after his own few seconds).
 func _coopevac(p: Node) -> void:
@@ -2460,7 +2656,7 @@ func _coopevac(p: Node) -> void:
 		return
 	if multiplayer.is_server() and Game.cmd_arg("walkout", "0") == "1":
 		await get_tree().create_timer(12.0).timeout
-	if multiplayer.is_server():
+	if multiplayer.is_server() and Game.cmd_arg("fail", "0") != "1":
 		for a in m().aliens():
 			if not a.dead:
 				a.damage(9999.0, a.global_position + Vector3(0, 0, 1), p)
@@ -2504,6 +2700,23 @@ func _coopevac(p: Node) -> void:
 	p.global_position = m().map["evac"] + Vector3(randf_range(-1, 1), 0.3, randf_range(-1, 1))
 	p.wants_evac = true
 	out("[EVAC] %s at the Kondor" % mode)
+	if Game.cmd_arg("fail", "0") == "1":
+		p.hp = 5000.0
+		for a in m().aliens():
+			a.set_physics_process(false)      # (they must not end it first)
+	if multiplayer.is_server() and Game.cmd_arg("fail", "0") == "1":
+		# (0.7x, Ari) a failed mission, everybody aboard with all his kit: nothing may be lost
+		await get_tree().create_timer(4.0).timeout      # (each reports what he carries every 3 s)
+		var gl: Dictionary = m().gear_lost(false)
+		var n_lost := 0
+		var n_kit := 0
+		for peer in m().kits:
+			n_kit += (m().kits[peer] as Array).size()
+			for it in gl.get(peer, {}):
+				n_lost += int(gl[peer][it])
+		out("[EVAC] fail kit players %d items %d lost %d" % [m().kits.size(), n_kit, n_lost])
+		if not m().finished:
+			m().leave_from_menu()
 	for i in 80:
 		await get_tree().create_timer(0.25).timeout
 		if m().finished:
@@ -2663,10 +2876,11 @@ func _shieldtest(p: Node) -> void:
 	if p == null or step > 0 or not m().started():
 		return
 	step = 1
+	var sid := Game.cmd_arg("shield", "stit")      # (0.80) --shield=stit_x: the alloy BSH-02
 	p.hp = 9999.0
 	p.armor = ""
 	p.inv["rh"] = {"id": "pistol", "loaded": 10}
-	p.inv["lh"] = {"id": "stit"}
+	p.inv["lh"] = {"id": sid}
 	p._update_held()
 	m().hud.inventory_open = false
 	await get_tree().create_timer(0.3).timeout
@@ -2680,12 +2894,12 @@ func _shieldtest(p: Node) -> void:
 	p.hurt(20.0, front)
 	var up: float = h1 - p.hp
 	var n := 0
-	while p.item_in("lh").get("id", "") == "stit" and n < 200:
+	while p.item_in("lh").get("id", "") == sid and n < 200:
 		p.hurt(30.0, front, true)
 		n += 1
 	var broke: bool = p.item_in("lh").is_empty()
 	# 0.57: BSH-01 against plasma, and a heavy blow knocks it aside
-	p.inv["lh"] = {"id": "stit"}
+	p.inv["lh"] = {"id": sid}
 	p._update_held()
 	p.stamina = 100.0
 	await get_tree().create_timer(0.3).timeout
@@ -2714,7 +2928,7 @@ func _shieldtest(p: Node) -> void:
 	var hp9: float = p.hp
 	p.hurt(20.0, front, false, "plasma")
 	var worn: bool = hp9 - p.hp > first + 2.0
-	out("RESULT shieldtest low %.0f up %.0f broke %s after %d plasma %.0f knock %s vest %.0f/%.0f worn %s" % [low, up, broke, n, pl, knocked, vd["vesta"], vd["pancir"], worn])
+	out("RESULT shieldtest %s low %.0f up %.0f broke %s after %d plasma %.0f knock %s vest %.0f/%.0f worn %s" % [sid, low, up, broke, n, pl, knocked, vd["vesta"], vd["pancir"], worn])
 	get_tree().quit()
 
 ## Editor animations in the game (0.52): a knife locked to the hand turns with it in a blow, a body
@@ -5919,6 +6133,26 @@ func _abase(p: Node) -> void:
 	get_viewport().get_texture().get_image().save_png("user://abase_command.png")
 	var core: Node3D = gen["core"]
 	out("core idx %d kind %s hp %s same %s" % [int(core.get_meta("break")), core.get_meta("break_kind"), core.get_meta("hp"), m().map["breakables"][int(core.get_meta("break"))] == core])
+	# (0.72.5) bullets glance off the core in sparks and take nothing; plasma takes a little
+	var hp0 := float(core.get_meta("hp"))
+	p.inv["rh"] = {"id": "rifle", "loaded": 30}
+	p._update_held()
+	var cpos: Vector3 = core.global_position
+	p.global_position = cpos + Vector3(3.0, -1.9, -1.0)
+	_aim_at(p, cpos)
+	p.head.rotation.x = p.pitch
+	for f in 3: await get_tree().process_frame
+	for k in 6:
+		p._glance_t = 0.0
+		p._shoot("rh", p.inv["rh"], Game.ITEMS["rifle"])
+		for f in 4: await get_tree().process_frame
+		if k == 0:
+			get_viewport().get_texture().get_image().save_png("user://abase_glance.png")
+	await get_tree().create_timer(0.3).timeout
+	var hp1 := float(core.get_meta("hp"))
+	m().hit_breakable(int(core.get_meta("break")), 50.0, "plasma")
+	out("core glance %d hp_bullets %s->%s plasma_hp %s" % [int(p.get_meta("glances", 0)), hp0, hp1, core.get_meta("hp")])
+	out("RESULT coreglance %s" % (int(p.get_meta("glances", 0)) >= 3 and hp1 == hp0 and float(core.get_meta("hp")) < hp1))
 	m().hit_breakable(int(core.get_meta("break")), 999.0, "explosion")
 	out("after hp %s broken %s" % [core.get_meta("hp") if is_instance_valid(core) else "freed", core.get_meta("broken", false) if is_instance_valid(core) else true])
 	await get_tree().create_timer(1.0).timeout

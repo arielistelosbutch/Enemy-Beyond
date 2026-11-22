@@ -27,6 +27,8 @@ var sel := -1
 var hover := -1
 var mode := "plan"           # plan / build
 var pick := ""               # the room chosen in the palette (build mode)
+var rebuild := false         # (Ari 2026-11-22) build mode aimed at a room that is there: rebuild it
+var _confirm := -1           # the room whose "Zbourat" was pressed once (second press tears it down)
 var map_tex: TextureRect
 var overlay: Control
 var side: VBoxContainer
@@ -163,6 +165,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		if pick != "":
 			_set_pick("")
+		elif rebuild:
+			_set_mode("plan")
 		else:
 			_close()
 	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_TAB:
@@ -176,11 +180,46 @@ func _set_mode(m: String) -> void:
 	if m == "build" and Campaign.viewer:
 		m = "plan"
 	mode = m
+	_confirm = -1
 	if mode == "plan":
 		pick = ""
-	elif sel >= 0 and String(Campaign.data["base"][sel]["type"]) != "":
+		rebuild = false
+	elif not rebuild and sel >= 0 and String(Campaign.data["base"][sel]["type"]) != "":
 		sel = -1
 	refresh()
+
+## (Ari 2026-11-22) Build mode aimed at the selected room: what goes in its place.
+func _start_rebuild() -> void:
+	if sel < 0 or Campaign.viewer:
+		return
+	rebuild = true
+	pick = ""
+	_set_mode("build")
+
+## Two presses: the first asks, the second tears it down.
+func _do_demolish() -> void:
+	if sel < 0 or Campaign.demolish_why(sel) != "":
+		return
+	if _confirm != sel:
+		_confirm = sel
+		refresh()
+		return
+	_confirm = -1
+	if Campaign.demolish(sel):
+		Game.play_ui(self, "ui_click", -6)
+		refresh()
+		_render_map()
+
+func _do_rebuild() -> void:
+	if not rebuild or pick == "" or sel < 0 or Campaign.rebuild_why(sel, pick) != "":
+		return
+	if Campaign.rebuild(sel, pick):
+		Game.play_ui(self, "ui_click", -6)
+		pick = ""
+		rebuild = false
+		mode = "plan"
+		refresh()
+		_render_map()
 
 func _set_pick(f: String) -> void:
 	pick = f
@@ -366,6 +405,9 @@ func _draw_overlay() -> void:
 			if i == hover and i != sel:
 				overlay.draw_rect(full.grow(1), Color(1, 1, 1, 0.45), false, -1)
 			if i == sel:
+				if rebuild and pick != "":
+					overlay.draw_rect(r, Color(0.04, 0.05, 0.07, 0.8))
+					_ghost(r, pick, 1.0)
 				_corners(full.grow(1), ACCENT)
 
 ## A room in the plan before it is built: gold wash, dashed outline, the name.
@@ -447,7 +489,13 @@ func _map_input(event: InputEvent) -> void:
 		if mode == "build" and pick != "" and i == sel and _free_spot(i):
 			_do_build()                                 # second click on the same place = build
 			return
+		if rebuild and i == sel:
+			if pick != "":
+				_do_rebuild()                           # second click on the room = rebuild it
+			return
 		sel = i
+		_confirm = -1
+		rebuild = false
 		if String(Campaign.data["base"][i]["type"]) != "" and mode == "build":
 			mode = "plan"                               # a finished room: look at it
 			pick = ""
@@ -487,7 +535,9 @@ func refresh() -> void:
 		UiSkin.row(tab_btns[k], k == mode)
 		tab_btns[k].alignment = HORIZONTAL_ALIGNMENT_CENTER
 	tab_btns["build"].disabled = Campaign.viewer
-	if mode == "build":
+	if rebuild:
+		hint_lbl.text = "Vlevo vyber novou místnost    LTM na ni znovu = přestavět    PTM zrušit    Esc zpět"
+	elif mode == "build":
 		hint_lbl.text = "LTM vybrat místo, znovu = postavit    PTM zrušit    Zlatá místa navazují na chodby    Tab přehled"
 	else:
 		hint_lbl.text = "LTM vybrat místnost    Tab stavět    Esc zavřít"
@@ -530,8 +580,12 @@ func _palette() -> void:
 			r.offset_right = -5
 			r.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			b.add_child(r)
-			var why := _why_not(f)
-			if not Campaign.facility_open(f):
+			var why := Campaign.rebuild_why(sel, f) if rebuild else _why_not(f)
+			if rebuild and f == String(Campaign.data["base"][sel]["type"]):
+				r.text = "tady je"
+				r.add_theme_color_override("font_color", Color(DIM, 0.7))
+				b.disabled = true
+			elif not Campaign.facility_open(f):
 				r.text = "výzkum"
 				r.add_theme_color_override("font_color", Color(DIM, 0.7))
 				b.disabled = true
@@ -540,13 +594,16 @@ func _palette() -> void:
 				r.add_theme_color_override("font_color", Color(DIM, 0.7))
 				b.disabled = true
 			else:
-				r.text = "%s · %d d" % [money(Campaign.facility_cost(f)), int(Campaign.facility_days(f))]
+				r.text = "%s · %d d" % [money(Campaign.rebuild_cost(sel, f) if rebuild else Campaign.facility_cost(f)), int(Campaign.facility_days(f))]
 				r.add_theme_color_override("font_color", UiSkin.BAD if why != "" and not Campaign.viewer else DIM)
 				b.disabled = Campaign.viewer
 			b.pressed.connect(func(): _set_pick("" if pick == f else f))
 
 ## Build mode, right: what the chosen room costs, does and when it is done.
 func _build_panel() -> void:
+	if rebuild and sel >= 0:
+		_rebuild_panel()
+		return
 	if pick == "":
 		_section(side, "Stavění")
 		if Campaign.viewer:
@@ -583,6 +640,46 @@ func _build_panel() -> void:
 	go.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	go.disabled = why != ""
 	var no := _btn(side, "Zrušit výběr", func(): _set_pick(""), 8)
+	UiSkin.ghost(no)
+	no.alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+## Rebuild, right: the room that goes, the room that comes, what it costs after the refund.
+func _rebuild_panel() -> void:
+	var old := String(Campaign.data["base"][sel]["type"])
+	var oname := String(Campaign.FACILITIES[old]["name"])
+	_section(side, "Přestavba")
+	if pick == "":
+		var n0 := _lbl(side, oname, TEXT, 11)
+		n0.add_theme_font_override("font", UiSkin.font(true))
+		_lbl(side, "Vlevo vyber, co tu bude místo ní. Stará místnost se vyklidí, část vybavení se prodá.", TEXT, 8)
+		_kv("Vratka", "+%s kr" % money(Campaign.refund_of(sel)), UiSkin.OK)
+		var why0 := Campaign.demolish_why(sel, true)
+		if why0 != "":
+			_lbl(side, why0, UiSkin.BAD, 8)
+	else:
+		var fi: Dictionary = Campaign.FACILITIES[pick]
+		var n := _lbl(side, "%s → %s" % [String(Campaign.FACILITIES[old].get("short", oname)), String(fi.get("short", fi["name"]))], TEXT, 10)
+		n.add_theme_font_override("font", UiSkin.font(true))
+		_lbl(side, String(fi["desc"]), DIM, 8)
+		var eff := _effect(pick)
+		if not eff.is_empty():
+			_kv(eff[0], eff[1], UiSkin.OK)
+		var cost := Campaign.rebuild_cost(sel, pick)
+		var cr := int(Campaign.data["credits"])
+		_kv("Cena", money(Campaign.facility_cost(pick)) + " kr")
+		_kv("Vratka", "+%s kr" % money(Campaign.refund_of(sel)), UiSkin.OK)
+		_kv("Rozpočet", "%s → %s" % [money(cr), money(cr - cost)], UiSkin.BAD if cr < cost else TEXT)
+		var days := Campaign.facility_days(pick)
+		_kv("Doba", "%d dní" % int(days) if days >= 5 else "%d dny" % int(days) if days >= 2 else "%d den" % int(days))
+		_kv("Hotovo", date_of(float(Campaign.data["day"]) + days))
+		var why := Campaign.rebuild_why(sel, pick)
+		if why != "":
+			_lbl(side, why, UiSkin.BAD if why.begins_with("Na tohle") else DIM, 8)
+		var go := _btn(side, "Přestavět", _do_rebuild, 9)
+		UiSkin.primary(go)
+		go.alignment = HORIZONTAL_ALIGNMENT_CENTER
+		go.disabled = why != ""
+	var no := _btn(side, "Zpět", func(): _set_mode("plan"), 8)
 	UiSkin.ghost(no)
 	no.alignment = HORIZONTAL_ALIGNMENT_CENTER
 
@@ -670,6 +767,28 @@ func _room_panel() -> void:
 		_hangar()
 	elif ty == "dilna" and float(c["days"]) <= 0.0:
 		_workshop()
+	if not Campaign.viewer and not ty in Campaign.FIXED_ROOMS:
+		_room_actions(float(c["days"]) > 0.0)
+
+## (Ari 2026-11-22) Rebuild or tear down the selected room.
+func _room_actions(building: bool) -> void:
+	_section(side, "Úpravy")
+	var back := Campaign.refund_of(sel)
+	var why := Campaign.demolish_why(sel)
+	var why_r := Campaign.demolish_why(sel, true)
+	var rb := _btn(side, "Přestavět na jinou...", _start_rebuild, 8)
+	rb.name = "Rebuild"
+	rb.disabled = why_r != ""
+	var label := "Zrušit stavbu" if building else "Zbourat"
+	if _confirm == sel:
+		label = "Opravdu? %s (+%s kr)" % [label.to_lower(), money(back)]
+	var db := _btn(side, "%s (+%s kr)" % [label, money(back)] if _confirm != sel else label, _do_demolish, 8)
+	db.name = "Demolish"
+	db.disabled = why != ""
+	if _confirm == sel:
+		db.add_theme_color_override("font_color", UiSkin.BAD)
+	if why != "":
+		_lbl(side, why, DIM, 8)
 
 func _head(s: String) -> void:
 	_section(side, s)

@@ -31,6 +31,7 @@ run pass_giant  300 h "passcheck .* 0 blocked"             --autotest=passcheck 
 run pass_wreck  300 h "passcheck .* 0 blocked"             --autotest=passcheck --mtype=crash --ufo=supply --size=huge --biome=farm
 run air_giant   200 x "AIR-air\] end outcome"            --autotest=air --ufo=battleship
 run airfx       200 x "RESULT airfx lead true hit_a true cracks [1-9] hit_b false .* crash true over true" --autotest=airfx
+run escort_kit 200 h "RESULT escortkit escort gun laser heavy laser_cannon hawk true fired [1-9]" --autotest=escort --kit=1 --gun=laser --heavy=laser_cannon --hawks=1
 for sd in 1 2 3; do
 run pass_ind_$sd  200 h "passcheck .* 0 blocked"           --autotest=passcheck --mtype=sabotage --biome=industrial --seed=$sd
 run pass_town_$sd 200 h "passcheck .* 0 blocked"           --autotest=passcheck --mtype=terror --biome=town --seed=$sd
@@ -40,8 +41,14 @@ run menu_ui     300 x "\[UI\] ready: 0"                    --autotest=ui
 run mods_ui     200 x "\[MODS\] bought true"              --autotest=modsui
 run talent_ui   200 x "\[TALENT\] skip true chain true rank true spent true eye true drone true" --autotest=talentui
 run dice        60 s "RESULT dicetest ok"                tools/test/dicetest.gd
+run caprank     90 s "RESULT caprank ok"                 tools/test/caprank.gd
+run sickbay     60 s "RESULT sickbaytest ok"             tools/test/sickbaytest.gd
+run debug       60 s "RESULT debugtest ok"               tools/test/debugtest.gd
 run firemode    60 s "RESULT firemode ok"                tools/test/firemodetest.gd
 run mtypes      60 s "RESULT missiontypes ok"            tools/test/missiontypes.gd
+run alloy       60 s "RESULT alloytest ok"               tools/test/alloytest.gd
+run stack       60 s "RESULT stacktest ok"               tools/test/stacktest.gd
+run basesell    60 s "RESULT basesell ok"                tools/test/basesell.gd
 run convoy      300 h "RESULT convoytest saved true banner true .* finished true" --autotest=convoytest --mtype=convoy --biome=forest --hold=90
 run convoy_fail 300 h "Vetřelci rozbili náklad konvoje"  --autotest=convoytest --mtype=convoy --biome=farm --group=bijci --fail=1
 run pilot       300 h "END\] success=true"               --autotest=objtest --mtype=pilot --biome=forest
@@ -53,7 +60,7 @@ run presets     200 x "\[PRESET\] first false list true merc true levels true di
 run sights     1000 x "scope mode=scope on=true"          --autotest=sightshot --day=1 --fast=1
 run menu_flick  200 x "RESULT menuflicker 0"               --autotest=menuflicker
 run geo_ui      300 x "\[UI\] geo_ency_grey: 0"            --autotest=uigeo
-run geo_events  150 x "RESULT geoevents shown true rows 3 stopped true back true full 8 viewer 1 bar true" --autotest=geoevents
+run geo_events  150 x "RESULT geoevents shown true rows 3 stopped true back true slow true full 8 viewer 1 bar true" --autotest=geoevents
 run geo_models  120 x "RESULT geomodels ships 5 crafts 3 models 8"   --autotest=geomodels
 run base_pick   120 x "RESULT basepick picking true frozen true bloc na place Texas credits 1200->1500 near [1-9][0-9]/40 running true"   --autotest=basepick
 run mission_ui  250 x "\[UI\] m_result: 0"                 --autotest=uimission
@@ -68,12 +75,13 @@ run base_attack 400 x "RESULT basewalk 16"                 --autotest=basewalk -
 run base_fly    300 h "RESULT basefly top [0-9.]+ above 0 inside 0 .* unreachable 0" --autotest=basefly --attack=1 --crew=levit,levit,levit_velitel,grey
 run gameover    150 x "RESULT gameover shown true had_save true save_gone true closed true archived [1-9][0-9]* ufo 1 races 6 fallen 15 why base bad 0" --autotest=gameover
 run base_def    120 h "RESULT basedef raids [1-2] first ([7-9][0-9]|1[0-9][0-9])\.[0-9] won_lost false fail_lost true konec true ignored true ignored_lost true" --autotest=basedef
-run alienbase   400 x "RESULT abase"                       --autotest=abase --mtype=alienbase
+run alienbase   400 x "RESULT coreglance true"            --autotest=abase --mtype=alienbase
 run fire        450 x "RESULT fireshot"                    --autotest=fireshot
 run doors       300 x "RESULT doorshot"                    --autotest=doorshot --biome=farm
 run blastdoor   300 h "RESULT blastdoor OK"                --autotest=blastdoor
 run navcache    200 h "RESULT navcache same true"         --autotest=navcache --mtype=landed --ufo=battleship --seed=2
 run perf        200 h "RESULT perf frames"                --autotest=perf --mtype=landed --ufo=battleship --seed=2 --dur=25 --kill=1
+run gunlag      400 h "RESULT gunlag minigun zaznam true .* navic -?[0-4]\.[0-9] ms" --autotest=gunlag --biome=town --seed=3 --gun=minigun --crew=grey,grey,grey,jestetan,jestetan,lihnoun,lihnoun,bijec,levit,ohar
 run farview     300 x "RESULT farview"                   --autotest=farview --mtype=terror --biome=town --seed=3
 run loadprog  300 x "RESULT loadprog parked true same true signals true back_ms [0-9]+ loading_on_back false bar 1.00 .* dropped true" --autotest=loadprog
 run cart      120 h "RESULT carttest paid \\[true, true, 2, 1, 3, 0\\] kept \\[true, true, true, 51\\]" --autotest=carttest
@@ -99,6 +107,17 @@ pair coop_pot     pothost potclient     "RESULT potpaid pothost paid 315 money \
 pair coop_heal    coophealhost coophealclient "RESULT coopheal host ok" "client t=10 hp [0-9.]+ bleeding 0.00"  7902
 pair safe_out   safeouthost safeoutclient "RESULT safeout host out true players 1 shots 0" "RESULT safeout client finished true hp ([0-9.]+) -> \\1" 7935
 pair coop_evac  coopevachost coopevacclient "reinf cleared: hidden true back true" "client back in the menu, online" 7937
+# (0.7x, Ari) a failed mission, both fly home with all their kit: nothing of it may be lost
+FAILARGS="--fail=1 --reinf=0"
+timeout 120 $G --headless --path . -- --autotest=coopevachost --port=7983 $FAILARGS > $LOG/coop_failkit_host.log 2>&1 &
+fkp=$!; sleep 1
+timeout 120 $G --headless --path . -- --autotest=coopevacclient --port=7983 $FAILARGS > $LOG/coop_failkit_client.log 2>&1
+wait $fkp
+if [ "$(cat $LOG/coop_failkit_*.log | grep -c 'SCRIPT ERROR')" = 0 ] && grep -qE "fail kit players 2 items [1-9][0-9]* lost 0" $LOG/coop_failkit_host.log && grep -q "client back in the menu, online" $LOG/coop_failkit_client.log; then
+  pass=$((pass+1)); report+="OK    coop_failkit\n"
+else
+  fail=$((fail+1)); report+="CHYBA coop_failkit\n"
+fi
 pair coop_base    lbhost lbclient       "start_mission"            "RESULT lb lbclient players 2" 7903
 pair host_base    hbhost hbclient       "RESULT hb drop hbhost players 2" "RESULT hbclient globe true day \\+0\\.0[1-9]" 7951
 pair coop_wipe    coopwipehost coopwipeclient "globe ready"     "END\\] leave"                  7904
@@ -106,6 +125,7 @@ pair coop_gameover gohost goclient "RESULT gohost shown true save_gone true onli
 pair coop_ready readyhost readyclient "RESULT readyhost early false window true ran true" "RESULT readyclient saw 'Výsadek: test' panel '.*' me true done true" 7938
 pair coop_cart  econhost econclient  "ECON-HOST\\] credits=1200" "RESULT cart client my=42 clips \\+2 grenades on order 0" 7952
 pair coop_stock stockhost stockclient "RESULT stockhost claim true mine 0 names 'Klient 1' back 1" "RESULT stockclient grenades 4 -> 9 fast true redrawn true" 7953
+pair coop_sick  sickhost sickclient   "RESULT sickhost bravo true locker 2 record 2" "RESULT sickclient alfa 2 sick 1 bravo 2 alfa_left 0 stash [56] -> [56]" 7971
 pair geo_live geolivehost geoliveclient "globe ready \(viewer false\)" "RESULT geolive day \+0\.0[1-9][0-9]* craft moved [1-9]" 7912
 pair ai_coop    aimphost aimpclient "RESULT aimp old 0 players 2 hide [1-9]" "AIMP aimpclient" 7913
 # co-op with four mercenaries: a host and three clients (0.63: the squads know about all of them)
@@ -127,9 +147,13 @@ quad() {   # name, expected in host log, port
 }
 quad ai_coop4 "RESULT aimp old 0 players 4 hide [1-9]" 7915
 pair lobby_kick kickhost kickclient "RESULT kick summary rows 2 ping [0-9]+ mic open after 1 rejoined false" "RESULT kick client .*vyhodil.*za 5 min" 7914
+pair coop_escort_kit escorthost escortclient "RESULT escortkit escorthost gun laser heavy plasma_cannon hawk true fired [1-9]" "RESULT escortkit escortclient gun laser heavy plasma_cannon hawk false fired [1-9]" 7974
+pair coop_air_sfx airhost airclient "RESULT airsfx airhost shots [1-9][0-9]* missiles [1-9]" "RESULT airsfx airclient shots [1-9][0-9]* missiles [1-9]" 7973
 pair ufo_hull hullhost hullclient "RESULT ufohull raider rays [0-9]+ leak 0\.[0-4] % hug_inside 0 seen 0" "RESULT ufohull raider rays [0-9]+ leak 0\.[0-4] % hug_inside 0 seen 0" 7917
 pair coop_leak leakhost leakclient "RESULT leakhost .* stone_leak 0\.[0-4] %" "RESULT leakclient .* stone_leak 0\.[0-4] %" 7958
 pair coop_flare flarehost flareclient "RESULT coopflare flarehost seen (59|6[0-9]) pos \\(-?[0-9.]+, [0-9]" "RESULT coopflare flareclient seen (59|6[0-9]) pos \\(-?[0-9.]+, [0-9]" 7918
+pair coop_quiet quiethost quietclient "RESULT quietcoop host listener true quiet_sound true quiet_heard false loud_heard true" "RESULT quietcoop client quiet_shots 1" 7982
+pair coop_sentry sentryhost sentryclient "RESULT coopsentry sentryhost seen true ammo 33 folded true back false" "RESULT coopsentry sentryclient seen true ammo 33 folded true back true" 7972
 pair voice_net vnethost vnetclient "RESULT vnet received 43 lost [0-9]+ dry 0" "RESULT vnet client sent 43" 7916
 # (0.61) a client with an other version of the game is not let in, both are told why
 timeout 60 $G --headless --path . -- --autotest=host --port=7915 > $LOG/version_host.log 2>&1 &
@@ -168,6 +192,8 @@ run interiors_$bm 200 h "RESULT interiors [0-9]+ houses, pockets 0, stairs_bad 0
 done
 run spectate  200 x "RESULT spectate active true eyes true next true auto true running true" --autotest=spectate --mtype=terror --biome=farm --seed=3 --day=1
 run daze      150 h "RESULT dazetest home false frozen ([0-3]?[0-9]) % .* cooldown true wall true" --autotest=dazetest --crew=ohar,grey --mtype=crash --biome=farm --seed=3
+run quiet     240 h "RESULT quiettest guns [1-9][0-9]* bad 0 knife true steps true" --autotest=quiettest --crew=grey,grey,grey,grey,grey,grey,grey,grey --mtype=crash --biome=farm --seed=3
+run scan    200 h "RESULT scantest base true upgraded true belt true" --autotest=scantest --mtype=terror --biome=town --seed=3 --day=1
 run daze_base 150 h "RESULT dazetest home true frozen ([0-2]?[0-9]) % .* cooldown true wall true" --autotest=dazebase --attack=1 --crew=ohar,grey
 run chain     200 h "RESULT chaintest solo true longest [0-4]\.[0-9] s frozen ([0-2]?[0-9]) % .* ko_again false blind 1\.00/1\.00/0\.00" --autotest=chaintest --crew=grey --mtype=crash --biome=farm --seed=3
 run chain_base 200 h "RESULT chaintest solo true longest [0-4]\.[0-9] s frozen ([0-2]?[0-9]) % .* ko_again false blind 1\.00/1\.00/0\.00" --autotest=chainbase --attack=1 --crew=grey
@@ -192,6 +218,8 @@ run civdeath    150 h "RESULT civdeath 10 deaths bad 0" --autotest=civdeath --mt
 # 0.66 Facelift I: the drone's radar in solo, the transport after a mission, the people of the base, the loading screen
 run flare       200 h "RESULT flaretest life (59|6[0-9]) lit true moved 0.00" --autotest=flaretest --mtype=crash --biome=farm
 run claymore    200 h "RESULT claytest placed 1 faces true levit_over true fired true walker_hit true levit_in_wedge [1-9][0-9]* behind_6m 0" --autotest=claytest --mtype=crash --biome=farm --crew=grey,grey,levit --seed=3
+run sentry      200 h "RESULT sentrytest kind rifle placed 1 faces true still_shots 0 shots [1-9][0-9]* dealt [1-9][0-9]* kills 1 behind 0 friendly 0 topped 20 folded true kept true left [0-9]* wrecked true" --autotest=sentrytest --mtype=crash --biome=farm --crew=grey,grey --seed=3
+run sentry_pl   200 h "RESULT sentrytest kind plasma placed 1 faces true still_shots 0 shots [1-9][0-9]* dealt [1-9][0-9]* kills 1 behind 0 friendly 0 topped 20 folded true kept true left [0-9]* wrecked true" --autotest=sentrytest --mtype=crash --biome=farm --crew=grey,grey --seed=3 --tier=plasma
 run frag        200 h "RESULT fragtest wood [5-8]/8 bare [0-8]/8 hurt6m [1-9]" --autotest=fragtest --mtype=crash --biome=farm --crew=grey,grey
 run radar       150 h "RESULT radar solo true scanner true kit_scanner false kit_radio false" --autotest=radartest --mtype=crash --biome=farm --day=1
 run rampcheck   200 h "RESULT rampcheck shut true open true" --autotest=rampcheck --prep=1
@@ -213,6 +241,7 @@ run tileeditor 150 x "RESULT tileeditor parts [0-9]+ click true moved true turne
 run leaveany    150 h "RESULT leaveany early_block true done true finished true" --autotest=leaveany
 run reinf_early 90 h "success=true why=Úkol splněn, ale tým odletěl před posilami" --autotest=coopevachost --port=7939 --players=1 --reinf=early
 run safeend     150 h "RESULT safeend finished true hp ([0-9.]+) -> \\1 shots 0 stress_rise 20.1" --autotest=safeend
+run failkit     90 h "RESULT failkit aboard true walk_safe true walk_field true same_as_won true left_behind true" --autotest=failkit
 run suit        100 h "RESULT suittest down true"        --autotest=suittest --group=sedaci --mtype=crash
 run levgrab     100 h "RESULT levgrab ko true carried true" --autotest=levgrab --group=levite --mtype=crash
 run mirotest   150 h "RESULT mirotest frenzy true .* mending true .* healed true" --autotest=mirotest --group=levite --mtype=landed
@@ -233,7 +262,8 @@ run koltest    200 h "RESULT koltest found true up true top [0-9.]+ down true" -
 run lasertest  120 h "RESULT lasertest drained true waiting true ready true burst true pr_auto true mg_dry true mg_full true edge true" --autotest=lasertest --mtype=landed
 run lcshot     150 h "RESULT lcshot hit true shards true hum true ready true" --autotest=lcshot --mtype=landed
 run plasmatest 150 h "RESULT plasmatest pistol 20 hot true interlock true cannon 4 minigun true rifle 10 grenade true seared true mags_left 0" --autotest=plasmatest --mtype=landed
-run shieldtest 100 h "RESULT shieldtest low 10 up 2 broke true after [0-9]+ plasma 4 knock true vest 16/13 worn true" --autotest=shieldtest --mtype=landed
+run shieldtest 100 h "RESULT shieldtest stit low 10 up 2 broke true after [0-9]+ plasma 4 knock true vest 16/13 worn true" --autotest=shieldtest --mtype=landed
+run shield_x  100 h "RESULT shieldtest stit_x low 10 up 1 broke true after [0-9]+ plasma 2 knock true vest 16/13 worn true" --autotest=shieldtest --mtype=landed --shield=stit_x
 run gearloss    60 h "RESULT gearloss order_wait true arrived true sold true won_grenades 4->3 clips_kept true lost_grenades 1 vests 1" --autotest=gearloss
 run workshoptest 60 h "RESULT workshoptest ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok$" --autotest=workshoptest
 run nadetest   150 h "RESULT nadetest old 0 away [4-8] of 8" --autotest=nadetest --mtype=crash --biome=farm --seed=3 --hour=13

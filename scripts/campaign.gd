@@ -275,13 +275,20 @@ const RESEARCH := {
 	# weapons
 	"zenijni": {"name": "Ženijní výbava", "cost": 150, "days": 2.0, "needs": {}, "branch": "zbrane", "icon": "mine",
 		"desc": "X-EXP-001. Směrová mina MC-18 typu Claymore: postaví se na nožičky čelem k nepříteli a před ni se natáhne nástražný drát. Kdo o něj zakopne, dostane plný klín střepin. Odemkne ji ve zbrojnici."},
+	# (0.80 Ari) strážní věž: nasazení jako Claymore, zbraň na ní lepší s výzkumem
+	"strazni_vez": {"name": "Strážní věž", "cost": 400, "days": 5.0, "needs": {"research": ["zenijni"]}, "branch": "zbrane", "icon": "sentry",
+		"desc": "X-EXP-002. Trojnožka s puškou a čidlem pohybu: postaví se na zem, hlídá výseč před sebou a sama střílí na vetřelce. Naše vojáky pozná podle odpovídače v helmě. Odemkne ji ve zbrojnici."},
+	"vez_laser": {"name": "Laserová věž", "cost": 350, "days": 4.0, "needs": {"research": ["strazni_vez", "laser"]}, "branch": "zbrane", "icon": "sentry",
+		"desc": "X-EXP-003. Na věž patří laser z našich nových zbraní: střílí pomaleji, ale nepotřebuje náboje - článek se po každé ráně sám nabije."},
+	"vez_plazma": {"name": "Plazmová věž", "cost": 500, "days": 5.0, "needs": {"research": ["vez_laser", "plazma"]}, "branch": "zbrane", "icon": "sentry",
+		"desc": "X-EXP-004. Plazmový emitor na věži: pomalé, ale ničivé rány, náboje nepotřebuje. Silnější protivníky zastaví i jediná věž."},
 	"tezke": {"name": "Těžké zbraně", "cost": 300, "days": 4.0, "needs": {}, "branch": "zbrane", "icon": "autocannon",
 		"desc": "Odemkne těžký kanón, minigun, odstřelovací pušku a průbojné a zápalné rakety."},
 	"rozbor_plazma": {"name": "Zbraně vetřelců", "cost": 250, "days": 3.0, "needs": {"loot": ["a_pistol", "a_rifle", "a_heavy"]}, "branch": "zbrane", "icon": "a_pistol",
 		"desc": "X-WEP-000. První rozbor ukořistěných zbraní vetřelců: pistole, pušky, těžká děla, granáty. Vyrobit ani bezpečně používat je zatím neumíme, ale otevírá se cesta k laseru a plazmě."},
 	# 0.57: X-WEP-001 - our guns, their energy. No magazines, but after a shot the cell has to charge.
 	"laser": {"name": "Laserové zbraně", "cost": 400, "days": 5.0, "needs": {"research": "rozbor_plazma"}, "branch": "zbrane", "icon": "laser_rifle",
-		"desc": "X-WEP-001. Naše zbraň, jejich energetika: žádné náboje ani zásobníky, článek se po výstřelu sám nabije - a do té doby zbraň nevystřelí. Otevře výzkum jednotlivých laserových zbraní."},
+		"desc": "X-WEP-001. Naše zbraň, jejich energetika: žádné náboje ani zásobníky, článek se po výstřelu sám nabije - a do té doby zbraň nevystřelí. Otevře výzkum jednotlivých laserových zbraní. Laserem jde konečně řezat i jejich slitinu: dílna z ní udělá štít BSH-02."},
 	"energo_nuz": {"name": "Energo nůž", "cost": 250, "days": 3.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "energo_nuz",
 		"desc": "X-WEP-002. EN-01: bojový nůž, jehož ostří rozžhaví laserové emitory. Pár silných zásahů, pak se článek několik vteřin nabíjí."},
 	"laser_pistole": {"name": "Laserová pistole", "cost": 300, "days": 4.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "laser_pistol",
@@ -314,7 +321,7 @@ const RESEARCH := {
 		"desc": "Vysílačka zabudovaná do helmy: mluvíš do éteru bez ruky na vysílačce. Odolnější proti rušení."},
 	# 0.72 (Ari): the detector's picture on the helmet - the detector itself can stay on the belt
 	"detektor_opasek": {"name": "Displej detektoru v helmě", "cost": 200, "days": 3.0, "needs": {}, "branch": "material", "icon": "scanner",
-		"desc": "Malý zelený displej na rameni helmy, kabelem k detektoru pohybu MD-01. Detektor pak stačí mít na opasku: obraz je vidět pořád a ruce zůstanou na zbrani. Pípá dál."},
+		"desc": "Malý zelený displej na rameni helmy, kabelem k detektoru pohybu MD-01. Detektor pak stačí mít na opasku: obraz je vidět pořád a ruce zůstanou na zbrani. Detektory týmu se navzájem spárují a pohyb vlastních lidí odfiltrují - na displeji zůstane jen to ostatní. Pípá dál."},
 	"slitiny": {"name": "Vetřelecké slitiny", "cost": 300, "mk": 20, "days": 5.0, "needs": {"loot": "slitiny"}, "branch": "material", "icon": "a_pack",
 		"desc": "Rozbor jejich kovu z trupů a zbrojí. Sami ho zatím vyrobit neumíme - co se dá použít, přivezeme z vraků. Otevře cestu k experimentální vestě, pancéřování letadel a hybridní technice."},
 	"pancir_letadel": {"name": "Pancéřování letadel", "cost": 450, "days": 5.0, "needs": {"research": "slitiny"}, "branch": "lode", "icon": "dropship",
@@ -414,20 +421,20 @@ const SHOP := {
 	"laser_pistol": 600, "laser_rifle": 1200, "laser_cannon": 1800, "laser_minigun": 2200, "energo_nuz": 450,
 	"rifle": 500, "sniper": 900, "sniper_clip": 70, "shotgun": 500, "magnum": 440, "autocannon": 1200, "minigun": 1500, "rocket_launcher": 1300,
 	"knife": 120, "stun_baton": 360, "scanner": 600, "radio": 80, "nvg": 700, "plasma_rifle": 1800, "plasma_cell": 180, "plasma_pistol": 1200, "plasma_cannon": 3000, "plasma_minigun": 3200, "plasma_grenade": 400,
-	"vesta": 600, "stit": 700, "pancir": 1300,
+	"vesta": 600, "stit": 700, "stit_x": 1400, "pancir": 1300, "sentry": 900,
 }
-const LOCKED_BY := {"mine": "zenijni", "autocannon": "tezke", "ac_clip": "tezke",
+const LOCKED_BY := {"mine": "zenijni", "sentry": "strazni_vez", "autocannon": "tezke", "ac_clip": "tezke",
 	"minigun": "tezke", "minigun_belt": "tezke", "rocket_ap": "tezke", "rocket_inc": "tezke",
 	"sniper": "tezke", "sniper_clip": "tezke",
 	"plasma_rifle": "plazma_puska", "plasma_cell": "plazma", "plasma_pistol": "plazma_pistole", "plasma_grenade": "plazma_granat",
 	"plasma_cannon": "plazma_kanon", "plasma_minigun": "plazma_minigun",
 	"laser_pistol": "laser_pistole", "laser_rifle": "laser_puska", "laser_cannon": "laser_tezky",
 	"laser_minigun": "laser_minigun", "energo_nuz": "energo_nuz",
-	"pancir": "pancir"}
+	"pancir": "pancir", "stit_x": "laser"}
 ## Alien-tech items also cost Moskovium 115 (the element that powers their ships).
 const SHOP_MK := {"plasma_rifle": 25, "plasma_cell": 3, "laser_cannon": 6, "laser_minigun": 6, "plasma_pistol": 12, "plasma_cannon": 40, "plasma_minigun": 40, "plasma_grenade": 4}
 ## ...and alloys from the wrecks (we cannot make them yet - Vetřelecké slitiny, X-MAT-001).
-const SHOP_AL := {"pancir": 6, "laser_cannon": 4, "plasma_rifle": 4, "plasma_cannon": 6, "plasma_minigun": 6}
+const SHOP_AL := {"pancir": 6, "stit_x": 4, "laser_cannon": 4, "plasma_rifle": 4, "plasma_cannon": 6, "plasma_minigun": 6}
 ## What the team brings home from a won mission (collected automatically).
 ## Machines that blow up when they fall: what is left are scraps. After this many won missions
 ## with one shot down the workshop puts a whole one together (that counts as the body for research).
@@ -592,6 +599,8 @@ func load_campaign() -> bool:
 			for rid in ["laser_pistole", "laser_puska"]:
 				if not rid in done:
 					done.append(rid)
+		_merge_orders()          # (2026-11-22) the same item on several workshop lines -> one line
+		_workshop_eta()
 	active = not data.is_empty()
 	# (0.57) the game went down in the middle of a mission (Alt+F4, a crash): it is not waiting on
 	# the globe to be tried again - it counts as lost, like walking out of it from the menu
@@ -1292,9 +1301,11 @@ func buy_hawk() -> bool:
 	if not can_make_hawk():
 		return false
 	var fresh := hawk_new()
-	data["credits"] = int(data["credits"]) - hawk_price()
+	var price_paid := hawk_price()
+	data["credits"] = int(data["credits"]) - price_paid
 	_pay(int(CRAFT_MAKE["jestrab"]["al"]), int(CRAFT_MAKE["jestrab"]["mk"]))
-	_queue("craft_jestrab", float(CRAFT_MAKE["jestrab"]["days"]) * time_k(), {"new": fresh})
+	_queue("craft_jestrab", float(CRAFT_MAKE["jestrab"]["days"]) * time_k(), {"new": fresh},
+		{"cr": price_paid, "al": int(CRAFT_MAKE["jestrab"]["al"]), "mk": int(CRAFT_MAKE["jestrab"]["mk"])})
 	_log("Dílna začala stavět Jestřába." if fresh else "Dílna začala přestavovat Sokol na Jestřába.")
 	save()
 	changed.emit()
@@ -1546,7 +1557,8 @@ func _learn_habits(kits: Dictionary) -> void:
 			continue
 		if not h.has(who):
 			h[who] = {}
-		for it in kits[peer]:
+		for it0 in kits[peer]:
+			var it := "stit" if String(it0) == "stit_x" else String(it0)      # (a shield is a shield to them)
 			if it in HABIT_GEAR:
 				h[who][it] = float(h[who].get(it, 0.0)) + 1.0
 	data["habits"] = h
@@ -1972,9 +1984,10 @@ func make_upgrade(id: String) -> bool:
 	if not can_make_upgrade(id):
 		return false
 	var u: Dictionary = UPGRADES[id]
-	data["credits"] = int(data["credits"]) - upgrade_price(id)
+	var cr := upgrade_price(id)
+	data["credits"] = int(data["credits"]) - cr
 	_pay(int(u.get("al", 0)), int(u.get("mk", 0)))
-	_queue("up_" + id, float(u["days"]) * time_k())
+	_queue("up_" + id, float(u["days"]) * time_k(), {}, {"cr": cr, "al": int(u.get("al", 0)), "mk": int(u.get("mk", 0))})
 	_log("Dílna začala vyrábět: " + String(u["name"]) + ".")
 	save()
 	changed.emit()
@@ -2122,8 +2135,139 @@ func build(index: int, ftype: String) -> bool:
 	if cell["type"] != "" or int(data["credits"]) < facility_cost(ftype) or not can_build_at(index) or not facility_open(ftype):
 		return false
 	data["credits"] = int(data["credits"]) - facility_cost(ftype)
-	data["base"][index] = {"type": ftype, "days": facility_days(ftype)}
+	data["base"][index] = {"type": ftype, "days": facility_days(ftype), "paid": facility_cost(ftype)}
 	_log("Stavba zahájena: " + f["name"])
+	save()
+	changed.emit()
+	return true
+
+# ---- (Ari 2026-11-22) tearing a room down, building another one in its place ----------------------
+## The rooms the base was dug around: the lift (velín), the hangar and the quarters stay.
+const FIXED_ROOMS := ["velin", "hangar", "ubikace"]
+## Of what the room cost: a finished one gives back a little (the fittings), a dig cut short more.
+const REFUND_DONE := 0.3
+const REFUND_BUILDING := 0.75
+## Only one of these on the base.
+const UNIQUE_ROOMS := ["cela", "maskovani", "psi_gen"]
+
+## What tearing this room down gives back (credits).
+func refund_of(index: int) -> int:
+	var c: Dictionary = data["base"][index]
+	var ty := String(c["type"])
+	if ty == "":
+		return 0
+	var paid := int(c.get("paid", facility_cost(ty)))
+	var k := REFUND_BUILDING if float(c["days"]) > 0.0 else REFUND_DONE
+	return int(round(float(paid) * k / 10.0) * 10)
+
+## Would the other rooms still reach the lift without this one? (the corridors run room to room)
+func _still_linked(without: int) -> bool:
+	var b: Array = data["base"]
+	if String(b[0]["type"]) == "" or without == 0:
+		return false
+	var seen := {0: true}
+	var todo := [0]
+	while not todo.is_empty():
+		var i: int = todo.pop_back()
+		var x := i % GRID_W
+		var z := i / GRID_W
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var nx: int = x + d.x
+			var nz: int = z + d.y
+			if nx < 0 or nz < 0 or nx >= GRID_W or nz >= GRID_H:
+				continue
+			var n := nz * GRID_W + nx
+			if n == without or seen.has(n) or String(b[n]["type"]) == "":
+				continue
+			seen[n] = true
+			todo.append(n)
+	for i in b.size():
+		if i != without and String(b[i]["type"]) != "" and not seen.has(i):
+			return false
+	return true
+
+func _base_under_attack() -> bool:
+	return (data.get("missions", []) as Array).any(func(m): return String(m.get("type", "")) == "base")
+
+## Why this room cannot go away now ("" = it can). keep_slot: the room is replaced, not dug out,
+## so the corridors stay (a rebuild never cuts a room off).
+func demolish_why(index: int, keep_slot := false) -> String:
+	if viewer:
+		return "O základně rozhoduje hostitel - je to jeho základna."
+	if index < 0 or index >= data["base"].size():
+		return "Tady nic není."
+	var c: Dictionary = data["base"][index]
+	var ty := String(c["type"])
+	if ty == "":
+		return "Tady je jen hlína a skála."
+	if ty in FIXED_ROOMS:
+		return {"velin": "Velín se vstupním výtahem drží celou základnu.",
+			"hangar": "Hangár je domov transportéru a stíhaček.",
+			"ubikace": "V ubikacích spí vojáci."}[ty]
+	if _base_under_attack():
+		return "Základna je pod útokem - teď se nebourá."
+	var done := float(c["days"]) <= 0.0
+	if done and count(ty) == 1:
+		match ty:
+			"laborator":
+				return "Je to poslední laboratoř - bez ní by výzkum stál."
+			"dilna":
+				if not _made_orders().is_empty():
+					return "V dílně se vyrábí - nejdřív výrobu dokončit nebo zrušit."
+			"cela":
+				for k in (data.get("found", {}) as Dictionary):
+					if String(k).begins_with("live_") and int(data["found"][k]) > 0:
+						return "V cele sedí živý zajatec."
+	if not keep_slot and not _still_linked(index):
+		return "Na tuhle místnost navazují další - bez ní by k nim nevedla chodba."
+	return ""
+
+## Tears the room down (or calls off the dig); some of the money comes back.
+func demolish(index: int) -> bool:
+	if demolish_why(index) != "":
+		return false
+	var c: Dictionary = data["base"][index]
+	var ty := String(c["type"])
+	var back := refund_of(index)
+	var was_done := float(c["days"]) <= 0.0
+	data["credits"] = int(data["credits"]) + back
+	data["base"][index] = {"type": "", "days": 0.0}
+	_log(("Zbouráno: %s (vráceno %d kr)" if was_done else "Stavba zrušena: %s (vráceno %d kr)") % [FACILITIES[ty]["name"], back])
+	save()
+	changed.emit()
+	return true
+
+## What a rebuild costs on top of what the old room gives back (can be below 0 = money comes back).
+func rebuild_cost(index: int, ftype: String) -> int:
+	return facility_cost(ftype) - refund_of(index)
+
+## Why this room cannot become ftype now ("" = it can).
+func rebuild_why(index: int, ftype: String) -> String:
+	var why := demolish_why(index, true)
+	if why != "":
+		return why
+	var ty := String(data["base"][index]["type"])
+	if ftype == ty:
+		return "Tahle místnost už tu je."
+	if not FACILITIES.has(ftype) or ftype in FIXED_ROOMS:
+		return "Tohle se postavit nedá."
+	if not facility_open(ftype):
+		return "Nejdřív je potřeba výzkum."
+	if ftype in UNIQUE_ROOMS and data["base"].any(func(c): return String(c["type"]) == ftype):
+		return "Základna ji už má - stačí jedna."
+	if int(data["credits"]) < rebuild_cost(index, ftype):
+		return "Na tohle teď nemáme peníze."
+	return ""
+
+## Tears the room down and digs another one in its place (the old fittings pay for part of it).
+func rebuild(index: int, ftype: String) -> bool:
+	if rebuild_why(index, ftype) != "":
+		return false
+	var old := String(data["base"][index]["type"])
+	var back := refund_of(index)
+	data["credits"] = int(data["credits"]) - rebuild_cost(index, ftype)
+	data["base"][index] = {"type": ftype, "days": facility_days(ftype), "paid": facility_cost(ftype)}
+	_log("Přestavba: %s → %s (vráceno %d kr)" % [FACILITIES[old]["name"], FACILITIES[ftype]["name"], back])
 	save()
 	changed.emit()
 	return true
@@ -2199,13 +2343,15 @@ func can_make(item: String) -> bool:
 func make(item: String) -> bool:
 	if not can_make(item):
 		return false
-	data["credits"] = int(data["credits"]) - price(item)
+	var cr := price(item)
+	data["credits"] = int(data["credits"]) - cr
 	_pay(int(SHOP_AL.get(item, 0)), int(SHOP_MK.get(item, 0)))
 	for it in MAKE_EATS.get(item, {}):
 		data["armory"][it] = int(data["armory"].get(it, 0)) - int(MAKE_EATS[item][it])
 		if int(data["armory"][it]) <= 0:
 			data["armory"].erase(it)
-	_queue(item, make_days(item))
+	_queue(item, make_days(item), {}, {"cr": cr, "al": int(SHOP_AL.get(item, 0)), "mk": int(SHOP_MK.get(item, 0)),
+		"eats": (MAKE_EATS.get(item, {}) as Dictionary).duplicate()})
 	save()
 	changed.emit()
 	return true
@@ -2217,13 +2363,127 @@ func _pay(al: int, mk: int) -> void:
 	data["found"] = found
 
 ## Into the workshop queue (the work in days at one workshop's pace).
-func _queue(item: String, days: float, extra := {}) -> void:
+## (Ari 2026-11-22) The same thing ordered again is not a new line: the order already in the queue
+## gets one more piece ("n" pieces, "each" = days per piece, "work" = what is left of the one in hand).
+## pay = what this piece cost (credits, alloys, Moskovium, stock eaten) - given back when it is cancelled.
+func _queue(item: String, days: float, extra := {}, pay := {}) -> void:
 	if not data.has("orders"):
 		data["orders"] = []
-	var o := {"item": item, "work": days, "total": days, "at": 0.0, "made": true}
+	if extra.is_empty() and _stackable(item):
+		for q in _made_orders():
+			if String(q["item"]) == item and q.has("work"):
+				if not pay.is_empty():
+					_pays_of(q).append(pay)
+				q["n"] = order_n(q) + 1
+				if not q.has("each"):
+					q["each"] = maxf(float(q.get("total", days)), 0.01)
+				_workshop_eta()
+				return
+	var o := {"item": item, "work": days, "total": days, "each": maxf(days, 0.01), "n": 1, "at": 0.0, "made": true}
+	if not pay.is_empty():
+		o["pays"] = [pay]
 	o.merge(extra)
 	data["orders"].append(o)
 	_workshop_eta()
+
+func _pays_of(o: Dictionary) -> Array:
+	if not o.has("pays"):
+		o["pays"] = []
+	return o["pays"]
+
+## What one piece of this line gave back if cancelled: what was paid for it, or (older saves that
+## did not keep it) what it costs today.
+func _refund_of(o: Dictionary) -> Dictionary:
+	var pays: Array = o.get("pays", [])
+	if pays.size() >= order_n(o) and not pays.is_empty():
+		return pays.pop_back()
+	var it := String(o["item"])
+	if it.begins_with("up_"):
+		var u: Dictionary = UPGRADES.get(it.substr(3), {})
+		return {"cr": upgrade_price(it.substr(3)) if not u.is_empty() else 0, "al": int(u.get("al", 0)), "mk": int(u.get("mk", 0))}
+	match it:
+		"craft_kondor":
+			return {"cr": kondor_price()}
+		"craft_orel":
+			return {"cr": pelikan_price(), "al": int(CRAFT_MAKE["orel"]["al"]), "mk": int(CRAFT_MAKE["orel"]["mk"])}
+		"craft_jestrab":
+			var cr := int(round((HAWK_PRICE if o.get("new", false) else HAWK_REBUILD) * econ() / 10.0) * 10)
+			return {"cr": cr, "al": int(CRAFT_MAKE["jestrab"]["al"]), "mk": int(CRAFT_MAKE["jestrab"]["mk"])}
+	return {"cr": price(it), "al": int(SHOP_AL.get(it, 0)), "mk": int(SHOP_MK.get(it, 0)),
+		"eats": (MAKE_EATS.get(it, {}) as Dictionary).duplicate()}
+
+## (Ari 2026-11-22) Takes a workshop order back: one piece of the line (all = the whole line).
+## Everything paid for it comes back - credits, alloys, Moskovium and what it ate from the stock;
+## a part-made piece too (nothing is made of it yet). Only who runs the base (host / solo).
+func cancel_order(o: Dictionary, all := false) -> bool:
+	var orders: Array = data.get("orders", [])
+	var i := -1
+	for k in orders.size():
+		if is_same(orders[k], o):
+			i = k
+			break
+	if viewer or i < 0 or not o.get("made", false):
+		return false
+	var n := order_n(o)
+	var take := n if all else 1
+	var got := {"cr": 0, "al": 0, "mk": 0, "eats": {}}
+	for _k in take:
+		var r := _refund_of(o)
+		got["cr"] += int(r.get("cr", 0))
+		got["al"] += int(r.get("al", 0))
+		got["mk"] += int(r.get("mk", 0))
+		var e: Dictionary = r.get("eats", {})
+		for it in e:
+			got["eats"][it] = int(got["eats"].get(it, 0)) + int(e[it])
+	data["credits"] = int(data["credits"]) + int(got["cr"])
+	_pay(-int(got["al"]), -int(got["mk"]))
+	for it in got["eats"]:
+		data["armory"][it] = int(data["armory"].get(it, 0)) + int(got["eats"][it])
+	if take >= n:
+		orders.remove_at(i)
+	else:
+		o["n"] = n - take      # (a piece not yet started goes; the one in hand keeps its progress)
+	var back := ["%d kr" % int(got["cr"])]
+	if int(got["al"]) > 0: back.append("%d slitin" % int(got["al"]))
+	if int(got["mk"]) > 0: back.append("%d g moskovia" % int(got["mk"]))
+	_log("Dílna zrušila zakázku: %s%s. Vráceno %s." % [queue_name(String(o["item"])), (" %dx" % take) if take > 1 else "", ", ".join(back)])
+	_workshop_eta()
+	save()
+	changed.emit()
+	return true
+
+## Ordinary pieces stack in one queue line; crafts and unit upgrades are one of a kind.
+func _stackable(item: String) -> bool:
+	return not item.begins_with("craft_") and not item.begins_with("up_")
+
+## How many pieces one queue line stands for (older saves: one).
+func order_n(o: Dictionary) -> int:
+	return maxi(1, int(o.get("n", 1)))
+
+## Days one more piece of this line takes at one workshop's pace.
+func _order_each(o: Dictionary) -> float:
+	return maxf(float(o.get("each", o.get("total", o.get("work", 0.5)))), 0.01)
+
+## Older saves (and anyone who ordered before 2026-11-22): the same item on several queue lines
+## goes together into the first of them. Only the head of the queue is ever part-made, and that is
+## the first line of its item, so the lines folded into it add whole pieces.
+func _merge_orders() -> void:
+	var orders: Array = data.get("orders", [])
+	var first := {}
+	var out := []
+	for o in orders:
+		if o.get("made", false) and _stackable(String(o["item"])) and o.has("work"):
+			var it := String(o["item"])
+			if first.has(it):
+				var f: Dictionary = first[it]
+				f["n"] = order_n(f) + order_n(o)
+				_pays_of(f).append_array(o.get("pays", []))
+				if not f.has("each"):
+					f["each"] = _order_each(o)
+				continue
+			first[it] = o
+		out.append(o)
+	data["orders"] = out
 
 ## What a workshop order is called in the queue.
 func queue_name(it: String) -> String:
@@ -2236,30 +2496,43 @@ func queue_name(it: String) -> String:
 func _made_orders() -> Array:
 	return (data.get("orders", []) as Array).filter(func(o): return o.get("made", false))
 
-## Work on the queue: the first piece, then the next one.
+## Work on the queue: the first piece, then the next one (a line of n pieces makes them one by one).
 func _workshop_tick(days: float) -> bool:
 	var rate := workshop_rate()
 	var now := float(data["day"])
-	var done := []
+	var done := []        # one entry per finished piece (the order it came from)
+	var gone := []        # lines with nothing left to make
 	var left := days * rate
 	for o in _made_orders():
 		if not o.has("work"):
 			o["work"] = maxf(0.01, float(o.get("at", now)) - now + days)      # (older saves: what was left)
+		while left > 0.0:
+			var w := float(o["work"])
+			if w > left:
+				o["work"] = w - left
+				left = 0.0
+				break
+			left -= w
+			done.append(o)
+			var pays: Array = o.get("pays", [])
+			if pays.size() >= order_n(o):
+				pays.pop_front()        # (the finished piece's price: kept, the rest stay refundable)
+			var n := order_n(o) - 1
+			if n <= 0:
+				o["work"] = 0.0
+				gone.append(o)
+				break
+			o["n"] = n
+			o["work"] = _order_each(o)
+			o["total"] = o["work"]
 		if left <= 0.0:
 			break
-		var w := float(o["work"])
-		if w <= left:
-			left -= w
-			o["work"] = 0.0
-			done.append(o)
-		else:
-			o["work"] = w - left
-			left = 0.0
+	for o in gone:
+		data["orders"].erase(o)
 	if not done.is_empty():
 		var l := []
 		var got := {}
 		for o in done:
-			data["orders"].erase(o)
 			var it := String(o["item"])
 			if it.begins_with("craft_"):
 				_craft_ready(o)
@@ -2286,16 +2559,20 @@ func workshop_now() -> Dictionary:
 	if not o.has("total") or float(o["total"]) < w:
 		o["total"] = maxf(w, 0.01)        # (older saves: counted from now)
 	var rate := workshop_rate()
+	var more := -1
+	for m in made:
+		more += order_n(m)
 	return {"name": queue_name(String(o["item"])), "pct": clampf(1.0 - w / float(o["total"]), 0.0, 1.0),
-		"hours": (w / rate * 24.0) if rate > 0.0 else -1.0, "more": made.size() - 1}
+		"hours": (w / rate * 24.0) if rate > 0.0 else -1.0, "more": more, "n": order_n(o)}
 
 ## When each piece will be done (game day), at today's pace.
 func _workshop_eta() -> void:
 	var rate := workshop_rate()
 	var t := float(data["day"])
 	for o in _made_orders():
-		t += float(o.get("work", 0.0)) / rate if rate > 0.0 else 9999.0
-		o["at"] = t
+		var w := float(o.get("work", 0.0)) + _order_each(o) * float(order_n(o) - 1)
+		t += w / rate if rate > 0.0 else 9999.0
+		o["at"] = t       # (a line of several pieces: when the last of them is done)
 
 ## Crafts ordered or in the workshop: how many of that kind (sokol / jestrab / kondor), and how many new hulls.
 func crafts_coming(kind := "") -> int:
@@ -2332,9 +2609,10 @@ func make_pelikan() -> bool:
 	if not can_make_pelikan():
 		return false
 	var c: Dictionary = CRAFT_MAKE["orel"]
-	data["credits"] = int(data["credits"]) - pelikan_price()
+	var cr := pelikan_price()
+	data["credits"] = int(data["credits"]) - cr
 	_pay(int(c["al"]), int(c["mk"]))
-	_queue("craft_orel", float(c["days"]) * time_k())
+	_queue("craft_orel", float(c["days"]) * time_k(), {}, {"cr": cr, "al": int(c["al"]), "mk": int(c["mk"])})
 	_log("Dílna začala stavět Pelikán.")
 	save()
 	changed.emit()
@@ -2350,8 +2628,9 @@ func can_make_kondor() -> bool:
 func make_kondor() -> bool:
 	if not can_make_kondor():
 		return false
-	data["credits"] = int(data["credits"]) - kondor_price()
-	_queue("craft_kondor", float(CRAFT_MAKE["kondor"]["days"]) * time_k())
+	var cr := kondor_price()
+	data["credits"] = int(data["credits"]) - cr
+	_queue("craft_kondor", float(CRAFT_MAKE["kondor"]["days"]) * time_k(), {}, {"cr": cr})
 	_log("Dílna začala stavět Kondor.")
 	save()
 	changed.emit()
@@ -2436,7 +2715,7 @@ func on_order(item: String) -> int:
 	var n := 0
 	for o in data.get("orders", []):
 		if o["item"] == item:
-			n += 1
+			n += order_n(o)
 	return n
 
 func _deliveries() -> void:
@@ -2571,7 +2850,7 @@ func summary() -> Dictionary:
 		if f.get("mia", false):
 			mia += 1
 		if names.size() < 12:
-			names.append([String(f.get("n", "?")), String(f.get("m", "")), int(f.get("k", 0)), bool(f.get("mia", false)), String(f.get("d", ""))])
+			names.append([String(f.get("n", "?")), String(f.get("m", "")), int(f.get("k", 0)), bool(f.get("mia", false)), String(f.get("d", "")), int(f.get("c", 0))])
 	var races := []
 	var kb: Dictionary = st.get("kills_by", {})
 	for r in kb:
@@ -2584,7 +2863,7 @@ func summary() -> Dictionary:
 	var ms: Dictionary = data.get("mercs", {})
 	for k in ms:
 		var m: Dictionary = ms[k]
-		best.append([String(m.get("name", k)), int(m.get("kills", 0)), int(m.get("missions", 0)), dead_names.has(String(m.get("name", k)))])
+		best.append([String(m.get("name", k)), int(m.get("kills", 0)), int(m.get("missions", 0)), dead_names.has(String(m.get("name", k))), int(m.get("captures", 0))])
 	best.sort_custom(func(a, b): return a[1] > b[1] or (a[1] == b[1] and a[2] > b[2]))
 	best = best.slice(0, 5)
 	var day := float(data.get("end_day", data.get("day", 0.0)))

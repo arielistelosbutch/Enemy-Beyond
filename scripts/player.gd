@@ -514,7 +514,7 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 		var lt: Vector3 = VM_ONE_L + Vector3(-bob.x, bob.y, 0) + Vector3(0, -0.4 * dig - 0.45 * _lower_l_t, 0)
 		if sprinting:
 			lt += Vector3(0, -0.15, 0.05)
-		if item_in("lh").get("id", "") == "stit":
+		if Game.is_shield(item_in("lh").get("id", "")):
 			# low and to the side; up to the face (its window before the eyes) on the right button
 			_shield_k = move_toward(_shield_k, 1.0 if shield_up else 0.0, delta * 3.5)
 			lt += Vector3(0.0, -0.38, 0.06).lerp(Vector3(0.2, -0.06, 0.02), _shield_k)
@@ -1683,7 +1683,7 @@ func _show_items(r: String, l: String, back: String) -> void:
 	if l != "" and (not two or l == "radio"):
 		if gun_l:
 			var lm := _held_model(l)
-			if l == "stit":
+			if Game.is_shield(l):
 				lm.position = Vector3(0.05, -0.05, -0.15)
 				lm.name = "FpShield"
 			gun_l.add_child(lm)
@@ -1700,7 +1700,7 @@ func _show_items(r: String, l: String, back: String) -> void:
 	if back != "" and body_back:
 		var bk := Game.model(back)
 		Game.dress_gun(bk, back, merc)
-		Game.apply_item_tweak(bk, "back/" + back)
+		Game.apply_item_tweak(bk, "back/" + Game.tweak_id(back))
 		body_back.add_child(bk)
 
 ## (0.57) What is held in first person lives on its own render layer: the camera of a scope
@@ -2096,6 +2096,11 @@ func _backed() -> float:
 	return 1.0
 
 func _physics_process(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_physics_process(delta)
+	PerfLog.took("vojáci: snímek", _pt)
+
+func _pl_physics_process(delta: float) -> void:
 	_blood_watch(delta)
 	_mg_tick()
 	_drag_sound(delta)
@@ -2181,9 +2186,10 @@ func _physics_process(delta: float) -> void:
 	bracing = brace_w and Input.is_action_pressed("aim") and not inv_open and not sprinting and busy <= 0
 	_shield_knock = maxf(0.0, _shield_knock - delta)
 	# holding it up is hard work: out of breath, the arm drops it
-	shield_up = item_in("lh").get("id", "") == "stit" and Input.is_action_pressed("aim") and not inv_open and busy <= 0 and not prone and not _winded and _shield_knock <= 0.0
+	shield_up = Game.is_shield(item_in("lh").get("id", "")) and Input.is_action_pressed("aim") and not inv_open and busy <= 0 and not prone and not _winded and _shield_knock <= 0.0
 	# the window cracks with every hit the shield takes
-	mission.hud.visor(clampf((0.75 - float(item_in("lh").get("hp", SHIELD_HP)) / SHIELD_HP) / 0.75, 0.0, 1.0) if shield_up else 0.0)
+	var _shmax := shield_max(item_in("lh").get("id", ""))
+	mission.hud.visor(clampf((0.75 - float(item_in("lh").get("hp", _shmax)) / _shmax) / 0.75, 0.0, 1.0) if shield_up else 0.0)
 	aiming = (two and not brace_w or pistol_grip()) and Input.is_action_pressed("aim") and not inv_open and not sprinting and busy <= 0 and not shield_up
 	if cam:
 		var scoped: bool = aiming and Game.ITEMS[rh["id"]].get("scope", false)
@@ -2279,7 +2285,7 @@ func _physics_process(delta: float) -> void:
 			var surf := Game.surface_at(self, global_position, mission.map)
 			if "wx" in mission and mission.wx and mission.wx.puddle_at(global_position):
 				surf = "water"       # (2026-11-17) a splash in a puddle
-			Game.play_at(self, "step_%s%d" % [surf, randi() % 4], global_position, (-24 if prone else (-19 if crouching else (-7 if sprint else -13))) + float(Game.STEP_DB.get(surf, 0.0)))
+			Game.play_at(self, "step_%s%d" % [surf, randi() % 4], global_position, (-24 if prone else (-19 if crouching else (-7 if sprint else -13))) + float(Game.STEP_DB.get(surf, 0.0)) - (4.0 if quiet < 1.0 else 0.0))
 			if sprint and randf() < 0.5:
 				Game.play_at(self, "gear", global_position + Vector3.UP, -12)   # the kit rattles when you run
 			mission.noise(global_position, (1.0 if prone else (2.0 if crouching else (14.0 if sprint else 6.0))) * quiet * mission.step_noise())
@@ -2660,7 +2666,7 @@ var shield_up := false
 
 ## The shield held up between us and @from (every machine: a plasma bolt bursts on its face).
 func shield_covers(from: Vector3) -> bool:
-	if held_l != "stit" or not shield_up or dead or downed:
+	if not Game.is_shield(held_l) or not shield_up or dead or downed:
 		return false
 	var to: Vector3 = from - global_position
 	to.y = 0
@@ -2675,6 +2681,10 @@ const FLOOR_PAUSE := 8.0
 var _floored_t := -99.0
 var _shield_knock := 0.0     # knocked aside by a blow: it cannot come back up for a moment
 const SHIELD_HP := 420.0
+
+## How much a shield takes before it falls apart (BSH-01 420, the alloy BSH-02 more).
+static func shield_max(id: String) -> float:
+	return float(Game.ITEMS.get(id, {}).get("hp", SHIELD_HP))
 func _actions(delta: float) -> void:
 	radio_button = false
 	_talk_tick(delta)
@@ -2716,6 +2726,8 @@ func _actions(delta: float) -> void:
 		_throw("mine")
 	if Input.is_action_just_pressed("flare"):
 		_throw("flare")
+	if Input.is_action_just_pressed("sentry") and busy <= 0:
+		_place_sentry()
 	if Input.is_action_just_pressed("melee"):
 		_quick_melee()
 	if Input.is_action_just_pressed("heal"):
@@ -2728,6 +2740,8 @@ func _actions(delta: float) -> void:
 			mission.use_terminal(tm)
 		elif _use_teammate() or _use_civilian():
 			pass
+		elif mission.sentry_near(global_position) and busy <= 0:
+			_use_sentry(mission.sentry_near(global_position))
 		elif mission.door_near(global_position) >= 0 and _door_first():
 			mission.use_door.rpc_id(1, mission.door_near(global_position), global_position)
 		else:
@@ -2750,6 +2764,9 @@ func _use_hand(slot: String, pressed: bool, just: bool, delta: float) -> void:
 		return
 	var rule: Dictionary = Game.ITEMS[it["id"]]
 	match rule["type"]:
+		"sentry":
+			if just and busy <= 0:
+				_place_sentry()
 		"weapon":
 			# a pull counts from the moment it is made, even while the rotor still spins up
 			if just:
@@ -3011,6 +3028,11 @@ func _tube(wp: Dictionary) -> Array:
 	return t
 
 func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
+	var _pt := PerfLog.t0()
+	_pl_shoot(slot, wp, rule)
+	PerfLog.took("výstřel", _pt)
+
+func _pl_shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 	var shell := ""
 	if rule.has("ammo_alt"):
 		var tb := _tube(wp)
@@ -3038,7 +3060,8 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 	var from := cam.global_position
 	var basis_ := cam.global_transform.basis
 	var muzzle := _muzzle(slot, rule)
-	mission.noise(global_position, float(rule["noise"]) * (0.2 if Game.has_mod(wp["id"], "tlumic", merc) else 1.0) * (1.3 if Game.has_mod(wp["id"], "kompenzator", merc) else 1.0))
+	var quiet := Game.has_mod(wp["id"], "tlumic", merc)
+	mission.noise(global_position, float(rule["noise"]) * (0.2 if quiet else 1.0) * (1.3 if Game.has_mod(wp["id"], "kompenzator", merc) else 1.0))
 	if rule.get("projectile", false):
 		var rs := spread * (0.7 if Game.has_mod(wp["id"], "pocitac", merc) else 1.0)
 		var d := (-basis_.z).rotated(basis_.x, randf_range(-rs, rs) * 0.3).rotated(basis_.y, randf_range(-rs, rs) * 0.3).normalized()
@@ -3099,7 +3122,7 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 				if weak:
 					dmg *= 1.5           # a weak point: the Levit's organ, a grey's neck, the Kolos's joints... (0.57)
 				mission.hud.hitmarker()
-				_hit_alien.rpc_id(1, c.name, dmg, "plasma" if String(wp["id"]).begins_with("plasma_") or rule.get("alien", false) else ("laser" if Game.ITEMS[wp["id"]].get("laser", false) else ("slug" if shell == "slugs" or rule.get("ap", false) else "bullet")), weak, hit.position)
+				_hit_alien.rpc_id(1, c.name, dmg, "plasma" if String(wp["id"]).begins_with("plasma_") or rule.get("alien", false) else ("laser" if Game.ITEMS[wp["id"]].get("laser", false) else ("slug" if shell == "slugs" or rule.get("ap", false) else "bullet")), weak, hit.position, quiet)
 				if rule.get("lc", false):
 					# LC-01 (the test-chamber incident): what the pulse burns off flies - hot shards round the hit
 					for x in mission.aliens():
@@ -3124,7 +3147,10 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 			elif c and c.has_method("is_civilian") and not c.dead:
 				mission.shoot_civ.rpc_id(1, c.name)
 			elif c and c.has_meta("break"):
-				mission.hit_breakable.rpc_id(1, int(c.get_meta("break")), base_dmg, "explosion" if rule.get("incendiary", false) else ("plasma" if String(wp["id"]).begins_with("plasma_") or Game.ITEMS[wp["id"]].get("laser", false) else "bullet"))
+				var bkind := "explosion" if rule.get("incendiary", false) else ("plasma" if String(wp["id"]).begins_with("plasma_") or Game.ITEMS[wp["id"]].get("laser", false) else "bullet")
+				mission.hit_breakable.rpc_id(1, int(c.get_meta("break")), base_dmg, bkind)
+				if bkind == "bullet" and String(c.get_meta("break_kind", "")) == "metal":
+					_glance(hit.position, hit.normal)
 			if rule.get("incendiary", false) and not (c and (c.has_method("is_alien") or c.has_method("is_player"))):
 				_incendiary.rpc_id(1, "", hit.position)
 			if rule.has("splash"):
@@ -3132,7 +3158,7 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 		if i < 4:
 			tracers.append(to)
 	for to in tracers:
-		_shot_fx.rpc(muzzle, to, rule["sound"] if to == tracers[0] else "")
+		_shot_fx.rpc(muzzle, to, (QUIET_MARK if quiet else "") + (String(rule["sound"]) if to == tracers[0] else ""))
 
 ## Knife and baton. The knife from behind is deadly, the baton knocks out
 ## (a living alien is worth more).
@@ -3385,10 +3411,12 @@ func _melee_alien(alien_name: String, dmg: float, stun: float) -> void:
 		return
 	var a: Node = mission.actors.get_node_or_null(alien_name)
 	if a and not a.dead:
+		mission.hit_quiet = true      # (0.72.5) a blade or a baton makes no bang: who it was, only it can see
 		if stun > 0:
 			a.stun(stun, global_position, self)
-		if dmg > 0:
+		if dmg > 0 and not a.dead:
 			a.damage(dmg, global_position, self)
+		mission.hit_quiet = false
 
 ## EN-01 (X-WEP-002): a few strikes with the hot edge, then a few seconds of charging when it is only
 ## a knife; charged, the edge waits switched off until R turns it on (the test-chamber incident).
@@ -3611,7 +3639,7 @@ func _unstuck_try() -> bool:
 	return false
 
 func _mantle_try(reach: float) -> bool:
-	if busy_stand or prone or downed or carried_by != 0 or held_l == "stit":
+	if busy_stand or prone or downed or carried_by != 0 or Game.is_shield(held_l):
 		return false
 	var spot := mantle_spot(reach)
 	if spot == Vector3.INF:
@@ -3657,7 +3685,12 @@ func _start_busy(time: float, text: String, done: Callable) -> void:
 	busy_done = done
 
 @rpc("any_peer", "call_local", "reliable")
-func _hit_alien(alien_name: String, dmg: float, kind := "bullet", weak := false, at := Vector3.INF) -> void:
+func _hit_alien(alien_name: String, dmg: float, kind := "bullet", weak := false, at := Vector3.INF, quiet := false) -> void:
+	var _pt := PerfLog.t0()
+	_pl_hit_alien(alien_name, dmg, kind, weak, at, quiet)
+	PerfLog.took("zásah vetřelce", _pt)
+
+func _pl_hit_alien(alien_name: String, dmg: float, kind := "bullet", weak := false, at := Vector3.INF, quiet := false) -> void:
 	if not multiplayer.is_server():
 		return
 	var a: Node = mission.actors.get_node_or_null(alien_name)
@@ -3665,15 +3698,100 @@ func _hit_alien(alien_name: String, dmg: float, kind := "bullet", weak := false,
 		if weak and a.has_method("weak_hit"):
 			a.weak_hit(at if at != Vector3.INF else a.global_position)
 		mission.hit_kind = kind
+		mission.hit_quiet = quiet
 		a.damage(dmg, global_position, self)
 		mission.hit_kind = ""
+		mission.hit_quiet = false
+
+## (0.72.5) A silenced shot: the sound is quiet and higher (`<sound>_silenced` when Ari records one),
+## the flash is small, the bullet's crack gives away only roughly where it came from.
+const QUIET_MARK := "~"
+var quiet_shots := 0          # (for the test: how many shots this machine played silenced)
+const QUIET_DB := -17.0
+const QUIET_PITCH := 1.35
+const QUIET_CUT := 0.35
+
+## (0.72.5) A bullet on what bullets cannot hurt (the alien core, steel doors): it glances off in sparks
+## with a ring of metal - no text, the eye and ear tell that this is not the way. Every machine sees it.
+const GLANCE_GAP := 0.07       # a minigun: not a spark burst per bullet
+var _glance_t := 0.0
+var _glance_snd_t := 0.0
+
+func _glance(at: Vector3, normal: Vector3) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _glance_t < GLANCE_GAP:
+		return
+	_glance_t = now
+	_glance_fx.rpc(at, normal)
 
 @rpc("any_peer", "call_local", "unreliable")
+func _glance_fx(at: Vector3, normal: Vector3) -> void:
+	if mission == null or not is_instance_valid(mission):
+		return
+	set_meta("glances", int(get_meta("glances", 0)) + 1)      # (autotest)
+	var n := normal.normalized() if normal.length() > 0.1 else Vector3.UP
+	var sp := CPUParticles3D.new()
+	sp.one_shot = true
+	sp.amount = 14
+	sp.lifetime = 0.35
+	sp.explosiveness = 1.0
+	sp.direction = Vector3(0, 0, 1)
+	sp.spread = 55.0
+	sp.initial_velocity_min = 3.0
+	sp.initial_velocity_max = 7.5
+	sp.gravity = Vector3(0, -9.8, 0)
+	sp.scale_amount_min = 0.5
+	sp.scale_amount_max = 1.0
+	var q := BoxMesh.new()
+	q.size = Vector3(0.02, 0.02, 0.1)
+	q.material = Game.color_mat(Color(1.0, 0.78, 0.35), true)
+	sp.mesh = q
+	sp.particle_flag_align_y = false
+	mission.add_child(sp)
+	sp.global_position = at + n * 0.02
+	if absf(n.dot(Vector3.UP)) < 0.98:
+		sp.look_at(sp.global_position - n, Vector3.UP)
+	else:
+		sp.look_at(sp.global_position - n, Vector3.FORWARD)
+	sp.emitting = true
+	var lt := OmniLight3D.new()
+	lt.light_color = Color(1.0, 0.75, 0.4)
+	lt.light_energy = 1.4
+	lt.omni_range = 1.6
+	mission.add_child(lt)
+	lt.global_position = at + n * 0.1
+	get_tree().create_timer(0.06).timeout.connect(func(): if is_instance_valid(lt): lt.queue_free())
+	get_tree().create_timer(0.8).timeout.connect(func(): if is_instance_valid(sp): sp.queue_free())
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _glance_snd_t > 0.12:
+		_glance_snd_t = now
+		Game.play_at(mission, "clink", at, -6, randf_range(1.3, 1.7))       # Ari's own ricochet when he records one
+
+static var _tracer_mesh: BoxMesh
+var _muzzle_fl: OmniLight3D
+var _muzzle_n := 0
+@rpc("any_peer", "call_local", "unreliable")
 func _shot_fx(from: Vector3, to: Vector3, snd: String) -> void:
+	var _pt := PerfLog.t0()
+	_pl_shot_fx(from, to, snd)
+	PerfLog.took("efekt výstřelu", _pt)
+
+func _pl_shot_fx(from: Vector3, to: Vector3, snd: String) -> void:
 	_fired_at = Time.get_ticks_msec() / 1000.0      # (every machine: the body's firing movement)
+	var quiet := snd.begins_with(QUIET_MARK)
+	if quiet:
+		snd = snd.substr(QUIET_MARK.length())
 	var green := snd.begins_with("plasma")      # plasma, plasma_p, plasma_mg, plasma_cannon, plasma_heavy
 	if mission and mission.nvg_on:
-		mission.nvg_flash(from, 0.15 if is_multiplayer_authority() else 0.35)    # (0.72) a muzzle flash in the tube
+		mission.nvg_flash(from, (0.04 if quiet else 0.15) if is_multiplayer_authority() else (0.08 if quiet else 0.35))    # (0.72) a muzzle flash in the tube
+	if quiet and snd != "":
+		quiet_shots += 1
+		if ResourceLoader.exists("res://assets/sounds/%s_silenced.wav" % snd):
+			Game.play_at(mission, snd + "_silenced", from, -6)
+		else:
+			var pk: float = float(Game.PITCHED[snd][1]) if Game.PITCHED.has(snd) else 1.0
+			Game.play_cut(mission, snd, from, QUIET_DB, QUIET_PITCH * pk, QUIET_CUT)
+		snd = ""
 	if snd == "laser_cannon":
 		_lc_fx(from, to)
 		return
@@ -3702,27 +3820,41 @@ func _shot_fx(from: Vector3, to: Vector3, snd: String) -> void:
 				var rel: Vector3 = a.global_position + Vector3(0, 1.0, 0) - from
 				var along := clampf(rel.dot(dir / L), 0.0, L + 3.0)
 				if (rel - dir / L * along).length() < 2.5:
-					a.suppressed(from)
+					a.suppressed(from, quiet)
 	if green:
 		_plasma_pulse(from, to)
 		return
+	# (0.72.5 výkon) stopa a záblesk: jedna sdílená síť (délka měřítkem) a jedno světlo u ústí
+	# na vojáka, které se jen rozsvítí - dřív nová síť a nové světlo při každé ráně (kulomet 14× za s)
 	var tracer := MeshInstance3D.new()
-	var bm := BoxMesh.new()
+	if _tracer_mesh == null:
+		_tracer_mesh = BoxMesh.new()
+		_tracer_mesh.size = Vector3(0.02, 0.02, 1.0)
 	var len := from.distance_to(to)
-	bm.size = Vector3(0.02, 0.02, len)
-	tracer.mesh = bm
+	tracer.mesh = _tracer_mesh
 	tracer.material_override = Game.color_mat(Color(1.0, 0.85, 0.4), true)
 	mission.add_child(tracer)
 	tracer.global_position = (from + to) / 2
 	if len > 0.01:
 		tracer.look_at(to, Vector3.UP if abs((to - from).normalized().y) < 0.99 else Vector3.RIGHT)
-	var fl := OmniLight3D.new()
-	fl.light_color = Color(1.0, 0.8, 0.4)
-	fl.light_energy = 3.0
-	fl.omni_range = 6.0
-	mission.add_child(fl)
-	fl.global_position = from
-	get_tree().create_timer(0.05).timeout.connect(func(): tracer.queue_free(); fl.queue_free())
+	tracer.scale = Vector3(1, 1, maxf(len, 0.01))
+	if not is_instance_valid(_muzzle_fl):
+		_muzzle_fl = OmniLight3D.new()
+		_muzzle_fl.light_color = Color(1.0, 0.8, 0.4)
+		_muzzle_fl.light_energy = 3.0
+		_muzzle_fl.omni_range = 6.0
+		mission.add_child(_muzzle_fl)
+	_muzzle_fl.global_position = from
+	_muzzle_fl.light_energy = 0.5 if quiet else 3.0     # (a silencer swallows the flash)
+	_muzzle_fl.omni_range = 1.5 if quiet else 6.0
+	_muzzle_fl.visible = true
+	_muzzle_n += 1
+	var n := _muzzle_n
+	get_tree().create_timer(0.05).timeout.connect(func():
+		if is_instance_valid(tracer):
+			tracer.queue_free()
+		if is_instance_valid(_muzzle_fl) and _muzzle_n == n:
+			_muzzle_fl.visible = false)
 
 ## Our plasma (PP-01 and the rest): a green pulse you can watch fly - far slower than a laser.
 const PLASMA_PULSE_SPEED := 120.0
@@ -4655,6 +4787,88 @@ func _throw(kind: String, from_slot := "") -> void:
 			v = Vector3(dir.x, 0, dir.z).normalized() * 1.6 + Vector3.UP * 0.6
 		_spawn_throwable.rpc(kind, from, v, name))
 
+## (debug mode) everything back to full: health, stamina, fear, bleeding, every magazine in hand.
+func debug_refill() -> void:
+	hp = max_hp
+	wounded = false
+	stamina = 100.0
+	stress = 0.0
+	bleeding = 0.0
+	for s in inv:
+		var it: Dictionary = inv[s]
+		if it.has("loaded") and Game.ITEMS.get(it["id"], {}).get("type", "") == "weapon":
+			it["loaded"] = Game.mag_size(it["id"])
+			it.erase("drained")
+
+## (0.80) 9: set the ST-01 down a step in front, facing where you look (it guards ±60° from there).
+func _place_sentry() -> void:
+	var slot := find_item(func(it): return it["id"] == "sentry")
+	if slot == "":
+		mission.hud.message("Nemáš: %s" % Game.ITEMS["sentry"]["name"], 1.5)
+		return
+	if prone or downed:
+		return
+	busy_stand = true
+	_start_busy(Game.fetch_time("sentry", slot) + 2.2, "Stavím věž", func():
+		busy_stand = false
+		if not inv.has(slot) or inv[slot].get("id", "") != "sentry":
+			return
+		var it: Dictionary = inv[slot]
+		var dir := -cam.global_transform.basis.z
+		dir = Vector3(dir.x, 0, dir.z)
+		if dir.length() < 0.01:
+			dir = -global_transform.basis.z
+		dir = dir.normalized()
+		var at := global_position + dir * 0.9
+		# not into a wall: then right at the feet
+		var q := PhysicsRayQueryParameters3D.create(global_position + Vector3(0, 0.5, 0), at + Vector3(0, 0.5, 0), Game.WORLD)
+		q.exclude = [get_rid()]
+		if not get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+			at = global_position + dir * 0.35
+		inv.erase(slot)
+		_update_held()
+		mission.req_sentry.rpc_id(1, at, dir, String(name), int(it.get("rounds", -1)), String(it.get("kind", "rifle"))))
+
+## F at a turret: top it up with what it fires, or (full / nothing to top it up with) fold it up.
+func sentry_action(s: Node) -> String:
+	var am: String = s.ammo_item()
+	if am != "" and s.ammo < s.ammo_max() and find_item(func(it): return it["id"] == am) != "":
+		return "reload"
+	return "fold"
+
+func _use_sentry(s: Node) -> void:
+	if sentry_action(s) == "reload":
+		var am: String = s.ammo_item()
+		var slot := find_item(func(it): return it["id"] == am)
+		_start_busy(1.6, "Doplňuji věž", func():
+			if not inv.has(slot) or inv[slot].get("id", "") != am or not is_instance_valid(s):
+				return
+			var r := int(inv[slot].get("rounds", Game.ITEMS[am].get("rounds", 20)))
+			inv.erase(slot)
+			_update_held()
+			s.req_reload.rpc_id(1, r))
+		return
+	_start_busy(2.0, "Skládám věž", func():
+		if is_instance_valid(s):
+			s.req_pickup.rpc_id(1, String(name)))
+
+## Host -> owner: something handed back (a folded turret): into the pack, or on the ground.
+@rpc("any_peer", "call_local", "reliable")
+func _got_item(item: Dictionary) -> void:
+	if not multiplayer.get_remote_sender_id() in [0, 1]:
+		return
+	var pid: String = item["id"]
+	for s in ["back", "side", "b0", "b1", "b2", "b3"] + Game.pack_slots():
+		if not inv.has(s) and Game.slot_refuse(s, pid) == "":
+			inv[s] = item
+			if not s.begins_with("p"):
+				item["home"] = s
+			_update_held()
+			mission.hud.message("Věž složená: %s." % Game.ITEMS[pid]["name"], 1.5)
+			return
+	mission.drop_item(item, global_position + Vector3(0, 0.3, 0))
+	mission.hud.message("Nemáš kam věž dát - leží na zemi.", 1.8)
+
 ## G: the grenade at hand - in the hand, then on the belt (left to right: a frag or a smoke one,
 ## whichever is there), only then one dug out of the pack. H: always a smoke one.
 func _throw_belt_grenade() -> void:
@@ -4916,6 +5130,8 @@ var vest_wear := 0.0       # ARM-02 plates burnt by plasma this mission (0..0.6)
 func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
 	if not is_multiplayer_authority() or dead or safe_out():
 		return
+	if Game.debug_god():
+		return          # (debug mode: nothing hurts)
 	if Game.easy():
 		dmg *= 0.7
 	if downed:
@@ -4943,7 +5159,7 @@ func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
 		dmg *= lerpf(pr, 1.0, 0.67) if acid else pr
 	# a shield in the left hand stops most of what comes from the front
 	var sh := item_in("lh")
-	if sh.get("id", "") == "stit" and from.distance_to(global_position) > 1.5:
+	if Game.is_shield(sh.get("id", "")) and from.distance_to(global_position) > 1.5:
 		var to: Vector3 = (from - global_position)
 		to.y = 0
 		if to.length() > 0.1 and (-global_transform.basis.z).dot(to.normalized()) > (0.35 if shield_up else 0.55):
@@ -4952,13 +5168,20 @@ func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
 			# so the shield takes most of it) and heat go partly through it, a blast
 			# comes round it, tentacles reach past it.
 			var cover: float = {"plasma": 0.8, "laser": 0.85, "heat": 0.4, "blast": 0.35, "claw": 0.45, "blow": 0.75}.get(kind, 0.9)
+			var sit: Dictionary = Game.ITEMS.get(String(sh.get("id", "")), {})
+			if sit.has("cover"):
+				# BSH-02 (alloy): its own numbers, "" = bullets and fragments
+				cover = float(sit["cover"].get(kind, sit["cover"].get("", cover)))
+			var sh_max := shield_max(String(sh.get("id", "")))
 			var kept := dmg * cover * (1.0 if shield_up else 0.55)
 			var raw := dmg
 			dmg -= kept
 			Game.play_at(self, "clink", global_position + Vector3.UP, -2)
 			# it holds as long as it lasts: acid eats it, plasma and fire burn it
 			var wear: float = 2.2 if acid else {"plasma": 2.0, "heat": 2.6}.get(kind, 1.4)
-			var hp_left := float(sh.get("hp", SHIELD_HP)) - kept * wear
+			if sit.has("wear"):
+				wear = float(sit["wear"].get("acid" if acid else kind, sit["wear"].get("", wear)))
+			var hp_left := float(sh.get("hp", sh_max)) - kept * wear
 			if kind == "blow" and raw > 25.0:
 				# a blow on the shield goes into the arm: knocked aside, out of breath - or off your feet
 				_shield_knock = 1.2
@@ -4975,8 +5198,8 @@ func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
 				_update_held()
 				Game.play_at(self, "glass_break", global_position + Vector3.UP, 0)
 				mission.hud.message("ŠTÍT SE ROZPADL!", 2.5)
-			elif hp_left < SHIELD_HP * 0.3 and hp_left + kept * wear >= SHIELD_HP * 0.3:
-				mission.hud.message("Štít je prožraný - dlouho nevydrží (%d %%)." % int(100.0 * hp_left / SHIELD_HP), 2.5)
+			elif hp_left < sh_max * 0.3 and hp_left + kept * wear >= sh_max * 0.3:
+				mission.hud.message("Štít je prožraný - dlouho nevydrží (%d %%)." % int(100.0 * hp_left / sh_max), 2.5)
 	hp -= dmg
 	wounded = true
 	stress = min(100.0, stress + dmg * (1.4 - float(merc.get("bravery", 40)) / 100.0) * 1.3 * _backed())
@@ -5012,7 +5235,7 @@ func bleed_time() -> float:
 	return BLEED_OUT + (45.0 if Game.has_talent(merc, "houzevnaty") else 0.0) + (20.0 if Game.has_research("medicina") else 0.0)
 
 func _bleed(delta: float) -> void:
-	if safe_out():
+	if safe_out() or Game.debug_god():
 		return
 	if bleeding > 0 and not downed and healed_t <= 0.0:      # (a hand pressing on the wound stops it)
 		hp -= bleeding * delta
@@ -5242,7 +5465,7 @@ func _treat_teammate(slot: String) -> void:
 	if true:
 		var target := best
 		var heal_time := 2.0 if Game.has_talent(merc, "felcar") else 3.0
-		if item_in("lh").get("id", "") == "stit":
+		if Game.is_shield(item_in("lh").get("id", "")):
 			heal_time *= 1.6     # the shield on the arm: one hand short
 		var verb := "Ošetřuji %s" if best.downed else "Obvazuji %s"
 		target.being_healed.rpc_id(target.get_multiplayer_authority(), display_name, heal_time)
@@ -5543,6 +5766,8 @@ var ko := false
 func knock_out() -> void:
 	if not is_multiplayer_authority() or dead or downed or safe_out():
 		return
+	if Game.debug_god():
+		return
 	if mission and mission.t < _ko_free_t:
 		# (Ari 2026-11-17) just stood up again: the blow only staggers him - he is not put down
 		# again before he could crawl anywhere (and a Strážce's dose is not thrown away)
@@ -5776,7 +6001,8 @@ func set_watched(v: float) -> void:
 func visibility_range() -> float:
 	if downed:
 		return 6.0
-	var r := (48.0 if Game.has_mod(weapon().get("id", ""), "svitilna", merc) else 40.0) if light_on else 13.0
+	# (0.72.5: by the synced `held`, so the host sees a co-op mate's gun light the same as he does)
+	var r := (48.0 if Game.has_mod(held if held != "" else String(weapon().get("id", "")), "svitilna", merc) else 40.0) if light_on else 13.0
 	# (the stronger weapon light shows you from further off too) - by day (and at dusk) the dark does not hide you
 	# standing in a flare's light: it shows you to everything out there in the dark
 	if mission and mission.phase() != "den":
