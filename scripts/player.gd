@@ -223,6 +223,11 @@ var _body_cap: CapsuleShape3D
 ## The body's hit and collision shape follows the stance on every machine: standing 1.8 m,
 ## crouched 1.2 m, lying (prone, down, dead) a low 0.7 m - you can shoot over a fallen friend.
 func _fit_body_shape() -> void:
+	var _pt := PerfLog.t0()
+	_pl_fit_body_shape()
+	PerfLog.took("voják._fit_body_shape", _pt)
+
+func _pl_fit_body_shape() -> void:
 	if _body_cap == null:
 		return
 	var h := 0.7 if (prone or downed or dead) else (1.25 if crouching else 1.8)
@@ -313,6 +318,11 @@ var _bob_idle := 0.0
 ## (0.70) Q/E: vykouknout za roh. Jen pohled a hlava (žádný nový pohyb nohou): hlava jde do strany
 ## a pohled se nakloní; zeď vedle náklon zkrátí (hlava ani hlaveň do ní nevlezou).
 func _lean_tick(delta: float, inv_open: bool) -> void:
+	var _pt := PerfLog.t0()
+	_pl_lean_tick(delta, inv_open)
+	PerfLog.took("voják._lean_tick", _pt)
+
+func _pl_lean_tick(delta: float, inv_open: bool) -> void:
 	var want := 0.0
 	if not (inv_open or prone or downed or dead or sprinting or panic != "" or _mantle_t >= 0.0 or emote != 0):
 		want = (1.0 if Input.is_action_pressed("lean_right") else 0.0) - (1.0 if Input.is_action_pressed("lean_left") else 0.0)
@@ -367,6 +377,11 @@ func _lean_overlay() -> void:
 		_sk.set_bone_pose_rotation(i, (pg.inverse() * r * pg) * _sk.get_bone_pose_rotation(i))
 
 func _cam_bob(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_cam_bob(delta)
+	PerfLog.took("voják._cam_bob", _pt)
+
+func _pl_cam_bob(delta: float) -> void:
 	if cam == null:
 		return
 	var k := float(Game.cam_bob)
@@ -410,6 +425,11 @@ func _cam_bob(delta: float) -> void:
 	cam.rotation = cam.rotation.lerp(rot * m, clampf(delta * 18.0, 0.0, 1.0))
 
 var _vm_t := 0.0
+var _conv := Vector2.ZERO      # (2026-11-26) pitch/yaw the gun in the eyes' view turns to aim its barrel at the crosshair
+var _conv_d := 25.0            # how far the crosshair's point is (smoothed)
+const CONV_MAX := 0.2          # rad, at most
+const CONV_NEAR := 2.5         # m: closer than this the barrel aims at this distance
+const CONV_FAR := 120.0
 var _vm_kick := 0.0
 var _swing := 0.0            # melee swing timer
 var _fp_strike_vr := false   # (0.62) the swing is Ari's VR blow (fp_strike_<item>)
@@ -420,6 +440,43 @@ const VM_R := {"rifle": Vector3(0.17, -0.18, -0.4), "sniper": Vector3(0.17, -0.1
 	"minigun": Vector3(0.21, -0.3, -0.42), "laser_minigun": Vector3(0.21, -0.3, -0.42), "plasma_minigun": Vector3(0.21, -0.3, -0.42), "rocket_launcher": Vector3(0.21, -0.1, -0.3)}
 const VM_ONE_R := Vector3(0.2, -0.2, -0.36)
 const VM_ONE_L := Vector3(-0.2, -0.2, -0.36)
+## (2026-11-26) Turns the gun in the eyes' view so that its barrel's axis goes through the point the
+## crosshair is on (a ray from the camera, smoothed), as long as the gun is held ready (not through a
+## sight - that has its own line -, sprinting, reloading, swinging...). Measured on the gun as it is
+## now, so Ari's own correction from the Dílna (fp/<gun>) stays, only the aim of the barrel follows.
+## Returns the pitch and yaw to add; outside the ready pose it goes back to nothing.
+func _barrel_converge(delta: float, rid: String, ready_: bool) -> Vector2:
+	var wm: Node3D = gun.get_node_or_null("Weapon") if gun else null
+	var item: Dictionary = Game.ITEMS.get(rid, {})
+	var on: bool = ready_ and wm != null and item.get("type", "") == "weapon" and not item.get("blunt", false) \
+		and not item.get("melee", false) and item.has("damage") and _vm_kick < 0.05
+	if not on:
+		_conv = _conv.move_toward(Vector2.ZERO, delta * 0.8)
+		return _conv
+	var tipv: Variant = _barrel_tip(wm)
+	if tipv == null:
+		return _conv
+	# how far the crosshair's point is
+	var cxf := cam.global_transform
+	var q := PhysicsRayQueryParameters3D.create(cxf.origin, cxf.origin - cxf.basis.z * CONV_FAR, Game.WORLD | Game.GLASS | 4)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	var dist := CONV_FAR
+	if hit:
+		dist = cxf.origin.distance_to(hit.position)
+	_conv_d = lerpf(_conv_d, clampf(dist, CONV_NEAR, CONV_FAR), clampf(delta * 10.0, 0.0, 1.0))
+	# in the camera's space: the barrel as it is now
+	var gx := gun.transform * wm.transform
+	var p: Vector3 = gx * (tipv as Vector3)
+	var d: Vector3 = (gx.basis * Vector3(0, 0, -1)).normalized()
+	var want := (Vector3(0, 0, -_conv_d) - p).normalized()
+	var dy := atan2(-want.x, -want.z) - atan2(-d.x, -d.z)
+	var dp := asin(clampf(want.y, -1.0, 1.0)) - asin(clampf(d.y, -1.0, 1.0))
+	var k := clampf(delta * 8.0, 0.0, 1.0)
+	_conv.x = clampf(_conv.x + dp * k, -CONV_MAX, CONV_MAX)
+	_conv.y = clampf(_conv.y + dy * k, -CONV_MAX, CONV_MAX)
+	return _conv
+
 func _viewmodel_motion(delta: float, speed: float) -> void:
 	if gun == null:
 		return
@@ -504,6 +561,13 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 	var settled := gun.position.distance_to(base) < SIGHT_SNAP and absf(gun.rotation.x - rot.x) < 0.04
 	_sight_on = not sl.is_empty() and rl <= 0.0 and (settled or (_sight_on and gun.position.distance_to(base) < 0.09))
 	_scope_tick(sl)
+	# (2026-11-26, Ari: „laser jde jiným směrem, než míří hlaveň, jako by křivo“) the barrel points
+	# at what the crosshair is on: before, the hip pose (yaw 0.06, the gun on the right) crossed the
+	# line of sight about 3 m out and the beam/tracer from the muzzle to the hit left it at an angle
+	var conv := _barrel_converge(delta, rid, sl.is_empty() and not sprinting and rl <= 0.0 and ra[0] == Vector3.ZERO \
+		and _radio_lower <= 0.01 and _swing <= 0.0 and not _fp_vr and dig <= 0.0 and busy <= 0.0)
+	rot.x += conv.x
+	rot.y += conv.y
 	gun.rotation.x = lerp(gun.rotation.x, rot.x + _vm_kick * 0.12 * kick_mult - rl * 0.5, k)
 	gun.rotation.y = lerp(gun.rotation.y, rot.y, k)
 	gun.rotation.z = lerp(gun.rotation.z, rot.z + rl * 0.7, k)
@@ -591,6 +655,11 @@ var _casing_n := 0
 var _mg_loop: AudioStreamPlayer3D
 var _mg_firing := false
 func _mg_tick() -> void:
+	var _pt := PerfLog.t0()
+	_pl_mg_tick()
+	PerfLog.took("voják._mg_tick", _pt)
+
+func _pl_mg_tick() -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	var firing := now - _mg_last < 0.15
 	if firing and not _mg_firing:
@@ -764,6 +833,8 @@ func _animate_body(delta: float) -> void:
 	_lean_overlay()
 	# (2026-11-16) aiming or shooting: the long gun goes up into the shoulder (_shoulder_gun)
 	_sh_k = move_toward(_sh_k, 1.0 if _shoulder_ok() else 0.0, delta / SHOULDER_IN)
+	# (2026-11-26) not aiming and not shooting: the rifle stays in the shoulder, muzzle down (low ready)
+	_carry_k = move_toward(_carry_k, 1.0 if _carry_on() else 0.0, delta / CARRY_IN)
 	if _sh_k > 0.001:
 		_aim_bend()
 	# the long gun sits in the right hand (follows the arms in every pose), not on the belly
@@ -890,6 +961,19 @@ const KICK_BACK := 0.035           # m into the shoulder per shot (x the gun's k
 const KICK_RISE := 0.07            # rad the muzzle rises per shot
 const KICK_TIME := 0.075           # s the kick dies away
 var _sh_k := 0.0
+## ---- (2026-11-26, Ari: „vojáci pořád drží divně pušky při chůzi a běhu“) The afk rifle walks and
+## runs carry the gun low across the belly with stiff arms (Rifle_Walk: the right arm has 2 keys).
+## Now a long gun stays in the shoulder ALWAYS (standing, walking, running, crouched - not in a sprint,
+## an action, an emote, lying), only when he neither aims nor shoots it is in the "low ready": the butt
+## in the shoulder, the muzzle down in front of him and a little to the left. Aiming / shooting it
+## comes up along the look as before (16. 11.). Only the picture: nothing new over the net.
+const CARRY_IN := 0.22             # s to go from the low ready to the aim (and back)
+const CARRY_DOWN := 0.3            # rad the muzzle is down standing / walking
+const CARRY_DOWN_RUN := 0.42       # ... running
+const CARRY_YAW := 0.22             # rad the muzzle turns in front of the body (to his left)
+const CARRY_LOOK := 0.3            # how much of the look up/down the lowered muzzle still follows
+const CARRY_HOLD := 1.6            # s after the last shot the gun stays up (then it goes down)
+var _carry_k := 0.0
 static var _NO_SHOULDER := Game.cmd_arg("noshoulder", "") == "1"      # (A/B: as the movements hold it)
 
 func _shoulder_ok() -> bool:
@@ -899,7 +983,46 @@ func _shoulder_ok() -> bool:
 		return false
 	if Game.tweaks.get("shoulder/" + held, true) == false:
 		return false      # (a gun can be left as the movement holds it: tweak "shoulder/<gun>": false)
+	if _hold_mode() == "rifle" and not _NO_CARRY:
+		return true      # (2026-11-26: a rifle stays in the shoulder - lowered when not aiming)
 	return aiming or Time.get_ticks_msec() / 1000.0 - _fired_at < SHOULDER_HOLD
+static var _NO_CARRY := Game.cmd_arg("nocarry", "") == "1"      # (A/B: the walks and runs as the movements carry it)
+
+## Low ready (no aiming, no shot for a while) - only the rifles.
+func _carry_on() -> bool:
+	if _hold_mode() != "rifle" or _NO_CARRY:
+		return false
+	return not aiming and Time.get_ticks_msec() / 1000.0 - _fired_at >= CARRY_HOLD
+
+## How far the chest is turned from the calm stand (about up, rad; skeleton space - the clips twist
+## the body: the rifle walk 18 degrees, the run swings with the stride).
+const CARRY_TWIST := 0.8          # (how much of it; the angle from the spine bone is the other way round)
+var _twist_ref := INF
+var _twist_sm := 0.0
+func _torso_twist() -> float:
+	var si := _bone("spine")
+	if si < 0:
+		return 0.0
+	var v := _sk.get_bone_global_pose(si).basis * Vector3.FORWARD
+	var a := atan2(v.x, v.z)
+	if _twist_ref == INF or (_bclip_id == "tp_body_idle" and _fade_from.is_empty()):
+		_twist_ref = a
+	var d := wrapf(a - _twist_ref, -PI, PI)
+	_twist_sm = lerpf(_twist_sm, d, clampf(get_process_delta_time() * 10.0, 0.0, 1.0))
+	return _twist_sm
+
+## Where the barrel points in the low ready (world).
+func _carry_dir(look: Vector3) -> Vector3:
+	var fl := Vector3(look.x, 0.0, look.z)
+	if fl.length() < 0.05:
+		fl = -body.global_transform.basis.z
+	fl = fl.normalized()
+	var runk := clampf((_body_speed - 2.0) / 1.6, 0.0, 1.0)
+	var dn := lerpf(CARRY_DOWN, CARRY_DOWN_RUN, runk)
+	var lp := asin(clampf(look.y, -1.0, 1.0)) * CARRY_LOOK
+	fl = Basis(Vector3.UP, CARRY_YAW) * fl      # (+ about up = to his left)
+	var p := lp - dn
+	return (fl * cos(p) + Vector3.UP * sin(p)).normalized()
 
 ## How the gun in the hand is brought up (2026-11-16): "rifle" butt in the shoulder, "tube" the
 ## rocket launcher lying on the shoulder, "hip" the braced heavies (cannons, miniguns) from the hip,
@@ -936,7 +1059,7 @@ func _aim_bend() -> void:
 		var i := _bone(pair[0])
 		if i < 0:
 			continue
-		var a: float = clampf(pitch, -1.0, 1.0) * float(pair[1]) * _sh_k
+		var a: float = clampf(pitch, -1.0, 1.0) * float(pair[1]) * _sh_k * (1.0 - 0.7 * _carry_k)
 		if pair[0] == "spine":
 			a += 0.035 * kick * _sh_k
 		var par := _sk.get_bone_parent(i)
@@ -954,6 +1077,12 @@ func _shoulder_gun(w: Transform3D, rh: Vector3, lh: Vector3, m: Node3D) -> Trans
 	var skt := _sk.global_transform
 	var sh := (skt * _sk.get_bone_global_pose(ui)).origin
 	var D := aim_dir()
+	if mode == "rifle" and _carry_k > 0.001:
+		var cd := _carry_dir(D)
+		var tw := _torso_twist()
+		if absf(tw) > 0.0001:
+			cd = Basis(Vector3.UP, -tw * CARRY_TWIST) * cd      # (the lowered gun turns a little with the chest)
+		D = D.slerp(cd, _carry_k).normalized()
 	if mode == "hip":
 		var fl := Vector3(D.x, 0.0, D.z).normalized()
 		var p := clampf(asin(clampf(D.y, -1.0, 1.0)), -HIP_PITCH, HIP_PITCH)
@@ -1009,32 +1138,97 @@ func _shoulder_gun(w: Transform3D, rh: Vector3, lh: Vector3, m: Node3D) -> Trans
 	F.basis = F.basis.orthonormalized().scaled(w.basis.get_scale())
 	# the hands where they held it, on the moved gun; the elbows bend as the movement had them
 	var to_f := F * w.affine_inverse()
+	var r_at := to_f * rh
 	var l_at := to_f * lh
+	var hr := _hand_r
+	var hl := _bone("hand.L")
+	var old_r := _sk.get_bone_global_pose(hr).basis.orthonormalized()
+	var old_l := _sk.get_bone_global_pose(hl).basis.orthonormalized() if hl >= 0 else Basis()
+	var sb := skt.basis
+	var g_r := Basis()      # (rifle: where the hands sit on the gun - fixed, see below)
+	var g_l := Basis()
+	var fixed := false
+	if mode == "rifle":
+		# (2026-11-26) the hands sit on the gun as the calm stand holds it (taken once per gun): each
+		# movement's own grip differs a little, and switching stand / walk / run made the hands jump
+		var idle := _bclip_id == "tp_body_idle" and _fade_from.is_empty()      # (not the idle_2.. fidgets)
+		var calm := not _grip_rel.has(held) or (idle and not bool((_grip_rel[held] as Array)[4]))
+		var wi := w.affine_inverse()
+		var wb := w.basis.orthonormalized().inverse()
+		if calm:
+			var arms := {}
+			for bn in ARM_BONES:
+				var bi := _bone(bn)
+				if bi >= 0:
+					arms[bi] = _sk.get_bone_pose_rotation(bi)
+			_grip_rel[held] = [wi * rh, wi * lh, wb * (sb * old_r), wb * (sb * old_l), idle, arms]
+		var gr: Array = _grip_rel[held]
+		r_at = F * (gr[0] as Vector3)
+		l_at = F * (gr[1] as Vector3)
+		var fb := F.basis.orthonormalized()
+		g_r = (sb.inverse() * fb * (gr[2] as Basis)).orthonormalized()
+		g_l = (sb.inverse() * fb * (gr[3] as Basis)).orthonormalized()
+		fixed = true
 	if mode != "rifle":
 		# the heavies and the handguns: the left hand on the gun's own fore grip (Dílna "grip/<gun>")
 		var g := ArmIK.grips(held, m)
 		if g.has("l"):
 			l_at = F * (m.transform * (g["l"] as Vector3))
-	var hr := _hand_r
-	var hl := _bone("hand.L")
-	var old_r := _sk.get_bone_global_pose(hr).basis.orthonormalized()
-	var old_l := _sk.get_bone_global_pose(hl).basis.orthonormalized() if hl >= 0 else Basis()
+	# (2026-11-26) the arms as the movement has them: going in / out of the shoulder they blend over
+	# (the IK elbow is not the movement's elbow - without this they jumped as it switched on and off)
+	var arm_was := {}
+	if _sh_k < 0.999:
+		for bn in ARM_BONES:
+			var bi := _bone(bn)
+			if bi >= 0:
+				arm_was[bi] = _sk.get_bone_pose_rotation(bi)
 	var er := _bone("forearm.R")
 	var el := _bone("forearm.L")
 	var r_pole := Vector3.DOWN * 0.25 + right * 0.1
 	if mode == "pistol":
 		r_pole = Vector3.DOWN * 0.3 + right * 0.15
+	var r_hint: Vector3 = (skt * _sk.get_bone_global_pose(er)).origin + r_pole if er >= 0 else Vector3.ZERO
+	var l_hint: Vector3 = (skt * _sk.get_bone_global_pose(el)).origin + Vector3.DOWN * 0.3 - right * (0.1 if mode == "pistol" else 0.0) if el >= 0 else Vector3.ZERO
+	if mode == "rifle":
+		# (2026-11-26) the elbows from the body, not from the movement's own elbows: those jump
+		# between the clips (stand / walk / run), and the arm with them - right elbow down and out,
+		# left elbow down under the fore-end
+		var flat_r := Vector3(right.x, 0.0, right.z).normalized()
+		r_hint = sh + Vector3.DOWN * 0.45 + flat_r * 0.22
+		l_hint = l_at + Vector3.DOWN * 0.4 - flat_r * 0.05
+	if fixed and _grip_rel[held].size() > 5:
+		# (the IK starts from the calm stand's arms: from each movement's own arms the bones twisted
+		# along as the movement changed - the stand / walk / run arms differ by up to 60 degrees)
+		var arms: Dictionary = _grip_rel[held][5]
+		for bi in arms:
+			_sk.set_bone_pose_rotation(bi, arms[bi])
 	if er >= 0:
-		ArmIK.solve(_sk, "R", to_f * rh, (skt * _sk.get_bone_global_pose(er)).origin + r_pole)
+		ArmIK.solve(_sk, "R", r_at, r_hint)
 	if el >= 0 and hl >= 0:
-		ArmIK.solve(_sk, "L", l_at, (skt * _sk.get_bone_global_pose(el)).origin + Vector3.DOWN * 0.3 - right * (0.1 if mode == "pistol" else 0.0))
+		ArmIK.solve(_sk, "L", l_at, l_hint)
 	# the hands turn with the gun
-	var sb := skt.basis
 	var rs := (sb.inverse() * to_f.basis.orthonormalized() * sb).orthonormalized()
-	_hand_turn(hr, rs * old_r)
+	_hand_turn(hr, _hand_smooth(hr, g_r if fixed else rs * old_r))
 	if hl >= 0 and mode == "rifle":
-		_hand_turn(hl, rs * old_l)
+		_hand_turn(hl, _hand_smooth(hl, g_l))
+	for bi in arm_was:
+		_sk.set_bone_pose_rotation(bi, (arm_was[bi] as Quaternion).slerp(_sk.get_bone_pose_rotation(bi), _sh_k))
 	return F
+
+## (2026-11-26) The hands on the shouldered gun turn smoothly: when the movement changes (stand ->
+## walk -> run) its own wrists jump between the clips' grips, the hand on the gun should not.
+var _hand_sm := {}
+var _grip_rel := {}      # gun -> [right hand, left hand (in the holder's space), their turns]
+var _hand_sm_f := -1
+func _hand_smooth(i: int, g: Basis) -> Basis:
+	var q := g.orthonormalized().get_rotation_quaternion()
+	var f := Engine.get_process_frames()
+	if _hand_sm.has(i) and f - _hand_sm_f <= 2:
+		q = (_hand_sm[i] as Quaternion).slerp(q, clampf(get_process_delta_time() * 14.0, 0.0, 1.0))
+	_hand_sm[i] = q
+	if i == _hand_r:
+		_hand_sm_f = f
+	return Basis(q)
 
 ## Sets bone @a i so its pose in the skeleton is @a g (rotation only).
 func _hand_turn(i: int, g: Basis) -> void:
@@ -1598,6 +1792,11 @@ var _air_t := 0.0            # how long off the ground (a jump, a fall)
 ## 0 nothing, 1 reloading, 2 a blow, 3 digging in the pack, 4 healing, 5 throwing, 6 using
 ## (a door...), 7 climbing up a ledge, 8 in the air, 9 drawing a long gun, 10 drawing a handgun
 func _act_tick() -> void:
+	var _pt := PerfLog.t0()
+	_pl_act_tick()
+	PerfLog.took("voják._act_tick", _pt)
+
+func _pl_act_tick() -> void:
 	var a := 0
 	if busy > 0 and busy_total > 0 and busy_text.begins_with("Přebíj"):
 		a = 1
@@ -1694,6 +1893,7 @@ func _show_items(r: String, l: String, back: String) -> void:
 		if holder:
 			_fp_layer(holder)
 			Game.dress_hands(holder, merc.get("look", {}))       # (0.57: bare arms = skin-coloured sleeve)
+	_scope_lens_setup()
 	var fps: Node = gun_l.get_node_or_null("FpShield") if gun_l else null
 	if fps:
 		_shield_fp(fps)
@@ -1796,6 +1996,11 @@ func find_item(pred: Callable) -> String:
 	return ""
 
 func _update_held() -> void:
+	var _pt := PerfLog.t0()
+	_pl_update_held()
+	PerfLog.took("voják._update_held", _pt)
+
+func _pl_update_held() -> void:
 	held = item_in("rh").get("id", "")
 	held_l = item_in("lh").get("id", "")
 	held_back = item_in("back").get("id", "")
@@ -2069,6 +2274,12 @@ var _breath_left := HOLD_BREATH
 var _breath_after := 0.0
 var breath_held := false
 func _hold_breath(delta: float) -> float:
+	var _pt := PerfLog.t0()
+	var _pr = _pl_hold_breath(delta)
+	PerfLog.took("voják._hold_breath", _pt)
+	return _pr
+
+func _pl_hold_breath(delta: float) -> float:
 	breath_held = false
 	if not Game.has_talent(merc, "zadrzet_dech"):
 		return 1.0
@@ -2108,6 +2319,7 @@ func _pl_physics_process(delta: float) -> void:
 		_remote_visuals()
 		return
 	_illusion_tick(delta)
+	_contact_tick(delta)
 	_fit_body_shape()
 	if dead or mission.finished:
 		velocity = Vector3.ZERO
@@ -2269,7 +2481,9 @@ func _pl_physics_process(delta: float) -> void:
 		if not _mantle_try(MANTLE_STAND) and not _unstuck_try():
 			velocity.y = 4.2
 			_wedge_t = 0.0
-	StepUp.climb(self, delta, StepUp.MAN)     # (0.62: up a kerb without a jump)
+	var stepped := StepUp.climb(self, delta, StepUp.MAN)     # (0.62: up a kerb without a jump)
+	if stepped > 0.0:
+		head.position.y -= stepped     # (2026-11-22) the eyes follow up smoothly (the head lerps back), no hop in the view
 	var y_before := global_position.y
 	move_and_slide()
 	if not is_on_floor() and get_slide_collision_count() > 0 and global_position.y - y_before > -0.004 and velocity.y <= 0.5:
@@ -2446,6 +2660,11 @@ func burst_name(it: Dictionary) -> String:
 var _dot: MeshInstance3D
 var _dot_tell := 0.0
 func _laser_dot() -> void:
+	var _pt := PerfLog.t0()
+	_pl_laser_dot()
+	PerfLog.took("voják._laser_dot", _pt)
+
+func _pl_laser_dot() -> void:
 	var w := weapon()
 	var on: bool = not w.is_empty() and Game.has_mod(w["id"], "laser", merc) and not sprinting and not mission.hud.inventory_open and not downed
 	if _dot == null:
@@ -2512,6 +2731,11 @@ func _laser_seen(alien_name: String) -> void:
 var mg_heat := 0.0
 var _mg_hot := false
 func _mg_cool(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_mg_cool(delta)
+	PerfLog.took("voják._mg_cool", _pt)
+
+func _pl_mg_cool(delta: float) -> void:
 	if mg_heat <= 0.0:
 		return
 	if _since_shot > 0.2:
@@ -2538,6 +2762,11 @@ var _pulse_k := 1.0           # 1 = a normal shot; PULSE_DMG while a burst fires
 
 ## Fires the next pulse of a running LR-01 burst (the cell is spent only by the last one).
 func _pulse_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_pulse_tick(delta)
+	PerfLog.took("voják._pulse_tick", _pt)
+
+func _pl_pulse_tick(delta: float) -> void:
 	if _pulse_left <= 0:
 		return
 	var w := item_in(_pulse_slot)
@@ -2566,6 +2795,11 @@ func _fire_pulse(slot: String, w: Dictionary, rule: Dictionary, last: bool) -> v
 		fire_cd = float(rule["rate"])
 
 func _laser_charge(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_laser_charge(delta)
+	PerfLog.took("voják._laser_charge", _pt)
+
+func _pl_laser_charge(delta: float) -> void:
 	_since_shot += delta
 	for s in ["rh", "lh"]:
 		var w := gun_in(s)
@@ -2614,13 +2848,18 @@ func _from_locker(ids: Array) -> Dictionary:
 
 var _kit_t := 3.0
 func _kit_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_kit_tick(delta)
+	PerfLog.took("voják._kit_tick", _pt)
+
+func _pl_kit_tick(delta: float) -> void:
 	if not is_multiplayer_authority() or Net.mission_params.is_empty():
 		return
 	_kit_t -= delta
 	if _kit_t > 0.0:
 		return
 	_kit_t = 3.0
-	mission.report_kit_now.rpc_id(1, [] if dead else _kit_ids())
+	mission.report_kit_now.rpc_id(1, _kit_ids())      # (2026-11-26: the dead keep it too - a won mission takes it home)
 
 ## Host: more of something was taken than the base has - it stays in the armory.
 @rpc("any_peer", "call_local", "reliable")
@@ -2686,6 +2925,11 @@ const SHIELD_HP := 420.0
 static func shield_max(id: String) -> float:
 	return float(Game.ITEMS.get(id, {}).get("hp", SHIELD_HP))
 func _actions(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_actions(delta)
+	PerfLog.took("voják._actions", _pt)
+
+func _pl_actions(delta: float) -> void:
 	radio_button = false
 	_talk_tick(delta)
 	var rh := item_in("rh")
@@ -2884,7 +3128,7 @@ func has_sight_line() -> bool:
 ## "dot" (a red dot in the window), "scope" (the magnified picture in the eyepiece), "iron" or "" - what
 ## the eye sees through the sight right now.
 func sight_mode() -> String:
-	if not _sight_on or not aiming:
+	if not _sight_on or not aiming or dead:
 		return ""
 	return String(Game.sight_of(item_in("rh").get("id", ""), merc).get("kind", ""))
 
@@ -2901,8 +3145,23 @@ func _scope_tick(sl: Dictionary) -> void:
 			_scope_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 			_scope_canvas.queue_redraw()
 		scope_r = 0.0
+		_scope_lens_tick(false)
 		return
+	_scope_lens_tick(true)
 	var sg: Dictionary = sl["sight"]
+	_scope_make()
+	_scope_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_scope_canvas.queue_redraw()
+	_scope_cam.global_transform = cam.global_transform
+	# the eyepiece's size on the screen from where it sits when the gun is settled at the eye
+	# (relief in front of it), not from the gun itself - the recoil would make it pump
+	var h := get_viewport().get_visible_rect().size.y
+	scope_r = float(sg["r"]) / float(sg["relief"]) / tan(deg_to_rad(cam.fov) * 0.5) * h * 0.5
+	var t := (scope_r / (h * 0.5)) * tan(deg_to_rad(cam.fov) * 0.5) / float(sg["zoom"])
+	_scope_cam.fov = rad_to_deg(2.0 * atan(t))
+
+## The scope's own camera and picture (made once).
+func _scope_make() -> void:
 	if _scope_vp == null:
 		_scope_vp = SubViewport.new()
 		_scope_vp.size = Vector2i(384, 384)
@@ -2924,15 +3183,79 @@ func _scope_tick(sl: Dictionary) -> void:
 		_scope_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		cl.add_child(_scope_canvas)
 		_scope_canvas.draw.connect(_draw_scope)
+
+## (2026-11-26, Ari: "puška, optika, pořád ten černý bordel") The eyepiece of a scope in the hands
+## shows the scope's picture (shaders/scope_lens.gdshader) - at the hip, coming up to the eye and
+## at the eye - instead of the black back of the eyepiece. Set on the gun's eye-lens glass ("...Glass")
+## whenever the gun in the hand has a scope.
+var _lens_mat: ShaderMaterial
+var _lens_sg := {}
+func _scope_lens_setup() -> void:
+	_lens_sg = {}
+	if gun == null or not is_multiplayer_authority():
+		return
+	var rid: String = item_in("rh").get("id", "")
+	var sg := Game.sight_of(rid, merc)
+	var wm: Node3D = gun.get_node_or_null("Weapon")
+	if String(sg.get("kind", "")) != "scope" or wm == null:
+		return
+	if _lens_mat == null:
+		_lens_mat = ShaderMaterial.new()
+		_lens_mat.shader = load("res://shaders/scope_lens.gdshader")
+	# a disc of the eyepiece's size LENS_BACK behind the eye lens (on the back face of the
+	# eyecup / the closed back of the tube, which was the black disc)
+	var q := QuadMesh.new()
+	q.size = Vector2.ONE * float(sg["r"]) * 2.0
+	var mi := MeshInstance3D.new()
+	mi.name = "ScopeLens"
+	mi.mesh = q
+	mi.material_override = _lens_mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.layers = FP_LAYER
+	mi.position = (sg["at"] as Vector3) + Vector3(0, 0, LENS_BACK)
+	wm.add_child(mi)
+	_lens_sg = sg
+const LENS_BACK := 0.005
+
+## The eyepiece shows the scope's picture now (tests).
+func scope_lens_on() -> bool:
+	return not _lens_sg.is_empty() and _lens_mat != null and float(_lens_mat.get_shader_parameter("live")) > 0.5
+
+## Each frame: where the eyepiece is, and the scope's camera looking along the scope (when the eye
+## is not settled behind it - then _scope_tick puts it where the eye looks, as before).
+func _scope_lens_tick(eye_on: bool) -> void:
+	if _lens_sg.is_empty() or _lens_mat == null:
+		return
+	var wm: Node3D = gun.get_node_or_null("Weapon") if gun else null
+	if wm == null or not wm.is_visible_in_tree():
+		_lens_mat.set_shader_parameter("live", 0.0)
+		return
+	var gx := wm.global_transform
+	var ec: Vector3 = gx * (_lens_sg["at"] as Vector3)
+	var f: Vector3 = (gx.basis * Vector3(0, 0, -1)).normalized()
+	var u: Vector3 = (gx.basis * Vector3(0, 1, 0)).normalized()
+	var r: Vector3 = f.cross(u).normalized()
+	u = r.cross(f).normalized()
+	_lens_mat.set_shader_parameter("eye_c", ec)
+	_lens_mat.set_shader_parameter("fwd", f)
+	_lens_mat.set_shader_parameter("t1", r)
+	_lens_mat.set_shader_parameter("t2", u)
+	_lens_mat.set_shader_parameter("relief", float(_lens_sg["relief"]))
+	# drawn only while the eyepiece is on the screen
+	var seen := cam != null and cam.is_position_in_frustum(ec)
+	if not seen and not eye_on:
+		if _scope_vp:
+			_scope_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		_lens_mat.set_shader_parameter("live", 0.0)
+		return
+	_scope_make()
+	_lens_mat.set_shader_parameter("pic", _scope_vp.get_texture())
+	_lens_mat.set_shader_parameter("live", 1.0)
 	_scope_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	_scope_canvas.queue_redraw()
-	_scope_cam.global_transform = cam.global_transform
-	# the eyepiece's size on the screen from where it sits when the gun is settled at the eye
-	# (relief in front of it), not from the gun itself - the recoil would make it pump
-	var h := get_viewport().get_visible_rect().size.y
-	scope_r = float(sg["r"]) / float(sg["relief"]) / tan(deg_to_rad(cam.fov) * 0.5) * h * 0.5
-	var t := (scope_r / (h * 0.5)) * tan(deg_to_rad(cam.fov) * 0.5) / float(sg["zoom"])
-	_scope_cam.fov = rad_to_deg(2.0 * atan(t))
+	if not eye_on:
+		_scope_cam.global_transform = Transform3D(Basis.looking_at(f, u), ec)
+		var t := float(_lens_sg["r"]) / float(_lens_sg["relief"]) / float(_lens_sg["zoom"])
+		_scope_cam.fov = rad_to_deg(2.0 * atan(t))
 
 ## Looking through a rifle scope right now (zoomed in).
 func scoped() -> bool:
@@ -3054,7 +3377,7 @@ func _pl_shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 		mg_heat += float(rule["heat"]) * (PULSE_HEAT if _pulse_k < 1.0 else 1.0) * (0.6 if Game.has_mod(wp["id"], "chladic", merc) else 1.0) * Game.part_mult(wp["id"], "heat", merc)
 		if mg_heat >= 1.0 and not _mg_hot:
 			_mg_hot = true
-			Game.play_at(self, "hiss", global_position + Vector3.UP, -2)
+			Game.play_cut(self, String(VENT_SOUND[0]), global_position + Vector3.UP, float(VENT_SOUND[1]) - 4.0, float(VENT_SOUND[2]), float(VENT_SOUND[3]))      # (not the lizard's "hiss")
 			mission.hud.message("Emitor přehřátý." if rule.get("laser", false) else ("Plazmová komora přehřátá - regulace blokuje výstřel." if String(wp["id"]).begins_with("plasma_") else "Hlavně přehřáté."), 1.5)
 	pitch += (0.012 + randf() * 0.01) * kick_mult * (0.5 if prone else 1.0)
 	var from := cam.global_position
@@ -3427,6 +3750,11 @@ func _edge_knife() -> Dictionary:
 	return inv[s] if s != "" else {}
 
 func _edge_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_edge_tick(delta)
+	PerfLog.took("voják._edge_tick", _pt)
+
+func _pl_edge_tick(delta: float) -> void:
 	var it := _edge_knife()
 	if it.is_empty() or int(it.get("edge", EDGE_CAP)) > 0:
 		return
@@ -3584,6 +3912,12 @@ func _mantle_top(space: PhysicsDirectSpaceState3D, feet: Vector3, fwd: Vector3, 
 var _stuck_at := Vector3.INF
 var _stuck_n := 0
 func _unstuck_try() -> bool:
+	var _pt := PerfLog.t0()
+	var _pr = _pl_unstuck_try()
+	PerfLog.took("voják._unstuck_try", _pt)
+	return _pr
+
+func _pl_unstuck_try() -> bool:
 	if _stuck_at.distance_to(global_position) < 0.4:
 		_stuck_n += 1
 	else:
@@ -3639,6 +3973,12 @@ func _unstuck_try() -> bool:
 	return false
 
 func _mantle_try(reach: float) -> bool:
+	var _pt := PerfLog.t0()
+	var _pr = _pl_mantle_try(reach)
+	PerfLog.took("voják._mantle_try", _pt)
+	return _pr
+
+func _pl_mantle_try(reach: float) -> bool:
 	if busy_stand or prone or downed or carried_by != 0 or Game.is_shield(held_l):
 		return false
 	var spot := mantle_spot(reach)
@@ -3655,6 +3995,11 @@ func _mantle_try(reach: float) -> bool:
 
 ## Pulling up: first the body rises along the wall, then it rolls over the edge.
 func _mantle_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_mantle_tick(delta)
+	PerfLog.took("voják._mantle_tick", _pt)
+
+func _pl_mantle_tick(delta: float) -> void:
 	_mantle_t += delta / MANTLE_TIME
 	var k := clampf(_mantle_t, 0.0, 1.0)
 	var up := clampf(k / 0.65, 0.0, 1.0)
@@ -3767,6 +4112,24 @@ func _glance_fx(at: Vector3, normal: Vector3) -> void:
 		_glance_snd_t = now
 		Game.play_at(mission, "clink", at, -6, randf_range(1.3, 1.7))       # Ari's own ricochet when he records one
 
+## (2026-11-26, Ari: laser „jako by křivo“) Where the shot is seen to leave from on this machine. The
+## shooter sends the muzzle of the gun in HIS eyes' view (a hand's width in front of his face); everyone
+## else sees him from outside, so the beam/tracer/pulse starts at the mouth of the gun in his hands
+## there (the model on his body), as long as that is shown and not far from the sent point.
+func _fx_muzzle(sent: Vector3) -> Vector3:
+	if is_multiplayer_authority() or body_gun == null or not body_gun.is_visible_in_tree():
+		return sent
+	for c in body_gun.get_children():
+		var wm := c as Node3D
+		if wm == null or not wm.is_visible_in_tree():
+			continue
+		var tip: Variant = _barrel_tip(wm)
+		if tip == null:
+			return sent
+		var p: Vector3 = wm.global_transform * (tip as Vector3)
+		return p if p.distance_to(sent) < 2.5 else sent
+	return sent
+
 static var _tracer_mesh: BoxMesh
 var _muzzle_fl: OmniLight3D
 var _muzzle_n := 0
@@ -3778,6 +4141,7 @@ func _shot_fx(from: Vector3, to: Vector3, snd: String) -> void:
 
 func _pl_shot_fx(from: Vector3, to: Vector3, snd: String) -> void:
 	_fired_at = Time.get_ticks_msec() / 1000.0      # (every machine: the body's firing movement)
+	from = _fx_muzzle(from)
 	var quiet := snd.begins_with(QUIET_MARK)
 	if quiet:
 		snd = snd.substr(QUIET_MARK.length())
@@ -3824,6 +4188,11 @@ func _pl_shot_fx(from: Vector3, to: Vector3, snd: String) -> void:
 	if green:
 		_plasma_pulse(from, to)
 		return
+	if mission:
+		# (0.65, 26. 11. 2026) dopad kulky podle povrchu a kulka, která prosviští kolem hlavy
+		Game.play_impact(mission, from, to, mission.map, -8.0 if quiet else -6.0)
+		if not is_multiplayer_authority():
+			_whiz_check(from, to)
 	# (0.72.5 výkon) stopa a záblesk: jedna sdílená síť (délka měřítkem) a jedno světlo u ústí
 	# na vojáka, které se jen rozsvítí - dřív nová síť a nové světlo při každé ráně (kulomet 14× za s)
 	var tracer := MeshInstance3D.new()
@@ -3855,6 +4224,83 @@ func _pl_shot_fx(from: Vector3, to: Vector3, snd: String) -> void:
 			tracer.queue_free()
 		if is_instance_valid(_muzzle_fl) and _muzzle_n == n:
 			_muzzle_fl.visible = false)
+
+## (0.65, 26. 11. 2026) Hlášky vojáka - Ariho nahrávky merc_<hláška>_male / _female
+## (reload, contact, grenade, hit, kill, help). Slyší je všichni kolem; ne víc než jedna za pár sekund.
+const SAY_GAP := 4.0
+var _say_t := -100.0
+func say(line: String, chance := 1.0) -> void:
+	if not is_multiplayer_authority() or dead or randf() > chance:
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _say_t < SAY_GAP and line != "help":
+		return
+	_say_t = now
+	_say_fx.rpc(line)
+
+@rpc("any_peer", "call_local", "unreliable")
+func _say_fx(line: String) -> void:
+	if mission == null:
+		return
+	var s := Game.voice_of("merc_" + line, merc.get("look", {}).get("female", false))
+	if s == "" or not ResourceLoader.exists("res://assets/sounds/%s.wav" % s):
+		return
+	Game.play_at(mission, s, global_position + Vector3(0, 1.6, 0), -1.0)
+
+## Vetřelec do 40 m nablízku (pro hlášku „Přebíjím!“ - v klidu na základně se nekřičí).
+func _in_fight() -> bool:
+	for a in mission.aliens():
+		if not a.dead and a.global_position.distance_to(global_position) < 40.0:
+			return true
+	return false
+
+## „Kontakt!“: voják uvidí vetřelce poprvé po delší době klidu (před sebou, nic mezi nimi).
+var _contact_cd := 0.0
+var _contact_quiet := 99.0
+func _contact_tick(delta: float) -> void:
+	_contact_cd -= delta
+	_contact_quiet += delta
+	if _contact_cd > 0.0 or mission == null or not mission.started():
+		return
+	_contact_cd = 0.5
+	var eye := cam.global_position
+	var fwd := -cam.global_transform.basis.z
+	for a in mission.aliens():
+		if a.dead or a.cloak:
+			continue
+		var at: Vector3 = a.global_position + Vector3(0, 1.0, 0)
+		var d := eye.distance_to(at)
+		if d > 40.0 or fwd.dot((at - eye) / maxf(d, 0.01)) < 0.6:
+			continue
+		var q := PhysicsRayQueryParameters3D.create(eye, at, Game.WORLD)
+		if get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+			if _contact_quiet > 25.0:
+				say("contact", 0.85)
+			_contact_quiet = 0.0
+			return
+
+## (0.65) Cizí kulka (spoluhráč při přátelské palbě) letí těsně kolem mé hlavy: zasviští.
+var _whiz_t := 0.0
+func _whiz_check(from: Vector3, to: Vector3) -> void:
+	var me: Node = mission.local_player()
+	if me == null or me == self or me.dead:
+		return
+	var head: Vector3 = me.global_position + Vector3(0, 1.5, 0)
+	var d := to - from
+	var L := d.length()
+	if L < 2.0:
+		return
+	var along := clampf((head - from).dot(d / L), 0.0, L)
+	if along < 3.0 or along > L - 0.5:
+		return
+	var p := from + d / L * along
+	if p.distance_to(head) > 1.6:
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _whiz_t < 0.15:
+		return
+	_whiz_t = now
+	Game.play_at(mission, "bullet_whiz", p, -2.0, randf_range(0.9, 1.1))
 
 ## Our plasma (PP-01 and the rest): a green pulse you can watch fly - far slower than a laser.
 const PLASMA_PULSE_SPEED := 120.0
@@ -3908,9 +4354,17 @@ func _plasma_pulse(from: Vector3, to: Vector3) -> void:
 
 ## LC-01: what the player must notice at once - a deep crack, the world flashing white, a thick
 ## beam, the hit glowing and shedding sparks, and a moment later the cooling vents with a hiss and steam.
+## (0.72.5, Ari: "after every LC-01 shot an alien is heard") the culprit was the vents' "hiss" 0.35 s
+## after the shot - that recording is a lizard's hiss; now the smoke grenade's gas, cut short. Also the
+## shot and its charge are no longer pitched far down (the laser zap at 0.55 and the charge whine at 0.6
+## groaned too). Checked by tools/test/lcsound.gd (no creature sound, no pitch under LC_MIN_PITCH).
+const LC_SHOT := [["laser", 4.0, 1.0], ["autocannon", -4.0, 0.9]]       # [sound, dB, pitch]
+const LC_HUM := ["laser_charge", -14.0, 1.0]                            # the charging whine, once per charge
+const LC_MIN_PITCH := 0.85
+const VENT_SOUND := ["smoke_pop", -2.0, 1.1, 0.7]     # [sound, dB, pitch, seconds]: steam from the vents / an overheated barrel
 func _lc_fx(from: Vector3, to: Vector3) -> void:
-	Game.play_at(mission, "laser", from, 6, 0.55)
-	Game.play_at(mission, "autocannon", from, -4, 0.7)
+	for s in LC_SHOT:
+		Game.play_at(mission, String(s[0]), from, float(s[1]), float(s[2]))
 	if is_multiplayer_authority():
 		mission.hud.shot_flash()
 	var beam := MeshInstance3D.new()
@@ -3963,7 +4417,7 @@ func _lc_fx(from: Vector3, to: Vector3) -> void:
 			return
 		# (the vents sit on the gun's flank: the steam rises beside it, not into the sights)
 		var at: Vector3 = global_position + Vector3(0, 1.05, 0) + global_transform.basis.x * 0.45 - global_transform.basis.z * 0.5
-		Game.play_at(mission, "hiss", at, 2, 0.8)
+		Game.play_cut(mission, String(VENT_SOUND[0]), at, float(VENT_SOUND[1]), float(VENT_SOUND[2]), float(VENT_SOUND[3]))
 		for k in 6:
 			var puff := MeshInstance3D.new()
 			var pm := SphereMesh.new()
@@ -3985,23 +4439,32 @@ func _lc_fx(from: Vector3, to: Vector3) -> void:
 
 ## LC-01's charging: a deep hum that rises as the cell fills.
 var _lc_hum: AudioStreamPlayer3D
+var _lc_hum_on := false
 func _lc_hum_tick() -> void:
+	var _pt := PerfLog.t0()
+	_pl_lc_hum_tick()
+	PerfLog.took("voják._lc_hum_tick", _pt)
+
+func _pl_lc_hum_tick() -> void:
 	var w := gun_in("rh")
 	var charging: bool = not w.is_empty() and Game.ITEMS[w["id"]].get("lc", false) and int(w.get("loaded", 1)) == 0 and not dead
 	if not charging:
+		_lc_hum_on = false
 		if _lc_hum and _lc_hum.playing:
 			_lc_hum.stop()
 		return
 	if _lc_hum == null:
 		_lc_hum = AudioStreamPlayer3D.new()
-		# (0.62) its own rising laser whine - the UFO core's hum it used made it sound like an alien after every shot
-		_lc_hum.stream = Game.sound("laser_charge")
+		# (0.62) its own laser whine - the UFO core's hum it used made it sound like an alien after every shot;
+		# (0.72.5) at its own pitch and once per charge (slowed down and looped it still groaned)
+		_lc_hum.stream = Game.sound(String(LC_HUM[0]))
 		_lc_hum.bus = "SFX"
 		_lc_hum.unit_size = 4.0
+		_lc_hum.volume_db = float(LC_HUM[1])
+		_lc_hum.pitch_scale = float(LC_HUM[2])
 		add_child(_lc_hum)
-	_lc_hum.pitch_scale = 0.6 + 0.4 * clampf(float(w.get("charge", 0.0)), 0.0, 1.0)
-	_lc_hum.volume_db = -16.0 + 6.0 * clampf(float(w.get("charge", 0.0)), 0.0, 1.0)
-	if not _lc_hum.playing:
+	if not _lc_hum_on:
+		_lc_hum_on = true
 		_lc_hum.play()
 
 func _reload(wp: Dictionary, rule: Dictionary) -> void:
@@ -4042,6 +4505,8 @@ func _reload(wp: Dictionary, rule: Dictionary) -> void:
 	if slot == "":
 		mission.hud.message("Nemáš náboje do: %s" % rule["name"], 2.0)
 		return
+	if _in_fight():
+		say("reload", 0.6)
 	var fast := 0.65 if Game.has_talent(merc, "rychle_prebiti") else 1.0
 	var dig := slot.begins_with("p")
 	if rule.has("single"):
@@ -4785,6 +5250,8 @@ func _throw(kind: String, from_slot := "") -> void:
 			v = dir * 19.0 + Vector3.UP * 4.0
 		if kind == "mine":
 			v = Vector3(dir.x, 0, dir.z).normalized() * 1.6 + Vector3.UP * 0.6
+		if kind in ["grenade", "plasma_grenade"]:
+			say("grenade", 0.8)
 		_spawn_throwable.rpc(kind, from, v, name))
 
 ## (debug mode) everything back to full: health, stamina, fear, bleeding, every magazine in hand.
@@ -5207,6 +5674,8 @@ func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
 		bleeding += 0.25
 	Game.play_ui(self, Game.voice_of("hurt", merc.get("look", {}).get("female", false)), -4)
 	mission.hud.damage_flash(from)
+	if hp > 0 and dmg > 12.0:
+		say("hit", 0.5)
 	if hp <= 0:
 		hp = 0
 		downed = true
@@ -5221,6 +5690,7 @@ func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
 					revived("Druhý dech")
 					mission.hud.message("DRUHÝ DECH - zvedl ses sám.", 4.0))
 		Game.play_ui(self, Game.voice_of("death", merc.get("look", {}).get("female", false)), -6)
+		get_tree().create_timer(2.5).timeout.connect(func(): if is_instance_valid(self) and downed and not dead: say("help"))
 
 ## (0.69, Ari: they kept shooting him while the transport left) once the mission is over for this
 ## player - the team flew off, he walked out, the result/transport/loading screen is up - nothing
@@ -5235,6 +5705,11 @@ func bleed_time() -> float:
 	return BLEED_OUT + (45.0 if Game.has_talent(merc, "houzevnaty") else 0.0) + (20.0 if Game.has_research("medicina") else 0.0)
 
 func _bleed(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_bleed(delta)
+	PerfLog.took("voják._bleed", _pt)
+
+func _pl_bleed(delta: float) -> void:
 	if safe_out() or Game.debug_god():
 		return
 	if bleeding > 0 and not downed and healed_t <= 0.0:      # (a hand pressing on the wound stops it)
@@ -5731,6 +6206,11 @@ func psi_illusion(ally: String, secs: float, roll: float) -> void:
 	Game.play_ui(self, "whisper", -6)
 
 func _illusion_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_illusion_tick(delta)
+	PerfLog.took("voják._illusion_tick", _pt)
+
+func _pl_illusion_tick(delta: float) -> void:
 	if _illusion_t <= 0.0:
 		return
 	_illusion_t -= delta
@@ -5817,6 +6297,11 @@ func psi_blast(dmg: float) -> void:
 
 # ---- fear ---------------------------------------------------------------------------------------
 func _stress(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_stress(delta)
+	PerfLog.took("voják._stress", _pt)
+
+func _pl_stress(delta: float) -> void:
 	var gain := 0.0
 	for a in mission.aliens():
 		if a.dead:
@@ -5930,6 +6415,11 @@ func _panic_check(delta: float) -> void:
 	Game.play_ui(self, "heartbeat", 0)
 
 func _panic_tick(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_panic_tick(delta)
+	PerfLog.took("voják._panic_tick", _pt)
+
+func _pl_panic_tick(delta: float) -> void:
 	panic_t = minf(panic_t, DAZE_MAX) - delta
 	crouching = panic == "drop"
 	head.position.y = lerp(head.position.y, 1.0 if crouching else 1.6, delta * 8.0)
@@ -5963,6 +6453,13 @@ var salvage := 0
 func _pick_up() -> void:
 	var it: Dictionary = mission.nearest_pickup(global_position)
 	if it.is_empty():
+		return
+	if String(it["item"]["id"]) == "fallen_kit":
+		# (Ari 2026-11-26) a fallen friend's kit: it goes home with whoever carries it to the transport
+		mission.take_pickup.rpc(it["pid"])
+		mission._kit_taken.rpc_id(1, int(it["item"].get("rec", -1)), multiplayer.get_unique_id())
+		mission.hud.message("Vzal jsi výstroj padlého (%s). Domů se vrátí, jen když ji doneseš do transportu živý." % String(it["item"].get("name", "?")), 4.0)
+		Game.play_ui(mission, "pickup", -6)
 		return
 	if Game.ITEMS[it["item"]["id"]]["type"] == "salvage":
 		# an alien's pack: tools, alloy offcuts, a strange device - worth money to the right people
@@ -6040,6 +6537,11 @@ func _place_flash() -> void:
 ## when one of them is near. Often the only warning you get.
 var _flick_t := 0.0
 func _flicker(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_flicker(delta)
+	PerfLog.took("voják._flicker", _pt)
+
+func _pl_flicker(delta: float) -> void:
 	_flick_t -= delta
 	if _flick_t > 0:
 		return
@@ -6063,6 +6565,11 @@ func _flicker(delta: float) -> void:
 var _drag_ap: AudioStreamPlayer3D
 var _drag_last := Vector3.INF
 func _drag_sound(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_drag_sound(delta)
+	PerfLog.took("voják._drag_sound", _pt)
+
+func _pl_drag_sound(delta: float) -> void:
 	var moving := false
 	if downed and carried_by != 0 and _drag_last != Vector3.INF and delta > 0.0:
 		moving = Vector2(global_position.x - _drag_last.x, global_position.z - _drag_last.z).length() / delta > 0.4
@@ -6147,6 +6654,11 @@ func _wounds() -> void:
 var _blood_hp := -1.0
 var _blood_t := 0.0
 func _blood_watch(delta: float) -> void:
+	var _pt := PerfLog.t0()
+	_pl_blood_watch(delta)
+	PerfLog.took("voják._blood_watch", _pt)
+
+func _pl_blood_watch(delta: float) -> void:
 	if mission == null:
 		return
 	if _blood_hp < 0.0:
@@ -6186,7 +6698,30 @@ func _hit_overlay(delta: float) -> void:
 ## (0.70+) Ari: dead in a co-op mission - watch the living teammates (scripts/spectator.gd).
 ## Meanwhile the own body lies where he fell (others see it there too).
 var spectator: Node = null
+var _aim_dropped := false
+
+## (2026-11-26, Ari: died while aiming through a scope - the eyepiece circle with the own see-through
+## gun stayed in the middle of the spectator view) Death ends the aiming: no sight, no scope
+## picture, no first-person gun or hands. Once, the first frame dead.
+func _drop_aim() -> void:
+	if _aim_dropped:
+		return
+	_aim_dropped = true
+	aiming = false
+	bracing = false
+	_sight_on = false
+	scope_r = 0.0
+	if _scope_vp:
+		_scope_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	if _scope_canvas:
+		_scope_canvas.queue_redraw()
+	if cam:
+		cam.fov = Game.fov
+	for h in [gun, gun_l]:
+		if h:
+			h.visible = false
 func _spectate(delta: float) -> void:
+	_drop_aim()
 	if spectator == null and not mission.finished and Game.cmd_arg("nospect", "") == "" \
 			and not (mission.has_method("home") and mission.home()) and Spectator.wanted(mission, self):
 		spectator = Spectator.new()
@@ -6200,6 +6735,11 @@ func _spectate(delta: float) -> void:
 		_animate_body(delta)
 
 func _remote_visuals() -> void:
+	var _pt := PerfLog.t0()
+	_pl_remote_visuals()
+	PerfLog.took("voják._remote_visuals", _pt)
+
+func _pl_remote_visuals() -> void:
 	if _hp_seen >= 0.0 and hp < _hp_seen - 0.5 and not dead and not downed:
 		var ids := []
 		for k in range(1, 9):

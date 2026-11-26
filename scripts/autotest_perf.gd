@@ -411,6 +411,26 @@ static func _verts(g) -> int:
 ## (úseky ze záznamníku výkonu, scripts/perf_log.gd). Vetřelci nezemřou (--kill=1 ano).
 static var _gl := {"ph": -1, "fr": [], "t0": {}, "n0": {}, "rows": []}
 const GL_PH := [["klid", 10.0], ["střelba", 20.0], ["po střelbě", 8.0]]
+## Nejbližší plochá střecha (3-9 m nad zemí), na kterou se dá postavit.
+static func _gl_roof(p: Node, sloped := false) -> Vector3:
+	var sp: PhysicsDirectSpaceState3D = p.get_world_3d().direct_space_state
+	var best := Vector3.INF
+	var bd := 1e9
+	for x in range(-60, 61, 2):
+		for z in range(-60, 61, 2):
+			var o: Vector3 = p.global_position + Vector3(x, 0, z)
+			var q := PhysicsRayQueryParameters3D.create(Vector3(o.x, 20, o.z), Vector3(o.x, -2, o.z), Game.WORLD)
+			var h := sp.intersect_ray(q)
+			if h.is_empty() or h["position"].y < 3.0 or h["position"].y > 9.0:
+				continue
+			if (h["normal"].y < 0.95) if not sloped else (h["normal"].y < 0.6 or h["normal"].y > 0.93):
+				continue
+			var d: float = Vector2(x, z).length() if not sloped else -h["position"].y + Vector2(x, z).length() * 0.01
+			if d < bd:
+				bd = d
+				best = h["position"]
+	return best
+
 static func gunlag(at: Node, p: Node) -> void:
 	if p == null: return
 	at._skip_brief()
@@ -426,6 +446,29 @@ static func gunlag(at: Node, p: Node) -> void:
 		p.inv["rh"] = {"id": gun, "loaded": 100000}
 		p._update_held()
 		if Game.perf: Game.perf.set_on(true)
+		if Game.cmd_arg("roof", "") in ["1", "2"]:      # (Ari 22. 11. večer: propad, když vyleze na střechu; 2 = šikmá)
+			var top := _gl_roof(p, Game.cmd_arg("roof", "") == "2")
+			if top != Vector3.INF:
+				p.global_position = top + Vector3(0, 0.3, 0)
+				p.velocity = Vector3.ZERO
+				at.set_meta("gl_top", top + Vector3(0, 0.3, 0))
+			at.out("[GUNLAG] na střeše: %s" % [top])
+		var at_s := Game.cmd_arg("at", "")
+		if at_s != "":
+			var c := at_s.split(",")
+			p.global_position = Vector3(float(c[0]), float(c[1]), float(c[2]))
+			p.velocity = Vector3.ZERO
+			at.out("[GUNLAG] postaven na %s" % [p.global_position])
+		if Game.cmd_arg("shapes", "") == "1":
+			var rows := []
+			for cs in at.m().find_children("*", "CollisionShape3D", true, false):
+				var sh: Shape3D = (cs as CollisionShape3D).shape
+				var n := 0
+				if sh is ConvexPolygonShape3D: n = (sh as ConvexPolygonShape3D).points.size()
+				elif sh is ConcavePolygonShape3D: n = -(sh as ConcavePolygonShape3D).get_faces().size() / 3
+				rows.append([n, cs.get_parent().name + "/" + cs.name, (cs as Node3D).global_position])
+			rows.sort_custom(func(x, y): return absi(x[0]) > absi(y[0]))
+			for r in rows.slice(0, 25): at.out("[SHAPE] %d %s %s" % r)
 		at.out("[GUNLAG] start %s: civilistů %d, vetřelců %d" % [gun, at.m().civilians().size(), at.m().aliens().size()])
 		at.set_meta("gl_t", at.t)
 	var tt: float = at.t - float(at.get_meta("gl_t"))
@@ -452,14 +495,25 @@ static func gunlag(at: Node, p: Node) -> void:
 				Game.perf._flush()
 				var fa := FileAccess.open(Game.perf._path, FileAccess.READ)
 				rec = fa != null and fa.get_length() > 200
+			at.out("[GUNLAG] spadl ze střechy %d×" % int(at.get_meta("gl_falls", 0)))
 			at.out("RESULT gunlag %s zaznam %s klid %.1f ms (max %.0f) strelba %.1f ms (99 %% %.0f, max %.0f) navic %.1f ms/snimek; nejdrazsi pri strelbe: %s" % [gun, rec, r[0][0], r[0][1], r[1][0], r[1][3], r[1][1], r[1][0] - r[0][0], r[1][2]])
 			at.get_tree().quit()
 			return
 	if dt > 0.0: (_gl["fr"] as Array).append(dt)
+	if int(at.t * 2.0) != int((at.t - 0.02) * 2.0) and Game.cmd_arg("where", "") == "1":
+		at.out("[GUNLAG] kde %s floor %s wedge %.2f" % [p.global_position, p.is_on_floor(), p._wedge_t])
 	var shoot := ph == 1
 	var a: Node = at._nearest(p)
 	if a and Game.cmd_arg("kill", "0") != "1":
 		a.hp = maxf(a.hp, 50.0)
+	if Game.cmd_arg("walk", "") == "1":
+		# walks round in a slow circle (on a roof: up and down the slope, along the ridge)
+		Input.action_press("move_forward")
+		p.rotation.y += 0.04
+		if at.has_meta("gl_top") and p.global_position.y < (at.get_meta("gl_top") as Vector3).y - 2.0:
+			p.global_position = at.get_meta("gl_top")      # (fell off the eave: back up)
+			p.velocity = Vector3.ZERO
+			at.set_meta("gl_falls", int(at.get_meta("gl_falls", 0)) + 1)
 	if shoot:
 		if a and p.global_position.distance_to(a.global_position) < 40.0 and Game.cmd_arg("walls", "0") != "1":
 			at._aim_at(p, a.global_position + Vector3(0, 0.9, 0))
@@ -492,5 +546,36 @@ static func _gl_report(at: Node, ph: int) -> void:
 	for k in ks.slice(0, 8):
 		parts.append("%s %.1f ms/s (%d/s)" % [k, d[k] / 1000.0 / secs, (int(PerfLog.tot_n[k]) - int((_gl["n0"] as Dictionary).get(k, 0))) / secs])
 	at.out("[GUNLAG] civilistů %d, vetřelců živých %d" % [at.m().civilians().size(), at.m().alive_aliens()])
+	var vparts := PackedStringArray()
+	for k in ks:
+		if String(k).begins_with("voják."): vparts.append("%s %.1f" % [k, d[k] / 1000.0 / secs])
+	at.out("[GUNLAG] voják podrobně (ms/s): %s" % ", ".join(vparts))
 	at.out("[GUNLAG] %-11s snímek %.1f ms, 99 %% %.1f, max %.0f ms | %s" % [GL_PH[ph][0], avg, p99, mx, ", ".join(parts)])
 	(_gl["rows"] as Array).append([avg, mx, ", ".join(parts.slice(0, 3)), p99])
+
+## deadcost (2026-11-26, propady v co-opu): kolik stojí jeden vetřelec za krok fyziky živý a mrtvý.
+## 4–14 s živí (nebojují), ve 14 s všichni padnou, 26–36 s mrtví (po CORPSE_REST). Spouštět s --perflog=1.
+static var _dc := {}
+static func deadcost(at: Node, p: Node) -> void:
+	if p == null: return
+	at._skip_brief()
+	p.hp = 1.0e6
+	var K := "vetřelci: pohyb a fyzika (snímek)"
+	var snap := func() -> Array: return [int(PerfLog.tot.get(K, 0)), int(PerfLog.tot_n.get(K, 0))]
+	if at.t > 4.0 and not _dc.has("a0"): _dc["a0"] = snap.call()
+	if at.t > 14.0 and not _dc.has("a1"):
+		_dc["a1"] = snap.call()
+		for a in at.m().aliens():
+			if is_instance_valid(a) and not a.dead:
+				a.damage(99999.0, a.global_position + Vector3(0, 1, 2), p)
+	if at.t > 26.0 and not _dc.has("d0"): _dc["d0"] = snap.call()
+	if at.t > 36.0 and not _dc.has("d1"):
+		_dc["d1"] = snap.call()
+		var f := func(x: Array, y: Array) -> String:
+			var n: int = y[1] - x[1]
+			return "%.3f ms/krok (%d)" % [float(y[0] - x[0]) / 1000.0 / maxf(1, n), n]
+		var dead := 0
+		for a in at.m().aliens():
+			if a.dead: dead += 1
+		at.out("RESULT deadcost alive %s dead %s (mrtvých %d)" % [f.call(_dc["a0"], _dc["a1"]), f.call(_dc["d0"], _dc["d1"]), dead])
+		at.get_tree().quit()

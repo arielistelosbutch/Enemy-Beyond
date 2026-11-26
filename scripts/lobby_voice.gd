@@ -26,6 +26,7 @@ var opened_at := 0
 var _retries := 0
 var _since_open := 0
 var dbg_rx := PackedFloat32Array()
+var _no_game := false
 
 func _ready() -> void:
 	name = "LobbyVoice"
@@ -52,7 +53,14 @@ func take_for_mission() -> PackedFloat32Array:
 	_mission_feed = PackedFloat32Array()
 	return out
 
+## (2026-11-26) Když se hra nenačte celá (Game se nezkompiluje, např. chybí PerfLog v cache tříd
+## při spuštění bez importu), Game je null a tenhle _process plnil log chybou každý snímek (1 GB).
 func _process(delta: float) -> void:
+	if Game == null:
+		if not _no_game:
+			_no_game = true
+			push_error("LobbyVoice: autoload Game se nenačetl, hlas vypnutý")
+		return
 	_pump(delta)
 	var want := _want_mic()
 	if want and mic == null:

@@ -47,6 +47,19 @@ var _turn_after := 60.0
 var _tell_t := 0.0
 var _tell_on := false
 
+var _female := false
+var _here_t := 0.0
+## (0.65, 26. 11. 2026) Ariho hlášky civilistů civ_<help|here|thanks|cry>_male / _female ("" když chybí).
+func _line(what: String) -> String:
+	var s := "civ_%s_%s" % [what, "female" if _female else "male"]
+	return s if ResourceLoader.exists("res://assets/sounds/%s.wav" % s) else ""
+
+@rpc("authority", "call_local", "unreliable")
+func _say(what: String) -> void:
+	var s := _line(what)
+	if s != "" and mission:
+		Game.play_at(mission, s, global_position + Vector3(0, 1.6, 0), -2.0)
+
 func is_civilian() -> bool:
 	return true
 
@@ -72,6 +85,7 @@ func setup(data: Dictionary) -> void:
 	var look := CivLook.make(CivLook.place_of(String(Net.mission_params.get("biome", "farm"))), int(data["id"]) + (Net.mission_seed % 997) * 131, _vip_sex() if vip else "")
 	civ_type = String(look["type"])
 	var female := bool(look["look"]["female"])
+	_female = female
 	model_name = "civ_b" if female else "civ_a"
 	var m: Node3D = Game.model("merc")
 	m.scale = Vector3(-1, 1, 1)
@@ -216,7 +230,20 @@ func _animate(delta: float) -> void:
 		_scream_t = randf_range(6.0, 14.0)
 		var me: Node = mission.local_player() if mission else null
 		if me and (cowering or _speed > 2.2) and me.global_position.distance_to(global_position) < 30.0:
-			Game.play_at(mission, "whimper" if cowering else "scream", global_position, -8 if cowering else -4)
+			var own := _line("cry" if cowering else "help") if randf() < 0.5 else ""
+			if own != "":
+				Game.play_at(mission, own, global_position + Vector3(0, 1.4, 0), -6 if cowering else -3)
+			else:
+				Game.play_at(mission, "whimper" if cowering else "scream", global_position, -8 if cowering else -4)
+	# „Tady jsme!“: schovaný / skrčený civilista zavolá na vojáka, který jde kolem
+	_here_t -= delta
+	if _here_t <= 0.0 and (cowering or hidden) and st != C.FOLLOW and not saved and not infected:
+		var me2: Node = mission.local_player() if mission else null
+		if me2 and not me2.dead and me2.global_position.distance_to(global_position) < 9.0:
+			_here_t = 25.0
+			var s2 := _line("here")
+			if s2 != "":
+				Game.play_at(mission, s2, global_position + Vector3(0, 1.2, 0), -3)
 
 # ---- host brain -----------------------------------------------------------------------------
 func hear(pos: Vector3, radius: float) -> void:
@@ -558,6 +585,7 @@ func calm_by(p: Node) -> bool:
 	follow = p
 	st = C.FOLLOW
 	cowering = false
+	_say.rpc("thanks")
 	return true
 
 @rpc("authority", "call_local", "reliable")

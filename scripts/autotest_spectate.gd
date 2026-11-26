@@ -33,6 +33,10 @@ static func run(at: Node, p: Node) -> void:
 		m.actors.add_child(mate)
 		mates.append(mate)
 	await at.get_tree().create_timer(0.5).timeout
+	# (2026-11-26) he dies while aiming through a scope: the eyepiece must not stay on the screen
+	p.aiming = true
+	p._sight_on = true
+	p.scope_r = 120.0
 	# the own merc dies
 	p.hp = 0.0
 	p.downed = true
@@ -42,6 +46,9 @@ static func run(at: Node, p: Node) -> void:
 	await at.get_tree().create_timer(Spectator.DELAY + 0.6).timeout
 	var sp: Node = p.spectator
 	var active: bool = sp != null and sp.active() and sp.cam.current
+	var gun_vis: bool = (p.gun != null and p.gun.visible) or (p.gun_l != null and p.gun_l.visible)
+	var no_aim: bool = not p.aiming and p.sight_mode() == "" and p.scope_texture() == null and p.scope_r == 0.0 and not gun_vis
+	at.out("[SPECT] aim after death: aiming %s sight '%s' scope_r %.0f fp_gun %s" % [p.aiming, p.sight_mode(), p.scope_r, gun_vis])
 	at.out("[SPECT] dead %s early %s active %s target %s dist %.2f body %s" % [p.dead, early, active, sp.target.name if sp and sp.target else "-",
 		sp.cam.global_position.distance_to(sp.target.global_position) if active else -1.0, p.body.visible])
 	await RenderingServer.frame_post_draw
@@ -68,5 +75,5 @@ static func run(at: Node, p: Node) -> void:
 	await RenderingServer.frame_post_draw
 	at._snap("spect_2")
 	at.out("[SPECT] eyes %s hidden %d eye_d %.2f back %s next %s auto %s finished %s" % [eyes, hidden, eye_d, back, nxt, auto, m.finished])
-	at.out("RESULT spectate active %s eyes %s next %s auto %s running %s" % [active and not early, eyes and hidden > 0 and eye_d < 0.4, nxt, auto, not m.finished])
+	at.out("RESULT spectate active %s eyes %s next %s auto %s running %s noaim %s" % [active and not early, eyes and hidden > 0 and eye_d < 0.4, nxt, auto, not m.finished, no_aim])
 	at.get_tree().quit()

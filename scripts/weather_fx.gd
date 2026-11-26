@@ -188,22 +188,26 @@ func _build_puddles() -> void:
 				close = true
 		if close:
 			continue
-		# all of it flat: the four corners too (not half over a kerb)
+		# all of it flat and under the open sky: a grid over the whole puddle, not just four points
+		# (2026-11-22: dřív kus louže zajel pod obrubník, práh nebo zeď)
+		var psz := Vector2(s, s * r.randf_range(0.55, 1.0))
 		var flat := true
-		for k in 4:
-			var c := p + Vector3(s * 0.4, 0, 0).rotated(Vector3.UP, yaw + k * PI / 2)
-			var qc := PhysicsRayQueryParameters3D.create(c + Vector3(0, 40, 0), c + Vector3(0, -1, 0), Game.WORLD | Game.GLASS)
-			var hc := space.intersect_ray(qc)
-			if hc.is_empty() or absf((hc.position as Vector3).y - p.y) > 0.03:
-				flat = false
-				break
+		for ix in range(-2, 3):
+			for iz in range(-2, 3):
+				if not flat or (ix * ix + iz * iz) > 5:
+					continue
+				var c := p + Vector3(ix * 0.25 * psz.x, 0, iz * 0.25 * psz.y).rotated(Vector3.UP, yaw)
+				var qc := PhysicsRayQueryParameters3D.create(c + Vector3(0, 40, 0), c + Vector3(0, -1, 0), Game.WORLD | Game.GLASS)
+				var hc := space.intersect_ray(qc)
+				if hc.is_empty() or absf((hc.position as Vector3).y - p.y) > 0.03:
+					flat = false
 		if not flat:
 			why["flat"] = why.get("flat", 0) + 1
 			continue
 		placed.append(p)
 		var mi := MeshInstance3D.new()
 		var pm := PlaneMesh.new()
-		pm.size = Vector2(s, s * r.randf_range(0.55, 1.0))
+		pm.size = psz
 		mi.mesh = pm
 		mi.material_override = _pud_mat
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

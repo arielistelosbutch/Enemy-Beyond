@@ -41,6 +41,8 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	rng.seed = map_seed
 	biome = params.get("biome", "farm")
 	mtype = params.get("type", "crash")
+	if mtype == "recovery":
+		mtype = String(params.get("of_type", "crash"))     # (the same place as the mission where the team fell)
 	N = int(SIZES.get(params.get("size", "medium"), 7))
 	# which ship: given (air war, quick missions), else by mission type and map size
 	ufo_kind = params.get("ufo", "")
@@ -131,6 +133,15 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 		if site != "convoy" or absi(sx - ux) >= 2:
 			break
 		sx = rng.randi_range(1, N - 2)     # (the convoy's road keeps clear of the landing place)
+	# (2026-11-26 Ari: the Kondor sometimes landed with its ramp straight at the UFO - its crew outside
+	# saw the team the moment the ramp fell and five Ještěřani shot down the ramp) the ramp looks into
+	# the map (+z): not in the UFO's own columns, but off to the side, the far side when there is room
+	if site == "" and Game.cmd_arg("oldlz", "") == "":
+		var uc := ux + us / 2.0
+		if absf(sx + 0.5 - uc) < 2.0:
+			var far_x := 1 if uc > N / 2.0 else N - 2
+			if absf(far_x + 0.5 - uc) >= 2.0 and grid[far_x][1] == "":
+				sx = far_x
 	grid[sx][1] = "sky"
 	for dx in [-1, 0, 1]:
 		for dz in [0, 1]:
@@ -472,9 +483,15 @@ func _merge_breakable() -> void:
 
 ## Sloučená síť z kusů, které ještě stojí (i za hry po rozbití, volá Mission).
 static func merge_build(out: MeshInstance3D) -> void:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var any := false
+	# (0.72.5 výkon, Ari: propady ve městě) dřív SurfaceTool.append_from po kusech: 25-65 ms při
+	# každém rozbitém kusu zdi (záznamník: „přestavba sloučené zdi"). Teď má každý kus jednou
+	# spočítané trojúhelníky už ve světě (_part_arrays, při stavbě mapy) a přestavba je jen
+	# spojení polí, co ještě stojí.
+	var vv := PackedVector3Array()
+	var nn := PackedVector3Array()
+	var tt := PackedFloat32Array()
+	var uu := PackedVector2Array()
+	var tan_ok := true
 	for cd in out.get_meta("parts", []):
 		var mi = cd[0]
 		if not is_instance_valid(mi) or (mi as Node).is_queued_for_deletion():
@@ -482,9 +499,61 @@ static func merge_build(out: MeshInstance3D) -> void:
 		var par: Node = (mi as Node).get_parent()
 		if par and (par.is_queued_for_deletion() or par.get_meta("broken", false)):
 			continue
-		st.append_from((mi as MeshInstance3D).mesh, 0, cd[1])
-		any = true
-	out.mesh = st.commit() if any else null
+		if cd.size() < 3:
+			cd.append(_part_arrays(mi as MeshInstance3D, cd[1]))
+		var pa: Array = cd[2]
+		vv.append_array(pa[0])
+		nn.append_array(pa[1])
+		uu.append_array(pa[3])
+		if (pa[2] as PackedFloat32Array).size() == (pa[0] as PackedVector3Array).size() * 4:
+			tt.append_array(pa[2])
+		else:
+			tan_ok = false
+	if vv.is_empty():
+		out.mesh = null
+		return
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = vv
+	arr[Mesh.ARRAY_NORMAL] = nn
+	if tan_ok and tt.size() == vv.size() * 4:
+		arr[Mesh.ARRAY_TANGENT] = tt
+	if uu.size() == vv.size():
+		arr[Mesh.ARRAY_TEX_UV] = uu
+	var am := ArrayMesh.new()
+	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	out.mesh = am
+
+## Trojúhelníky jednoho kusu ve světě (bez indexů, aby se daly jen připojit za sebe).
+static func _part_arrays(mi: MeshInstance3D, xf: Transform3D) -> Array:
+	var a: Array = (mi.mesh as PrimitiveMesh).get_mesh_arrays()
+	var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+	var n: PackedVector3Array = a[Mesh.ARRAY_NORMAL] if a[Mesh.ARRAY_NORMAL] != null else PackedVector3Array()
+	var t: PackedFloat32Array = a[Mesh.ARRAY_TANGENT] if a[Mesh.ARRAY_TANGENT] != null else PackedFloat32Array()
+	var u: PackedVector2Array = a[Mesh.ARRAY_TEX_UV] if a[Mesh.ARRAY_TEX_UV] != null else PackedVector2Array()
+	var idx: PackedInt32Array = a[Mesh.ARRAY_INDEX] if a[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+	if idx.is_empty():
+		idx.resize(v.size())
+		for i in v.size(): idx[i] = i
+	var nb := xf.basis.inverse().transposed()
+	var flip := xf.basis.determinant() < 0.0
+	var ov := PackedVector3Array(); ov.resize(idx.size())
+	var on := PackedVector3Array(); on.resize(idx.size())
+	var ou := PackedVector2Array(); ou.resize(idx.size() if u.size() == v.size() else 0)
+	var ot := PackedFloat32Array(); ot.resize(idx.size() * 4 if t.size() == v.size() * 4 else 0)
+	for k in idx.size():
+		var j := k
+		if flip:
+			j = k - k % 3 + (2 - k % 3)      # mirrored: keep the faces facing out
+		var i: int = idx[j]
+		ov[k] = xf * v[i]
+		on[k] = (nb * n[i]).normalized() if n.size() == v.size() else Vector3.UP
+		if not ou.is_empty():
+			ou[k] = u[i]
+		if not ot.is_empty():
+			var tv := (xf.basis * Vector3(t[i * 4], t[i * 4 + 1], t[i * 4 + 2])).normalized()
+			ot[k * 4] = tv.x; ot[k * 4 + 1] = tv.y; ot[k * 4 + 2] = tv.z; ot[k * 4 + 3] = t[i * 4 + 3]
+	return [ov, on, ot, ou]
 
 func _collect_refs(v, out: Dictionary) -> void:
 	if typeof(v) == TYPE_OBJECT and not is_instance_valid(v):
@@ -786,11 +855,42 @@ func _hits(rs: Array, grid: Dictionary, shrink := 0.12) -> bool:
 						return true
 	return false
 
+## Roofs and ceilings of a static body (high and wide, not a lamp arm): their ground plan.
+func _roof_rects(n: Node) -> Array:
+	var out := []
+	for cs in n.find_children("*", "CollisionShape3D", true, false):
+		var c := cs as CollisionShape3D
+		if c.shape == null or c.disabled:
+			continue
+		if not _shape_aabb.has(c.shape):
+			var dm := c.shape.get_debug_mesh()
+			_shape_aabb[c.shape] = dm.get_aabb() if dm else AABB()
+		var a: AABB = c.global_transform * (_shape_aabb[c.shape] as AABB)
+		if a.position.y < 2.0 or a.size.x < 2.0 or a.size.z < 2.0:
+			continue
+		out.append(Rect2(a.position.x, a.position.z, a.size.x, a.size.z))
+	return out
+
+## Is any corner (or the centre) of these rects under a roof, more than the eaves (0.8 m) in?
+func _indoors(rs: Array, roofs: Dictionary) -> bool:
+	for r0 in rs:
+		var r: Rect2 = r0
+		var pts := [r.get_center()]
+		if r.size.x > 0.0:
+			pts += [r.position, r.end, Vector2(r.position.x, r.end.y), Vector2(r.end.x, r.position.y)]
+		for pt in pts:
+			var k := Vector2i(int(floor(pt.x / _CELL)), int(floor(pt.y / _CELL)))
+			for o in roofs.get(k, []):
+				if (o as Rect2).grow(-0.8).has_point(pt):
+					return true
+	return false
+
 ## Every free-standing prop that ended up inside a wall, a car, a tree or another prop is moved a
 ## little; when there is no room, it goes (better nothing than a tractor in the kitchen).
 func _untangle() -> void:
 	var moved := 0
 	var gone := 0
+	info["untangle_moves"] = []
 	var static_rects := {}           # node -> its rects, for everything that is not a loose prop
 	var loose_set := {}
 	for n in _loose:
@@ -811,6 +911,12 @@ func _untangle() -> void:
 	for rl in static_rects.values():
 		for r in rl:
 			_bucket_add(grid, r)
+	# 2026-11-26 (Ari: „dřevo u schodů“): roofs and ceilings - a thing from the yard must not be
+	# pushed into a house (an empty room has nothing on the floor to bump into)
+	var roofs := {}
+	for sb in static_rects.keys():
+		for r in _roof_rects(sb):
+			_bucket_add(roofs, r)
 	for d in info["doors"]:
 		var c: Vector3 = d["c"]
 		_bucket_add(grid, Rect2(c.x - 0.7, c.z - 0.7, 1.4, 1.4))     # keep the doorways clear
@@ -826,6 +932,7 @@ func _untangle() -> void:
 				_bucket_add(grid, r)
 			continue
 		var home: Vector3 = n.position
+		var outside := not _indoors([Rect2(home.x, home.z, 0, 0)], roofs)
 		var ok := false
 		for t in 14:
 			var step := 1.0 + t * 0.35
@@ -835,11 +942,14 @@ func _untangle() -> void:
 				continue
 			n.position = np
 			rs = _rects(n)
+			if outside and _indoors(rs + [Rect2(np.x, np.z, 0, 0)], roofs):
+				continue      # (a woodpile in the hall by the stairs)
 			if not _hits(rs, grid):
 				ok = true
 				break
 		if ok:
 			moved += 1
+			info["untangle_moves"].append([String(n.name), home, n.position, n])
 			for r in rs:
 				_bucket_add(grid, r)
 		else:
@@ -886,7 +996,10 @@ func _prop(name: String, p: Vector3, yaw := 0.0, cover := true) -> Node3D:
 	if name == "house_roof":
 		# solid: a merc who climbs up stands on the tiles (and they stop bullets from above)
 		for mi in n.find_children("*", "MeshInstance3D", true, false):
-			(mi as MeshInstance3D).create_trimesh_collision()
+			if Game.cmd_arg("oldroofcol", "") == "1":
+				(mi as MeshInstance3D).create_trimesh_collision()
+			else:
+				_roof_shell(mi as MeshInstance3D)
 	if name == "house_roof" and not capturing:
 		# a pitched roof over the flat slab: the flier sits on the ridge instead (height found later)
 		info["roofs"] = info["roofs"].filter(func(r): return Vector2(r.x - p.x, r.z - p.z).length() > 5.5 or absf(r.y - p.y) > 0.6)
@@ -1723,6 +1836,113 @@ func _under_ramp(sb: Node3D, size: Vector3) -> void:
 		fb.position = Vector3(mid.x, (floor_y + top) / 2.0, mid.z)
 		fb.rotation.y = yaw
 
+## 0.72.5 (Ari: „když vylezu na střechu, začne to hrozně padat v FPS“): the roof used to collide
+## with its whole mesh - 8 000 triangles of overlapping tiles. A merc standing on it touched dozens
+## of tiles at once and every physics step of every merc up there cost milliseconds (it spiralled
+## into 100-200 ms frames). Now the tiles are two smooth slabs lying on top of them (worked out from
+## the tile vertices, so any roof model fits), plus the gable ends and the chimney: ~60 triangles,
+## the same surface to stand on and to stop bullets. (--oldroofcol=1 = the old trimesh)
+func _roof_shell(mi: MeshInstance3D) -> void:
+	var m := mi.mesh
+	if m == null:
+		return
+	var tiles := PackedVector3Array()
+	var chim := AABB()
+	var has_chim := false
+	var gable := AABB()
+	var has_gable := false
+	for si in m.get_surface_count():
+		var mat := m.surface_get_material(si)
+		var nm := mat.resource_name if mat else ""
+		var v: PackedVector3Array = m.surface_get_arrays(si)[Mesh.ARRAY_VERTEX]
+		if v.is_empty():
+			continue
+		if nm.begins_with("VRoofTile") or nm == "VDarkWood":
+			tiles.append_array(v)
+		elif nm in ["VBrick", "VStoneDark", "VStone"]:
+			for p in v:
+				if not has_chim:
+					chim = AABB(p, Vector3.ZERO)
+					has_chim = true
+				chim = chim.expand(p)
+		elif nm == "VPlaster":
+			for p in v:
+				if not has_gable:
+					gable = AABB(p, Vector3.ZERO)
+					has_gable = true
+				gable = gable.expand(p)
+	if tiles.size() < 8:
+		mi.create_trimesh_collision()       # some other roof: as before
+		return
+	var x0 := INF
+	var x1 := -INF
+	var zmax := 0.0
+	for p in tiles:
+		x0 = minf(x0, p.x)
+		x1 = maxf(x1, p.x)
+		zmax = maxf(zmax, absf(p.z))
+	var faces := PackedVector3Array()
+	const TH := 0.16
+	for side in [-1.0, 1.0]:
+		# the slope: through the highest tile point near the eave and near the ridge, lifted so no
+		# tile sticks out over it
+		# (the ridge caps along the top are left out: a bump the feet step over)
+		var ye := -INF
+		var yr := -INF
+		for p in tiles:
+			if p.z * side < 0.0:
+				continue
+			var az := absf(p.z)
+			if az > zmax - 0.25: ye = maxf(ye, p.y)
+			if az > 0.35 and az < 0.6: yr = maxf(yr, p.y)
+		if ye == -INF or yr == -INF:
+			continue
+		var k := (ye - yr) / maxf(zmax - 0.475, 0.01)
+		var c := -INF
+		for p in tiles:
+			if p.z * side >= 0.0 and absf(p.z) > 0.3:
+				c = maxf(c, p.y - k * absf(p.z))
+		var top_r := Vector3(0, c, 0)
+		var top_e := Vector3(0, c + k * zmax, side * zmax)
+		var dn := Vector3(0, -TH, 0)
+		_box_faces(faces, [
+			Vector3(x0, top_r.y, 0), Vector3(x1, top_r.y, 0), Vector3(x1, top_e.y, top_e.z), Vector3(x0, top_e.y, top_e.z),
+			Vector3(x0, top_r.y, 0) + dn, Vector3(x1, top_r.y, 0) + dn, Vector3(x1, top_e.y, top_e.z) + dn, Vector3(x0, top_e.y, top_e.z) + dn])
+	if has_gable:
+		# the gable ends: plaster triangles over the end walls
+		var gz := gable.size.z / 2.0
+		var gy0 := gable.position.y
+		var gy1 := gable.end.y
+		var gc := gable.get_center().z
+		for gx in [gable.position.x, gable.end.x]:
+			var inner: float = gx + (0.2 if gx < gable.get_center().x else -0.2)
+			var a := Vector3(gx, gy0, gc - gz)
+			var b := Vector3(gx, gy0, gc + gz)
+			var t := Vector3(gx, gy1, gc)
+			var a2 := Vector3(inner, gy0, gc - gz)
+			var b2 := Vector3(inner, gy0, gc + gz)
+			var t2 := Vector3(inner, gy1, gc)
+			faces.append_array([a, b, t, a2, t2, b2, a, a2, b2, a, b2, b, a, t, t2, a, t2, a2, b, b2, t2, b, t2, t])
+	if has_chim:
+		var q := chim.position
+		var e := chim.end
+		_box_faces(faces, [Vector3(q.x, e.y, q.z), Vector3(e.x, e.y, q.z), Vector3(e.x, e.y, e.z), Vector3(q.x, e.y, e.z),
+			Vector3(q.x, q.y, q.z), Vector3(e.x, q.y, q.z), Vector3(e.x, q.y, e.z), Vector3(q.x, q.y, e.z)])
+	var sh := ConcavePolygonShape3D.new()
+	sh.backface_collision = true
+	sh.set_faces(faces)
+	var sb := StaticBody3D.new()
+	sb.name = String(mi.name) + "_col"
+	var cs := CollisionShape3D.new()
+	cs.shape = sh
+	sb.add_child(cs)
+	mi.add_child(sb)
+
+## A closed box from 8 corners: 0-3 the top (in order round), 4-7 the bottom under them.
+static func _box_faces(f: PackedVector3Array, c: Array) -> void:
+	for q in [[0, 1, 2, 3], [7, 6, 5, 4], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]]:
+		f.append_array([c[q[0]], c[q[1]], c[q[2]], c[q[0]], c[q[2]], c[q[3]]])
+
 ## The village roof model carries a flat collision slab (the "-colonly" body "Roof", half a metre
 ## over its base) - fine over a ceiling, but under it nothing can stand: a loft right under the roof
 ## (the cabin) loses it. The tiles keep their own collision (the trimesh "*_col").
@@ -1781,7 +2001,7 @@ func _house(o: Vector3) -> void:
 	var well_yaw := rng.randf() * TAU
 	if biome not in ["town", "industrial", "base"]:          # (0.72.3) a well only in the country, not in a town street
 		_prop("well", o + Vector3(1.0, 0, 10.9), well_yaw)
-	_prop("woodpile", o + Vector3(11.2, 0, 3.2), PI / 2)     # (0.70: off the middle - it is solid now and stood in the next house's side door; 0.72.1 a bit further, its loose logs reached the door)
+	_prop("woodpile", o + Vector3(11.45, 0, 3.2), PI / 2)     # (0.70: off the middle - it is solid now and stood in the next house's side door; 0.72.1 a bit further, its loose logs reached the door; 2026-11-26 the chopping block and chips reached into the wall, so the map shifted it - sometimes into the house)
 	# (0.72.3: hens only in the country - no hen house in a town or an army base)
 	if rng.randf() < 0.5 or biome in ["town", "industrial", "base"]:
 		_prop("laundry", o + Vector3(6.5, 0, 10.9), 0.0, false)
@@ -1916,31 +2136,15 @@ func _lamp(p: Vector3, energy := 1.1, rng_ := 5.5, col := Color(1.0, 0.78, 0.5))
 	bulb.position = p
 	lamp.set_meta("lens", bulb)
 
-## A forklift: yellow body, black wheels, the seat under a cage, the mast and two forks in front
-## (a pallet on the forks now and then).
+## A forklift (0.72, Ari: „ještěrka má divná kolečka"): the model v_forklift (street.py: round tyres,
+## mast, carriage, forks lowered, overhead guard), solid as it looks (FitCollision.WHOLE); now and then
+## a pallet on the forks. (The two rng draws stay as before, so a seed builds the same map.)
 func _forklift(fp: Vector3, yaw: float) -> void:
 	info["forklift"] = fp
-	var yel := Game.color_mat(Color(0.78, 0.58, 0.1))
-	var blk := Game.color_mat(Color(0.08, 0.08, 0.08))
-	var grey := Game.color_mat(Color(0.3, 0.3, 0.32))
-	var at := func(off: Vector3) -> Vector3: return fp + off.rotated(Vector3.UP, yaw)
-	box(at.call(Vector3(0, 0.62, 0.15)), Vector3(1.1, 0.7, 1.7), yel, true, yaw)            # body
-	box(at.call(Vector3(0, 0.95, 0.85)), Vector3(1.1, 0.5, 0.45), yel, true, yaw)           # counterweight at the back
-	for wx in [-0.56, 0.56]:
-		for wz in [-0.45, 0.75]:
-			box(at.call(Vector3(wx, 0.3, wz)), Vector3(0.22, 0.6, 0.6), blk, true, yaw)      # wheels
-	box(at.call(Vector3(0, 1.1, 0.25)), Vector3(0.5, 0.12, 0.5), blk, false, yaw)            # seat
-	for cx in [-0.5, 0.5]:
-		for cz in [-0.3, 0.75]:
-			box(at.call(Vector3(cx, 1.55, cz)), Vector3(0.06, 1.2, 0.06), blk, false, yaw)   # cage posts
-	box(at.call(Vector3(0, 2.15, 0.22)), Vector3(1.1, 0.06, 1.2), blk, false, yaw)          # cage roof
-	for mx in [-0.35, 0.35]:
-		box(at.call(Vector3(mx, 1.2, -0.75)), Vector3(0.1, 2.4, 0.12), grey, false, yaw)    # mast
-	var lift := rng.randf_range(0.1, 0.9)
-	for kx in [-0.28, 0.28]:
-		box(at.call(Vector3(kx, lift + 0.03, -1.3)), Vector3(0.12, 0.05, 1.0), grey, false, yaw)   # forks
+	_prop("forklift", fp, yaw, false)
+	var _lift := rng.randf_range(0.1, 0.9)
 	if rng.randf() < 0.5:
-		box(at.call(Vector3(0, lift + 0.12, -1.3)), Vector3(1.0, 0.14, 1.0), Game.mat("planks", 1.0), false, yaw)
+		_prop("pallet", fp + Vector3(0, 0, -1.33).rotated(Vector3.UP, yaw), yaw + PI / 2, false)
 
 func _crate(p: Vector3, sz := 1.0, yaw := 0.0) -> void:
 	sz = maxf(sz, 0.85)
@@ -2029,7 +2233,7 @@ func _house2(o: Vector3) -> void:
 	_kitchen(c + Vector3(0.45, 0.1, 5.0), false, 2.0)
 	_rug(c + Vector3(2.0, 0, 2.2), Vector2(2.6, 1.8), Color(0.25, 0.3, 0.5))
 	_rug(up + Vector3(3.0, 0.0, 5.8), Vector2(2.0, 1.4), Color(0.5, 0.35, 0.2))
-	_prop("woodpile", o + Vector3(11.2, 0, 3.2), PI / 2)     # (0.70: off the middle - it is solid now and stood in the next house's side door; 0.72.1 a bit further, its loose logs reached the door)
+	_prop("woodpile", o + Vector3(11.7, 0, 3.2), PI / 2)     # (0.70: off the middle; 2026-11-26 Ari „dřevo u schodů“: at 11.2 the chopping block reached through the wall by the stairs, the map shifted the pile and it could land in the hall by the stairs)
 	_cover(c + Vector3(3.6, 0, -1.0)); _cover(c + Vector3(1.0, 0, 1.0)); _cover(up + Vector3(2.0, 0.1, 1.0)); _cover(up + Vector3(6.0, 0.1, 5.5))
 	info["waypoints"].append(c + Vector3(2, 0, 3))
 	info["waypoints"].append(up + Vector3(3, 0.1, 5.5))
@@ -2840,7 +3044,14 @@ func _pub(o: Vector3) -> void:
 		var bp := o + Vector3(2.5 + i * 5.0, 0, 10.4)
 		box(bp + Vector3(0, 0.75, 0), Vector3(2.0, 0.06, 0.7), Game.mat("planks", 1.0))
 		for sz in [-0.6, 0.6]:
-			box(bp + Vector3(0, 0.45, sz), Vector3(2.0, 0.06, 0.3), Game.mat("planks", 1.0), false)
+			box(bp + Vector3(0, 0.45, sz), Vector3(2.0, 0.06, 0.3), Game.mat("planks", 1.0))    # 0.72.6: solid, it used to float
+		# 0.72.6: the legs (the set used to hang in the air): a board under each end of the table,
+		# a rail between them, two legs under each bench
+		for sx in [-0.8, 0.8]:
+			box(bp + Vector3(sx, 0.36, 0), Vector3(0.06, 0.72, 0.56), Game.mat("planks", 1.0), false)
+			for sz in [-0.6, 0.6]:
+				box(bp + Vector3(sx, 0.21, sz), Vector3(0.06, 0.42, 0.24), Game.mat("planks", 1.0), false)
+		box(bp + Vector3(0, 0.22, 0), Vector3(1.54, 0.06, 0.08), Game.mat("planks", 1.0), false)
 		cyl(bp + Vector3(0, 1.2, 0), 0.03, 0.03, 2.4, Game.color_mat(Color(0.8, 0.8, 0.8)), false, 6)
 		cyl(bp + Vector3(0, 2.4, 0), 0.0, 1.4, 0.5, Game.color_mat(Color(0.75, 0.15, 0.12)), false, 8)
 	_lamp(c + Vector3(3.5, 2.8, 3.5), 1.0, 6.5)
@@ -3424,16 +3635,26 @@ func _giant_hull(center: Vector3, upper: Dictionary) -> void:
 	var n := 72
 	var HS := 23.0
 	var supply := ufo_kind == "supply"
-	var outline := []
+	var door_x := 2.4
+	# (0.72.6 oprava, Ari: „u sestřelené bitevní lodi nebyl vchod“) obrys má body přesně na krajích
+	# dveří: dřív byl nejbližší bod obrysu 6,6 m od osy, střed žádného dílu sukně ani skryté krabice
+	# nepadl do dveří, takže sukně (od 0.69 pevná) i krabice vchod zavřely
+	var angles := []
 	for i in n:
-		var a := TAU * i / n
+		angles.append(TAU * i / n)
+	var da := asin(pow(door_x / HS, 2.0))
+	angles.append(PI * 1.5 - da)
+	angles.append(PI * 1.5 + da)
+	angles.sort()
+	n = angles.size()
+	var outline := []
+	for a in angles:
 		var ca := cos(a)
 		var sa := sin(a)
 		outline.append(Vector3(signf(ca) * HS * pow(absf(ca), 0.5), 0, signf(sa) * HS * pow(absf(sa), 0.5)))
 	var hullm := Game.mat("ufo_hull", 0.5)
 	var dark := Game.color_mat(Color(0.07, 0.06, 0.08), false, 0.5, 0.5)
 	var glow := Game.color_mat(Color(0.85, 0.3, 1.0) if not supply else Color(1.0, 0.55, 0.2), true)
-	var door_x := 2.4
 	var in_door := func(p: Vector3) -> bool: return absf(p.x) < door_x and p.z < 0.0
 	# the skirt: sloping out from the ground to the rim; solid boxes behind it (not over the door)
 	var lo := []
@@ -3461,7 +3682,7 @@ func _giant_hull(center: Vector3, upper: Dictionary) -> void:
 	var inner := []
 	var outer := []
 	for i in n:
-		var a2 := TAU * i / n
+		var a2: float = angles[i]
 		inner.append(center + Vector3(cos(a2) * 7.0, 4.6, sin(a2) * 7.0))
 		outer.append(rim[i] + Vector3(0, -0.15, 0))
 	shell.append(_strip(inner, outer, hullm, Callable(), true))

@@ -13,6 +13,10 @@ const MAX_PLAYERS := 4
 
 ## peer id -> {"name": ..., "merc": {...}}
 var roster := {}
+## (0.72.x, Ari: "když se někdo opožděně připojí na misi, hra ho vezme, jako by tam byl") who went
+## into the running mission: the roster frozen at _start on every machine. A friend who joins the
+## lobby while the others are already out there is in `roster` (next mission), not in this one.
+var mission_roster := {}
 var mission_seed := 0
 var mission_difficulty := "normal"
 
@@ -128,6 +132,22 @@ func _version_fail() -> void:
 		drop_reason = why
 		back_to_menu()
 
+## Host: is the team out on a mission right now (not a base walk of one's own)?
+func in_battle() -> bool:
+	var sc := get_tree().current_scene
+	return sc != null and sc.name == "Mission" and sc.has_method("local") and not sc.local() and not bool(sc.get("finished"))
+
+## (0.72.x) Host: these did not make it into the mission (never loaded it): out of its roster everywhere.
+@rpc("authority", "call_local", "reliable")
+func _mission_drop(ids: Array) -> void:
+	for id in ids:
+		mission_roster.erase(int(id))
+
+## (0.72.x) Host: one who was left out because his loading took too long is in after all.
+@rpc("authority", "call_local", "reliable")
+func _mission_add(id: int, entry: Dictionary) -> void:
+	mission_roster[id] = entry
+
 func is_online() -> bool:
 	return not (multiplayer.multiplayer_peer is OfflineMultiplayerPeer)
 
@@ -161,6 +181,7 @@ func close() -> void:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	roster = {}
+	mission_roster = {}
 	wallets = {}
 	link = {}
 	ready_peers = {}
@@ -198,6 +219,7 @@ func _on_peer_disconnected(id: int) -> void:
 		_ready_state.rpc(ready_peers, ready_wait)
 	if multiplayer.is_server() and roster.has(id):
 		_note.rpc("%s odešel ze hry." % roster[id]["name"])
+	mission_roster.erase(id)
 	if roster.erase(id):
 		roster_changed.emit()
 		if multiplayer.is_server():
@@ -233,6 +255,8 @@ func _register(merc: Dictionary) -> void:
 	roster[id] = {"name": str(merc.get("name", "Voják")), "merc": merc}
 	if fresh:
 		_note.rpc("%s se připojil ke hře (%d/%d)." % [roster[id]["name"], roster.size(), MAX_PLAYERS])
+		if in_battle():
+			_note.rpc_id(id, "Tým je právě na misi. Přidáš se k další - počkej, až se vrátí.")
 	wallets[id] = int(merc.get("money", 0))
 	_set_roster.rpc(roster)
 	roster_changed.emit()
@@ -313,6 +337,8 @@ func _start(s: int, diff := "normal", params := {}, ff := true) -> void:
 	mission_seed = s
 	mission_difficulty = diff
 	mission_params = params
+	if not params.has("local"):
+		mission_roster = roster.duplicate(true)
 	var real := params.has("cid") and String(params.get("type", "")) != "home"
 	if real and multiplayer.is_server() and Campaign.active:
 		Campaign.mission_begun(int(params.get("id", -1)))
@@ -371,6 +397,7 @@ func after_mission() -> void:
 	Game.camo = ""
 	var campaign := not mission_params.is_empty()
 	mission_params = {}
+	mission_roster = {}
 	if campaign and multiplayer.is_server() and Campaign.active:
 		if not is_online():
 			close()
@@ -577,6 +604,11 @@ func _base_snapshot(d: Dictionary) -> void:
 	if was > 0.0 and Game.heal_days_left(Game.merc) <= 0.0:
 		Game.save_merc()
 		reregister()
+	# (2026-11-26) the kit of our fallen soldier came home on a recovery mission
+	var rt := Game.claim_returns(d)
+	if rt != "":
+		update_merc()
+		note.emit(rt)
 	base_changed.emit()
 	stock_changed.emit()
 

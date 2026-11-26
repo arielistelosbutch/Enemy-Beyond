@@ -2723,13 +2723,24 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "shouldershot", "radiosprint", "voice", "club", "uimission", "stance", "wshot", "sightshot", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "rooftest", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "leaktest", "leakmap", "ufohull", "wedgetest", "leantest", "pockettest", "leaveany", "safeend", "failkit", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "reinfcap", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "loadshots", "transport", "uifit", "groundtest", "ceiltest", "rainshot", "lamptest", "wxtest", "wxshot", "tracktest", "lensshot", "interiors", "spectate", "dazetest", "chaintest", "echotest", "dirtshot", "flaretest", "civpanic", "nvgtest", "civstuck", "civlooks", "fragtest", "claytest", "sentrytest", "convoytest", "bugtest", "quartest", "quiettest", "scantest", "gunlag":
+		"town", "zoo", "terror", "shouldershot", "radiosprint", "voice", "club", "uimission", "stance", "wshot", "sightshot", "scopelens", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "rooftest", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "leaktest", "leakmap", "ufohull", "ufoentry", "wedgetest", "leantest", "pockettest", "leaveany", "safeend", "failkit", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "reinfcap", "dropshot", "lzcheck", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "tasktest", "loadshots", "transport", "uifit", "groundtest", "kerbtest", "ceiltest", "rainshot", "lamptest", "wxtest", "wxshot", "pudcheck", "scorchshot", "tracktest", "lensshot", "interiors", "yardtest", "spectate", "dazetest", "chaintest", "echotest", "dirtshot", "flaretest", "civpanic", "nvgtest", "civstuck", "civlooks", "fragtest", "claytest", "sentrytest", "convoytest", "bugtest", "quartest", "quiettest", "scantest", "debugkeys", "gunlag", "alnadetest", "deadcost":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
 				"hour": float(Game.cmd_arg("hour", "14.0" if Game.cmd_arg("day", "0") == "1" else "23.0")), "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "testroom": Game.autotest() == "testroom", "terrain": Game.cmd_arg("terrain", "temperate"), "size": Game.cmd_arg("size", "medium"), "ufo": Game.cmd_arg("ufo", ""), "crew_of": Game.cmd_arg("crewof", ""), "group": Game.cmd_arg("group", ""), "research": Array(Game.cmd_arg("research", "").split(",", false)),
 				"habits": {String(Game.merc.get("name", "")): Game.cmd_arg("habits", "").split(",", false)} if Game.cmd_arg("habits", "") != "" else {},
 				"styles": {String(Game.merc.get("name", "")): Array(Game.cmd_arg("styles", "").split(",", false))} if Game.cmd_arg("styles", "") != "" else {}})
+		"recoverymission":
+			# (2026-11-26) the site of a wiped team: a crash map with two bodies, five Šediváci survived
+			Net.play_solo()
+			Campaign.active = false
+			var bods := []
+			for bi in 2:
+				bods.append({"uid": "u%d" % bi, "name": ["Novák", "Dvořák"][bi], "look": {"female": bi == 1}, "pos": [30.0 + bi * 4.0, 0.0, 34.0 + bi * 2.0],
+					"armory": {"plasma_rifle": 1}, "locker": {"grenade": 1}, "mods": {"rifle": ["optika"]}})
+			Net.start_mission({"type": "recovery", "of_type": Game.cmd_arg("oftype", "crash"), "biome": Game.cmd_arg("biome", "farm"), "night": Game.cmd_arg("day", "0") != "1",
+				"hour": 14.0 if Game.cmd_arg("day", "0") == "1" else 23.0, "place": "Test", "type_name": "Vyzvednout padlé", "id": -1, "size": "medium",
+				"terrain": "temperate", "group": "sedaci", "bodies": bods, "survivors": ["grey", "grey", "grey", "grey", "grey"]})
 		"basewalk", "basepass", "basenade", "basefly", "blastdoor", "npcshot", "baseshot", "echobase", "wallshot", "dazebase", "chainbase":
 			Net.play_solo()
 			var b := []
@@ -3008,7 +3019,7 @@ func _autotest() -> void:
 			Net.give_money(1, 200)
 			await get_tree().create_timer(2.5).timeout
 			print("[ECON] after gift my=%d wallets=%s" % [Net.my_money(), Net.wallets])
-			# (0.7x) the armory basket: several things for the base in one request (300 kr: 2 clips + 1 grenade, 120 kr more than money left -> grenade 2 is not bought)
+			# (0.7x) the armory basket: several things for the base in one request (26. 11. prices x0.8: 2 clips 166 + 1 grenade 124 of 380 kr, grenade 2 is not bought - 90 kr left)
 			var arm0 := int(Campaign.data["armory"].get("rifle_clip", 0)) + Campaign.on_order("rifle_clip")
 			Net.buy_cart_for_base({"rifle_clip": 2, "grenade": 2})
 			await get_tree().create_timer(2.5).timeout
@@ -3201,7 +3212,7 @@ func _autotest() -> void:
 			await get_tree().create_timer(1.0).timeout
 			print("[LB] client goes down to the base alone")
 			Net.start_local_base({"type": "home", "type_name": "Základna", "base": Campaign.data["base"].duplicate(true), "grid_w": Campaign.GRID_W, "grid_h": Campaign.GRID_H, "transport": "heli", "live": [], "research": [], "night": false, "hour": 12.0, "blips": []})
-		"coophealhost", "aimphost", "safeouthost", "hullhost", "pothost", "leakhost", "quiethost":
+		"coophealhost", "aimphost", "safeouthost", "hullhost", "pothost", "leakhost", "quiethost", "alnadehost":
 			if Game.autotest() == "aimphost":
 				Game.seed_override = int(Game.cmd_arg("seed", "4242"))     # (the same map for the old and the new AI)
 			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
@@ -3213,7 +3224,7 @@ func _autotest() -> void:
 				mp["cid"] = "pottest"      # (0.70: the pay is counted only in a campaign mission)
 				mp["reward"] = 200
 			Net.start_mission(mp)
-		"coophealclient", "aimpclient", "safeoutclient", "hullclient", "potclient", "leakclient", "quietclient":
+		"coophealclient", "aimpclient", "safeoutclient", "hullclient", "potclient", "leakclient", "quietclient", "alnadeclient":
 			Game.merc["name"] = "Klient" if Game.cmd_arg("ci", "1") == "1" else "Klient" + Game.cmd_arg("ci", "1")
 			await get_tree().create_timer(1.0 + 0.5 * int(Game.cmd_arg("ci", "1"))).timeout
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
@@ -3242,6 +3253,27 @@ func _autotest() -> void:
 		"nadeclient", "flareclient", "nmradarclient", "nmbugclient", "sentryclient":
 			Game.merc["name"] = "Klient"
 			await get_tree().create_timer(1.0).timeout
+			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+		"latehost", "slowhost":
+			# (0.72.x) a friend joins while the team is already out / one never finishes loading
+			Game.seed_override = 4242
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			while Net.roster.size() < 2:
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(0.5).timeout
+			Net.start_mission()
+		"latemate", "slowmate", "latecomer":
+			Game.merc["name"] = {"latecomer": "Opozdilec", "slowmate": "Pomalý"}.get(Game.autotest(), "Klient")
+			await get_tree().create_timer(1.0 if Game.autotest() != "latecomer" else 7.0).timeout
+			if Game.autotest() == "latecomer":
+				var heard := []
+				Net.note.connect(func(tx): heard.append(tx))
+				Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
+				await get_tree().create_timer(14.0).timeout
+				var busy := heard.filter(func(tx): return "na misi" in tx)
+				print("RESULT latecomer scene %s roster %d told %s" % [get_tree().current_scene.name, Net.roster.size(), not busy.is_empty()])
+				get_tree().quit()
+				return
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
 		"host":
 			Game.seed_override = 4242

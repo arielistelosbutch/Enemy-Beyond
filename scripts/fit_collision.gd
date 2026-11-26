@@ -18,7 +18,9 @@ const MAX_PIECES := 160       # more than this (grass, chains...): keep the old 
 const WHOLE := ["v_ab_spire", "v_ab_spire_low", "mars_spire", "v_rubble", "v_debris", "v_log",
 	# 0.70 (Ari: „protékají dílky, ne kameny“): the old box held only a part of these too - the logs
 	# at the back of the woodpile, the crate beside the stack, a wreck's crumpled nose
-	"v_woodpile", "v_mil_crates", "v_truck_wreck", "v_humvee_wreck", "v_tractor", "v_trough", "v_well", "v_broken_fence"]
+	"v_woodpile", "v_mil_crates", "v_truck_wreck", "v_humvee_wreck", "v_tractor", "v_trough", "v_well", "v_broken_fence",
+	# 0.72: the forklift (wheels, mast, guard posts, forks: all of it you can bump into)
+	"v_forklift"]
 
 ## Refits the collision of @a n (a model instance, before it is scaled or moved - the shapes
 ## are in the model's own space, so scaling the node later scales them too).

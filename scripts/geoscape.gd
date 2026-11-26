@@ -2217,7 +2217,7 @@ func _show_workshop() -> void:
 		var ucl := _tcell(urow, " + ".join(up), 92, UiSkin.DIM)
 		ucl.tooltip_text = " + ".join(up)
 		ucl.mouse_filter = Control.MOUSE_FILTER_PASS
-		_tcell(urow, _span(float(u["days"]) * Campaign.time_k() / maxf(Campaign.workshop_rate(), 1.0)), 44, UiSkin.DIM)
+		_tcell(urow, _span(float(u["days"]) * Campaign.make_k() / maxf(Campaign.workshop_rate(), 1.0)), 44, UiSkin.DIM)
 		_tcell(urow, "-", 30, UiSkin.DIM)
 		var umb := UiSkin.chip(urow, "Vyrobit", "own", func():
 			if Campaign.make_upgrade(ukey):

@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.72.5
+# Operace X - Enemy Beyond — prototyp 0.72.6
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,24 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.72.6
+- Nové zvuky: dopady kulek podle povrchu (beton, kov, hlína, dřevo, tělo, vetřelec), svist kulek a plazmy kolem hlavy, krátké hlášky vojáků (přebíjím, kontakt, granát, zásah, mám ho, pomoc) a volání civilistů. Ještěřan a Bijec mají vlastní hlasy při zranění a smrti.
+- F1 v misi ukáže zadání mise (hra běží dál). Skrytí HUD je teď na F2. Obě klávesy jdou přenastavit.
+- Kamarád, který se připojí, zatímco je tým na misi, už se do mise nepočítá (rampa se otevře, i když jsme dva). Kdo se nenačte do 90 s, hra ho vynechá a pustí do mise, až se načte.
+- Do sestřelené bitevní a zásobovací lodi už se dá vejít dveřmi.
+- Když padne celý tým, zůstane na glóbu mise Vyzvednout padlé: druhá šance dojít si pro těla a výstroj (vyprší za 2,5 dne). Když padne jen část týmu a mise se splní, výstroj padlého se neztratí.
+- Ještěřani a Bijci jsou na začátku svého výskytu a na lehké obtížnosti mírnější (kousnutí Ještěřana slabší, těžké zbraně na lehké poloviční). Posily už se neobjeví z ničeho: přiletí loď a spustí je paprskem.
+- Kondor přistává mimo vetřelce: v okolí rampy nejsou do 40 m a u lodi je chvíli klid (na lehké minutu).
+- Granáty vetřelců se nekutálí pod nohy: zůstanou, kde dopadnou, pípají a vybuchnou 1,2 s po dopadu, u všech hráčů na stejném místě.
+- Optika 2x na pušce už není černá, v okuláru je živý obraz.
+- Dřevo a věci z dvora už se neobjevují v domech a na schodech.
+- Po smrti už v pohledu na spoluhráče nezůstává zaměřovač.
+- Bijci už nejezdí po mapě v T póze.
+- Zbrojnice a dílna jsou o 20 % levnější, výroba v dílně je rychlejší a na lehké obtížnosti jde výzkum i výroba o čtvrtinu rychleji. Debug mód jde zapnout v Nastavení → Ovládání.
+- Méně propadů FPS v co-opu: mrtvá těla vetřelců po chvíli ztuhnou a nic nestojí, hra při zásecích nedohání fyziku víc než třemi kroky a log se už nezahlcuje chybou hlasu.
+- Paprsek laserové pušky (a výstřel každé zbraně) jde rovně z hlavně do středu zaměřovače; spoluhráči vidí výstřel ze zbraně v mých rukou.
+- Vojáci zvenku drží pušku pořád opřenou v rameni – i při stání, chůzi a běhu (hlaveň v pohotovosti šikmo dolů), při míření a střelbě ji zvednou do pohledu. Staré pohyby Bijce z Mixama jsou pryč.
 
 ## Novinky 0.72.5
 - Strážní věž ST-01 (klávesa 9): postavím ji před sebe a hlídá výseč před sebou. Střílí jen na to, co se hýbe, a výzkumem dostane laser nebo plazmu. F u věže ji doplní nebo složí.
