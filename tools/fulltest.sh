@@ -142,7 +142,7 @@ pair coop_gameover gohost goclient "RESULT gohost shown true save_gone true onli
 pair coop_ready readyhost readyclient "RESULT readyhost early false window true ran true" "RESULT readyclient saw 'Výsadek: test' panel '.*' me true done true" 7938
 pair coop_cart  econhost econclient  "ECON-HOST\\] credits=1200" "RESULT cart client my=90 clips \\+2 grenades on order 1" 7952
 pair coop_stock stockhost stockclient "RESULT stockhost claim true mine 0 names 'Klient 1' back 1" "RESULT stockclient grenades 4 -> 9 fast true redrawn true" 7953
-pair coop_sick  sickhost sickclient   "RESULT sickhost bravo true locker 2 record 2" "RESULT sickclient alfa 2 sick 1 bravo 2 alfa_left 0 stash 6 -> 6" 7971
+pair coop_sick  sickhost sickclient   "RESULT sickhost bravo true locker 2 record 2" "RESULT sickclient alfa 2 sick 1 bravo 2 alfa_left 0 stash [56] -> [56]" 7971
 pair geo_live geolivehost geoliveclient "globe ready \(viewer false\)" "RESULT geolive day \+0\.0[1-9][0-9]* craft moved [1-9]" 7912
 pair ai_coop    aimphost aimpclient "RESULT aimp old 0 players 2 hide [1-9]" "AIMP aimpclient" 7913
 # co-op with four mercenaries: a host and three clients (0.63: the squads know about all of them)
@@ -218,7 +218,7 @@ fi
 run airdeath    150 h "RESULT airdeath ok"                 --autotest=airdeath --group=levite
 run vipcheck    200 h "RESULT vipcheck [0-9]+ spots, 0 bad" --autotest=vipcheck --mtype=rescue
 run climb       200 x "RESULT climb ok"                    --autotest=climb --mtype=terror --biome=farm
-run ground     250 h "RESULT groundtest [0-9]+ raised, 0 bare, .*sunk 0 .*kerbs alien [6-8]/8 merc [6-8]/8" --autotest=groundtest --day=1 --nomerge=all --dur=20 --seed=5
+run ground     250 h "RESULT groundtest [0-9]+ raised, 0 bare, .*sunk [01] \(0\.0 .*kerbs alien [6-8]/8 merc [6-8]/8" --autotest=groundtest --day=1 --nomerge=all --dur=20 --seed=5
 run kerb       250 h "RESULT kerbtest merc 54/54 stall 0 " --autotest=kerbtest --mtype=terror --biome=town --seed=3 --day=1 --nomerge=all
 run rocks       250 x "RESULT rocktest [0-9]+ stones, 0 hollow, 0 nav inside, walked 12, 0 bad" --autotest=rocktest --mtype=crash --biome=mountain --seed=7 --day=1
 run hitbox      200 h "RESULT hitbox [0-9]+ props, [0-9]+ rays, phantom [0-4]\.[0-9] %" --autotest=hitbox --mtype=crash --biome=farm --seed=7

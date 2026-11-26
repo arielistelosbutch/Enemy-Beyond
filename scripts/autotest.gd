@@ -3923,6 +3923,14 @@ func _rockettest(p: Node) -> void:
 	var tube := str(p.inv["rh"].get("tube", []))
 	var b: Node = bs[0]
 	b.state = b.S.LURK
+	# 0.72.6: the Kondor now lands away from the UFO, so the map in front of it differs - face a clear line
+	for k in 16:
+		var cq := PhysicsRayQueryParameters3D.create(p.cam.global_position, p.cam.global_position - p.cam.global_transform.basis.z * 9.0, Game.WORLD | Game.GLASS)
+		cq.exclude = [p.get_rid()]
+		if p.get_world_3d().direct_space_state.intersect_ray(cq).is_empty():
+			break
+		p.rotation.y += TAU / 16.0
+		await get_tree().physics_frame
 	var fwd: Vector3 = -p.cam.global_transform.basis.z
 	fwd.y = 0
 	b.global_position = p.cam.global_position + fwd.normalized() * 9.0 - Vector3(0, 1.3, 0)
@@ -3954,11 +3962,14 @@ func _supplytest(p: Node) -> void:
 	step = 1
 	p.hp = 9999.0
 	var before: int = m().aliens_total
-	for round in 4:
+	# 0.72.6: the supply ship now flies in and beams its crew down (mission.reinf_drop, ~7 s), so wait for it
+	for round in 60:
 		for a in m().aliens():
 			if not a.dead and a.race != "pylon":
 				a.damage(9999.0, a.global_position + Vector3.UP, null)
 		await get_tree().create_timer(0.6).timeout
+		if m()._supply_drops >= 2 and m().alive_aliens() == 0:
+			break
 	out("RESULT supplytest drops %d total %d->%d" % [m()._supply_drops, before, m().aliens_total])
 	get_tree().quit()
 
@@ -4035,6 +4046,14 @@ func _kanontest(p: Node) -> void:
 	p._update_held()
 	var b: Node = bs[0]
 	b.state = b.S.LURK
+	# 0.72.6: the Kondor now lands away from the UFO, so the map in front of it differs - face a clear line
+	for k in 16:
+		var cq := PhysicsRayQueryParameters3D.create(p.cam.global_position, p.cam.global_position - p.cam.global_transform.basis.z * 9.0, Game.WORLD | Game.GLASS)
+		cq.exclude = [p.get_rid()]
+		if p.get_world_3d().direct_space_state.intersect_ray(cq).is_empty():
+			break
+		p.rotation.y += TAU / 16.0
+		await get_tree().physics_frame
 	var fwd: Vector3 = -p.cam.global_transform.basis.z
 	fwd.y = 0
 	b.global_position = p.cam.global_position + fwd.normalized() * 6.0 - Vector3(0, 1.3, 0)
@@ -5471,7 +5490,7 @@ func _leaveany(p: Node) -> void:
 	await get_tree().create_timer(0.5).timeout
 	out("before: done %s, wants_evac %s (should be false), %.0f m from the ship" % [m().objective_done(), p.wants_evac, far])
 	var early: bool = p.wants_evac
-	for i in 40:
+	for i in 160:   # 0.72.6: reinforcements beam down from a ship (~7 s each), so give them time to land
 		for a in m().aliens():
 			if not a.dead:
 				a.damage(9999.0, a.global_position + Vector3(0, 0, 1), p)

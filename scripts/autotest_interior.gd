@@ -86,6 +86,12 @@ static func run(at: Node, p: Node) -> void:
 					uq.exclude = [p.get_rid()]
 					uq.hit_back_faces = true
 					var ceil := space.intersect_ray(uq)
+					for _r in 3:
+						# a ceiling slab made solid on 17. 11.: look past it, as the test did before
+						if ceil.is_empty() or not is_instance_valid(ceil.get("collider")) or not (ceil.collider as Node).has_meta("roof_slab"):
+							break
+						uq.exclude = uq.exclude + [(ceil.collider as CollisionObject3D).get_rid()]
+						ceil = space.intersect_ray(uq)
 					var lvl := int(round(fp.y / 0.5))
 					if ceil.is_empty() and kind != "shop":
 						continue        # a roof, the open yard
