@@ -240,3 +240,146 @@ static func lens(at: Node, p: Node) -> void:
 	at.out("RESULT lensshot sight %s drops %d fog %.2f after6s %.2f" % [mode, n_rain, fog, wx.lens_fog])
 	Input.action_release("aim")
 	at.get_tree().quit()
+
+## pudcheck: --autotest=pudcheck --mtype=terror --biome=town --weather=rain --seed=3
+##   (2026-11-22, Ari: černé fleky na zemi) každá louže: je nad ní střecha/strop (uvnitř domu)?
+##   leží její viditelná plocha pod zdí, prahem nebo jinou věcí (část schovaná pod zdí = „půlkruh“)?
+static func pudcheck(at: Node, p: Node) -> void:
+	if p == null: return
+	at._skip_brief()
+	if at.step > 0 or not at.m().started(): return
+	at.step = 1
+	var m: Node = at.m()
+	for a in m.aliens():
+		a.set_physics_process(false)
+		a.global_position += Vector3(0, -200, 0)
+	await at.get_tree().create_timer(0.5).timeout
+	var wx: Node = m.wx
+	var space: PhysicsDirectSpaceState3D = p.get_world_3d().direct_space_state
+	var n := 0
+	var roofed := 0
+	var under := 0
+	var flagged: Array = []
+	if wx.puddles:
+		for c in wx.puddles.get_children():
+			n += 1
+			var mi := c as MeshInstance3D
+			var pc: Vector3 = mi.global_position
+			var q := PhysicsRayQueryParameters3D.create(pc + Vector3(0, 0.2, 0), pc + Vector3(0, 40, 0))
+			q.hit_back_faces = true
+			var roof := not space.intersect_ray(q).is_empty()
+			var sz: Vector2 = (mi.mesh as PlaneMesh).size
+			var bad := 0
+			for ix in range(-4, 5):
+				for iz in range(-4, 5):
+					var lp := Vector3(ix / 8.0 * sz.x, 0, iz / 8.0 * sz.y)
+					if Vector2(ix, iz).length() > 4.0: continue
+					var w: Vector3 = mi.global_transform * lp
+					var qd := PhysicsRayQueryParameters3D.create(w + Vector3(0, 2.5, 0), w + Vector3(0, -0.3, 0))
+					var hd := space.intersect_ray(qd)
+					if not hd.is_empty() and (hd.position as Vector3).y > pc.y + 0.05:
+						bad += 1
+			if roof: roofed += 1
+			if bad > 0: under += 1
+			if roof or bad > 0:
+				at.out("[PUD] %s roof %s covered %d size %s" % [pc, roof, bad, sz])
+				flagged.append([bad, mi])
+	at.out("RESULT pudcheck puddles %d roofed %d under %d" % [n, roofed, under])
+	if Game.cmd_arg("pudsnap", "") != "":
+		flagged.sort_custom(func(a, b): return a[0] > b[0])
+		if flagged.is_empty() and wx.puddles and wx.puddles.get_child_count() > 0:
+			flagged.append([0, wx.puddles.get_child(0)])
+		p.hp = 1.0e6
+		for i in mini(3, flagged.size()):
+			var c: Node3D = flagged[i][1]
+			var dir := Vector3(1, 0, 0).rotated(Vector3.UP, i * 2.1)
+			p.global_position = c.global_position - dir * 3.5 + Vector3(0, 0.1, 0)
+			p.velocity = Vector3.ZERO
+			await at.get_tree().create_timer(0.6).timeout
+			at._aim_at(p, c.global_position)
+			await at.get_tree().create_timer(0.8).timeout
+			at._snap("pud_%s_%d" % [Game.cmd_arg("pudsnap", ""), i])
+	at.get_tree().quit()
+
+## scorchshot: --autotest=scorchshot --mtype=terror --biome=town --day=1 --seed=5
+##   (2026-11-22) oheň u dveří domu a uvnitř u ležícího vojáka shoří, zbude obtisk sazí (Decal), ne černý
+##   kotouč přes zdi; snímky scorch_N.png. RESULT: kolik po ohni zůstalo kotoučů (MeshInstance) a obtisků.
+static func scorch(at: Node, p: Node) -> void:
+	if p == null: return
+	at._skip_brief()
+	if at.step > 0 or not at.m().started(): return
+	at.step = 1
+	var m: Node = at.m()
+	p.hp = 1.0e6
+	for a in m.aliens():
+		a.set_physics_process(false)
+		a.visible = false
+		a.global_position += Vector3(0, -200, 0)
+	var spots: Array = []
+	for d in m.map.get("doors", []):
+		if spots.size() >= 2: break
+		spots.append([(d["c"] as Vector3), d])
+	for i in spots.size():
+		m.ignite((spots[i][0] as Vector3) + Vector3(0, 0.3, 0), 1.0)
+	await at.get_tree().create_timer(1.0).timeout
+	var burnt: Array = []
+	for id in m.fires.keys():
+		burnt.append(m.fires[id]["pos"])
+		m._fire_off(id)
+	await at.get_tree().create_timer(0.5).timeout
+	var discs := 0
+	var decals := 0
+	for c in m.get_children():
+		if c is Decal:
+			decals += 1
+		if c is MeshInstance3D and (c as MeshInstance3D).mesh is CylinderMesh:
+			for bp in burnt:
+				if Vector2((c as Node3D).global_position.x - bp.x, (c as Node3D).global_position.z - bp.z).length() < 0.3:
+					discs += 1
+	at.out("RESULT scorchshot decals %d discs %d (kotouče u ohňů)" % [decals, discs])
+	if DisplayServer.get_name() == "headless":
+		at.get_tree().quit()
+		return
+	var fp: Array = []
+	for c in m.get_children():
+		if c is Decal: fp.append((c as Node3D).global_position)
+	# a fire in the open, right in front of the soldier: how the soot looks on plain ground
+	var front: Vector3 = p.global_position - (p.global_basis.z * Vector3(1, 0, 1)).normalized() * 3.5
+	m.ignite(front + Vector3(0, 0.3, 0), 1.0)
+	await at.get_tree().create_timer(0.6).timeout
+	for id in m.fires.keys():
+		m._fire_off(id)
+	fp.append(front)
+	await at.get_tree().create_timer(9.0).timeout      # the last smoke drifts off
+	if not fp.is_empty():
+		at._aim_at(p, fp[-1])
+		await at.get_tree().create_timer(0.8).timeout
+		at._snap("scorch_%s_top" % Game.cmd_arg("tag", "x"))
+	for i in spots.size():
+		var d: Dictionary = spots[i][1]
+		var c: Vector3 = spots[i][0]
+		var across := Vector3(0, 0, 1) if d.get("along_x", true) else Vector3(1, 0, 0)
+		p.global_position = c + across * 4.0 + Vector3(0, 0.1, 0)
+		p.velocity = Vector3.ZERO
+		await at.get_tree().create_timer(0.6).timeout
+		at._aim_at(p, c)
+		await at.get_tree().create_timer(0.8).timeout
+		at._snap("scorch_%s_%d" % [Game.cmd_arg("tag", "x"), i])
+	var k := 0
+	for c in m.get_children():
+		if is_instance_valid(c) and c is Decal and k < 3:
+			var dp: Vector3 = (c as Node3D).global_position
+			var off := Vector3(1.6, 0, 0)
+			for t in 4:
+				var q := PhysicsRayQueryParameters3D.create(dp + Vector3(0, 0.5, 0), dp + off.rotated(Vector3.UP, t * PI / 2) + Vector3(0, 0.5, 0), 1)
+				if p.get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+					off = off.rotated(Vector3.UP, t * PI / 2)
+					break
+			p.global_position = dp + off
+			p.velocity = Vector3.ZERO
+			await at.get_tree().create_timer(0.6).timeout
+			at._aim_at(p, dp)
+			await at.get_tree().create_timer(0.6).timeout
+			at._snap("scorch_%s_d%d" % [Game.cmd_arg("tag", "x"), k])
+			k += 1
+	at.get_tree().quit()

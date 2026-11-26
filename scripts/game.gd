@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.72.5 prototyp"
-const VERSION_NUM := "0.72.5"
+const VERSION := "0.72.4 prototyp"
+const VERSION_NUM := "0.72.4"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -16,10 +16,10 @@ const ITEMS := {
 	"autocannon": {"name": "Těžký kanón", "short": "Kanón", "weight": 16, "type": "weapon", "two": true, "heavy": 0.72, "brace": true, "ammo": "ac_clip", "damage": 150, "ap": true, "incendiary": true, "spread": 1.3, "rate": 1.9, "auto": false, "sound": "autocannon", "noise": 75.0, "muzzle": 1.2, "reload": 3.0, "kick": 3.0},
 	"minigun": {"name": "Minigun", "short": "Minigun", "weight": 20, "type": "weapon", "two": true, "heavy": 0.6, "brace": true, "ammo": "minigun_belt", "damage": 15, "spread": 3.4, "rate": 0.05, "auto": true, "spinup": 0.9, "heat": 0.0085, "sound": "minigun", "noise": 75.0, "muzzle": 0.86, "reload": 4.0, "kick": 0.4},
 	"rocket_launcher": {"name": "Raketomet", "short": "Raketomet", "weight": 12, "type": "weapon", "two": true, "heavy": 0.85, "ammo": "rocket", "ammo_alt": ["rocket_ap", "rocket_inc"], "damage": 160, "splash": 4.5, "spread": 0.8, "rate": 1.0, "auto": false, "projectile": true, "sound": "launch", "noise": 80.0, "muzzle": 0.9, "reload": 3.0, "kick": 3.0},
-	"plasma_rifle": {"name": "Plazmová puška PR-01", "short": "PR-01", "weight": 6, "type": "weapon", "modes": true, "two": true, "ammo": "plasma_cell", "cap": 10, "falloff": [35.0, 80.0], "damage": 75, "spread": 0.8, "rate": 0.21, "auto": true, "heat": 0.09, "sound": "plasma", "noise": 34.0, "muzzle": 0.8, "reload": 1.3, "kick": 0.5},
-	"plasma_pistol": {"name": "Plazmová pistole PP-01", "short": "PP-01", "weight": 3, "type": "weapon", "ammo": "plasma_cell", "cap": 20, "falloff": [20.0, 50.0], "damage": 34, "spread": 1.3, "rate": 0.28, "auto": false, "heat": 0.14, "sound": "plasma_p", "noise": 28.0, "muzzle": 0.21, "reload": 1.4, "kick": 0.4},
-	"plasma_cannon": {"name": "Plazmový kanón PC-01", "short": "PC-01", "weight": 15, "type": "weapon", "two": true, "heavy": 0.72, "brace": true, "ammo": "plasma_cell", "cap": 4, "damage": 290, "pc": true, "spread": 0.9, "rate": 0.9, "auto": false, "heat": 0.3, "sound": "plasma_cannon", "noise": 60.0, "muzzle": 0.86, "reload": 3.0, "kick": 1.2},
-	"plasma_minigun": {"name": "Plazmový minigun PM-01", "short": "PM-01", "weight": 20, "type": "weapon", "two": true, "heavy": 0.58, "brace": true, "ammo": "plasma_cell", "cap": 50, "damage": 26, "spread": 3.0, "rate": 0.08, "auto": true, "bursts": [5, 10, 0], "spinup": 0.7, "heat": 0.02, "sound": "plasma_mg", "noise": 70.0, "muzzle": 0.86, "reload": 3.5, "kick": 0.4},
+	"plasma_rifle": {"name": "Plazmová puška PR-01", "short": "PR-01", "weight": 6, "type": "weapon", "modes": true, "two": true, "ammo": "plasma_cell", "cap": 15, "falloff": [35.0, 80.0], "damage": 75, "spread": 0.8, "rate": 0.21, "auto": true, "heat": 0.06, "sound": "plasma", "noise": 34.0, "muzzle": 0.8, "reload": 1.3, "kick": 0.5},
+	"plasma_pistol": {"name": "Plazmová pistole PP-01", "short": "PP-01", "weight": 3, "type": "weapon", "ammo": "plasma_cell", "cap": 30, "falloff": [20.0, 50.0], "damage": 34, "spread": 1.3, "rate": 0.28, "auto": false, "heat": 0.14, "sound": "plasma_p", "noise": 28.0, "muzzle": 0.21, "reload": 1.4, "kick": 0.4},
+	"plasma_cannon": {"name": "Plazmový kanón PC-01", "short": "PC-01", "weight": 15, "type": "weapon", "two": true, "heavy": 0.72, "brace": true, "ammo": "plasma_cell", "cap": 6, "damage": 290, "pc": true, "spread": 0.9, "rate": 0.9, "auto": false, "heat": 0.2, "sound": "plasma_cannon", "noise": 60.0, "muzzle": 0.86, "reload": 3.0, "kick": 1.2},
+	"plasma_minigun": {"name": "Plazmový minigun PM-01", "short": "PM-01", "weight": 20, "type": "weapon", "two": true, "heavy": 0.58, "brace": true, "ammo": "plasma_cell", "cap": 75, "damage": 26, "spread": 3.0, "rate": 0.08, "auto": true, "bursts": [5, 10, 0], "spinup": 0.7, "heat": 0.0134, "sound": "plasma_mg", "noise": 70.0, "muzzle": 0.86, "reload": 3.5, "kick": 0.4},
 	"sniper": {"name": "Odstřelovací puška", "short": "Odstřelovačka", "weight": 9, "type": "weapon", "two": true, "ammo": "sniper_clip", "damage": 120, "ap": true, "spread": 0.25, "hip": 5.0, "scope": true, "rate": 1.3, "auto": false, "sound": "sniper", "noise": 75.0, "muzzle": 1.07, "reload": 2.4, "kick": 3.5, "ext_mag": 8},
 	# lasers: no magazines - the cell recharges by itself after a short pause (cap = shots in the cell)
 	"laser_pistol": {"name": "Laserová pistole LP-01", "short": "Laser. pistole", "weight": 2, "type": "weapon", "ammo": "", "laser": true, "cap": 1, "recharge": 2.0, "falloff": [25.0, 60.0], "damage": 42, "spread": 1.0, "rate": 0.3, "auto": false, "sound": "laser_p", "noise": 25.0, "muzzle": 0.21, "kick": 0.3},
@@ -749,8 +749,16 @@ func _on_scene_changed() -> void:
 func loading_busy() -> bool:
 	return is_instance_valid(_loading) and _loading.busy()
 
+const MAX_PHYS_STEPS := 3
 func _ready() -> void:
 	load_tweaks()
+	# (2026-11-26, propady v co-opu) Když snímek trvá dlouho, Godot dohání fyziku až 8 kroky za
+	# snímek – ty snímek ještě prodlouží a hra se propadne na 10 FPS (záznam výkonu: 70 kroků
+	# vetřelců v jednom snímku). Nejvýš 3 kroky: při velké zátěži se hra radši na chvíli zpomalí.
+	if cmd_arg("physsteps", "") == "":
+		Engine.max_physics_steps_per_frame = MAX_PHYS_STEPS
+	else:
+		Engine.max_physics_steps_per_frame = int(cmd_arg("physsteps", "8"))
 	# the steel look for every control in the game, CanvasLayers included
 	ThemeDB.get_default_theme().merge_with(UiSkin.theme())
 	ThemeDB.get_default_theme().default_font = UiSkin.font()
@@ -791,8 +799,20 @@ func set_perf_log(v: bool) -> void:
 ## (0.80) The hidden test mode (scripts/debug_menu.gd): --debug=1 or Ctrl+Alt+Shift+D, then F10.
 const DebugMenu := preload("res://scripts/debug_menu.gd")
 var debug: Node = null
+## (Ari 26. 11.) the debug mode stays on after a restart once it is woken (Nastavení → Ovládání,
+## or Ctrl+Alt+Shift+D); a test never stores it.
+var debug_mode := false
+func set_debug_mode(v: bool, store := true) -> void:
+	debug_mode = v
+	if debug and debug.on != v:
+		debug.toggle_mode(v)
+	if store and autotest() == "":
+		save_settings()
 func debug_on() -> bool:
 	return debug != null and debug.on
+
+func debug_panel() -> bool:
+	return debug != null and debug.on and debug.panel_open()
 
 func debug_god() -> bool:
 	return debug != null and debug.on and debug.god
@@ -823,6 +843,8 @@ const KEY_DEFAULTS := {
 		"primary": [KEY_1], "secondary": [KEY_2],
 		"belt1": [KEY_3], "belt2": [KEY_4], "belt3": [KEY_5], "belt4": [KEY_6],
 		"talk": [KEY_T], "radio_talk": [KEY_TAB, KEY_K], "mic_toggle": [KEY_M], "nvg": [KEY_N], "scan_mute": [KEY_O], "sentry": [KEY_9], "firemode": [KEY_B], "drop": [KEY_BACKSPACE], "ready": [KEY_ENTER, KEY_KP_ENTER], "salute": [KEY_J], "atease": [KEY_U],
+		# (26. 11. Ari) F1 = zadání mise (dřív skrytí HUD, to je teď F2)
+		"mission_info": [KEY_F1], "hud_toggle": [KEY_F2],
 	}
 
 ## What the settings offer to rebind, in this order: [action, Czech name] (a header row has no name).
@@ -838,6 +860,7 @@ const KEY_ROWS := [
 	["", "VĚCI A AKCE"], ["use", "Použít (dveře, sebrat, táhnout)"], ["heal", "Lékárnička"], ["inventory", "Výstroj"],
 	["flashlight", "Svítilna"], ["nvg", "Noktovizor"], ["scan_mute", "Ztlumit detektor"], ["drop", "Zahodit"], ["ready", "Připraven (v lodi)"],
 	["salute", "Kolo emocí"], ["atease", "Pohov"],
+	["mission_info", "Zadání mise"], ["hud_toggle", "Skrýt HUD"],
 	["", "HLAS"], ["talk", "Mluvit nahlas (držet)"], ["radio_talk", "Vysílačka (držet)"], ["mic_toggle", "Mikrofon stále zapnutý"],
 	["", "STÍHAČKA"], ["decoy", "Návnady"],
 ]
@@ -966,6 +989,10 @@ func roll_levels(r: RandomNumberGenerator) -> Dictionary:
 ## (`dice["peak"]` = the most soldiers ever at once). The points are always free (a fixed 30).
 const DICE_ROLLS := 3
 var dice := {"left": DICE_ROLLS, "last": {}, "peak": 1}
+## (Ari 2026-11-26) the player's own soldiers lost on missions (uid) and the kits of theirs brought
+## home by a recovery mission that he already took back (rid) - kept in the profile, merc.cfg.
+var fallen_uids := {}
+var returned := {}
 
 func dice_left() -> int:
 	return int(dice.get("left", DICE_ROLLS))
@@ -1000,10 +1027,57 @@ func dice_used(by_dice: bool) -> void:
 ## A recruit in the place of a soldier lost on a mission (fallen, missing): the dice come back.
 func lost_merc(from: Dictionary = {}) -> Dictionary:
 	dice_grant()
+	var fu := String((from if not from.is_empty() else merc).get("uid", ""))
+	if fu != "":
+		fallen_uids[fu] = true       # (his kit may still come home: claim_returns)
+		while fallen_uids.size() > 60:
+			fallen_uids.erase(fallen_uids.keys()[0])
 	var m := new_merc()
 	# (0.72.x) what is left in the player's own locker goes to the new recruit, like the savings
 	carry_gear(from if not from.is_empty() else merc, m)
 	return m
+
+## (Ari 2026-11-26) A recovery mission brought a fallen soldier's kit home: if he was one of ours,
+## his locker pieces and the parts on his guns come back to the soldier we play now (the campaign
+## keeps the list in data["returns"]; co-op mates get it with the host's campaign). Returns what came.
+func claim_returns(cdata: Dictionary) -> String:
+	if skirmish:
+		return ""
+	var got := []
+	for r in cdata.get("returns", []):
+		var rid := String(r.get("rid", ""))
+		if rid == "" or returned.has(rid) or not fallen_uids.has(String(r.get("uid", ""))):
+			continue
+		returned[rid] = true
+		gear_to(merc, String(r.get("cid", cdata.get("cid", ""))))
+		var lk: Dictionary = merc.get("locker", {})
+		for it in r.get("locker", {}):
+			lk[it] = int(lk.get(it, 0)) + int(r["locker"][it])
+			got.append("%s %dx" % [ITEMS[it]["short"] if ITEMS.has(it) else it, int(r["locker"][it])])
+		merc["locker"] = lk
+		var mods: Dictionary = merc.get("mods", {})
+		var nm := 0
+		for w in r.get("mods", {}):
+			var l: Array = mods.get(w, [])
+			for md in r["mods"][w]:
+				if not md in l:
+					l.append(md)
+					nm += 1
+					# a free slot gets it mounted at once, as when it was bought
+					var f: Dictionary = merc.get("fit", {})
+					var fw: Dictionary = fitted(w).duplicate()
+					if not fw.has(mod_slot(md)) and md in MOD_FITS.get(w, []):
+						fw[mod_slot(md)] = md
+						f[w] = fw
+						merc["fit"] = f
+			mods[w] = l
+		merc["mods"] = mods
+		if nm > 0:
+			got.append("díly na zbraně %dx" % nm)
+	if got.is_empty():
+		return ""
+	save_merc()
+	return "Z výstroje tvého padlého vojáka se ti vrátilo: " + ", ".join(got) + "."
 
 func set_levels(m: Dictionary, lv: Dictionary) -> void:
 	m["levels"] = lv.duplicate()
@@ -1478,6 +1552,8 @@ func load_merc() -> void:
 		mercs = cf.get_value("merc", "roster", [])
 		active = int(cf.get_value("merc", "active", 0))
 		on_mission = String(cf.get_value("merc", "on_mission", ""))
+		fallen_uids = cf.get_value("merc", "fallen_uids", {})
+		returned = cf.get_value("merc", "returned", {})
 		var dc = cf.get_value("merc", "dice") if cf.has_section_key("merc", "dice") else null
 		if dc is Dictionary:
 			dice = dc
@@ -1576,6 +1652,8 @@ func save_merc() -> void:
 	cf.set_value("merc", "active", active)
 	cf.set_value("merc", "on_mission", on_mission)
 	cf.set_value("merc", "dice", dice)
+	cf.set_value("merc", "fallen_uids", fallen_uids)
+	cf.set_value("merc", "returned", returned)
 	cf.save("user://merc.cfg")
 
 ## Another mercenary from the roster goes on the next mission (the purse goes with the player).
@@ -1670,6 +1748,7 @@ func load_settings() -> void:
 		fullscreen = cf.get_value("video", "fullscreen", false)
 		seen_version = cf.get_value("game", "seen_version", "")
 		intro_seen = cf.get_value("game", "intro_seen", false)
+		debug_mode = bool(cf.get_value("game", "debug", false))
 		voice_mode = cf.get_value("voice", "mode", "ptt")
 		mic_gate = cf.get_value("voice", "gate", 0.03)
 		mimic_ok = cf.get_value("voice", "mimic", true)
@@ -1706,6 +1785,7 @@ func save_settings() -> void:
 	cf.set_value("video", "fullscreen", fullscreen)
 	cf.set_value("game", "seen_version", seen_version)
 	cf.set_value("game", "intro_seen", intro_seen)
+	cf.set_value("game", "debug", debug_mode)
 	cf.set_value("voice", "mode", voice_mode)
 	cf.set_value("voice", "gate", mic_gate)
 	cf.set_value("voice", "mimic", mimic_ok)
@@ -1971,7 +2051,7 @@ var volumetric := true     # volumetric fog (Forward+ only)
 var render_scale := 1.0    # 3D resolution (1 = native, sharp; lower = faster)
 var grass := true          # grass blades swaying in the wind
 var hud_min := false       # (0.66) minimal HUD: ammunition only as a guess
-var hud_hidden := false    # (0.66) F1 in the game: the HUD hidden (not saved)
+var hud_hidden := false    # (0.66) F2 in the game (F1 until 26. 11.): the HUD hidden (not saved)
 var loud_at := Vector3.ZERO   # (0.66) where the last loud sound was played (the compass shows it)
 var loud_ms := -100000
 var shadows := 1           # 0.62 výkon: stíny 0 = nízké, 1 = střední, 2 = vysoké (jako do 0.61)
@@ -2116,6 +2196,68 @@ func surface_at(world: Node3D, pos: Vector3, map: Dictionary) -> String:
 		"desert": return "sand"
 		"mars": return "dirt"
 	return "grass"
+
+## (0.65, 26. 11. 2026) Dopad kulky: Ariho zvuky zásahů podle toho, do čeho kulka vletěla
+## (beton, kov, hlína, dřevo, člověk, vetřelec; velký vetřelec hlubší; stroje jako kov).
+## @a from -> @a to je dráha střely, krátký paprsek u konce zjistí, co tam je. Sklo má svůj zvuk rozbití.
+const IMPACT_SURF := {"hard": "concrete", "metal": "metal", "alien": "metal", "wood": "wood", "dirt": "dirt",
+	"grass": "dirt", "sand": "dirt", "snow": "dirt", "water": ""}
+const IMPACT_BREAK := {"metal": "metal", "wood": "wood", "crate": "wood", "brick": "concrete", "glass": ""}
+const IMPACT_METAL_RACES := ["diskoll", "kolos", "pylon"]
+const IMPACT_BIG_RACES := ["bijec", "bijec_velitel", "jestetan", "jestetan_velitel", "nador", "ohnivec", "levit", "levit_velitel"]
+func impact_kind(world: Node3D, from: Vector3, to: Vector3, map: Dictionary) -> String:
+	var dir := to - from
+	if dir.length() < 0.05:
+		return ""
+	dir = dir.normalized()
+	var q := PhysicsRayQueryParameters3D.create(to - dir * 0.4, to + dir * 0.4, WORLD | GLASS | 2 | 4 | 8)
+	var hit := world.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return ""
+	var c: Object = hit["collider"]
+	if c == null:
+		return ""
+	if c.has_method("is_alien"):
+		var r := String(c.get("race")) if "race" in c else ""
+		if r in IMPACT_METAL_RACES or String(c.get_script().resource_path if c.get_script() else "").contains("drone"):
+			return "metal"
+		return "alien_big" if r in IMPACT_BIG_RACES else "alien"
+	if c.has_method("is_player") or c.has_method("is_civilian"):
+		return "flesh"
+	if c.has_meta("break_kind"):
+		return String(IMPACT_BREAK.get(String(c.get_meta("break_kind")), "concrete"))
+	var n: Node = c as Node
+	for k in 3:
+		if n == null:
+			break
+		if n.has_meta("surf"):
+			return String(IMPACT_SURF.get(String(n.get_meta("surf")), "concrete"))
+		if n.get_child_count() > 40:
+			break
+		for ch in n.get_children():
+			if ch is MeshInstance3D and ch.material_override and ch.material_override.has_meta("tex"):
+				var sf: String = TEX_SURFACE.get(String(ch.material_override.get_meta("tex")), "")
+				if sf != "":
+					return String(IMPACT_SURF.get(sf, "concrete"))
+		n = n.get_parent()
+	if (hit["normal"] as Vector3).y > 0.6:
+		return String(IMPACT_SURF.get(surface_at(world, hit["position"], map), "dirt"))
+	return "concrete"
+
+## Hraje dopad kulky v @a to (všem strojům, z efektu výstřelu). Kulomet: ne každá rána.
+var _impact_t := 0.0
+func play_impact(world: Node3D, from: Vector3, to: Vector3, map: Dictionary, volume_db := -6.0) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - _impact_t < 0.05:
+		return
+	var cam := world.get_viewport().get_camera_3d()
+	if cam and cam.global_position.distance_to(to) > 45.0:
+		return
+	var k := impact_kind(world, from, to, map)
+	if k == "":
+		return
+	_impact_t = now
+	play_at(world, "impact_" + k, to, volume_db + (2.0 if k == "flesh" else 0.0), randf_range(0.92, 1.08))
 
 const STEP_DB := {"grass": -1.0, "dirt": 0.0, "hard": 0.0, "wood": 0.0, "metal": 0.0, "snow": 0.0, "sand": -1.0, "water": 0.0, "alien": 0.0}
 
@@ -2336,7 +2478,9 @@ func loop_stream(sname: String) -> AudioStream:
 ## Sounds with several takes (name_0..name_N-1): a random one each time.
 ## Names that play another sound at a different pitch (a pistol is the rifle's smaller sister).
 const PITCHED := {"plasma_p": ["plasma", 1.18], "laser_p": ["laser", 1.15]}
-const VARIANTS := {"plasma_heavy": 10, "casing": 4, "step_heavy": 3, "gear": 4, "sting": 4, "type": 4, "breath": 2}
+const VARIANTS := {"plasma_heavy": 10, "casing": 4, "step_heavy": 3, "gear": 4, "sting": 4, "type": 4, "breath": 2,
+	"impact_concrete": 4, "impact_metal": 4, "impact_dirt": 2, "impact_wood": 2, "impact_flesh": 2, "impact_alien": 2, "impact_alien_big": 2, "bullet_whiz": 2,
+	"jestetan_hurt": 2, "jestetan_death": 3, "bijec_hurt": 2, "bijec_death": 2}
 ## (0.61) The soldier's own voice by sex: "<name>_female" / "<name>_male" when that recording is in
 ## assets/sounds (also as takes <name>_female_0, _1...), else the common "<name>" - but a woman never
 ## gets the common one when it is a man's recording (VOICE_MALE): she stays quiet until hers is there.
@@ -2357,6 +2501,10 @@ func voice_of(sname: String, female: bool) -> String:
 	if female and sname in VOICE_MALE:
 		return ""
 	return sname
+
+## A sound by name is there: its own file, or its takes <name>_0.. listed in VARIANTS.
+func has_sound(sname: String) -> bool:
+	return VARIANTS.has(sname) or ResourceLoader.exists("res://assets/sounds/%s.wav" % sname)
 
 func sound(sname: String) -> AudioStream:
 	if PITCHED.has(sname):

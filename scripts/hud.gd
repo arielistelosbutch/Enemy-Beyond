@@ -27,7 +27,6 @@ var _last_pos := {}           # alien name -> last position (for the scanner)
 var _blips := []              # [{pos, t}]
 var _scan_t := 0.0
 var _scan_sweep := 0.0
-var _f1_down := false
 
 func _ready() -> void:
 	layer = 5
@@ -273,6 +272,148 @@ func damage_flash(from: Vector3) -> void:
 		var local: Vector3 = p.global_transform.basis.inverse() * d
 		flash_dir = atan2(local.x, -local.z)
 
+# ---- (26. 11. Ari) F1: zadání mise -------------------------------------------------------
+## The briefing again, on the left over the running game (nothing stops, nothing is blocked -
+## in co-op each one opens his own). Only what the team was told and what the HUD already says:
+## the task, the facts from the briefing, how long the team is down and the current objective
+## line. Hardcore: no counts, no positions, nothing about the aliens.
+var _task_parts := {}
+var _task_t0 := -1
+var _task_panel: PanelContainer
+var _task_time: Label
+var _task_now: Label
+var _task_now_s := ""
+
+func task_open() -> bool:
+	return _task_panel != null and is_instance_valid(_task_panel)
+
+func task_toggle() -> void:
+	if task_open():
+		_task_panel.queue_free()
+		_task_panel = null
+		return
+	if _brief_t >= 0 and _brief_fade < 0:
+		return          # the briefing itself is still on the screen
+	Game.play_ui(mission(), "ui_click", -12)
+	_task_build()
+
+func _task_build() -> void:
+	var m := mission()
+	var mp: Dictionary = Net.mission_params
+	_task_panel = PanelContainer.new()
+	_task_panel.name = "TaskPanel"
+	_task_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_task_panel.position = Vector2(14, 34)
+	_task_panel.custom_minimum_size = Vector2(220, 0)
+	_task_panel.size = Vector2(220, 0)
+	_task_panel.add_theme_stylebox_override("panel", UiBox.make(Color(UiSkin.BG.r, UiSkin.BG.g, UiSkin.BG.b, 0.86), UiSkin.LINE, 0, Vector4(10, 8, 10, 8)).with_bar(UiSkin.ACC, 0, 2.0))
+	add_child(_task_panel)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 3)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_task_panel.add_child(v)
+	var parts := _task_parts
+	var eb_parts: Array = ["Zadání mise", String(mp.get("type_name", "mise"))]
+	if String(parts.get("time", "")) != "":
+		eb_parts.append(String(parts["time"]))
+	var eb := _lbl(v, " · ".join(eb_parts), UiSkin.ACC, 7)
+	UiSkin.eyebrow(eb, UiSkin.ACC, 7)
+	eb.custom_minimum_size = Vector2(200, 0)
+	var place := String(parts.get("place", ""))
+	var hl := _lbl(v, place if place != "" else ("Na základně" if m and m.home() else String(mp.get("type_name", "Mise"))), TEXT, 13)
+	UiSkin.headline(hl, 13)
+	hl.custom_minimum_size = Vector2(200, 0)
+	var task := String(parts.get("task", ""))
+	if task != "":
+		var tp := PanelContainer.new()
+		tp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tp.add_theme_stylebox_override("panel", UiBox.make(Color(UiSkin.ACC.r, UiSkin.ACC.g, UiSkin.ACC.b, 0.08), Color(0, 0, 0, 0), 0, Vector4(7, 3, 5, 3)).with_bar(UiSkin.ACC, 0, 2.0))
+		v.add_child(tp)
+		var tl := _lbl(tp, task, TEXT, 8)
+		tl.custom_minimum_size = Vector2(186, 0)
+	elif m and m.home():
+		var hm := _lbl(v, "Na základně žádný úkol nemáš.", UiSkin.DIM, 8)
+		hm.custom_minimum_size = Vector2(200, 0)
+	# the state: only what the HUD shows anyway
+	var sh := _lbl(v, "Stav", UiSkin.DIM, 7)
+	UiSkin.eyebrow(sh, UiSkin.DIM, 7)
+	_task_time = _task_row(v, "Na místě")
+	_task_now = _lbl(v, "", TEXT, 8)
+	_task_now.custom_minimum_size = Vector2(200, 0)
+	_task_now_s = "?"
+	for kv in parts.get("facts", []):
+		_kv_row(v, kv[0], kv[1])
+	var story := String(parts.get("story", ""))
+	if story != "":
+		var sc := ScrollContainer.new()
+		sc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+		sc.custom_minimum_size = Vector2(200, 0)
+		v.add_child(sc)
+		var st := _lbl(sc, story, Color(0.72, 0.75, 0.78), 7)
+		st.custom_minimum_size = Vector2(196, 0)
+		st.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# as much of the story as fits above the bars (bottom left); the rest is cut off
+		sc.set_meta("story", true)
+	var kb := _lbl(v, "%s / Esc = zavřít" % Game.key_name("mission_info"), UiSkin.DIM, 7)
+	kb.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_task_tick()
+
+func _task_row(parent: Node, k: String) -> Label:
+	var row := PanelContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_theme_stylebox_override("panel", UiBox.make(Color(0, 0, 0, 0), UiSkin.LINE, 8, Vector4(0, 1, 0, 1)))
+	parent.add_child(row)
+	var hb := HBoxContainer.new()
+	row.add_child(hb)
+	var kl := _lbl(hb, k, UiSkin.DIM, 8)
+	kl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	kl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var vl := _lbl(hb, "", TEXT, 8)
+	vl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	return vl
+
+## Keeps the open panel current (time, the objective line) and closes it when a window opens.
+const TASK_MAX_H := 236.0       # the panel must stay above the bars bottom left (y 270+)
+func _task_tick() -> void:
+	if not task_open():
+		return
+	var m := mission()
+	if window_up() or m == null or m.finished:
+		_task_panel.queue_free()
+		_task_panel = null
+		return
+	if _task_t0 >= 0:
+		var s := int((Time.get_ticks_msec() - _task_t0) / 1000)
+		_task_time.text = "%d:%02d" % [s / 60, s % 60]
+	else:
+		_task_time.text = "-"
+	var now: String = Game.shipify(m.objective_text())
+	var col := TEXT
+	if m.done_banner:
+		now = "Úkol splněn. %s = odlet, transport vyzvedne všechny." % Game.key_name("ready")
+		col = UiSkin.OK
+	elif now == "":
+		now = "Úkol trvá."
+		col = UiSkin.DIM
+	if now != _task_now_s:
+		_task_now_s = now
+		_task_now.text = now
+		_task_now.add_theme_color_override("font_color", col)
+	# the story gets what is left of TASK_MAX_H
+	for c in _task_panel.get_child(0).get_children():
+		if c is ScrollContainer and c.has_meta("story"):
+			var others := 0.0
+			for o in _task_panel.get_child(0).get_children():
+				if o != c and o.visible:
+					others += o.get_combined_minimum_size().y + 3.0
+			var room := maxf(0.0, TASK_MAX_H - 16.0 - others)
+			var want := (c.get_child(0) as Control).get_combined_minimum_size().y
+			c.custom_minimum_size.y = minf(room, want)
+			c.visible = c.custom_minimum_size.y >= 18.0
+	_task_panel.size = Vector2(220, 0)
+
 # ---- briefing: black screen, typewriter text, then the night fades in --------------------
 var _brief_bg: ColorRect
 var _brief_lbl: Label
@@ -295,6 +436,7 @@ func briefing(text: String) -> void:
 	# 0.72 (návrh A): the report split up - where and when on top, the story typed out, the task
 	# in a gold box, the facts as a table, the place on the map on the right
 	var parts := _brief_parts(Game.shipify(text))
+	_task_parts = parts
 	var v := VBoxContainer.new()
 	v.position = Vector2.ZERO
 	v.size = Vector2(640, 360)
@@ -473,6 +615,7 @@ func _brief_tick(delta: float) -> void:
 	if _brief_t >= hold and _brief_fade < 0 and (key or _brief_t > hold + 2.5 or Game.autotest() != ""):
 		_brief_lbl.visible_characters = -1
 		_brief_fade = 0.0
+		_task_t0 = Time.get_ticks_msec()
 		mission().brief_done()
 	if _brief_fade >= 0:
 		_brief_fade += delta
@@ -654,17 +797,20 @@ func _process(delta: float) -> void:
 	if Input.is_action_just_pressed("inventory") and not paused:
 		if inventory_open: _close_inventory()
 		elif me() and not me().downed and not me().dead: _open_inventory()
-	if Input.is_key_pressed(KEY_F1) != _f1_down:
-		_f1_down = not _f1_down
-		if _f1_down:
-			Game.hud_hidden = not Game.hud_hidden
-			message("HUD skrytý (F1)" if Game.hud_hidden else "HUD zpět (F1)", 1.5)
+	# (26. 11. Ari) F1 = zadání mise, skrytí HUD se přesunulo na F2 (obojí jde přenastavit)
+	if not Game.binding_key and Input.is_action_just_pressed("hud_toggle"):
+		Game.hud_hidden = not Game.hud_hidden
+		message(("HUD skrytý (%s)" if Game.hud_hidden else "HUD zpět (%s)") % Game.key_name("hud_toggle"), 1.5)
+	if not Game.binding_key and Input.is_action_just_pressed("mission_info") and not window_up():
+		task_toggle()
 	if Input.is_action_just_pressed("pause") and not Game.binding_key:
-		if inventory_open: _close_inventory()
+		if task_open(): task_toggle()
+		elif inventory_open: _close_inventory()
 		elif paused: _resume()
 		else: _pause()
 	if inventory_open:
 		_refresh_inventory()
+	_task_tick()
 	canvas.queue_redraw()
 
 func _draw_hud() -> void:
@@ -742,7 +888,7 @@ func _draw_hud() -> void:
 				for d in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
 					c.draw_line(mid + d * 4, mid + d * 8, Color(1, 0.3, 0.2), 1.0)
 	if Game.hud_hidden:
-		return          # (0.66) F1: only the crosshair / sight and what happens to you
+		return          # (0.66) F2 (dřív F1): only the crosshair / sight and what happens to you
 	if window_up():
 		return          # 0.72: one thing at a time - the window, not the HUD under it
 	if msg_label.visible and msg_label.text != "":
@@ -782,7 +928,7 @@ func _draw_hud() -> void:
 		_prompt(("F - doplnit věž" if p.sentry_action(st) == "reload" else "F - složit věž") + am, TEXT)
 	if not p.downed and not mission().nearest_pickup(p.global_position).is_empty():
 		var it: Dictionary = mission().nearest_pickup(p.global_position)["item"]
-		_prompt("F - sebrat: " + Game.ITEMS[it["id"]]["name"], TEXT)
+		_prompt("F - sebrat: " + mission().pickup_name(it), TEXT)
 	if p.bleeding > 0:
 		_text(c, base + Vector2(0, -12), "KRVÁCÍŠ (-%.1f zdraví/s) - X lékárnička (do ruky, pak X)" % p.bleeding, RED, 9)
 	# hands, bottom: left hand on the left, right hand on the right
@@ -1654,7 +1800,7 @@ var _dragged := false
 func _input(event: InputEvent) -> void:
 	# the window lost the mouse (alt-tab...): a click only takes it back, it does not shoot
 	if event is InputEventMouseButton and event.pressed and not inventory_open and not paused and not is_instance_valid(_screen) \
-			and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not mission().finished and Game.autotest() == "":
+			and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not mission().finished and Game.autotest() == "" and not Game.debug_panel():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		_back_to_game()
 		return
@@ -2178,7 +2324,7 @@ static func settings_ui(box: Control) -> void:
 	hq.add_item("HUD: minimální (munice jen odhadem)")
 	hq.select(1 if Game.hud_min else 0)
 	hq.item_selected.connect(func(i): Game.hud_min = i == 1; Game.save_settings())
-	hq.tooltip_text = "F1 ve hře skryje celý HUD (zůstane jen zaměřovač)."
+	hq.tooltip_text = "%s ve hře skryje celý HUD (zůstane jen zaměřovač), %s ukáže zadání mise." % [Game.key_name("hud_toggle"), Game.key_name("mission_info")]
 	pg["gfx"].add_child(hq)
 	# (Ari 22. 11.) záznamník výkonu: záseky do souboru, jen o hře, nic neposílá
 	var pl := CheckBox.new()
@@ -2189,6 +2335,15 @@ static func settings_ui(box: Control) -> void:
 	pl.tooltip_text = "Když se hra sekne, zapíše do složky logs (vykon_*.txt), co se v tu chvíli dělo. Nic neposílá."
 	pl.toggled.connect(func(v): Game.set_perf_log(v))
 	pg["gfx"].add_child(pl)
+	# (Ari 26. 11.) debug mód na testování - zůstane zapnutý i po restartu
+	var dbg := CheckBox.new()
+	dbg.focus_mode = Control.FOCUS_NONE
+	dbg.add_theme_font_size_override("font_size", 9)
+	dbg.text = "Debug mód pro testování (F10 = panel, Ctrl+Alt+Shift+D)"
+	dbg.button_pressed = Game.debug_mode or Game.debug_on()
+	dbg.tooltip_text = "Vlevo nahoře se ukáže DEBUG: výzkum, peníze, sklad, nesmrtelnost... Kampaň mění jen hostitel."
+	dbg.toggled.connect(func(v): Game.set_debug_mode(v))
+	pg["ctl"].add_child(dbg)
 	_keys_ui(pg["keys"])
 
 ## 0.72 (Ari): everyone's own keys. Click a key and press the new one (Esc = keep the old one),

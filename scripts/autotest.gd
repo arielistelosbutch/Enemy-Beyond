@@ -12,6 +12,7 @@ const AIT := preload("res://scripts/autotest_ai.gd")    # (the aliens' AI tests)
 const PERF := preload("res://scripts/autotest_perf.gd")    # (výkon, propady FPS)
 const FL2 := preload("res://scripts/autotest_facelift2.gd")   # (0.70 facelift II: ozvěna, špína, zeď padlých, intro)
 const GT := preload("res://scripts/autotest_ground.gd")    # (vetřelci a zem: chodníky, schody)
+const KERB := preload("res://scripts/autotest_kerb.gd")    # (2026-11-22: obrubníky bez skoku)
 const RAIN := preload("res://scripts/autotest_rain.gd")
 const WEATHER := preload("res://scripts/autotest_weather.gd")   # (2026-11-17: nápady z deště)    # (2026-11-17: déšť vidět z budov)
 const CEIL := preload("res://scripts/autotest_ceil.gd")    # (0.69: proskakování stropem budov)
@@ -25,6 +26,7 @@ func out(s: String) -> void:
 	print("[AT %5.1f] %s" % [t, s])
 
 var _ns_t := 0.0
+var _lj_t9 := false
 var _ns_f := 0
 ## Network traffic of this machine (ENet host totals), every 2 s: kB/s out and in, packets/s, FPS.
 func _netstat(delta: float) -> void:
@@ -73,21 +75,28 @@ func _process(delta: float) -> void:
 		"solo", "campaign": _solo(p)
 		"perf": PERF.run(self, p)
 		"gunlag": PERF.gunlag(self, p)
+		"deadcost": PERF.deadcost(self, p)
 		"groundtest": GT.run(self, p)
+		"kerbtest": KERB.run(self, p)
 		"rainshot": RAIN.run(self, p)
 		"lamptest": WEATHER.lamps(self, p)
 		"wxtest": WEATHER.shift(self, p)
 		"wxshot": WEATHER.shots(self, p)
+		"pudcheck": WEATHER.pudcheck(self, p)
+		"scorchshot": WEATHER.scorch(self, p)
 		"tracktest": WEATHER.tracks(self, p)
 		"lensshot": WEATHER.lens(self, p)
 		"ceiltest": CEIL.run(self, p)
 		"interiors": INTERIOR.run(self, p)
+		"yardtest": preload("res://scripts/autotest_yard.gd").run(self, p)
 		"spectate": preload("res://scripts/autotest_spectate.gd").run(self, p)
+		"alnadetest", "alnadehost", "alnadeclient": preload("res://scripts/autotest_alnade.gd").run(self, p)
 		"shouldershot": preload("res://scripts/autotest_shoulder.gd").run(self, p)
 		"radiosprint": preload("res://scripts/autotest_shoulder.gd").radio(self, p)
 		"dazetest", "dazebase": preload("res://scripts/autotest_daze.gd").run(self, p)
 		"quiettest": preload("res://scripts/autotest_quiet.gd").run(self, p)
 		"scantest": preload("res://scripts/autotest_scan.gd").run(self, p)
+		"debugkeys": preload("res://scripts/autotest_debugkeys.gd").run(self, p)
 		"quiethost", "quietclient": preload("res://scripts/autotest_quiet.gd").pair(self, p)
 		"convoytest": preload("res://scripts/autotest_missions.gd").convoy(self, p)
 		"bugtest": preload("res://scripts/autotest_missions.gd").bug(self, p)
@@ -98,6 +107,7 @@ func _process(delta: float) -> void:
 		"civstuck": preload("res://scripts/autotest_civnvg.gd").civstuck(self, p)
 		"civlooks": preload("res://scripts/autotest_civnvg.gd").civlooks(self, p)
 		"radartest": FL.radar(self, p)
+		"tasktest": preload("res://scripts/autotest_task.gd").run(self, p)
 		"transport": FL.transport(self, p)
 		"echotest", "echobase": FL2.echo(self, p)
 		"dirtshot": FL2.dirt(self, p)
@@ -135,6 +145,7 @@ func _process(delta: float) -> void:
 		"pothost", "potclient": _potcoop(p)
 		"safeend": _safeend(p)
 		"failkit": _failkit(p)
+		"recoverymission": _recoverymission(p)
 		"coopevachost", "coopevacclient": _coopevac(p)
 		"safeouthost", "safeoutclient": _safeout(p)
 		"coopwipehost", "coopwipeclient":
@@ -316,6 +327,7 @@ func _process(delta: float) -> void:
 		"rocktest": _rocktest(p)
 		"hitbox": _hitbox(p)
 		"ufohull", "hullhost", "hullclient": preload("res://scripts/autotest_hull.gd").run(self, p)
+		"ufoentry": preload("res://scripts/autotest_entry.gd").run(self, p)
 		"leaktest", "leakmap", "leakhost", "leakclient": preload("res://scripts/autotest_leak.gd").run(self, p)
 		"pockettest": _pockettest(p)
 		"wedgetest": _wedgetest(p)
@@ -363,6 +375,8 @@ func _process(delta: float) -> void:
 		"aimphost", "aimpclient", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest": AIT.run(self, p)
 		"latetest": _latetest(p)
 		"reinfcap": _reinfcap(p)
+		"dropshot": _dropshot(p)
+		"lzcheck": _lzcheck(p)
 		"gunshots": _gunshots(p)
 		"topshot": _topshot(p)
 		"shieldtest": _shieldtest(p)
@@ -379,6 +393,7 @@ func _process(delta: float) -> void:
 		"stance": _stance(p)
 		"wshot": _wshot(p)
 		"sightshot": _sightshot(p)
+		"scopelens": _scopelens(p)
 		"muzzleshot": _muzzleshot(p)
 		"pose": _pose(p)
 		"invtest": _invtest(p)
@@ -409,6 +424,24 @@ func _process(delta: float) -> void:
 				p._pick_up()
 				out("picked up -> rh=%s pickups=%d" % [p.item_in("rh").get("id", "-"), m().pickups.size()])
 			if t > 33: get_tree().quit()
+		"latehost", "latemate", "slowhost", "slowmate":
+			# (0.72.x) the mission's roster is who went in: a late joiner / a friend who never loaded
+			# does not hold the ramp shut, and the slow one is put down when he does load
+			if mode == "slowhost" and not _lj_t9 and t > 9.0:
+				_lj_t9 = true
+				out("RESULT slowhost t9 roster %d players %d" % [m().roster().size(), m().players().size()])
+			if mode in ["latehost", "slowhost"] and step == 0 and t > 15.0:
+				step = 1
+				out("RESULT %s t12 roster %d lobby %d ramp %s players %d solo %s" % [mode, m().roster().size(), Net.roster.size(), m().prep_left <= 0.0, m().players().size(), m().solo()])
+			# (slow: the host stays until the mate has had his look - a host gone first sends him to the menu)
+			var end_t := 24.0 if mode.begins_with("late") else (30.0 if mode == "slowhost" else 33.0)
+			if step < 2 and t > end_t:
+				step = 2
+				out("RESULT %s end roster %d lobby %d ramp %s players %d" % [mode, m().roster().size(), Net.roster.size(), m().prep_left <= 0.0, m().players().size()])
+				if mode != "slowhost":
+					get_tree().quit()
+			if t > 37.0:
+				get_tree().quit()
 		"host", "client":
 			if mode == "client" and p and m().go and step < 10 and t > 12.0:
 				step = 10
@@ -423,7 +456,7 @@ func _process(delta: float) -> void:
 			if t > 25.0:
 				out("RESULT players=%d aliens=%d" % [m().players().size(), m().aliens().size()])
 				get_tree().quit()
-	if t > (300.0 if mode == "sightshot" else 120.0) and mode != "campaign" and mode != "tactics" and mode != "dirtest":
+	if t > (300.0 if mode in ["sightshot", "scopelens"] else 120.0) and mode != "campaign" and mode != "tactics" and mode != "dirtest":
 		out("TIMEOUT")
 		get_tree().quit()
 
@@ -1326,6 +1359,79 @@ func _wshot(p: Node) -> void:
 ## 0.57: the rifle with parts, through its sights: user://sight_<name>.png - from the hip, aimed
 ## with the factory red dot, aimed through the 2x scope (+ the scope's own picture), with a bayonet
 ## and a stab on V. RESULT line: the eye on the sight line, scope radius, weight and times.
+## (2026-11-26) Scopes seen from behind (Ari: "rifle, scope V2, still that black mess"): the
+## eyepiece must show the scope's picture at the hip, while coming up to the eye and at the eye,
+## never a black disc. Pictures user://scopelens_<gun>_<hip|rise|eye>.png, a line per gun:
+## lens = the eyepiece glass got the picture material, dark = share of near-black pixels in the
+## middle of the screen.
+func _scopelens(p: Node) -> void:
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	_skip_brief()
+	await get_tree().create_timer(3.0).timeout
+	m().hud.inventory_open = false
+	p.global_position = m().map["ufo"] + Vector3(4, 0.3, 16)
+	_aim_at(p, m().map["ufo"] + Vector3(0, 1.0, 0))
+	if Game.cmd_arg("inside", "") != "":
+		p.global_position = m().map["ufo"] + Vector3(0, 0.3, 0)
+		_aim_at(p, m().map["ufo"] + Vector3(6, 1.2, 0))
+	p.inv.erase("lh")
+	p.merc = p.merc.duplicate(true)
+	for a in m().aliens():
+		a.queue_free()
+	var bad := 0
+	for setup in [["rifle", {"optika": "optika"}], ["sniper", {}], ["rocket_launcher", {"optika": "optika"}]]:
+		var fit: Dictionary = p.merc.get("fit", {})
+		fit[setup[0]] = setup[1]
+		p.merc["fit"] = fit
+		p.inv["rh"] = {"id": setup[0], "loaded": 5}
+		p._shown = "-"
+		p._update_held()
+		await get_tree().create_timer(1.2).timeout
+		var lens: bool = p.scope_lens_on()
+		var line := "%s lens=%s" % [setup[0], lens]
+		for st in ["hip", "rise", "eye"]:
+			if st == "rise":
+				# slowed down: the gun half way up to the eye, the eye not yet behind the scope
+				Engine.time_scale = 0.2
+				Input.action_press("aim")
+				for f in 12:
+					await get_tree().process_frame
+					if f % 3 == 2 and f < 11:
+						get_viewport().get_texture().get_image().save_png("user://scopelens_%s_rise%d.png" % [setup[0], f / 3])
+				# the eyepiece must show the picture while the gun comes up
+				if not p.scope_lens_on():
+					bad += 1
+				line += " settled=%s" % p._sight_on
+			elif st == "eye":
+				Engine.time_scale = 1.0
+				await get_tree().create_timer(1.4).timeout
+			var img := get_viewport().get_texture().get_image()
+			img.save_png("user://scopelens_%s_%s.png" % [setup[0], st])
+			# near-black share in the middle third of the screen
+			var w := img.get_width()
+			var h := img.get_height()
+			var n := 0
+			var dk := 0
+			for y in range(h / 3, h * 2 / 3, 4):
+				for x in range(w / 3, w * 2 / 3, 4):
+					var c := img.get_pixel(x, y)
+					n += 1
+					if c.r + c.g + c.b < 0.12:
+						dk += 1
+			var share := float(dk) / maxf(1.0, float(n))
+			line += " %s dark=%.2f" % [st, share]
+			if share > 0.25 and st != "eye":
+				bad += 1
+		Input.action_release("aim")
+		await get_tree().create_timer(0.6).timeout
+		if not lens:
+			bad += 1
+		out("[SCOPELENS] " + line)
+	out("RESULT scopelens bad %d" % bad)
+	get_tree().quit()
+
 func _sightshot(p: Node) -> void:
 	if p == null or step > 0 or not m().started():
 		return
@@ -2637,7 +2743,67 @@ func _failkit(p: Node) -> void:
 	m()._abandoned = true
 	var b: Dictionary = m().gear_lost(false)
 	var left: bool = int(b[1].get("rifle", 0)) == 1 and int(b[1].get("rifle_clip", 0)) == 2 and int(b[1].get("vesta", 0)) == 1
-	out("RESULT failkit aboard %s walk_safe %s walk_field %s same_as_won %s left_behind %s" % [aboard, walk_safe, walk_field, same_won, left])
+	# (Ari 2026-11-26) the same man fell, but the team won: his kit goes home with them, only what
+	# he used up is gone; who walked out in the field (his body gone) still loses all
+	var bw: Dictionary = m().gear_lost(true)
+	var site: Dictionary = m()._fallen_site(false, bw, true)
+	var fell_won: bool = bw[1] == a[1] and int(bw[78].get("rifle", 0)) == 1 and (site.get("brought", []) as Array).size() == 1 \
+		and (site["brought"][0]["armory"] as Dictionary).is_empty() and site["brought"][0].has("mods")
+	out("RESULT failkit aboard %s walk_safe %s walk_field %s same_as_won %s left_behind %s fell_won %s" % [aboard, walk_safe, walk_field, same_won, left, fell_won])
+	get_tree().quit()
+
+## (Ari 2026-11-26) "Vyzvednout padlé": the site of a wiped team - same map, the bodies with their
+## kit, the survivors around. Pick up both kits (F), the banner, and at the transport both go home.
+func _recoverymission(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.hp = 5000.0
+	await get_tree().create_timer(1.0).timeout
+	var bodies: Array = Net.mission_params.get("bodies", [])
+	var crew: int = m().aliens().size()
+	var near := 0
+	for a in m().aliens():
+		for b in bodies:
+			var bp := Vector3(float(b["pos"][0]), float(b["pos"][1]), float(b["pos"][2]))
+			if a.global_position.distance_to(bp) < 17.0:
+				near += 1
+				break
+		a.set_physics_process(false)
+	var ufo: bool = m().map.get("ufo", Vector3.ZERO) != Vector3.ZERO
+	var kits0: int = m().kits_left()
+	var txt0: String = m().objective_text()
+	var names := []
+	for pid in m().pickups:
+		names.append(m().pickup_name(m().pickups[pid]["item"]))
+	out("[REC] ufo %s crew %d near %d kits %d text '%s' names %s" % [ufo, crew, near, kits0, txt0, names])
+	if DisplayServer.get_name() != "headless":
+		var bn: Node3D = m().pickups.values()[0]["node"]
+		var cam := Camera3D.new()
+		m().add_child(cam)
+		cam.global_position = bn.global_position + Vector3(2.2, 1.6, 2.2)
+		cam.look_at(bn.global_position + Vector3(0, 0.3, 0))
+		cam.current = true
+		await get_tree().create_timer(0.6).timeout
+		get_viewport().get_texture().get_image().save_png("user://recovery_body.png")
+		cam.queue_free()
+	for k in kits0:
+		var pid: String = m().pickups.keys().filter(func(x): return String(m().pickups[x]["item"].get("id", "")) == "fallen_kit")[0]
+		p.global_position = (m().pickups[pid]["node"] as Node3D).global_position + Vector3(0.3, 0.4, 0)
+		await get_tree().create_timer(0.3).timeout
+		p._pick_up()
+		await get_tree().create_timer(0.4).timeout
+	await get_tree().create_timer(2.5).timeout
+	var done: bool = m().objective_done()
+	p.global_position = m().map["evac"] + Vector3(0, 0.3, 0)
+	await get_tree().create_timer(0.3).timeout
+	var site: Dictionary = m()._fallen_site(false, {})
+	# who carried them falls out there: nothing goes home
+	p.dead = true
+	var lost_site: Dictionary = m()._fallen_site(false, {})
+	p.dead = false
+	out("RESULT recoverymission ufo %s crew %d near %s kits %d left %d carried %d done %s brought %d dead_brings %d" % [ufo, crew, near > 0, kits0, m().kits_left(), m()._kit_carry.size(), done, (site.get("brought", []) as Array).size(), (lost_site.get("brought", []) as Array).size()])
 	get_tree().quit()
 
 ## (0.69, Ari: the game crashed flying home) a co-op mission won: the aliens gone, everyone at the
@@ -3390,7 +3556,7 @@ func _lasertest(p: Node) -> void:
 	p.mg_heat = 0.0
 	p.fire_cd = 0.0
 	Input.action_press("fire")
-	await get_tree().create_timer(2.6).timeout
+	await get_tree().create_timer(3.6).timeout
 	Input.action_release("fire")
 	var pr_left := int(p.inv["rh"]["loaded"])
 	var pr_hot: bool = p._mg_hot
@@ -3409,6 +3575,63 @@ func _lasertest(p: Node) -> void:
 
 ## (0.72, Ari) reinforcements at most twice per mission: beacons, the late ship and a Bijec officer
 ## all pushed to call over and over; only REINF_MAX lots may land.
+## (2026-11-26 Ari: the Kondor landed ramp-first at the UFO, its crew shot down the ramp) where the
+## transport stands against the UFO, how near the closest alien starts, and that the first moments
+## by the ship are quiet. --autotest=lzcheck --mtype=crash --biome=farm --seed=N [--oldlz=1]
+func _lzcheck(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	var ev: Vector3 = m().map["evac"]
+	var uf: Vector3 = m().map["ufo"]
+	var side := absf(ev.x - uf.x)
+	var near := 999.0
+	for a in m().aliens():
+		near = minf(near, a.global_position.distance_to(ev))
+	var safe_ok: bool = m().landing_safe(p)
+	out("RESULT lzcheck side %.0f ahead %s near %.0f safe %s" % [side, side < 18.0, near, safe_ok])
+	get_tree().quit()
+
+## (2026-11-26 Ari) reinforcements come by ship: it flies in, a beam to the ground, they appear at its
+## foot only once it reached the ground (they count as alive already), the ship flies off.
+## --autotest=dropshot --mtype=crash --biome=farm --day=1 (xvfb: snapshots drop_0..3.png)
+func _dropshot(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.hp = 9999.0
+	await get_tree().create_timer(1.0).timeout
+	var cam: Camera3D = get_viewport().get_camera_3d()
+	var fwd: Vector3 = -p.global_transform.basis.z
+	fwd.y = 0
+	fwd = fwd.normalized() if fwd.length() > 0.1 else Vector3.FORWARD
+	var at: Vector3 = m().free_spot(p.global_position + fwd * 26.0)
+	var n0: int = m().aliens().filter(func(a): return not a.dead).size()
+	var alive0: int = m().alive_aliens()
+	var rr := RandomNumberGenerator.new()
+	rr.seed = 7
+	m().reinf_drop(at, ["grey", "grey"], rr)
+	var pend: int = m()._drops_pending
+	var shots := [[1.5, 0], [m().DROP_IN + 0.6, 1], [m().DROP_IN + m().DROP_BEAM + 0.4, 2], [m().DROP_IN + m().DROP_BEAM + m().DROP_HOLD + 2.0, 3]]
+	var t0 := 0.0
+	var early := -1
+	for sh in shots:
+		await get_tree().create_timer(float(sh[0]) - t0).timeout
+		t0 = float(sh[0])
+		if int(sh[1]) == 1:
+			early = m().aliens().filter(func(a): return not a.dead).size() - n0
+		if cam and DisplayServer.get_name() != "headless":
+			cam.look_at(at + Vector3(0, 12.0, 0))
+			await get_tree().process_frame
+			_snap("drop_%d" % int(sh[1]))
+	var landed: int = m().aliens().filter(func(a): return not a.dead).size() - n0
+	await get_tree().create_timer(m().DROP_OUT + 0.5).timeout
+	var gone: bool = m().get_node_or_null("ReinfDrop") == null
+	out("RESULT dropshot fx %d pending %d alive_counts %s early %d landed %d gone %s" % [m().drops_seen, pend, m().alive_aliens() >= alive0 + 2 or landed == 2, early, landed, gone])
+	get_tree().quit()
+
 func _reinfcap(p: Node) -> void:
 	_skip_brief()
 	if p == null or step > 0 or not m().started():
@@ -3421,19 +3644,23 @@ func _reinfcap(p: Node) -> void:
 		m()._reinf_t = 0.0
 		m()._late_reinf_t = 100000.0
 		await get_tree().process_frame
-	var mid: int = m().aliens().size()
+	var mid: int = m().aliens().size() + m()._drops_pending
+	# (2026-11-22) a beacon call brings exactly its number of the crew's rank and file, no officer;
+	# on easy the sabotage starts with a small party and the beacons call once
+	var called: Array = m().beacon_called
+	out("RESULT sabcrew start %d bcalls %d called %s officer_in_call %d" % [n0, m()._beacon_calls, called, called.filter(func(r): return String(r).ends_with("_velitel")).size()])
 	# a Bijec officer who would call now: nothing may come any more
 	m().spawn_alien("bijec_velitel", m().free_spot(p.global_position + Vector3(40, 0.3, 40)))
 	await get_tree().create_timer(0.3).timeout
 	var offs: Array = m().aliens().filter(func(a): return a.race == "bijec_velitel" and not a.dead)
 	var off: Node = offs[-1] if not offs.is_empty() else null
-	var before_off: int = m().aliens().size()
+	var before_off: int = m().aliens().size() + m()._drops_pending
 	if off:
 		off.state = off.S.COMBAT
 		off._reinf_t = 999.0
 		off._reinf_tick(0.1)
 	await get_tree().create_timer(0.5).timeout
-	var off_added: int = m().aliens().size() - before_off
+	var off_added: int = m().aliens().size() + m()._drops_pending - before_off
 	out("RESULT reinfcap calls %d max %d added %d officer %d waves %d" % [m().reinf_count, m().REINF_MAX, mid - n0, off_added, m()._reinf_waves])
 	get_tree().quit()
 
@@ -3474,7 +3701,7 @@ func _latetest(p: Node) -> void:
 	for i in 5:
 		await get_tree().process_frame
 	await get_tree().create_timer(1.0).timeout
-	var after: int = m().aliens().filter(func(a): return not a.dead).size()
+	var after: int = m().aliens().filter(func(a): return not a.dead).size() + m()._drops_pending   # (2026-11-26: still coming down the beam)
 	# 5) the campaign side
 	var d0 = Campaign.data.duplicate(true)
 	Campaign.data["day"] = 105.0
@@ -3667,7 +3894,7 @@ func _bvtest(p: Node) -> void:
 	a._reinf_tick(0.1)
 	b._reinf_tick(0.1)
 	await get_tree().create_timer(1.0).timeout
-	out("RESULT bvtest weak %s body %s module %s reinf %d" % [weak, not_weak, b.module_ok, m().aliens().size() - n0])
+	out("RESULT bvtest weak %s body %s module %s reinf %d" % [weak, not_weak, b.module_ok, m().aliens().size() + m()._drops_pending - n0])
 	get_tree().quit()
 
 ## 0.57: RL-01's warheads - the armour-piercing one into a Bijec, the incendiary one into the ground.
@@ -4289,11 +4516,15 @@ func _blendtest(p: Node) -> void:
 			p.remove_meta("no_fade")
 		p.global_position = start
 		await get_tree().physics_frame
+		for _i in 30:      # (2026-11-26: settle after the jump back to the start - not a movement change)
+			await get_tree().physics_frame
+			p._remote_visuals()
 		var fw: Vector3 = -p.global_transform.basis.z
 		var sd: Vector3 = p.global_transform.basis.x
 		var plan := [[Vector3.ZERO, 0.8], [fw * 1.5, 0.9], [fw * 4.5, 0.9], [sd * 1.5, 0.9], [Vector3.ZERO, 0.8]]
 		var last: Array = []
 		var worst := 0.0
+		var w_at := ""
 		var clips := []
 		for st: Array in plan:
 			var t := 0.0
@@ -4310,9 +4541,12 @@ func _blendtest(p: Node) -> void:
 					now.append(p._sk.get_bone_pose_rotation(i))
 				if last.size() == now.size():
 					for i in now.size():
-						worst = maxf(worst, rad_to_deg((last[i] as Quaternion).angle_to(now[i])))
+						var dg := rad_to_deg((last[i] as Quaternion).angle_to(now[i]))
+						if dg > worst:
+							worst = dg
+							w_at = "%s in %s (+%.2f s)" % [p._sk.get_bone_name(i), p._bclip_id, t]
 				last = now
-		out("blendtest %s worst %.1f deg/frame clips %s" % [mode, worst, clips])
+		out("blendtest %s worst %.1f deg/frame at %s clips %s" % [mode, worst, w_at, clips])
 		res.append(worst)
 	out("RESULT blendtest off %.1f on %.1f smoother %s" % [res[0], res[1], res[1] < res[0] or res[0] < 1.0])
 	get_tree().quit()
@@ -4931,6 +5165,24 @@ func _afkalien(p: Node) -> void:
 		await get_tree().create_timer(0.15).timeout
 		if shots:
 			get_viewport().get_texture().get_image().save_png("user://afk_%s_%s.png" % [race, clip])
+	# a clip that moves no bone of this model (its tracks name another skeleton) = a T-pose
+	var dead_clips := []
+	var asr: Node = a.anim.get_node(a.anim.root_node)
+	for clip in a.anim.get_animation_list():
+		var an: Animation = a.anim.get_animation(clip)
+		var bones := 0
+		var ok := 0
+		for t in an.get_track_count():
+			if not an.track_get_type(t) in [Animation.TYPE_POSITION_3D, Animation.TYPE_ROTATION_3D, Animation.TYPE_SCALE_3D]:
+				continue
+			bones += 1
+			var tp := an.track_get_path(t)
+			var nd: Node = asr.get_node_or_null(NodePath(String(tp).split(":")[0])) if asr else null
+			if nd is Skeleton3D and (nd as Skeleton3D).find_bone(String(tp.get_concatenated_subnames())) >= 0:
+				ok += 1
+		if bones - ok >= 5:      # (several bones of another skeleton; the rest only held at rest)
+			dead_clips.append(String(clip))
+	out("[AFK] %s clips moving no bone: %s" % [race, ",".join(dead_clips) if dead_clips else "none"])
 	var leap := ""
 	if a.anim.has_animation("pounce"):
 		# the real run-in: from 14 m it creeps, dashes, springs and lands its claws
@@ -5011,7 +5263,7 @@ func _afkalien(p: Node) -> void:
 		await get_tree().create_timer(0.7).timeout
 		if shots:
 			get_viewport().get_texture().get_image().save_png("user://afk_%s_death_%d.png" % [race, i])
-	out("RESULT afkalien %s clips %s deaths %d dying %s dead %s husk %s body_y %.2f" % [race, ",".join(have), a._afk_deaths.size(), a._afk_dying, a.dead, a.husk, a.body.position.y] + leap + react)
+	out("RESULT afkalien %s clips %s deaths %d dying %s dead %s husk %s body_y %.2f" % [race, ",".join(have), a._afk_deaths.size(), a._afk_dying, a.dead, a.husk, a.body.position.y] + leap + react + " deadclips %s" % (",".join(dead_clips) if dead_clips else "none"))
 	get_tree().quit()
 
 func _bijtest(p: Node) -> void:
@@ -5689,6 +5941,21 @@ func _soundcheck(p: Node) -> void:
 		names[{"step_alien": "step_alien0", "surface": "step_dirt0"}.get(st, st)] = "kroky " + r
 	for r in AL.HURT: names[String(AL.HURT[r][0])] = "zásah " + r
 	names["ufo_door"] = "dveře UFO"
+	# (0.65) dopady kulek, průlety a hlášky vojáků / civilistů (Ariho zvuky z 26. 11. 2026)
+	for k in ["concrete", "metal", "dirt", "wood", "flesh", "alien", "alien_big"]:
+		for i in int(Game.VARIANTS["impact_" + k]): names["impact_%s_%d" % [k, i]] = "dopad kulky"
+	for i in int(Game.VARIANTS["bullet_whiz"]): names["bullet_whiz_%d" % i] = "průlet kulky"
+	for k in ["jestetan_hurt", "jestetan_death", "bijec_hurt", "bijec_death"]:
+		for i in int(Game.VARIANTS[k]): names["%s_%d" % [k, i]] = "hlas vetřelce"
+	names["plasma_flyby"] = "průlet plazmy"
+	for sx in ["male", "female"]:
+		for l in ["reload", "contact", "grenade", "hit", "kill", "help"]: names["merc_%s_%s" % [l, sx]] = "hláška vojáka"
+		for l in ["help", "here", "thanks", "cry"]: names["civ_%s_%s" % [l, sx]] = "hláška civilisty"
+	# impact_kind: povrchy z mapy musí dát známý dopad
+	for sf in Game.TEX_SURFACE.values():
+		if not Game.IMPACT_SURF.has(sf):
+			bad += 1
+			out("[SND] CHYBA: povrch %s nemá zvuk dopadu" % sf)
 	for n in names:
 		var f: String = Game.PITCHED[n][0] if Game.PITCHED.has(n) else n
 		if Game.VARIANTS.has(f): f = "%s_0" % f
@@ -6183,6 +6450,17 @@ func _muzzleshot(p: Node) -> void:
 		await get_tree().create_timer(1.5).timeout
 		var mz: Vector3 = p._muzzle("rh", Game.ITEMS[g])
 		var sp: Vector2 = p.cam.unproject_position(mz)
+		# (2026-11-26) how far off the crosshair's point the barrel aims (degrees)
+		var off := -1.0
+		var wmg: Node3D = p.gun.get_node_or_null("Weapon")
+		if wmg:
+			var cx: Transform3D = p.cam.global_transform
+			var q := PhysicsRayQueryParameters3D.create(cx.origin, cx.origin - cx.basis.z * 120.0, Game.WORLD | Game.GLASS | 4)
+			q.exclude = [p.get_rid()]
+			var h: Dictionary = p.get_world_3d().direct_space_state.intersect_ray(q)
+			var aimp: Vector3 = h.position if h else cx.origin - cx.basis.z * 120.0
+			var bd: Vector3 = (wmg.global_transform.basis * Vector3(0, 0, -1)).normalized()
+			off = rad_to_deg(bd.angle_to((aimp - mz).normalized()))
 		get_viewport().get_texture().get_image().save_png("user://muzzle_%s_0.png" % g)
 		p.spin = 1.0
 		p.fire_cd = 0.0
@@ -6194,7 +6472,7 @@ func _muzzleshot(p: Node) -> void:
 				get_viewport().get_texture().get_image().save_png("user://muzzle_%s_%d.png" % [g, f / 3 + 1])
 		Input.action_release("fire")
 		Engine.time_scale = 1.0
-		res.append("%s muzzle screen (%.0f, %.0f)" % [g, sp.x, sp.y])
+		res.append("%s muzzle screen (%.0f, %.0f) barrel_off %.1f" % [g, sp.x, sp.y, off])
 		await get_tree().create_timer(1.0).timeout
 	out("RESULT muzzleshot " + " | ".join(res))
 	get_tree().quit()

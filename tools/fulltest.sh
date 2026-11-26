@@ -42,6 +42,8 @@ run mods_ui     200 x "\[MODS\] bought true"              --autotest=modsui
 run talent_ui   200 x "\[TALENT\] skip true chain true rank true spent true eye true drone true" --autotest=talentui
 run dice        60 s "RESULT dicetest ok"                tools/test/dicetest.gd
 run caprank     90 s "RESULT caprank ok"                 tools/test/caprank.gd
+run recovery    90 s "RESULT recoverytest ok"            tools/test/recoverytest.gd
+run racelate    90 s "RESULT racelate ok"                tools/test/racelate.gd
 run sickbay     60 s "RESULT sickbaytest ok"             tools/test/sickbaytest.gd
 run debug       60 s "RESULT debugtest ok"               tools/test/debugtest.gd
 run firemode    60 s "RESULT firemode ok"                tools/test/firemodetest.gd
@@ -58,6 +60,7 @@ run bug_fail    200 h "RESULT bugtest tagged false gone true finished true" --au
 run quarantine  300 h "RESULT quartest carriers [2-9] tell true/false hatched [1-9] saved true nest 0 finished true" --autotest=quartest --mtype=quarantine --biome=town --size=large
 run presets     200 x "\[PRESET\] first false list true merc true levels true dice_nolevels true gear true" --autotest=presets
 run sights     1000 x "scope mode=scope on=true"          --autotest=sightshot --day=1 --fast=1
+run scopelens  300 x "RESULT scopelens bad 0"            --autotest=scopelens --day=1 --seed=3
 run menu_flick  200 x "RESULT menuflicker 0"               --autotest=menuflicker
 run geo_ui      300 x "\[UI\] geo_ency_grey: 0"            --autotest=uigeo
 run geo_events  150 x "RESULT geoevents shown true rows 3 stopped true back true slow true full 8 viewer 1 bar true" --autotest=geoevents
@@ -82,6 +85,8 @@ run blastdoor   300 h "RESULT blastdoor OK"                --autotest=blastdoor
 run navcache    200 h "RESULT navcache same true"         --autotest=navcache --mtype=landed --ufo=battleship --seed=2
 run perf        200 h "RESULT perf frames"                --autotest=perf --mtype=landed --ufo=battleship --seed=2 --dur=25 --kill=1
 run gunlag      400 h "RESULT gunlag minigun zaznam true .* navic -?[0-4]\.[0-9] ms" --autotest=gunlag --biome=town --seed=3 --gun=minigun --crew=grey,grey,grey,jestetan,jestetan,lihnoun,lihnoun,bijec,levit,ohar
+run deadcost    200 h "RESULT deadcost alive [0-9.]+ ms/krok .* dead 0\.0[0-2][0-9] ms/krok" --autotest=deadcost --perflog=1 --mtype=crash --biome=farm --seed=3 --crew=bijec,bijec,bijec,grey,grey,jestetan
+run roofwalk    300 h "RESULT gunlag minigun zaznam true klid [0-9]\.[0-9] ms .* strelba [0-9]\.[0-9] ms \(99 % ([0-9]|[1-3][0-9]),"  --autotest=gunlag --mtype=terror --biome=town --seed=3 --gun=minigun --roof=2 --walk=1 --crew=grey
 run farview     300 x "RESULT farview"                   --autotest=farview --mtype=terror --biome=town --seed=3
 run loadprog  300 x "RESULT loadprog parked true same true signals true back_ms [0-9]+ loading_on_back false bar 1.00 .* dropped true" --autotest=loadprog
 run cart      120 h "RESULT carttest paid \\[true, true, 2, 1, 3, 0\\] kept \\[true, true, true, 51\\]" --autotest=carttest
@@ -118,14 +123,26 @@ if [ "$(cat $LOG/coop_failkit_*.log | grep -c 'SCRIPT ERROR')" = 0 ] && grep -qE
 else
   fail=$((fail+1)); report+="CHYBA coop_failkit\n"
 fi
+# 0.72.6 alien grenades stick where they land and blow 1.2 s later, same spot on host and client
+run alnade 200 h "RESULT alnade alnadetest throws 4 roll 0.00 delay 1.2" --autotest=alnadetest --mtype=crash --biome=farm --crew=bijec,jestetan --seed=5 --throws=4
+ANARGS="--mtype=crash --biome=farm --crew=bijec,jestetan --seed=5 --throws=4"
+timeout 150 $G --headless --path . -- --autotest=alnadehost --port=7991 $ANARGS > $LOG/coop_alnade_host.log 2>&1 &
+anp=$!; sleep 1
+timeout 150 $G --headless --path . -- --autotest=alnadeclient --port=7991 $ANARGS > $LOG/coop_alnade_client.log 2>&1
+wait $anp
+if [ "$(cat $LOG/coop_alnade_*.log | grep -c 'SCRIPT ERROR')" = 0 ] && grep -qE "RESULT alnade alnadehost throws 4 roll 0.00" $LOG/coop_alnade_host.log && grep -qE "RESULT alnade alnadeclient throws 4 roll 0.00 delay 1.2[0-9]-1.2[0-9] drift 0.0" $LOG/coop_alnade_client.log; then
+  pass=$((pass+1)); report+="OK    coop_alnade\n"
+else
+  fail=$((fail+1)); report+="CHYBA coop_alnade\n"
+fi
 pair coop_base    lbhost lbclient       "start_mission"            "RESULT lb lbclient players 2" 7903
 pair host_base    hbhost hbclient       "RESULT hb drop hbhost players 2" "RESULT hbclient globe true day \\+0\\.0[1-9]" 7951
 pair coop_wipe    coopwipehost coopwipeclient "globe ready"     "END\\] leave"                  7904
 pair coop_gameover gohost goclient "RESULT gohost shown true save_gone true online true" "RESULT goclient shown true kills 77 races 1 closed true" 7953
 pair coop_ready readyhost readyclient "RESULT readyhost early false window true ran true" "RESULT readyclient saw 'Výsadek: test' panel '.*' me true done true" 7938
-pair coop_cart  econhost econclient  "ECON-HOST\\] credits=1200" "RESULT cart client my=42 clips \\+2 grenades on order 0" 7952
+pair coop_cart  econhost econclient  "ECON-HOST\\] credits=1200" "RESULT cart client my=90 clips \\+2 grenades on order 1" 7952
 pair coop_stock stockhost stockclient "RESULT stockhost claim true mine 0 names 'Klient 1' back 1" "RESULT stockclient grenades 4 -> 9 fast true redrawn true" 7953
-pair coop_sick  sickhost sickclient   "RESULT sickhost bravo true locker 2 record 2" "RESULT sickclient alfa 2 sick 1 bravo 2 alfa_left 0 stash [56] -> [56]" 7971
+pair coop_sick  sickhost sickclient   "RESULT sickhost bravo true locker 2 record 2" "RESULT sickclient alfa 2 sick 1 bravo 2 alfa_left 0 stash 6 -> 6" 7971
 pair geo_live geolivehost geoliveclient "globe ready \(viewer false\)" "RESULT geolive day \+0\.0[1-9][0-9]* craft moved [1-9]" 7912
 pair ai_coop    aimphost aimpclient "RESULT aimp old 0 players 2 hide [1-9]" "AIMP aimpclient" 7913
 # co-op with four mercenaries: a host and three clients (0.63: the squads know about all of them)
@@ -145,6 +162,39 @@ quad() {   # name, expected in host log, port
     fail=$((fail+1)); report+="CHYBA $name (skript. chyb: $errs)\n"
   fi
 }
+# (0.72.x) a friend who joins while the team is out is not in the mission (ramp opens for two);
+# one who never finishes loading is left out after --loadwait s and put down when he does load
+late_join() {
+  local name=late_join
+  timeout 120 $G --headless --path . -- --autotest=latehost --prep=1 --port=7996 > $LOG/${name}_host.log 2>&1 &
+  sleep 1
+  timeout 120 $G --headless --path . -- --autotest=latemate --prep=1 --port=7996 > $LOG/${name}_mate.log 2>&1 &
+  timeout 120 $G --headless --path . -- --autotest=latecomer --port=7996 > $LOG/${name}_late.log 2>&1
+  wait
+  local errs=$(cat $LOG/${name}_*.log | grep -c "SCRIPT ERROR")
+  if [ "$errs" = 0 ] && grep -qE "RESULT latehost t12 roster 2 lobby 3 ramp true players 2 solo false" $LOG/${name}_host.log \
+      && grep -qE "RESULT latecomer scene Main roster 3 told true" $LOG/${name}_late.log; then
+    pass=$((pass+1)); report+="OK    $name\n"
+  else
+    fail=$((fail+1)); report+="CHYBA $name (skript. chyb: $errs)\n"
+  fi
+}
+late_join
+slow_load() {
+  local name=slow_load
+  timeout 120 $G --headless --path . -- --autotest=slowhost --prep=1 --loadwait=6 --port=7997 > $LOG/${name}_host.log 2>&1 &
+  sleep 1
+  timeout 120 $G --headless --path . -- --autotest=slowmate --prep=1 --readydelay=20 --port=7997 > $LOG/${name}_client.log 2>&1
+  wait
+  local errs=$(cat $LOG/${name}_*.log | grep -c "SCRIPT ERROR")
+  if [ "$errs" = 0 ] && grep -qE "RESULT slowhost t9 roster 1 players 1" $LOG/${name}_host.log \
+      && grep -qE "RESULT slowhost end roster 2 lobby 2 ramp true players 2" $LOG/${name}_host.log; then
+    pass=$((pass+1)); report+="OK    $name\n"
+  else
+    fail=$((fail+1)); report+="CHYBA $name (skript. chyb: $errs)\n"
+  fi
+}
+slow_load
 quad ai_coop4 "RESULT aimp old 0 players 4 hide [1-9]" 7915
 pair lobby_kick kickhost kickclient "RESULT kick summary rows 2 ping [0-9]+ mic open after 1 rejoined false" "RESULT kick client .*vyhodil.*za 5 min" 7914
 pair coop_escort_kit escorthost escortclient "RESULT escortkit escorthost gun laser heavy plasma_cannon hawk true fired [1-9]" "RESULT escortkit escortclient gun laser heavy plasma_cannon hawk false fired [1-9]" 7974
@@ -169,6 +219,7 @@ run airdeath    150 h "RESULT airdeath ok"                 --autotest=airdeath -
 run vipcheck    200 h "RESULT vipcheck [0-9]+ spots, 0 bad" --autotest=vipcheck --mtype=rescue
 run climb       200 x "RESULT climb ok"                    --autotest=climb --mtype=terror --biome=farm
 run ground     250 h "RESULT groundtest [0-9]+ raised, 0 bare, .*sunk 0 .*kerbs alien [6-8]/8 merc [6-8]/8" --autotest=groundtest --day=1 --nomerge=all --dur=20 --seed=5
+run kerb       250 h "RESULT kerbtest merc 54/54 stall 0 " --autotest=kerbtest --mtype=terror --biome=town --seed=3 --day=1 --nomerge=all
 run rocks       250 x "RESULT rocktest [0-9]+ stones, 0 hollow, 0 nav inside, walked 12, 0 bad" --autotest=rocktest --mtype=crash --biome=mountain --seed=7 --day=1
 run hitbox      200 h "RESULT hitbox [0-9]+ props, [0-9]+ rays, phantom [0-4]\.[0-9] %" --autotest=hitbox --mtype=crash --biome=farm --seed=7
 run leak_mtn  250 x "RESULT leaktest mountain .* stone_leak 0\.[0-4] %" --autotest=leaktest --mtype=crash --biome=mountain --seed=7 --day=1
@@ -185,15 +236,23 @@ done
 for u in battleship supply; do
 run ufohull_$u 300 h "RESULT ufohull $u rays [0-9]+ leak 0\.[0-4] % hug_inside 0 seen 0" --autotest=ufohull --mtype=landed --ufo=$u --size=huge --biome=farm --day=1
 done
+# (0.72.6 oprava) do každé lodi se dá vejít dveřmi (Ari: u sestřelené bitevní lodi nebyl vchod)
+for u in scout raider harvester battleship supply; do
+run ufoentry_$u 300 h "RESULT ufoentry $u nav [0-9.]+ walk [0-9.]+ inside true" --autotest=ufoentry --mtype=crash --ufo=$u --biome=farm --day=1
+done
 run wedge      150 x "RESULT wedgetest ok"                --autotest=wedgetest --mtype=crash --biome=farm --seed=7 --day=1
 run ceiling   200 h "RESULT ceiltest [0-9]+ spots, [0-9]+ tries, leaks 0, unstuck 0, jumps [0-9]+ bad 0" --autotest=ceiltest --mtype=terror --biome=farm --seed=7 --day=1
 for bm in town farm mountain industrial base; do
 run interiors_$bm 200 h "RESULT interiors [0-9]+ houses, pockets 0, stairs_bad 0" --autotest=interiors --mtype=terror --biome=$bm --seed=3
 done
-run spectate  200 x "RESULT spectate active true eyes true next true auto true running true" --autotest=spectate --mtype=terror --biome=farm --seed=3 --day=1
+for bm in farm town; do
+run yard_$bm 150 h "RESULT yardtest moved [0-9]+, indoors 0," --autotest=yardtest --mtype=quarantine --biome=$bm --seed=3
+done
+run spectate  200 x "RESULT spectate active true eyes true next true auto true running true noaim true" --autotest=spectate --mtype=terror --biome=farm --seed=3 --day=1
 run daze      150 h "RESULT dazetest home false frozen ([0-3]?[0-9]) % .* cooldown true wall true" --autotest=dazetest --crew=ohar,grey --mtype=crash --biome=farm --seed=3
 run quiet     240 h "RESULT quiettest guns [1-9][0-9]* bad 0 knife true steps true" --autotest=quiettest --crew=grey,grey,grey,grey,grey,grey,grey,grey --mtype=crash --biome=farm --seed=3
 run scan    200 h "RESULT scantest base true upgraded true belt true" --autotest=scantest --mtype=terror --biome=town --seed=3 --day=1
+run debugkeys 200 h "RESULT debugkeys ok" --autotest=debugkeys --mtype=crash --biome=farm --seed=3 --day=1
 run daze_base 150 h "RESULT dazetest home true frozen ([0-2]?[0-9]) % .* cooldown true wall true" --autotest=dazebase --attack=1 --crew=ohar,grey
 run chain     200 h "RESULT chaintest solo true longest [0-4]\.[0-9] s frozen ([0-2]?[0-9]) % .* ko_again false blind 1\.00/1\.00/0\.00" --autotest=chaintest --crew=grey --mtype=crash --biome=farm --seed=3
 run chain_base 200 h "RESULT chaintest solo true longest [0-4]\.[0-9] s frozen ([0-2]?[0-9]) % .* ko_again false blind 1\.00/1\.00/0\.00" --autotest=chainbase --attack=1 --crew=grey
@@ -210,8 +269,9 @@ run blendtest  150 x "RESULT blendtest off [0-9.]+ on [0-9.]+ smoother true" --a
 run shoulder   200 h "RESULT shouldershot mean 0\.0[0-9]"  --autotest=shouldershot --mtype=crash --biome=farm --seed=3 --day=1 --snaps=0
 run talenttest 250 h "RESULT talenttest .* ok true"     --autotest=talenttest
 # 0.62 animations: hit reactions, turning on the spot, the Ohař's moods (afk models: only in the game package)
-for r in ohar jestetan zombie bijec_velitel; do
-run afk_$r      300 h "RESULT afkalien $r .* hitplay hit[a-z_0-9]* turnplay turn" --autotest=afkalien --race=$r --mtype=landed
+# (deadclips none: no clip of the model names another skeleton - the Bijec ran in a T-pose, 2026-11-26)
+for r in ohar jestetan zombie bijec bijec_velitel; do
+run afk_$r      300 h "RESULT afkalien $r .* hitplay hit[a-z_0-9]* turnplay turn.* deadclips none" --autotest=afkalien --race=$r --mtype=landed
 done
 run civanim     150 h "RESULT civanim [0-9]+ civilians afk idle,walk,run,lurk cower lurk" --autotest=civanim --mtype=terror
 run civdeath    150 h "RESULT civdeath 10 deaths bad 0" --autotest=civdeath --mtype=terror
@@ -224,6 +284,8 @@ run frag        200 h "RESULT fragtest wood [5-8]/8 bare [0-8]/8 hurt6m [1-9]" -
 run radar       150 h "RESULT radar solo true scanner true kit_scanner false kit_radio false" --autotest=radartest --mtype=crash --biome=farm --day=1
 run rampcheck   200 h "RESULT rampcheck shut true open true" --autotest=rampcheck --prep=1
 run transport   150 h "RESULT transport closed true"     --autotest=transport --mtype=crash --biome=farm --day=1
+run task_crash  150 x "RESULT tasktest open true task true fits 0 done true esc true again true hud true keys true" --autotest=tasktest --mtype=crash --biome=farm --day=1
+run task_rescue 150 x "RESULT tasktest open true task true fits 0 done true esc true again true hud true keys true" --autotest=tasktest --mtype=rescue --biome=town --day=1
 run uifit       150 x "RESULT uifit bad 0"               --autotest=uifit --mtype=crash --biome=farm --day=1
 run npcbase     150 h "RESULT npc moved [1-9]"           --autotest=npcshot --shots=0 --wait=25
 run baseshot    150 x "RESULT baseshot builders 3 inside 0" --autotest=baseshot
@@ -241,7 +303,8 @@ run tileeditor 150 x "RESULT tileeditor parts [0-9]+ click true moved true turne
 run leaveany    150 h "RESULT leaveany early_block true done true finished true" --autotest=leaveany
 run reinf_early 90 h "success=true why=Úkol splněn, ale tým odletěl před posilami" --autotest=coopevachost --port=7939 --players=1 --reinf=early
 run safeend     150 h "RESULT safeend finished true hp ([0-9.]+) -> \\1 shots 0 stress_rise 20.1" --autotest=safeend
-run failkit     90 h "RESULT failkit aboard true walk_safe true walk_field true same_as_won true left_behind true" --autotest=failkit
+run recovery_mission 150 h "RESULT recoverymission ufo true crew [1-9][0-9]* near true kits 2 left 0 carried 2 done true brought 2 dead_brings 0" --autotest=recoverymission --oftype=crash
+run failkit     90 h "RESULT failkit aboard true walk_safe true walk_field true same_as_won true left_behind true fell_won true" --autotest=failkit
 run suit        100 h "RESULT suittest down true"        --autotest=suittest --group=sedaci --mtype=crash
 run levgrab     100 h "RESULT levgrab ko true carried true" --autotest=levgrab --group=levite --mtype=crash
 run mirotest   150 h "RESULT mirotest frenzy true .* mending true .* healed true" --autotest=mirotest --group=levite --mtype=landed
@@ -261,7 +324,8 @@ run mystest    150 h "RESULT mystest moved true again false alive true" --autote
 run koltest    200 h "RESULT koltest found true up true top [0-9.]+ down true" --autotest=koltest --mtype=terror --biome=town
 run lasertest  120 h "RESULT lasertest drained true waiting true ready true burst true pr_auto true mg_dry true mg_full true edge true" --autotest=lasertest --mtype=landed
 run lcshot     150 h "RESULT lcshot hit true shards true hum true ready true" --autotest=lcshot --mtype=landed
-run plasmatest 150 h "RESULT plasmatest pistol 20 hot true interlock true cannon 4 minigun true rifle 10 grenade true seared true mags_left 0" --autotest=plasmatest --mtype=landed
+run lcsound    60 s "RESULT lcsound ok"                 tools/test/lcsound.gd
+run plasmatest 150 h "RESULT plasmatest pistol 30 hot true interlock true cannon 6 minigun true rifle 15 grenade true seared true mags_left 0" --autotest=plasmatest --mtype=landed
 run shieldtest 100 h "RESULT shieldtest stit low 10 up 2 broke true after [0-9]+ plasma 4 knock true vest 16/13 worn true" --autotest=shieldtest --mtype=landed
 run shield_x  100 h "RESULT shieldtest stit_x low 10 up 1 broke true after [0-9]+ plasma 2 knock true vest 16/13 worn true" --autotest=shieldtest --mtype=landed --shield=stit_x
 run gearloss    60 h "RESULT gearloss order_wait true arrived true sold true won_grenades 4->3 clips_kept true lost_grenades 1 vests 1" --autotest=gearloss
@@ -285,6 +349,9 @@ run tunetest   160 h "RESULT tunetest diff normal" --autotest=tunetest --mtype=c
 run ai_late    160 h "RESULT aitest jestetan late 1 dmg [1-9][0-9][0-9]" --autotest=aitest --mtype=crash --biome=farm --late=1 --seed=5 --hour=13
 run latetest   120 h "RESULT latetest pack [2-9] nemesis [1-9][0-9]* marked true waves 2 added [2-9]" --autotest=latetest --mtype=crash --biome=farm --late=1 --seed=5 --hour=23
 run reinfcap   120 h "RESULT reinfcap calls 2 max 2 added [2-9] officer 0 waves [01]" --autotest=reinfcap --mtype=sabotage --biome=farm --late=1 --seed=5
+run dropshot   400 x "RESULT dropshot fx 1 pending 2 alive_counts true early 0 landed 2 gone true" --autotest=dropshot --mtype=crash --biome=farm --day=1
+run lzcheck     200 h "RESULT lzcheck side 54 ahead false near 66 safe true" --autotest=lzcheck --mtype=crash --biome=farm --seed=5
+run sab_easy   120 h "RESULT sabcrew start [2-7] bcalls 1 called .* officer_in_call 0" --autotest=reinfcap --mtype=sabotage --biome=farm --late=1 --seed=5 --difficulty=easy
 run maptown   220 x "RESULT topshot untangled" --autotest=topshot --mtype=crash --biome=town --hour=13 --seed=11 --late=1
 run mapdesert 220 x "RESULT topshot untangled" --autotest=topshot --mtype=crash --biome=desert --terrain=desert --hour=13 --seed=7 --late=1
 run wrecks      60 h "RESULT wrecks \[\[1, 0, false\], \[0, 1, true\], \[1, 1, true\]\]" --autotest=wrecks
@@ -294,10 +361,14 @@ run rooftest   250 h "RESULT rooftest slabs [1-9][0-9]* holes 0" --autotest=roof
 run rain       250 h "RESULT rainshot gpu true visible_inside true visible_outside true" --autotest=rainshot --weather=storm --mtype=terror --biome=town --day=1 --seed=3
 run lamps      200 h "RESULT lamptest lamps [1-9][0-9]* hittable [1-9][0-9]* shot_dark true" --autotest=lamptest --mtype=terror --biome=town --hour=23 --seed=3
 run wxshift    200 h "RESULT wxtest from overcast .* -> rain rain true ratio 0.55 .* puddles [1-9][0-9]* sound true .* -> fog rain false sound false" --autotest=wxtest --mtype=crash --biome=farm --weather=overcast --wxshift=rain@4 --wxblend=6 --seed=3
+run scorch     200 h "RESULT scorchshot decals [1-9][0-9]* discs 0" --autotest=scorchshot --mtype=terror --biome=town --day=1 --seed=5
+run puddles    200 h "RESULT pudcheck puddles [1-9][0-9]* roofed 0 under [01]$" --autotest=pudcheck --mtype=terror --biome=town --weather=rain --hour=23 --seed=5
 run tracks_snow 200 h "RESULT tracktest .* tracks [3-9][0-9]* .*smoke_drift" --autotest=tracktest --mtype=crash --biome=forest --terrain=snow --day=1 --seed=3
 run tracks_mud 200 h "RESULT tracktest weather storm .* tracks [3-9][0-9]* .*fire_down 2.20 fire_up 0.30" --autotest=tracktest --mtype=crash --biome=farm --weather=storm --seed=3
 run lens       200 h "RESULT lensshot sight dot drops ([3-9]|[1-9][0-9]) fog 0.[4-9]" --autotest=lensshot --mtype=crash --biome=farm --weather=storm --seed=3
 # car windows lean in with the pillars in the model itself, glass tinted (a script test, not --autotest)
 timeout 120 $G --headless --path . -s tools/test/cartest.gd > $LOG/cartest.log 2>&1
 if grep -q "RESULT cartest ok" $LOG/cartest.log; then pass=$((pass+1)); report+="OK    cartest\n"; else fail=$((fail+1)); report+="CHYBA cartest $(grep RESULT $LOG/cartest.log | cut -c1-120)\n"; fi
+# (0.72, Ari 22. 11.) the yard forklift is the model v_forklift with collision as it looks
+run forklift 120 s "RESULT forklifttest ok" tools/test/forklifttest.gd
 echo -e "\n==== VELKÝ TEST: $pass OK, $fail CHYB ====\n$report"

@@ -222,6 +222,8 @@ const MTYPES := {
 		"text": "Náš Sokol spadl. Pilot se katapultoval a od té doby se nehlásí. Vetřelci ho hledají taky. Najít ho a dostat domů."},
 	"alienbase": {"name": "Základna vetřelců", "reward": 1400, "aliens": 5, "expire": 9999.0, "trust": 14,
 		"text": "Výslech prozradil, kde mají základnu. Jeskyně pod zemí, velitelské centrum s řídicím jádrem, v líhni zajatí lidé. Zničit jádro."},
+	"recovery": {"name": "Vyzvednout padlé", "reward": 0, "aliens": 0, "expire": 2.5, "trust": 0,
+		"text": "Tým padl a jeho těla leží tam, kde boj skončil - i s výstrojí. Vetřelci, kteří přežili, tam pořád jsou. Kdo výstroj padlých donese domů, vrátí ji do skladu."},
 	"base": {"name": "Útok na základnu", "reward": 600, "aliens": 3, "expire": 0.2, "trust": 6,
 		"text": "Radar hlásí loď nad roklí. Míří na NÁS. Bránit základnu do posledního vetřelce. Když základna padne, Projekt X končí."},
 }
@@ -303,15 +305,15 @@ const RESEARCH := {
 	"plazma": {"name": "Plazmové zbraně", "cost": 700, "mk": 30, "days": 8.0, "needs": {"research": ["laser", "vyslech", "moskovium"], "loot": "a_rifle"}, "branch": "zbrane", "icon": "plasma_cell",
 		"desc": "X-WEP-007. Jejich plazma v lidských zbraních. Žádné dobíjení jako u laseru, ale skutečná munice: univerzální plazmový zásobník PL-MAG-01. Otevře výzkum jednotlivých plazmových zbraní."},
 	"plazma_pistole": {"name": "Plazmová pistole PP-01", "cost": 500, "mk": 10, "days": 5.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_pistol",
-		"desc": "X-WEP-008. UAI PP-01, lidský rám kolem jejich plazmového emitoru. Bez čekání na článek, 20 ran na zásobník PL-MAG-01. Při rychlé palbě se přehřívá."},
+		"desc": "X-WEP-008. UAI PP-01, lidský rám kolem jejich plazmového emitoru. Bez čekání na článek, 30 ran na zásobník PL-MAG-01. Při rychlé palbě se přehřívá."},
 	"plazma_puska": {"name": "Plazmová puška PR-01", "cost": 700, "mk": 20, "days": 6.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_rifle",
-		"desc": "X-WEP-009. UAI PR-01, hlavní plazmová puška pěchoty. Nejsilnější rána pušky, další bez čekání na článek, 10 ran na zásobník PL-MAG-01. Při rychlé palbě se přehřívá."},
+		"desc": "X-WEP-009. UAI PR-01, hlavní plazmová puška pěchoty. Nejsilnější rána pušky, další bez čekání na článek, 15 ran na zásobník PL-MAG-01. Při rychlé palbě se přehřívá."},
 	"plazma_granat": {"name": "Plazmový granát PG-01", "cost": 500, "mk": 15, "days": 5.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_grenade",
 		"desc": "X-WEP-010. UAI PG-01: celý zásobník PL-MAG-01 uvolněný naráz. Výroba každého granátu spotřebuje jeden zásobník ze skladu. Ve středu ničivý, k okraji rychle slábne, kryt chrání. Spálí i kořist."},
 	"plazma_kanon": {"name": "Plazmový kanón PC-01", "cost": 1000, "mk": 40, "days": 8.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_cannon",
-		"desc": "X-WEP-011. UAI PC-01, těžký přenosný plazmový kanón. Čtvrt zásobníku PL-MAG-01 na ránu - čtyři ničivé výstřely. Velmi těžký."},
+		"desc": "X-WEP-011. UAI PC-01, těžký přenosný plazmový kanón. Šestina zásobníku PL-MAG-01 na ránu - šest ničivých výstřelů. Velmi těžký."},
 	"plazma_minigun": {"name": "Plazmový minigun PM-01", "cost": 1100, "mk": 40, "days": 8.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_minigun",
-		"desc": "X-WEP-012. UAI PM-01, šest rotujících plazmových emitorů. 50 pulzů na zásobník PL-MAG-01, krátká, prodloužená nebo úplná dávka. Velmi těžký, při přehřátí se rotor zastaví."},
+		"desc": "X-WEP-012. UAI PM-01, šest rotujících plazmových emitorů. 75 pulzů na zásobník PL-MAG-01, krátká, prodloužená nebo úplná dávka. Velmi těžký, při přehřátí se rotor zastaví."},
 	# materials and gear
 	"vesta": {"name": "Keramické vložky", "cost": 200, "days": 3.0, "needs": {}, "branch": "material", "icon": "vesta",
 		"desc": "Tvrdé keramické pláty do vest ARM-01. Vesta pak zastaví víc ran a střepin."},
@@ -521,11 +523,25 @@ func econ() -> float:
 func time_k() -> float:
 	return float({"easy": 1.0, "normal": 1.25, "veteran": 1.5}.get(difficulty(), 1.25))
 
+## (Ari 2026-11-26) "Všechno trvá věčnost": the shop is cheaper and the workshop quicker for
+## everyone, and on easy research and the workshop go another 25 % faster (normal / veteran as before).
+const SHOP_K := 0.8          # shop and workshop prices (credits), all difficulties
+const MAKE_K := 0.67         # workshop time per piece, all difficulties
+const EASY_FAST := 0.75      # research and workshop time on easy
+
+## Research and workshop time (construction keeps time_k).
+func work_k() -> float:
+	return time_k() * (EASY_FAST if difficulty() == "easy" else 1.0)
+
+## Workshop time of one piece / upgrade / craft (days at one workshop).
+func make_k() -> float:
+	return work_k() * MAKE_K
+
 func research_cost(id: String) -> int:
 	return int(round(float(RESEARCH[id]["cost"]) * econ() / 10.0) * 10)
 
 func research_days(id: String) -> float:
-	return float(RESEARCH[id]["days"]) * time_k()
+	return float(RESEARCH[id]["days"]) * work_k()
 
 func facility_cost(ft: String) -> int:
 	return int(round(float(FACILITIES[ft]["cost"]) * econ() * bloc_k("build_cost") * (bloc_k("radar_cost") if ft == "radar" else 1.0) / 10.0) * 10)
@@ -820,6 +836,11 @@ func advance(days: float) -> bool:
 				continue
 			if m["type"] == "radar":
 				_radar_area(float(m["lat"]), float(m["lon"]), false)
+			if m["type"] == "recovery":
+				# (Ari 2026-11-26) the second chance went by: what the fallen carried is gone for good
+				_log("Výstroj padlých (%s) už nikdo nevyzvedne - vetřelci místo vyčistili." % m["place"])
+				stop = true
+				continue
 			var lost_trust := int(round((15 if m["type"] == "terror" else 5) * (1.0 + war_stage())))     # (the later, the less patience)
 			data["trust"] = int(data["trust"]) - lost_trust
 			_log("%s (%s) zůstala bez odpovědi. Důvěra −%d." % [MTYPES[m["type"]]["name"], m["place"], lost_trust])
@@ -1304,7 +1325,7 @@ func buy_hawk() -> bool:
 	var price_paid := hawk_price()
 	data["credits"] = int(data["credits"]) - price_paid
 	_pay(int(CRAFT_MAKE["jestrab"]["al"]), int(CRAFT_MAKE["jestrab"]["mk"]))
-	_queue("craft_jestrab", float(CRAFT_MAKE["jestrab"]["days"]) * time_k(), {"new": fresh},
+	_queue("craft_jestrab", float(CRAFT_MAKE["jestrab"]["days"]) * make_k(), {"new": fresh},
 		{"cr": price_paid, "al": int(CRAFT_MAKE["jestrab"]["al"]), "mk": int(CRAFT_MAKE["jestrab"]["mk"])})
 	_log("Dílna začala stavět Jestřába." if fresh else "Dílna začala přestavovat Sokol na Jestřába.")
 	save()
@@ -1817,7 +1838,7 @@ func _gear_lost(kits: Dictionary, lost: Dictionary, lockers: Dictionary) -> Stri
 		l.append("%s %dx" % [Game.ITEMS[it]["short"] if Game.ITEMS.has(it) else it, g])
 	return (" Ze skladu ubylo (spotřebováno nebo zůstalo venku): " + ", ".join(l) + ".") if not l.is_empty() else ""
 
-func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs: int, civ_saved := 0, civ_dead := 0, races := [], loot := {}, wiped := false, kits := {}, q := 1.0, lost_gear := {}, lockers := {}) -> String:
+func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs: int, civ_saved := 0, civ_dead := 0, races := [], loot := {}, wiped := false, kits := {}, q := 1.0, lost_gear := {}, lockers := {}, fallen_site := {}) -> String:
 	# (0.7x Štěnice) not loot: the tracker on their hull
 	var tagged := int(loot.get("bug_tag", 0)) > 0
 	loot.erase("bug_tag")
@@ -1937,13 +1958,87 @@ func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs:
 	elif wiped and not success:
 		var kl := _kondor_lost({})
 		txt += kl if transport() != "heli" else kl.replace("Kondoru", "Čápa").replace("Kondor", "Čáp")
-	txt += gear_txt + bug_txt
+	var rec_txt := ""
+	if m["type"] == "recovery":
+		rec_txt = _recovered(fallen_site.get("brought", []), success)
+	elif wiped and not success and not fallen_site.is_empty():
+		rec_txt = _add_recovery(m, fallen_site)
+	elif success and not (fallen_site.get("brought", []) as Array).is_empty():
+		# (Ari 2026-11-26) a man fell, the rest won: his kit comes home with the team, no carrying
+		rec_txt = _recovered(fallen_site["brought"], true)
+	txt += gear_txt + bug_txt + rec_txt
 	_log(txt)
 	if m["type"] == "base" and not success:
 		fell = _base_fell("Obrana selhala.")
 	save()
 	changed.emit()
 	return (fell + "\n\n" + txt) if fell != "" else txt
+
+# ---- (Ari 2026-11-26) the whole team fell: a second chance to fetch what they carried --------------
+## The site stays on the globe for a few days ("Vyzvednout padlé"): the same place and map, the bodies
+## where they fell with what they carried, the aliens who survived still around. Who brings a fallen
+## man's kit home gives the base back its armory pieces, the player his own locker pieces and the parts
+## on his guns (Game.claim_returns). A recovery that fails is the end of it - no third chance.
+const RECOVERY_TYPES := ["crash", "landed", "abduction", "terror", "rescue", "sabotage", "convoy", "radar", "quarantine", "bug", "pilot"]
+const RETURNS_KEPT := 30
+
+## Of what one merc lost, the part that was the base's (not the free allotment, not his locker).
+func armory_part(kit: Array, lost: Dictionary, from_locker: Dictionary) -> Dictionary:
+	var mine := locker_part(kit, lost, from_locker)
+	var out := {}
+	for it in lost:
+		var n := int(lost[it])
+		var free := mini(kit.count(it), int(allot().get(it, 0)))
+		var a := maxi(0, n - free) - int(mine.get(it, 0))
+		if a > 0:
+			out[it] = a
+	return out
+
+func _add_recovery(m: Dictionary, site: Dictionary) -> String:
+	var bodies: Array = site.get("bodies", [])
+	if not String(m["type"]) in RECOVERY_TYPES or bodies.is_empty() or data.get("lost", false):
+		return ""
+	var r := m.duplicate(true)
+	r["of_type"] = String(m["type"])
+	r["type"] = "recovery"
+	r["id"] = int(data["next_id"])
+	data["next_id"] = int(r["id"]) + 1
+	r["expires"] = float(data["day"]) + float(MTYPES["recovery"]["expire"])
+	r["reward"] = 0
+	r["extra_aliens"] = 0
+	r["bodies"] = bodies
+	r["survivors"] = site.get("survivors", [])
+	r.erase("crew_of")
+	data["missions"].append(r)
+	mission_found.emit(r)
+	var names := []
+	for b in bodies:
+		names.append(String(b.get("name", "?")))
+	return " Těla (%s) i s výstrojí leží v oblasti %s. Kdo je do %d hodin vyzvedne, vrátí výstroj domů." % [", ".join(names), m["place"], int(float(MTYPES["recovery"]["expire"]) * 24.0)]
+
+## A recovery mission came home: @brought = the bodies whose kit somebody carried to the transport.
+func _recovered(brought: Array, success: bool) -> String:
+	if brought.is_empty():
+		return " Výstroj padlých zůstala venku a je ztracena." if not success else ""
+	var back := {}
+	var rets: Array = data.get("returns", [])
+	var names := []
+	for b in brought:
+		names.append(String(b.get("name", "?")))
+		var ar: Dictionary = b.get("armory", {})
+		for it in ar:
+			data["armory"][it] = int(data["armory"].get(it, 0)) + int(ar[it])
+			back[it] = int(back.get(it, 0)) + int(ar[it])
+		if not (b.get("locker", {}) as Dictionary).is_empty() or not (b.get("mods", {}) as Dictionary).is_empty():
+			rets.append({"rid": str(data.get("cid", "")) + ":" + str(randi()), "uid": String(b.get("uid", "")), "name": String(b.get("name", "")),
+				"locker": b.get("locker", {}), "mods": b.get("mods", {}), "cid": str(data.get("cid", ""))})
+	while rets.size() > RETURNS_KEPT:
+		rets.remove_at(0)
+	data["returns"] = rets
+	var l := []
+	for it in back:
+		l.append("%s %dx" % [Game.ITEMS[it]["short"] if Game.ITEMS.has(it) else it, int(back[it])])
+	return " Výstroj padlých (%s) je doma%s" % [", ".join(names), (": do skladu se vrátilo " + ", ".join(l) + ".") if not l.is_empty() else "."]
 
 # ---- research, building, shop -----------------------------------------------------------------
 ## 0.57: what research gives Project X is a design - the workshop has to make it before anyone has it.
@@ -1987,7 +2082,7 @@ func make_upgrade(id: String) -> bool:
 	var cr := upgrade_price(id)
 	data["credits"] = int(data["credits"]) - cr
 	_pay(int(u.get("al", 0)), int(u.get("mk", 0)))
-	_queue("up_" + id, float(u["days"]) * time_k(), {}, {"cr": cr, "al": int(u.get("al", 0)), "mk": int(u.get("mk", 0))})
+	_queue("up_" + id, float(u["days"]) * make_k(), {}, {"cr": cr, "al": int(u.get("al", 0)), "mk": int(u.get("mk", 0))})
 	_log("Dílna začala vyrábět: " + String(u["name"]) + ".")
 	save()
 	changed.emit()
@@ -2276,7 +2371,7 @@ func unlocked(item: String) -> bool:
 	return not LOCKED_BY.has(item) or researched(LOCKED_BY[item])
 
 func price(item: String) -> int:
-	var p: float = float(SHOP[item]) * econ()
+	var p: float = float(SHOP[item]) * econ() * SHOP_K
 	if String(Game.ITEMS.get(item, {}).get("type", "")) in ["ammo", "grenade", "flare", "medkit"]:
 		p *= pow(0.9, count("sklad"))
 	return int(p)
@@ -2320,7 +2415,7 @@ func alloys() -> int:
 
 ## Days one piece takes on one line.
 func make_days(item: String) -> float:
-	return clampf(float(SHOP.get(item, 400)) / 400.0, 0.5, 6.0) * time_k()
+	return clampf(float(SHOP.get(item, 400)) / 400.0, 0.5, 6.0) * make_k()
 
 func workshop_lines() -> int:
 	return count("dilna")
@@ -2612,7 +2707,7 @@ func make_pelikan() -> bool:
 	var cr := pelikan_price()
 	data["credits"] = int(data["credits"]) - cr
 	_pay(int(c["al"]), int(c["mk"]))
-	_queue("craft_orel", float(c["days"]) * time_k(), {}, {"cr": cr, "al": int(c["al"]), "mk": int(c["mk"])})
+	_queue("craft_orel", float(c["days"]) * make_k(), {}, {"cr": cr, "al": int(c["al"]), "mk": int(c["mk"])})
 	_log("Dílna začala stavět Pelikán.")
 	save()
 	changed.emit()
@@ -2630,7 +2725,7 @@ func make_kondor() -> bool:
 		return false
 	var cr := kondor_price()
 	data["credits"] = int(data["credits"]) - cr
-	_queue("craft_kondor", float(CRAFT_MAKE["kondor"]["days"]) * time_k(), {}, {"cr": cr})
+	_queue("craft_kondor", float(CRAFT_MAKE["kondor"]["days"]) * make_k(), {}, {"cr": cr})
 	_log("Dílna začala stavět Kondor.")
 	save()
 	changed.emit()

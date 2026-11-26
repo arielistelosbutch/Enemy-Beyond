@@ -80,6 +80,8 @@ func _physics_process(dt: float) -> void:
 	if not scared and me and not me.downed and global_position.distance_to(me.global_position + Vector3(0, 1.4, 0)) < 1.8:
 		scared = true
 		me.stress = min(100.0, me.stress + 14.0)
+		if kind == "plasma":
+			Game.play_at(mission, "plasma_flyby", global_position, -4.0, randf_range(1.15, 1.3) if red else randf_range(0.92, 1.05))   # (0.65) Ariho průlet plazmy kolem hlavy
 	if kind != "plasma" and kind != "rocket":
 		vel.y -= 7.0 * dt
 	var nxt := global_position + vel * dt

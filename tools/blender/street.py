@@ -185,9 +185,117 @@ def litter_bin():
     vis.append(disc(m["dmetal"], (0, -0.12, 0.89), 0.205, 0.025, verts=24, b=0.006))
     save("LitterBin", vis, [], "litter_bin")
 
+def forklift():
+    """(0.72) A warehouse forklift ("ještěrka", own design): a yellow chassis with a rounded counterweight
+    and hazard stripes, round tyres on grey rims, a seat with a steering wheel under the overhead guard,
+    a gas bottle behind the seat, a two-stage mast with a lift cylinder and chains, the carriage with a
+    load backrest and two L-shaped forks lowered to the ground. Forks face +Y (Godot -Z); same footprint
+    as the old box forklift (map_gen._forklift): body 1.1 m wide, from 1.0 m behind to 1.8 m in front."""
+    reset(); m = M(); vis = []; col = []
+    yel = mat2("VForkYellow", (0.78, 0.56, 0.08), 0.5, 0.2)
+    tyre = mat2("VTyre", (0.05, 0.05, 0.05), 0.95)
+    blk = mat2("VBlackPaint", (0.06, 0.06, 0.07), 0.6, 0.3)
+    seat = mat2("VSeat", (0.09, 0.09, 0.1), 0.8)
+    chrome = mat2("VChrome", (0.7, 0.7, 0.72), 0.25, 0.9)
+    glass = mat2("VLampGlass", (0.9, 0.88, 0.75), 0.2)
+    amber = mat2("VAmber", (0.9, 0.45, 0.05), 0.4)
+    redl = mat2("VRedLamp", (0.55, 0.05, 0.04), 0.4)
+    gas = mat2("VGasBottle", (0.55, 0.57, 0.6), 0.45, 0.6)
+    # chassis: lower frame, the body over the engine with a step, the cowl in front of the seat
+    vis.append(bx(blk, (0, -0.15, 0.34), (0.86, 1.6, 0.3), 0.03))
+    vis.append(box_loft(yel, [(-0.62, 0, 0.66, 1.06, 0.62), (0.2, 0, 0.66, 1.06, 0.62), (0.42, 0, 0.6, 1.0, 0.5)], b=0.05))
+    vis.append(box_loft(yel, [(0.36, 0, 1.0, 0.9, 0.22), (0.5, 0, 1.06, 0.84, 0.34), (0.6, 0, 1.02, 0.8, 0.28)], b=0.04))
+    vis.append(bx(blk, (0, -0.02, 0.975), (0.98, 0.7, 0.03), 0.01))                                  # rubber floor mat
+    for sx in (-1, 1):
+        vis.append(bx(blk, (sx * 0.535, 0.3, 0.42), (0.04, 0.24, 0.16), 0.01))                       # step
+    # counterweight: a rounded cast block at the back with hazard stripes and the tail lamps
+    vis.append(bx(yel, (0, -0.86, 0.78), (1.1, 0.42, 0.9), 0.12, seg=3))
+    for k in range(5):
+        vis.append(bx(blk, (-0.4 + k * 0.2, -1.075, 0.52), (0.07, 0.012, 0.3), 0.0, rot=(0, 0.6, 0)))
+    for sx in (-1, 1):
+        vis.append(bx(redl, (sx * 0.42, -1.075, 0.98), (0.12, 0.02, 0.07), 0.01))
+    vis.append(tb(blk, (0.3, -0.98, 0.32), (0.3, -1.12, 0.3), 0.025, 8))                           # exhaust
+    vis.append(tb(blk, (0, -1.08, 0.32), (0, -1.14, 0.32), 0.04, 10))                              # tow pin
+    # gas bottle in its cradle behind the seat
+    vis.append(tb(gas, (-0.38, -0.58, 1.38), (0.38, -0.58, 1.38), 0.15, 16))
+    for sx in (-1, 1):
+        vis.append(ball(gas, (sx * 0.38, -0.58, 1.38), 0.15, (0.4, 1, 1), seg=14, rings=8))
+        vis.append(torus(blk, (sx * 0.22, -0.58, 1.38), 0.16, 0.015, rot=(0, PI2, 0), seg=16, mseg=4))
+    vis.append(tb(chrome, (0.48, -0.58, 1.38), (0.56, -0.58, 1.38), 0.025, 8))
+    # wheels: big drive tyres in front, smaller steer tyres at the back; grey rims, hubs, mudguards
+    for (wy, r, w) in ((0.45, 0.31, 0.24), (-0.75, 0.25, 0.2)):
+        for sx in (-1, 1):
+            x = sx * 0.56
+            vis.append(disc(tyre, (x, wy, r), r, w, 'x', verts=24, b=0.05))
+            vis.append(disc(m["metal"], (x + sx * (w / 2 + 0.002), wy, r), r * 0.58, 0.02, 'x', verts=16))
+            vis.append(disc(m["dmetal"], (x + sx * (w / 2 + 0.012), wy, r), r * 0.22, 0.03, 'x', verts=10))
+            for k in range(3):                                              # tread grooves
+                vis.append(disc(m["dmetal"], (x + (k - 1) * w * 0.3, wy, r), r + 0.004, 0.012, 'x', verts=24))
+    for sx in (-1, 1):                                                      # front mudguards
+        for k in range(5):
+            a0 = 0.25 + k * 0.5; a1 = a0 + 0.5
+            vis.append(beam(yel, (sx * 0.56, 0.45 + math.cos(a0) * 0.36, 0.31 + math.sin(a0) * 0.36),
+                            (sx * 0.56, 0.45 + math.cos(a1) * 0.36, 0.31 + math.sin(a1) * 0.36), 0.27, 0.025))
+    # seat, steering wheel, levers
+    vis.append(bx(seat, (0, -0.22, 1.1), (0.48, 0.46, 0.1), 0.04, seg=2))
+    vis.append(bx(seat, (0, -0.44, 1.38), (0.46, 0.09, 0.46), 0.04, seg=2, rot=(-0.12, 0, 0)))
+    vis.append(bx(blk, (0, -0.22, 1.03), (0.36, 0.36, 0.06), 0.01))
+    vis.append(tb(blk, (0, 0.5, 1.15), (0, 0.24, 1.42), 0.03, 8))                                   # steering column
+    vis.append(torus(blk, (0, 0.22, 1.44), 0.17, 0.018, rot=(0.75, 0, 0), seg=20, mseg=5))
+    vis.append(ball(m["red"], (0.12, 0.18, 1.5), 0.025, seg=8, rings=5))                              # spinner knob
+    for k in range(3):                                                      # hydraulic levers
+        x = 0.2 + k * 0.07
+        vis.append(tb(blk, (x, 0.5, 1.2), (x, 0.44, 1.4), 0.008, 6))
+        vis.append(ball(m["red"] if k == 0 else blk, (x, 0.44, 1.41), 0.022, seg=8, rings=5))
+    # overhead guard: front posts lean back, rear posts on the counterweight, a slatted roof
+    for sx in (-1, 1):
+        vis.append(tb(blk, (sx * 0.49, 0.5, 0.95), (sx * 0.47, 0.22, 2.12), 0.032, 8))
+        vis.append(tb(blk, (sx * 0.49, -0.72, 1.2), (sx * 0.47, -0.66, 2.12), 0.032, 8))
+    vis.append(bx(blk, (0, -0.22, 2.14), (1.02, 0.96, 0.05), 0.012))
+    for k in range(6):
+        vis.append(bx(blk, (-0.36 + k * 0.144, -0.22, 2.18), (0.05, 0.9, 0.04), 0.006))
+    vis.append(bx(blk, (0, -0.22, 2.12), (0.9, 0.84, 0.06), 0.0))      # (the roof's inner plate)
+    for sx in (-1, 1):                                                      # work lights on the front posts
+        vis.append(bx(blk, (sx * 0.45, 0.25, 2.04), (0.12, 0.1, 0.1), 0.015))
+        vis.append(disc(glass, (sx * 0.45, 0.305, 2.04), 0.04, 0.012, 'y', verts=12))
+    vis.append(disc(blk, (0, -0.55, 2.19), 0.06, 0.04, verts=12))                                  # amber beacon
+    vis.append(disc(amber, (0, -0.55, 2.26), 0.055, 0.1, verts=12, b=0.015))
+    # mast: two outer channels, the inner stage a little higher, cross ties, the lift cylinder, chains
+    for sx in (-1, 1):
+        vis.append(bx(m["dmetal"], (sx * 0.36, 0.78, 1.2), (0.1, 0.12, 2.3), 0.01))
+        vis.append(bx(m["dmetal"], (sx * 0.3, 0.82, 1.3), (0.05, 0.08, 2.4), 0.008))
+        vis.append(tb(chrome, (sx * 0.3, 0.77, 0.25), (sx * 0.38, 0.77, 0.25), 0.04, 10))         # tilt pivot
+        vis.append(tb(blk, (sx * 0.4, 0.42, 1.0), (sx * 0.4, 0.72, 1.18), 0.035, 8))              # tilt cylinder
+        vis.append(tb(chrome, (sx * 0.4, 0.6, 1.11), (sx * 0.4, 0.75, 1.2), 0.02, 8))
+    for z in (0.18, 1.55, 2.33):
+        vis.append(bx(m["dmetal"], (0, 0.78, z), (0.8, 0.1, 0.1), 0.01))
+    vis.append(bx(m["dmetal"], (0, 0.82, 2.48), (0.65, 0.08, 0.08), 0.01))
+    vis.append(tb(blk, (0, 0.74, 0.22), (0, 0.74, 1.5), 0.05, 12))
+    vis.append(tb(chrome, (0, 0.74, 1.5), (0, 0.74, 2.3), 0.032, 12))
+    for sx in (-1, 1):                                                      # chains (link strips) and the sheave
+        vis.append(bx(m["iron"], (sx * 0.12, 0.79, 1.3), (0.03, 0.02, 2.0), 0.0))
+        for k in range(10):
+            vis.append(bx(m["iron"], (sx * 0.12, 0.8, 0.35 + k * 0.2), (0.04, 0.012, 0.08), 0.004))
+    vis.append(disc(m["iron"], (0, 0.79, 2.33), 0.08, 0.3, 'x', verts=14))
+    # carriage with the load backrest and the forks (lowered, tines a hand above the floor)
+    vis.append(bx(m["dmetal"], (0, 0.9, 0.3), (1.0, 0.07, 0.12), 0.01))
+    vis.append(bx(m["dmetal"], (0, 0.9, 0.62), (1.0, 0.07, 0.12), 0.01))
+    for sx in (-1, 1):
+        vis.append(bx(m["dmetal"], (sx * 0.46, 0.9, 0.95), (0.06, 0.05, 1.0), 0.008))
+    vis.append(bx(m["dmetal"], (0, 0.9, 1.43), (0.98, 0.05, 0.06), 0.008))
+    for k in range(5):
+        vis.append(bx(m["dmetal"], (-0.3 + k * 0.15, 0.9, 1.03), (0.03, 0.03, 0.8), 0.0))
+    for sx in (-1, 1):
+        x = sx * 0.28
+        vis.append(bx(m["iron"], (x, 0.96, 0.4), (0.12, 0.05, 0.62), 0.008))                      # shank
+        vis.append(bx(m["iron"], (x, 0.98, 0.69), (0.12, 0.07, 0.06), 0.008))                     # hook on the top bar
+        vis.append(box_loft(m["iron"], [(0.94, x, 0.095, 0.12, 0.05), (1.62, x, 0.095, 0.12, 0.05), (1.82, x, 0.088, 0.11, 0.022)], b=0.006))
+    col.append(colbox("Forklift", (0, 0.35, 1.2), (1.24, 2.95, 2.45)))
+    save("Forklift", vis, col, "forklift")
+
 ALL = dict(sandbags=sandbags, bench=bench, flower_bed=flower_bed, drum_red=lambda: drum("drum_red", "red"),
            drum_blue=lambda: drum("drum_blue", "blue"), pallet=pallet, railing=railing, wire_fence=wire_fence,
-           workbench=workbench, litter_bin=litter_bin)
+           workbench=workbench, litter_bin=litter_bin, forklift=forklift)
 for k, f in ALL.items():
     if not ONLY or k in ONLY:
         f()

@@ -8,6 +8,8 @@ extends RefCounted
 const STATES := [
 	# name, aiming, firing, pitch, crouching, speed (m/s forward)
 	["idle", false, false, 0.0, false, 0.0],
+	["walk", false, false, 0.0, false, 1.4],
+	["walk_up", false, false, 0.4, false, 1.4],
 	["aim", true, false, 0.0, false, 0.0],
 	["fire", true, true, 0.0, false, 0.0],
 	["aim_up", true, false, 0.45, false, 0.0],
@@ -16,6 +18,7 @@ const STATES := [
 	["run", false, false, 0.0, false, 4.2],
 	["run_aim", true, false, 0.0, false, 4.2],
 	["run_fire", true, true, 0.0, false, 4.2],
+	["crouch", false, false, 0.0, true, 0.0],
 	["crouch_aim", true, false, 0.0, true, 0.0],
 	["crouch_fire", true, true, 0.0, true, 0.0],
 ]
@@ -55,6 +58,7 @@ static func run(at: Node, p: Node) -> void:
 			mate.aiming = st[1]
 			mate.pitch = st[3]
 			mate.crouching = st[4]
+			mate._fired_at = -10.0      # (each state from a calm start: the low ready after the last one's shots)
 			var t := 0.0
 			var worst := 0.0
 			var sum := 0.0

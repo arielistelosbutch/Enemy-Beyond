@@ -42,10 +42,10 @@ const RACES := {
 		"melee": [28.0, 40.0], "reach": 2.2, "strike_cd": 1.2, "dumb": true, "pounce": [11.0, 1.75]},
 	"jestetan": {"name": "Ještěřan", "hp": 190.0, "walk": 1.1, "run": 2.4, "armor": 0.6, "model": "jestetan", "h": 2.1, "r": 0.4, "eye": 2.2,
 		"bolt": 1.2, "shots": [1, 2], "miss": 0.75, "hide": 0.8, "tac": "hunter", "guns": ["rifle", "rifle", "rifle", "mg", "cannon"], "nades": true, "traps": 2, "cloak": true,
-		"night_eyes": true, "bite": [30.0, 45.0], "glint": [Vector3(0, 2.02, -0.3), Color(1.0, 0.6, 0.1)], "light_shy": true, "weak": {"fire": 1.5, "explosion": 1.25}},
+		"night_eyes": true, "bite": [20.0, 30.0], "glint": [Vector3(0, 2.02, -0.3), Color(1.0, 0.6, 0.1)], "light_shy": true, "weak": {"fire": 1.5, "explosion": 1.25}},
 	"jestetan_velitel": {"name": "Ještěřan velitel", "hp": 230.0, "walk": 1.2, "run": 2.6, "armor": 0.5, "model": "jestetan_velitel", "h": 2.1, "r": 0.4, "eye": 2.0,
 		"bolt": 1.3, "shots": [2, 3], "miss": 0.7, "hide": 0.8, "tac": "hunter", "guns": ["rifle", "rifle", "minigun", "cannon"], "nades": true, "traps": 3, "cloak": true, "grab": true,
-		"bite": [35.0, 50.0], "glint": [Vector3(0, 2.02, -0.3), Color(1.0, 0.45, 0.1)], "light_shy": true, "goggles": true, "weak": {"fire": 1.5, "explosion": 1.25}},
+		"bite": [24.0, 36.0], "glint": [Vector3(0, 2.02, -0.3), Color(1.0, 0.45, 0.1)], "light_shy": true, "goggles": true, "weak": {"fire": 1.5, "explosion": 1.25}},
 	"lihnoun": {"name": "Líhavec", "hp": 110.0, "walk": 2.2, "run": 6.6, "armor": 0.8, "model": "lihnoun", "h": 1.4, "r": 0.3, "eye": 1.5,
 		"melee": [38.0, 52.0], "reach": 1.8, "strike_cd": 0.85, "implant": true, "pounce": [9.0, 1.45], "weak": {"plasma": 1.6, "fire": 1.6}},
 	"zombie": {"name": "Nakažený", "hp": 65.0, "walk": 1.0, "run": 1.7, "armor": 1.0, "model": "zombie", "h": 1.6, "r": 0.3, "eye": 1.6,
@@ -150,13 +150,29 @@ var _last_anim_pos := Vector3.ZERO
 var _speed := 0.0
 var glint_t := 0.0
 
+## (2026-11-26 Ari: „Bijci a Ještěřani jsou fakt hardcore“) the month a race first comes to the
+## war (= mission.GROUPS["from"], keep in step): a race that joins late does not land at full war
+## strength on its first day - its "late" (health, aim, heavier guns, mines, traps, the cloak)
+## counts from when it came, like the greys' did from the start.
+const RACE_FROM := {"levit": 1, "levit_velitel": 1, "ohar": 1,
+	"jestetan": 2, "jestetan_velitel": 2, "lihnoun": 2,
+	"bijec": 3, "bijec_velitel": 3, "nador": 3, "ohnivec": 3, "myslodej": 3, "kolos": 3}
+## (2026-11-26 Ari: „jak přijdou Ještěřani, začne to být peklo i na snadnou. To by fakt být nemělo.“)
+## on easy the armoured soldier races are not a wall of their own: [health x, how much of the
+## armour gives way (0 = all of it holds, 1 = none)]
+const EASY_SOFT := {"jestetan": [0.75, 0.25], "jestetan_velitel": [0.8, 0.2], "bijec": [0.75, 0.25], "bijec_velitel": [0.8, 0.2]}
+
+static func race_start(r: String) -> float:
+	return maxf(15.0, 30.0 * float(RACE_FROM.get(r, 0)))
+
 ## {late: 0..1 over the war, coop: mercenaries beyond the first}.
-static func threat() -> Dictionary:
+static func threat(r := "") -> Dictionary:
 	var day := float(Net.mission_params.get("day", 0.0))
-	var lt := clampf((day - 15.0) / 90.0, 0.0, 1.0)
+	var lt := clampf((day - race_start(r)) / 90.0, 0.0, 1.0)
 	if Game.cmd_arg("late", "") != "":
 		lt = float(Game.cmd_arg("late", "0"))
-	return {"late": lt, "coop": maxi(0, Net.roster.size() - 1)}
+	var who: Dictionary = Net.mission_roster if not Net.mission_roster.is_empty() else Net.roster
+	return {"late": lt, "coop": maxi(0, who.size() - 1)}
 
 var _late := 0.0
 var _aim_k := 1.0
@@ -195,6 +211,8 @@ func setup(data: Dictionary) -> void:
 	race = data.get("race", "grey")
 	R = RACES.get(race, RACES["grey"])
 	hp = float(R["hp"]) * (1.25 if Game.veteran() else (0.75 if Game.easy() else 1.0))
+	if Game.easy() and EASY_SOFT.has(race):
+		hp *= float(EASY_SOFT[race][0])
 	walk_spd = float(R["walk"])
 	run_spd = float(R["run"])
 	rng.seed = int(data["id"]) * 7919 + 13
@@ -205,14 +223,16 @@ func setup(data: Dictionary) -> void:
 	traps_left = int(R.get("traps", 0))
 	# how hard the war has got: late days and every extra mercenary in co-op make them tougher,
 	# sharper, quicker - and better armed
-	var th := threat()
+	var th := threat(race)
 	_late = float(th["late"])
 	var coop := float(th["coop"])
-	hp *= 1.0 + 0.35 * _late + 0.18 * coop
+	# (2026-11-22 Ari: co-op ve třech na lehké drtí) the co-op health bonus is halved on easy
+	hp *= 1.0 + 0.35 * _late + (0.09 if Game.easy() else 0.18) * coop
 	_aim_k = (1.0 - 0.3 * _late) * pow(0.9, coop)
 	_react_k = (1.0 - 0.35 * _late) * pow(0.92, coop)
 	_press = 0.3 + 0.45 * _late + 0.1 * coop
-	if GUNS_LATE.has(race) and rng.randf() < 0.15 + 0.55 * _late:
+	# (2026-11-26 Ari) on easy the heavy guns (minigun, rockets, heavy cannon) come half as often
+	if GUNS_LATE.has(race) and rng.randf() < (0.15 + 0.55 * _late) * (0.5 if Game.easy() else 1.0):
 		var gl2: Array = GUNS_LATE[race]
 		gun = String(gl2[rng.randi() % gl2.size()])
 	has_nades = R.has("nades") or (tac in ["grey", "levit"] and _late > 0.25 and rng.randf() < _late)
@@ -229,7 +249,8 @@ func setup(data: Dictionary) -> void:
 				gun = "cannon"
 	# the cloak: officers from the start; as the war goes on, their soldiers get it too
 	var day := float(Net.mission_params.get("day", 0.0))
-	can_cloak = R.has("cloak") and (race.ends_with("_velitel") or day >= (30.0 if Game.veteran() else 45.0) or Game.cmd_arg("cloak", "") == "1")
+	# (2026-11-26) the soldiers' cloak a month after their race came (veteran: two weeks) - not on day one
+	can_cloak = R.has("cloak") and (race.ends_with("_velitel") or day >= race_start(race) + (15.0 if Game.veteran() else 30.0) or Game.cmd_arg("cloak", "") == "1")
 	collision_layer = 4
 	collision_mask = 1 | 64 | 128
 	var cs := CollisionShape3D.new()
@@ -333,6 +354,10 @@ func _physics_process(delta: float) -> void:
 	PerfLog.took("vetřelci: pohyb a fyzika (snímek)", _pt)
 
 func _pl_physics_process(delta: float) -> void:
+	if _resting:
+		if multiplayer.is_server() and not _traps.is_empty():
+			_traps_tick(delta)
+		return
 	_eyeshine(delta)
 	_drip(delta)
 	_cloak_tick(delta)
@@ -340,6 +365,9 @@ func _pl_physics_process(delta: float) -> void:
 	_footsteps(delta)
 	if multiplayer.is_server() and not _traps.is_empty():
 		_traps_tick(delta)
+	if dead and _death_t > CORPSE_REST:
+		_corpse_rest()
+		return          # (2026-11-26) a body that has lain still a while costs (almost) nothing
 	if dead:
 		_death_anim(delta)
 		if multiplayer.is_server() and _death_t < 8.0 and not _landed_dead:
@@ -668,10 +696,17 @@ func _tentacle_tick(delta: float) -> void:
 
 ## Mixamo motion for some races (animace/mixamo_<race>.glb, made by tools/blender/retarget_mixamo.py).
 ## It is only in the game package, not in the sources (Mixamo licence): without it the old clips stay.
-const MIXAMO_CLIPS := {"bijec": "res://animace/mixamo_bijec.glb", "bijec_velitel": "res://animace/mixamo_bijec.glb"}
+# (2026-11-26) the old Mixamo moves of the Bijec are no longer used - the afk ones (afk_bijec.glb, al_bijec_velitel_*.json)
+# replace them; mixamo_bijec.glb is moved aside on the PC (zaloha_stare/). An entry here would load it again.
+const MIXAMO_CLIPS := {}
 const ONE_SHOT := ["roar", "vanish", "materialize"]
 static var _mx_cache := {}
 func _mixamo_clips() -> void:
+	# (2026-11-26) not on Ari's afk model: these clips are made for the old model's skeleton, so on
+	# the afk one they moved no bone at all - the Bijec ran in its T-pose. And the afk scene's clip
+	# library is shared by every Bijec of the mission, so the first one spoilt them all.
+	if _afk_native:
+		return
 	var path: String = MIXAMO_CLIPS.get(race, "")
 	if path == "" or not ResourceLoader.exists(path):
 		return
@@ -1221,6 +1256,25 @@ var _rest_y := 0.0               # body height that keeps it lying on top of the
 var _skel: Skeleton3D
 var _limp := {}                  # bone index -> target extra rotation
 
+## (2026-11-26, propady FPS v co-opu) Mrtvé tělo dřív běželo každý krok fyziky celé jako živý
+## vetřelec (přehrávač pohybů, pružiny, oči, kroky, síť 30x za s) – ~0,3 ms za tělo a krok, na
+## karanténě s 30 těly přes 8 ms. Po CORPSE_REST s smrti (pád, smrt z afk, výbuchy Kolosu/Diskollu
+## jsou dávno pryč) tělo ztuhne: přehrávač se už neposouvá (ruční režim), oči, kroky a pád se nepočítají,
+## síť jen 1x za s. Pružiny (chapadla, ocas) nechávám – vypnutí by je vrátilo do klidové polohy.
+const CORPSE_REST := 9.0
+var _resting := false
+func _corpse_rest() -> void:
+	if _resting:
+		return
+	_resting = true
+	if eye_glint:
+		eye_glint.visible = false
+	velocity = Vector3.ZERO
+	var sync := get_node_or_null("Sync") as MultiplayerSynchronizer
+	if sync and Game.cmd_arg("oldsync", "") == "":
+		sync.replication_interval = 1.0
+		sync.delta_interval = 1.0
+
 func _death_setup() -> void:
 	_death_t = 0.0
 	_springs_limp()
@@ -1752,6 +1806,8 @@ func taken(dmg: float) -> float:
 	if kind == "explosion" and k > 1.0:
 		return dmg * k       # armour does not stop a blast from tearing it apart
 	var arm := float(R["armor"])
+	if Game.easy() and EASY_SOFT.has(race):
+		arm = lerpf(arm, 1.0, float(EASY_SOFT[race][1]))
 	if kind == "slug":
 		arm = lerpf(arm, 1.0, 0.3)    # a solid slug carries through more of the armour
 	if R.has("joints") and kind in ["laser", "plasma"]:
@@ -1964,7 +2020,7 @@ func _pl_die() -> void:
 		hand_gun.visible = false      # (it falls from the hand: _drop_gun lays the real one down)
 	# each race's own death when its recording is there (<race>_death), else the shared one
 	var own := "%s_death" % race.trim_suffix("_velitel")
-	Game.play_at(mission, own if ResourceLoader.exists("res://assets/sounds/%s.wav" % own) else "death", global_position, -4)
+	Game.play_at(mission, own if Game.has_sound(own) else "death", global_position, -4)
 
 ## Hit: a short cry by race - [sound, dB, pitch, length in s, from where in the sound].
 ## Stand-ins cut from the sounds we have, until each race has its own <race>_hurt.
@@ -1986,7 +2042,7 @@ func _hurt_voice() -> void:
 		return
 	_hurt_cd = now + randf_range(0.9, 1.6)
 	var own := "%s_hurt" % race.trim_suffix("_velitel")
-	if ResourceLoader.exists("res://assets/sounds/%s.wav" % own):
+	if Game.has_sound(own):
 		Game.play_at(mission, own, global_position + Vector3.UP * 1.2, -3.0, randf_range(0.94, 1.06))
 		return
 	if not HURT.has(race):
@@ -2067,6 +2123,8 @@ func _credit(player_name: String) -> void:
 	if p and p.is_multiplayer_authority():
 		p.kills += 1
 		mission.hud.message("Zásah. Přestal se hýbat.", 2.5)
+		if p.has_method("say"):
+			p.get_tree().create_timer(0.4).timeout.connect(func(): if is_instance_valid(p): p.say("kill", 0.6))
 
 # ---- brain (host) ------------------------------------------------------------------
 func _go(p: Vector3) -> void:
@@ -2867,9 +2925,11 @@ func _reinf_tick(delta: float) -> void:
 		return             # (0.72) the mission has had its two lots of reinforcements already
 	var soldier: String = race.trim_suffix("_velitel")
 	var away := Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized()
+	var who := []
 	for i in (3 if Game.veteran() else 2):
-		var at: Vector3 = mission.free_spot(global_position + away * rng.randf_range(24.0, 32.0) + Vector3(rng.randf_range(-4, 4), 0.3, rng.randf_range(-4, 4)))
-		mission.spawn_alien(soldier, at)
+		who.append(soldier)
+	# (2026-11-26) they come by ship, down a beam everybody sees (mission.reinf_drop)
+	mission.reinf_drop(global_position + away * rng.randf_range(24.0, 32.0), who, rng)
 	_tlog("reinforcements")
 	_reinf_fx.rpc()
 
@@ -3357,55 +3417,107 @@ func _throw_nade(at: Vector3) -> void:
 	var v := Vector3(d.x / t, d.y / t + 0.5 * 9.8 * t, d.z / t)
 	_decloak_t = 1.6
 	_tlog("grenade")
-	_lob.rpc(from, v)
+	_nade_n += 1
+	_lob.rpc(from, v, _nade_n)
 
 func _fire_instead(at: Vector3) -> void:
 	_nade_cd = 3.0
 	if is_instance_valid(target):
 		_fire(target)
 
+## Alien plasma grenade (0.72.6): it flies along its arc without physics (each computer steps the
+## same arc against the same map, so it no longer rolls off somewhere else on each screen), sticks
+## where it lands and goes off NADE_FUSE s later - there, where everyone saw it land. The host has
+## the last word on the spot (_nade_down), the blast follows its landing, not a fixed 2.4 s timer
+## (it used to roll on and blow up later under somebody's feet).
+const NADE_FUSE := 1.2       # s from landing to the blast (time to jump away)
+const NADE_LOST := 3.5       # s in the air at most (thrown off the map): it goes off where it is
+var _nade_n := 0
+
 @rpc("authority", "call_local", "reliable")
-func _lob(from: Vector3, v: Vector3) -> void:
-	var rb := RigidBody3D.new()
-	rb.collision_layer = 8
-	rb.collision_mask = 1
-	rb.mass = 0.6
-	var cs := CollisionShape3D.new()
-	var sh := SphereShape3D.new()
-	sh.radius = 0.09
-	cs.shape = sh
-	rb.add_child(cs)
+func _lob(from: Vector3, v: Vector3, n: int = 0) -> void:
+	var g := Node3D.new()
+	g.name = "ANade_%s_%d" % [name, n]
 	var mi := MeshInstance3D.new()
 	var sm := SphereMesh.new()
 	sm.radius = 0.09; sm.height = 0.18; sm.radial_segments = 8; sm.rings = 4
 	mi.mesh = sm
 	mi.material_override = Game.color_mat(Color(0.35, 1.0, 0.45), true)
-	rb.add_child(mi)
+	g.add_child(mi)
 	var l := OmniLight3D.new()
+	l.name = "Light"
 	l.light_color = Color(0.35, 1.0, 0.45)
 	l.light_energy = 1.2
 	l.omni_range = 3.0
-	rb.add_child(l)
-	mission.add_child(rb)
-	rb.global_position = from
-	rb.linear_velocity = v
+	g.add_child(l)
+	mission.add_child(g)
+	g.global_position = from
 	Game.play_at(mission, "swish", from, -4)
-	for k in 3:
-		get_tree().create_timer(0.9 + k * 0.45).timeout.connect(func():
-			if not is_instance_valid(rb):
-				return
-			Game.play_at(mission, "plasma_grenade_beep", rb.global_position, 2)
-			l.light_energy = 4.0
-			var me: Node = mission.local_player()
-			if k == 0 and me and not me.dead and me.global_position.distance_to(rb.global_position) < 9.0:
-				pass)
-	get_tree().create_timer(2.4).timeout.connect(func():
-		if not is_instance_valid(rb):
+	# (a safety net: the thrower gone before the host's word came - it must not lie there for ever)
+	get_tree().create_timer(NADE_LOST + NADE_FUSE + 3.0).timeout.connect(func():
+		if is_instance_valid(g):
+			g.queue_free())
+	_nade_fly(g, v)
+
+func _nade_fly(g: Node3D, v: Vector3) -> void:
+	var t := 0.0
+	while is_instance_valid(g) and not g.has_meta("down"):
+		await get_tree().physics_frame
+		if not is_instance_valid(g) or g.has_meta("down") or not g.is_inside_tree():
 			return
-		var p := rb.global_position
-		rb.queue_free()
-		if multiplayer.is_server():
-			mission.explode(p, 4.5, 70.0 * (1.2 if Game.veteran() else 1.0), "-", false))
+		var dt := get_physics_process_delta_time()
+		t += dt
+		var p0 := g.global_position
+		v.y -= 9.8 * dt
+		var p1 := p0 + v * dt
+		var q := PhysicsRayQueryParameters3D.create(p0, p1, Game.WORLD | Game.GLASS)
+		var hit := g.get_world_3d().direct_space_state.intersect_ray(q)
+		if not hit.is_empty():
+			var nrm: Vector3 = hit["normal"]
+			p1 = hit["position"] + nrm * 0.09
+			if nrm.y > 0.45 or v.length() < 3.0:
+				g.set_meta("on", str(hit["collider"]))
+				g.global_position = p1
+				_nade_landed(g, p1)
+				return
+			# off a wall: it drops down by it, most of its speed gone (no rolling on)
+			v = (v - 2.0 * v.dot(nrm) * nrm) * 0.25
+		g.global_position = p1
+		if t > NADE_LOST:
+			_nade_landed(g, p1)
+			return
+
+func _nade_landed(g: Node3D, p: Vector3) -> void:
+	if multiplayer.is_server():
+		_nade_down.rpc(String(g.name), p)
+	else:
+		g.set_meta("rest", true)      # lies here until the host says where it really is
+
+@rpc("authority", "call_local", "reliable")
+func _nade_down(nm: String, p: Vector3) -> void:
+	var g := mission.get_node_or_null(nm) as Node3D
+	if g == null or g.has_meta("down"):
+		return
+	g.set_meta("down", true)
+	if g.has_meta("rest"):
+		g.set_meta("drift", g.global_position.distance_to(p))     # (how far off my own copy lay - test)
+	g.global_position = p
+	var l := g.get_node_or_null("Light") as OmniLight3D
+	# beeps from the moment it lands, faster and faster: the blast comes after the 3rd one
+	for at in [0.0, 0.5, 0.85]:
+		get_tree().create_timer(at).timeout.connect(func():
+			if not is_instance_valid(g):
+				return
+			Game.play_at(mission, "plasma_grenade_beep", g.global_position, 2)
+			if l:
+				l.light_energy = 4.0)
+	var dmg := 70.0 * (1.2 if Game.veteran() else 1.0)
+	var m := mission
+	get_tree().create_timer(NADE_FUSE).timeout.connect(func():
+		if is_instance_valid(g):
+			g.queue_free()
+		if is_instance_valid(m) and m.multiplayer.is_server():
+			m.explode(p, 4.5, dmg, "-", false))
 
 # ---- Ještěřani: flash traps -----------------------------------------------------------------------
 var traps_left := 0

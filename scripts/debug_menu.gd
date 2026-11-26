@@ -1,8 +1,8 @@
 extends CanvasLayer
 ## (0.80, Ari: "Debug mód na testování, něco co instantně odemkne všechno a takový ptákoviny")
-## Hidden from normal players: nothing in the menus points to it. It wakes with the launch
-## argument `--debug=1` or with Ctrl+Alt+Shift+D anywhere; then a small "DEBUG" shows in the
-## corner and F10 opens the panel. What it can do depends on where you are:
+## It wakes with the launch argument `--debug=1`, with Ctrl+Alt+Shift+D anywhere, or (Ari 26. 11.)
+## with the box in Nastavení → Ovládání - and then stays on after a restart (settings.cfg [game] debug).
+## A small "DEBUG (F10)" shows in the corner: F10 or a click on it opens the panel. What it can do depends on where you are:
 ##   campaign (solo / the host): all research done, money, everything into the stock, moskovium
 ##     and alloys, buildings / research / workshop finished, days forward, trust, a new mission;
 ##   your soldier (anyone): money, a promotion, talent points;
@@ -15,26 +15,35 @@ var on := false
 var god := false
 var _panel: PanelContainer
 var _box: VBoxContainer
-var _tag: Label
+var _tag: Button
 var _note: Label
 
 func _ready() -> void:
 	layer = 125
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	_tag = Label.new()
+	_tag = Button.new()
 	_tag.text = "DEBUG  (F10)"
-	_tag.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25))
+	_tag.flat = true
+	_tag.focus_mode = Control.FOCUS_NONE
+	for c in ["font_color", "font_hover_color", "font_pressed_color"]:
+		_tag.add_theme_color_override(c, Color(1.0, 0.35, 0.25))
 	_tag.add_theme_font_size_override("font_size", 8)
-	_tag.position = Vector2(4, 2)
-	_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tag.position = Vector2(2, 0)
+	_tag.pressed.connect(func():
+		if _panel and is_instance_valid(_panel):
+			_close()
+		else:
+			_open())
 	_tag.visible = false
 	add_child(_tag)
-	if Game.cmd_arg("debug", "") == "1":
+	if Game.cmd_arg("debug", "") == "1" or (Game.debug_mode and Game.autotest() == ""):
 		toggle_mode(true)
 
 func toggle_mode(v: bool) -> void:
 	on = v
 	_tag.visible = on
+	if on:
+		print("[DEBUG] debug mód zapnutý (F10 = panel)")
 	if not on:
 		god = false
 		_close()
@@ -45,6 +54,7 @@ func _input(e: InputEvent) -> void:
 	var k := e as InputEventKey
 	if k.physical_keycode == KEY_D and k.ctrl_pressed and k.alt_pressed and k.shift_pressed:
 		toggle_mode(not on)
+		Game.set_debug_mode(on)
 		get_viewport().set_input_as_handled()
 		return
 	if on and k.physical_keycode == KEY_F10:
@@ -53,6 +63,10 @@ func _input(e: InputEvent) -> void:
 		else:
 			_open()
 		get_viewport().set_input_as_handled()
+
+## The panel is open (the mission then leaves the mouse free and does not shoot on a click).
+func panel_open() -> bool:
+	return _panel != null and is_instance_valid(_panel)
 
 func _close() -> void:
 	if _panel and is_instance_valid(_panel):
