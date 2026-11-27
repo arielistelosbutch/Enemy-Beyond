@@ -1,4 +1,4 @@
-# Operace X - Enemy Beyond — prototyp 0.72.6
+# Operace X - Enemy Beyond — prototyp 0.72.7
 
 **Hratelný test (Windows 64 bit):** stáhni [hratelny-test/EnemyBeyond-0.28-windows.zip](hratelny-test/EnemyBeyond-0.28-windows.zip)
 (tlačítko „Download raw file“), rozbal a spusť `EnemyBeyond.exe` - nic se neinstaluje.
@@ -15,6 +15,16 @@ Velká aktualizace, na kterou jsem šetřil:
 - Válka sílí: v pozdní hře chytřejší a tvrdší vetřelci, noční tlupy, posily během mise, nemesis (zabiješ velitele - jdou po tobě), raketomety, těžká děla, granáty a miny. V co-op přitvrzuje s každým hráčem.
 - Ekonomika: všechno dražší, nákupy se doručují, kořist se dá prodat, nepovedená mise = ztracená výbava, výzkum skrytý za ???.
 - Nové modely zbraní a lodí vetřelců, na mapách vraky, krátery, trosky a fialový porost kolem UFO. Transportér už nestojí na kraji mapy a nic se nespawnuje v sobě.
+
+## Novinky 0.72.7
+- Šavle SV-01 ze slitin vetřelců: delší než nůž, velmi účinná zblízka a drží se jednou rukou, takže jde se štítem. Odemkne ji výzkum po laserech, vyrábí se v dílně.
+- Komando Štír: v tvorbě vojáka → Šablony je sedm hotových vojáků z vlastní party z 80. let. K tomu nové oblečení (košile bez rukávů, tílko, pásy s náboji křížem, staré polní popruhy, pilotky, čelenka) a vojáci občas dostanou přezdívku.
+- Stromy a auta jdou zničit: auto po zásazích kouří, hoří a vybuchne, strom chytne od laseru, plazmy nebo ohně a kanón nebo granát ho přelomí.
+- Poslední vetřelec se už neschovává napořád: po chvíli klidu si zavolá loď a utíká k ní (jde ho cestou zastřelit), zvířata vyrazí na tým a ozývají se.
+- Mise jsou na správném místě (města leží ve své zemi) a mají terén podle podnebí: poušť s plochými střechami a kaktusy, suchá step s akáciemi, tropy s džunglí a palmami. Věci na mapách už nezajíždějí do sebe.
+- Den a noc sedí s glóbem i podle ročního období, glóbus ukazuje, jaká bude denní doba při příletu. Měsíc v noci už tolik nesvítí.
+- Méně trhání: při požárech a výbuších (stíny, kouř), při příletu posil a vzniku vetřelců v co-opu, při prvním výstřelu.
+- Těžkou zbraň bez dvojnožky vleže už nejde vzít do ruky. Kontrolka v Kondoru už nesvítí zeleně přes celou kabinu.
 
 ## Novinky 0.72.6
 - Nové zvuky: dopady kulek podle povrchu (beton, kov, hlína, dřevo, tělo, vetřelec), svist kulek a plazmy kolem hlavy, krátké hlášky vojáků (přebíjím, kontakt, granát, zásah, mám ho, pomoc) a volání civilistů. Ještěřan a Bijec mají vlastní hlasy při zranění a smrti.

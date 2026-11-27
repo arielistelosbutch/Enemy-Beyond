@@ -402,6 +402,9 @@ const QUICK := [
 	["Karanténa (Nakažení, městečko)", {"group": "bijci", "type": "quarantine", "type_name": "Karanténa", "biome": "town", "place": "Slavonice", "extra_aliens": 1, "size": "large"}],
 	["Štěnice na lodi (Šediváci, les, zkušební)", {"group": "sedaci", "type": "bug", "type_name": "Štěnice na lodi", "biome": "forest", "place": "Lesy u Telče", "extra_aliens": 1, "size": "medium", "crew_of": "raider", "ufo": "raider"}],
 	["Uvízlý konvoj (Šediváci, les)", {"group": "sedaci", "type": "convoy", "type_name": "Uvízlý konvoj", "biome": "forest", "place": "Silnice u Jindřichova Hradce", "extra_aliens": 1, "size": "medium"}],
+	["Teror v pouštním městě (Šediváci, civilisté)", {"group": "sedaci", "type": "terror", "type_name": "Teror", "biome": "town", "place": "Asuán, Egypt", "extra_aliens": 1, "terrain": "desert", "lat": 24.1, "lon": 32.9, "size": "large"}],
+	["Havárie v džungli (Levité)", {"group": "levite", "type": "crash", "type_name": "Havárie UFO", "biome": "forest", "place": "Amazonas, Brazílie", "extra_aliens": 1, "terrain": "tropic", "lat": -3.5, "lon": -62.0, "size": "medium"}],
+	["Přistání v savaně (Ještěřani)", {"group": "jestetani", "type": "landed", "type_name": "Přistání UFO", "biome": "farm", "place": "Serengeti, Tanzanie", "extra_aliens": 1, "terrain": "dry", "lat": -2.3, "lon": 34.8, "size": "large"}],
 	["Poslední mise: Velín na Marsu (Velký mozek)", {"group": "myslodejove", "type": "mars", "type_name": "Velín na Marsu", "biome": "mars", "terrain": "mars", "place": "Mars - rudá pláň", "extra_aliens": 3, "size": "large"}],
 	["Náhodná mise", {}],
 ]
@@ -1377,7 +1380,7 @@ func _build_create() -> void:
 		_cycle(left, "Vesta", _look_names(Game.VESTS), Game.look_i(look, "vest", Game.VESTS), _look_pick(look, "vest"))
 		_cycle(left, "Kalhoty", _look_names(Game.PANTS), Game.look_i(look, "pants", Game.PANTS), _look_pick(look, "pants"))
 		_cycle(left, "Na hlavě", _look_names(Game.HEADGEAR), int(look.get("headgear", 0)), func(i): look["headgear"] = i; _build_create())
-		if Game.HEADGEAR[Game.look_i(look, "headgear", Game.HEADGEAR)][0] in ["beret", "bandana"]:
+		if Game.HEADGEAR[Game.look_i(look, "headgear", Game.HEADGEAR)][0] in ["beret", "bandana", "headband"]:
 			_cycle(left, "Barva látky", Game.BERET_COLORS.map(func(h): return h[0]), Game.look_i(look, "beret_color", Game.BERET_COLORS), _look_pick(look, "beret_color"))
 		_cycle(left, "Vlajka", Game.FLAGS.map(func(f): return f[1]), Game.flag_index(str(look.get("flag", ""))), func(i): look["flag"] = Game.FLAGS[i][0]; _refresh_preview())
 		var note := Label.new()
@@ -1479,6 +1482,24 @@ func _build_merc_presets(right: VBoxContainer) -> void:
 	UiSkin.section(ht)
 	right.add_child(ht)
 	_rlabel(right, "Uložený vzhled a jméno; u vojáka z rozdělených bodů i jeho body. Hod kostkami se neukládá - kostky se házejí vždy znovu.", FRAME, 7)
+	# 0.72.7: the ready-made squad (looks + name, never the points; cannot be deleted)
+	var st := Label.new()
+	st.text = Game.SQUAD_NAME
+	UiSkin.section(st)
+	right.add_child(st)
+	var sflow := HFlowContainer.new()
+	sflow.add_theme_constant_override("h_separation", 3)
+	sflow.add_theme_constant_override("v_separation", 2)
+	right.add_child(sflow)
+	for sq in Game.SQUAD:
+		var sqd: Dictionary = sq
+		var sb2 := _small_btn(sflow, String(sqd["label"]), func(): _apply_merc_preset(sqd))
+		sb2.custom_minimum_size = Vector2(0, 16)
+		sb2.tooltip_text = String(sqd["name"])
+	var mt := Label.new()
+	mt.text = "Moje šablony"
+	UiSkin.section(mt)
+	right.add_child(mt)
 	var list := Game.presets("merc")
 	if list.is_empty():
 		_rlabel(right, "Zatím žádná šablona.", TEXT, 8)
@@ -2723,13 +2744,28 @@ func _autotest() -> void:
 		"escort":
 			Net.mission_params = {"escort": true, "craft": -1, "transport": Game.cmd_arg("tr", "heli"), "escort_n": int(Game.cmd_arg("esc", "2")), "pilots": [], "driver": 0}
 			get_tree().change_scene_to_file("res://scenes/Escort.tscn")
-		"town", "zoo", "terror", "shouldershot", "radiosprint", "voice", "club", "uimission", "stance", "wshot", "sightshot", "scopelens", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "rooftest", "camoshot", "lookshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "leaktest", "leakmap", "ufohull", "ufoentry", "wedgetest", "leantest", "pockettest", "leaveany", "safeend", "failkit", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "reinfcap", "dropshot", "lzcheck", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "tasktest", "loadshots", "transport", "uifit", "groundtest", "kerbtest", "ceiltest", "rainshot", "lamptest", "wxtest", "wxshot", "pudcheck", "scorchshot", "tracktest", "lensshot", "interiors", "yardtest", "spectate", "dazetest", "chaintest", "echotest", "dirtshot", "flaretest", "civpanic", "nvgtest", "civstuck", "civlooks", "fragtest", "claytest", "sentrytest", "convoytest", "bugtest", "quartest", "quiettest", "scantest", "debugkeys", "gunlag", "alnadetest", "deadcost":
+		"town", "zoo", "terror", "shouldershot", "radiosprint", "voice", "club", "uimission", "stance", "wshot", "sightshot", "scopelens", "muzzleshot", "pose", "rlanim", "ufoshot", "mapshot", "objtest", "breaktest", "armstest", "invtest", "actshot", "stuntest", "tactics", "cloakshot", "doorshot", "passcheck", "rooftest", "camoshot", "lookshot", "squadshot", "soundcheck", "dronetest", "dronereal", "airdeath", "vipcheck", "climb", "rocktest", "hitbox", "leaktest", "leakmap", "ufohull", "ufoentry", "wedgetest", "leantest", "pockettest", "leaveany", "safeend", "failkit", "skyshot", "zfight", "suittest", "levgrab", "mirotest", "bijtest", "weaktest", "sgtest", "kanontest", "mgheat", "seedtest", "supplytest", "rockettest", "bvtest", "nadtest", "ohntest", "mystest", "koltest", "lasertest", "lcshot", "ppshot", "bijanim", "afkalien", "softparts", "fpmocap", "vrplay", "vrstrike", "strikeshot", "fpreload", "quickcut", "pronetest", "civanim", "civdeath", "tpwalk", "blendtest", "talenttest", "dragshot", "testroom", "plasmatest", "aitest", "nadetest", "searchtest", "feartest", "squadtest", "packtest", "heattest", "tunetest", "styletest", "dirtest", "nemtest", "civtest", "latetest", "reinfcap", "dropshot", "lzcheck", "gunshots", "topshot", "shieldtest", "shieldshot", "locktest", "mocapgame", "beltthrow", "fireshot", "abase", "radartest", "tasktest", "loadshots", "transport", "uifit", "groundtest", "kerbtest", "ceiltest", "rainshot", "lamptest", "wxtest", "wxshot", "pudcheck", "scorchshot", "tracktest", "lensshot", "interiors", "yardtest", "overlaptest", "spectate", "dazetest", "chaintest", "echotest", "dirtshot", "flaretest", "civpanic", "nvgtest", "civstuck", "civlooks", "fragtest", "claytest", "sentrytest", "convoytest", "bugtest", "quartest", "quiettest", "sabretest", "scantest", "debugkeys", "gunlag", "alnadetest", "deadcost", "lasttest", "wrecktest", "firelag":
 			Net.play_solo()
 			Campaign.active = false
 			Net.start_mission({"type": Game.cmd_arg("mtype", "terror"), "biome": Game.cmd_arg("biome", "town"), "night": Game.cmd_arg("day", "0") != "1",
-				"hour": float(Game.cmd_arg("hour", "14.0" if Game.cmd_arg("day", "0") == "1" else "23.0")), "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "testroom": Game.autotest() == "testroom", "terrain": Game.cmd_arg("terrain", "temperate"), "size": Game.cmd_arg("size", "medium"), "ufo": Game.cmd_arg("ufo", ""), "crew_of": Game.cmd_arg("crewof", ""), "group": Game.cmd_arg("group", ""), "research": Array(Game.cmd_arg("research", "").split(",", false)),
+				"hour": float(Game.cmd_arg("hour", "14.0" if Game.cmd_arg("day", "0") == "1" else "23.0")), "place": "Test", "type_name": "Test", "extra_aliens": 1, "id": -1, "testroom": Game.autotest() == "testroom", "terrain": Game.cmd_arg("terrain", "temperate"), "lon": float(Game.cmd_arg("lon", "15")), "size": Game.cmd_arg("size", "medium"), "ufo": Game.cmd_arg("ufo", ""), "crew_of": Game.cmd_arg("crewof", ""), "group": Game.cmd_arg("group", ""), "research": Array(Game.cmd_arg("research", "").split(",", false)),
 				"habits": {String(Game.merc.get("name", "")): Game.cmd_arg("habits", "").split(",", false)} if Game.cmd_arg("habits", "") != "" else {},
 				"styles": {String(Game.merc.get("name", "")): Array(Game.cmd_arg("styles", "").split(",", false))} if Game.cmd_arg("styles", "") != "" else {}})
+		"daynight":
+			# (2026-11-27) a mission lit by the campaign's sun over a place on a day (autotest_daynight.gd)
+			Net.play_solo()
+			Campaign.active = false
+			Net.start_mission(preload("res://scripts/autotest_daynight.gd").test_params())
+		"dnhost":
+			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
+			while Net.roster.size() < 2:
+				await get_tree().create_timer(0.2).timeout
+			await get_tree().create_timer(0.5).timeout
+			Net.start_mission(preload("res://scripts/autotest_daynight.gd").test_params())
+		"dnclient":
+			Game.merc["name"] = "Klient"
+			await get_tree().create_timer(1.5).timeout
+			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))
 		"recoverymission":
 			# (2026-11-26) the site of a wiped team: a crash map with two bodies, five Šediváci survived
 			Net.play_solo()
@@ -3212,8 +3248,8 @@ func _autotest() -> void:
 			await get_tree().create_timer(1.0).timeout
 			print("[LB] client goes down to the base alone")
 			Net.start_local_base({"type": "home", "type_name": "Základna", "base": Campaign.data["base"].duplicate(true), "grid_w": Campaign.GRID_W, "grid_h": Campaign.GRID_H, "transport": "heli", "live": [], "research": [], "night": false, "hour": 12.0, "blips": []})
-		"coophealhost", "aimphost", "safeouthost", "hullhost", "pothost", "leakhost", "quiethost", "alnadehost":
-			if Game.autotest() == "aimphost":
+		"coophealhost", "aimphost", "safeouthost", "hullhost", "pothost", "leakhost", "quiethost", "alnadehost", "cperfhost", "lasthost", "wreckhost", "firehost":
+			if Game.autotest() in ["aimphost", "cperfhost", "firehost"]:
 				Game.seed_override = int(Game.cmd_arg("seed", "4242"))     # (the same map for the old and the new AI)
 			Net.host(int(Game.cmd_arg("port", str(Net.PORT))))
 			while Net.roster.size() < int(Game.cmd_arg("players", "2")):
@@ -3224,7 +3260,7 @@ func _autotest() -> void:
 				mp["cid"] = "pottest"      # (0.70: the pay is counted only in a campaign mission)
 				mp["reward"] = 200
 			Net.start_mission(mp)
-		"coophealclient", "aimpclient", "safeoutclient", "hullclient", "potclient", "leakclient", "quietclient", "alnadeclient":
+		"coophealclient", "aimpclient", "safeoutclient", "hullclient", "potclient", "leakclient", "quietclient", "alnadeclient", "cperfclient", "lastclient", "wreckclient", "fireclient":
 			Game.merc["name"] = "Klient" if Game.cmd_arg("ci", "1") == "1" else "Klient" + Game.cmd_arg("ci", "1")
 			await get_tree().create_timer(1.0 + 0.5 * int(Game.cmd_arg("ci", "1"))).timeout
 			Net.join("127.0.0.1", int(Game.cmd_arg("port", str(Net.PORT))))

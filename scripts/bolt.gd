@@ -106,6 +106,9 @@ func _physics_process(dt: float) -> void:
 			hit.collider.sentry_hit(base)
 		if multiplayer.is_server() and hit.collider and hit.collider.has_meta("break"):
 			mission.hit_breakable(int(hit.collider.get_meta("break")), base, "plasma")
+		if multiplayer.is_server() and hit.collider and hit.collider.has_meta("wreck") and mission.wreck and kind in ["plasma", "lava"]:
+			# (27. 11.) strom/auto: plazma vetřelců pálí taky, jen strom chytne hůř (poloviční žár)
+			mission.wreck.hit(int(hit.collider.get_meta("wreck")), base * (0.5 if kind == "plasma" else 1.0), "laser" if red else "plasma", true, shooter_pos)
 		if kind == "plasma" and power >= 1.9 and multiplayer.is_server():
 			# the plasma cannon: the bolt bursts - through a wall, if need be
 			mission.explode(hit.position, 2.6, 30.0 * power / 2.0, "-", false)

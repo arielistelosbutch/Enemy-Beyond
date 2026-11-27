@@ -37,12 +37,18 @@ run pass_ind_$sd  200 h "passcheck .* 0 blocked"           --autotest=passcheck 
 run pass_town_$sd 200 h "passcheck .* 0 blocked"           --autotest=passcheck --mtype=terror --biome=town --seed=$sd
 run pass_farm_$sd 200 h "passcheck .* 0 blocked"           --autotest=passcheck --mtype=crash --biome=farm --seed=$sd
 done
+run pass_desert 200 h "passcheck .* 0 blocked"             --autotest=passcheck --mtype=terror --biome=town --terrain=desert --seed=1
 run menu_ui     300 x "\[UI\] ready: 0"                    --autotest=ui
 run mods_ui     200 x "\[MODS\] bought true"              --autotest=modsui
 run talent_ui   200 x "\[TALENT\] skip true chain true rank true spent true eye true drone true" --autotest=talentui
 run dice        60 s "RESULT dicetest ok"                tools/test/dicetest.gd
 run caprank     90 s "RESULT caprank ok"                 tools/test/caprank.gd
 run recovery    90 s "RESULT recoverytest ok"            tools/test/recoverytest.gd
+# (2026-11-27, Ari: "hra ukazovala den, ale ve hře byla noc") glóbus = mise, předpověď při příletu, roční doby
+run daynight   120 s "RESULT daynight ok"                tools/test/daynight.gd
+run dn_night   200 h "RESULT daynight daynight phase noc .*brief ok globe ok weather 'jasno, svítí měsíc' nvgwx ok" --autotest=daynight --lat=30 --lon=31.2 --cday=0.92 --weather=clear
+run dn_dusk    200 h "RESULT daynight daynight phase soumrak .*brief ok globe ok weather 'jasno, slunce" --autotest=daynight --lat=49.5 --lon=15.6 --cday=0.725 --weather=clear
+run dn_day     200 h "RESULT daynight daynight phase den .*brief ok globe ok weather 'zataženo'" --autotest=daynight --lat=-33.9 --lon=18.4 --cday=0.45 --weather=overcast
 run racelate    90 s "RESULT racelate ok"                tools/test/racelate.gd
 run sickbay     60 s "RESULT sickbaytest ok"             tools/test/sickbaytest.gd
 run debug       60 s "RESULT debugtest ok"               tools/test/debugtest.gd
@@ -59,6 +65,8 @@ run bug         200 h "RESULT bugtest tagged true gone false finished true" --au
 run bug_fail    200 h "RESULT bugtest tagged false gone true finished true" --autotest=bugtest --mtype=bug --biome=forest --ufo=raider --crewof=raider --fail=1
 run quarantine  300 h "RESULT quartest carriers [2-9] tell true/false hatched [1-9] saved true nest 0 finished true" --autotest=quartest --mtype=quarantine --biome=town --size=large
 run presets     200 x "\[PRESET\] first false list true merc true levels true dice_nolevels true gear true" --autotest=presets
+# 2026-11-27 Komando Štír: hotová parta v šablonách + přezdívky v generátoru jmen (snímky parta_*.png)
+run squadshot   300 x "RESULT squadshot 7 clenu, prezdivek [0-9]+/400, 0 chyb" --autotest=squadshot --day=1 --mtype=crash --biome=farm --seed=3
 run sights     1000 x "scope mode=scope on=true"          --autotest=sightshot --day=1 --fast=1
 run scopelens  300 x "RESULT scopelens bad 0"            --autotest=scopelens --day=1 --seed=3
 run menu_flick  200 x "RESULT menuflicker 0"               --autotest=menuflicker
@@ -87,16 +95,19 @@ run perf        200 h "RESULT perf frames"                --autotest=perf --mtyp
 run gunlag      400 h "RESULT gunlag minigun zaznam true .* navic -?[0-4]\.[0-9] ms" --autotest=gunlag --biome=town --seed=3 --gun=minigun --crew=grey,grey,grey,jestetan,jestetan,lihnoun,lihnoun,bijec,levit,ohar
 run deadcost    200 h "RESULT deadcost alive [0-9.]+ ms/krok .* dead 0\.0[0-2][0-9] ms/krok" --autotest=deadcost --perflog=1 --mtype=crash --biome=farm --seed=3 --crew=bijec,bijec,bijec,grey,grey,jestetan
 run roofwalk    300 h "RESULT gunlag minigun zaznam true klid [0-9]\.[0-9] ms .* strelba [0-9]\.[0-9] ms \(99 % ([0-9]|[1-3][0-9]),"  --autotest=gunlag --mtype=terror --biome=town --seed=3 --gun=minigun --roof=2 --walk=1 --crew=grey
+# (2026-11-27, Ari: lagy při velkém požáru) 24 ohňů + granát každých 1,5 s; stín jen u 2 nejbližších ohňů
+run firelag     300 h "RESULT firelag firelag klid [0-9.]+ ms pozar [0-9]\.[0-9] ms .* ohnu 2[0-4] stin [0-9]+ stin_ohnu [0-2] " --autotest=firelag --mtype=terror --biome=town --seed=3 --perflog=1
 run farview     300 x "RESULT farview"                   --autotest=farview --mtype=terror --biome=town --seed=3
 run loadprog  300 x "RESULT loadprog parked true same true signals true back_ms [0-9]+ loading_on_back false bar 1.00 .* dropped true" --autotest=loadprog
 run cart      120 h "RESULT carttest paid \\[true, true, 2, 1, 3, 0\\] kept \\[true, true, true, 51\\]" --autotest=carttest
 # co-op: two games at once (host and client on this machine)
 pair() {   # name, host mode, client mode, expected in host log, expected in client log, port
   local name=$1
-  timeout 120 $G --headless --path . -- --autotest=$2 --port=$6 > $LOG/${name}_host.log 2>&1 &
+  local pto=120; [ "$name" = coop_fire ] && pto=240
+  timeout $pto $G --headless --path . -- --autotest=$2 --port=$6 > $LOG/${name}_host.log 2>&1 &
   local hp=$!
   sleep 1
-  timeout 120 $G --headless --path . -- --autotest=$3 --port=$6 > $LOG/${name}_client.log 2>&1
+  timeout $pto $G --headless --path . -- --autotest=$3 --port=$6 > $LOG/${name}_client.log 2>&1
   wait $hp
   local errs=$(cat $LOG/${name}_host.log $LOG/${name}_client.log | grep -c "SCRIPT ERROR")
   if [ "$errs" = 0 ] && grep -qE "$4" $LOG/${name}_host.log && grep -qE "$5" $LOG/${name}_client.log; then
@@ -106,6 +117,7 @@ pair() {   # name, host mode, client mode, expected in host log, expected in cli
   fi
 }
 pair coop_mission host client          "players=2"                "blk=false vet=false players=2"  7901
+pair coop_fire  firehost fireclient     "RESULT firelag firehost .* stin_ohnu [0-2] " "RESULT firelag fireclient klid [0-9.]+ ms pozar [0-9]+\.[0-9] ms .* ohnu 2[0-4] stin [0-9]+ stin_ohnu [0-2] " 7995
 pair coop_radar nmradarhost nmradarclient "RESULT nm nmradarhost radar true" "RESULT nm nmradarclient radar true lit [1-9]" 7961
 pair coop_bug   nmbughost nmbugclient   "RESULT nm nmbughost radar false bug true gone true" "RESULT nm nmbugclient radar false lit 0 bug true gone true banner true" 7962
 pair coop_pot     pothost potclient     "RESULT potpaid pothost paid 315 money \\+315" "RESULT potpaid potclient paid 315 money \\+315" 7936
@@ -134,6 +146,36 @@ if [ "$(cat $LOG/coop_alnade_*.log | grep -c 'SCRIPT ERROR')" = 0 ] && grep -qE 
   pass=$((pass+1)); report+="OK    coop_alnade\n"
 else
   fail=$((fail+1)); report+="CHYBA coop_alnade\n"
+fi
+# 2026-11-27 stromy a auta: auto hoří a vybuchne (a zasáhne vedlejší), laser zapálí strom, kanón ho porazí, granát taky
+run wreck_town 200 h "RESULT wrecktest trees [0-9]+ cars [0-9]+ car_smoke true car_burn true car_boom true wreck true chain [1-9][0-9]* tree_burn true tree_fall true lying true stump true" --autotest=wrecktest --mtype=terror --biome=town --seed=3 --day=1
+run wreck_farm 200 h "RESULT wrecktest .* tree_burn true tree_fall true lying true stump true blast_fall true" --autotest=wrecktest --mtype=crash --biome=farm --seed=3 --day=1
+run wreck_stress 200 h "RESULT wreckstress lit 8 cars 6 gone 6" --autotest=wrecktest --stress=1 --mtype=terror --biome=town --seed=3 --day=1
+WRARGS="--mtype=terror --biome=town --seed=3 --day=1"
+timeout 200 $G --headless --path . -- --autotest=wreckhost --port=7998 $WRARGS > $LOG/coop_wreck_host.log 2>&1 &
+wrp=$!; sleep 1
+timeout 200 $G --headless --path . -- --autotest=wreckclient --port=7998 $WRARGS > $LOG/coop_wreck_client.log 2>&1
+wait $wrp
+wh=$(grep -oE "states .* hash -?[0-9]+" $LOG/coop_wreck_host.log); wc=$(grep -oE "states .* hash -?[0-9]+" $LOG/coop_wreck_client.log)
+if [ "$(cat $LOG/coop_wreck_*.log | grep -c 'SCRIPT ERROR')" = 0 ] && [ -n "$wh" ] && [ "$wh" = "$wc" ] && grep -q "lying true" $LOG/coop_wreck_client.log; then
+  pass=$((pass+1)); report+="OK    coop_wreck\n"
+else
+  fail=$((fail+1)); report+="CHYBA coop_wreck\n"
+fi
+# 2026-11-27 the last alien does not hide for ever: it runs for a ship (beam) or, a beast, comes out to hunt
+run last_crash  300 h "RESULT last lasttest mode done ship 1 escaped 1 done true" --autotest=lasttest --mtype=crash --biome=farm --crew=grey,grey,grey,grey --seed=3 --lastquiet=3
+run last_terror 300 h "RESULT last lasttest mode done ship 1 escaped 1 done true reach false sky true" --autotest=lasttest --mtype=terror --biome=town --crew=grey,grey,grey,grey,grey --seed=3 --lastquiet=3
+run last_shot   300 h "RESULT last lasttest mode done ship 1 escaped 0 done true" --autotest=lasttest --mtype=crash --biome=farm --crew=grey,grey,grey,grey --seed=3 --lastquiet=3 --shoot=1
+run last_beast  300 h "RESULT last lasttest mode hunt ship 0 escaped 0 done false reach true" --autotest=lasttest --mtype=crash --biome=farm --crew=lihnoun,lihnoun,grey,grey --race=lihnoun --seed=3 --lastquiet=3
+LSARGS="--mtype=crash --biome=farm --crew=grey,grey,grey,grey --seed=3 --lastquiet=3"
+timeout 200 $G --headless --path . -- --autotest=lasthost --port=7995 $LSARGS > $LOG/coop_last_host.log 2>&1 &
+lsp=$!; sleep 1
+timeout 200 $G --headless --path . -- --autotest=lastclient --port=7995 $LSARGS > $LOG/coop_last_client.log 2>&1
+wait $lsp
+if [ "$(cat $LOG/coop_last_*.log | grep -c 'SCRIPT ERROR')" = 0 ] && grep -qE "RESULT last lasthost mode done ship 1 escaped 1 done true" $LOG/coop_last_host.log && grep -qE "RESULT last lastclient mode - ship 1 escaped 1 done true" $LOG/coop_last_client.log; then
+  pass=$((pass+1)); report+="OK    coop_last\n"
+else
+  fail=$((fail+1)); report+="CHYBA coop_last\n"
 fi
 pair coop_base    lbhost lbclient       "start_mission"            "RESULT lb lbclient players 2" 7903
 pair host_base    hbhost hbclient       "RESULT hb drop hbhost players 2" "RESULT hbclient globe true day \\+0\\.0[1-9]" 7951
@@ -196,9 +238,32 @@ slow_load() {
 }
 slow_load
 quad ai_coop4 "RESULT aimp old 0 players 4 hide [1-9]" 7915
+# (2026-11-27, trhání v co-opu) hostitel + klient: střelba, posily z lodi, výbuch - záznamník výkonu u obou
+CPARGS="--players=2 --perflog=1 --mtype=crash --biome=farm --seed=3 --crew=grey,grey,grey,jestetan,jestetan,lihnoun,bijec,levit"
+timeout 200 $G --headless --path . -- --autotest=cperfhost --port=7992 $CPARGS > $LOG/coop_perf_host.log 2>&1 &
+cpp=$!; sleep 1
+timeout 200 $G --headless --path . -- --autotest=cperfclient --ci=1 --port=7992 $CPARGS > $LOG/coop_perf_client.log 2>&1
+wait $cpp
+if [ "$(cat $LOG/coop_perf_*.log | grep -c 'SCRIPT ERROR')" = 0 ] && grep -qE "RESULT cperf cperfhost frames [0-9]{3,}" $LOG/coop_perf_host.log && grep -qE "RESULT cperf cperfclient frames [0-9]{3,}" $LOG/coop_perf_client.log; then
+  pass=$((pass+1)); report+="OK    coop_perf\n"
+else
+  fail=$((fail+1)); report+="CHYBA coop_perf\n"
+fi
 pair lobby_kick kickhost kickclient "RESULT kick summary rows 2 ping [0-9]+ mic open after 1 rejoined false" "RESULT kick client .*vyhodil.*za 5 min" 7914
 pair coop_escort_kit escorthost escortclient "RESULT escortkit escorthost gun laser heavy plasma_cannon hawk true fired [1-9]" "RESULT escortkit escortclient gun laser heavy plasma_cannon hawk false fired [1-9]" 7974
 pair coop_air_sfx airhost airclient "RESULT airsfx airhost shots [1-9][0-9]* missiles [1-9]" "RESULT airsfx airclient shots [1-9][0-9]* missiles [1-9]" 7973
+# (2026-11-27) co-op: the client lights the mission exactly like the host (a dusk in Vysočina)
+timeout 120 $G --headless --path . -- --autotest=dnhost --port=7996 --lat=49.5 --lon=15.6 --cday=0.725 --weather=clear > $LOG/daynight_coop_host.log 2>&1 &
+dnp=$!; sleep 1
+timeout 120 $G --headless --path . -- --autotest=dnclient --port=7996 > $LOG/daynight_coop_client.log 2>&1
+wait $dnp
+dnh=$(grep -oE "phase [a-z]+ sun [-0-9.]+ moon [0-9.]+ amb [0-9.]+ brief ok globe ok" $LOG/daynight_coop_host.log)
+dnc=$(grep -oE "phase [a-z]+ sun [-0-9.]+ moon [0-9.]+ amb [0-9.]+ brief ok globe ok" $LOG/daynight_coop_client.log)
+if [ -n "$dnh" ] && [ "$dnh" = "$dnc" ] && [ "$(cat $LOG/daynight_coop_*.log | grep -c 'SCRIPT ERROR')" = 0 ]; then
+  pass=$((pass+1)); report+="OK    daynight_coop\n"
+else
+  fail=$((fail+1)); report+="CHYBA daynight_coop ($dnh | $dnc)\n"
+fi
 pair ufo_hull hullhost hullclient "RESULT ufohull raider rays [0-9]+ leak 0\.[0-4] % hug_inside 0 seen 0" "RESULT ufohull raider rays [0-9]+ leak 0\.[0-4] % hug_inside 0 seen 0" 7917
 pair coop_leak leakhost leakclient "RESULT leakhost .* stone_leak 0\.[0-4] %" "RESULT leakclient .* stone_leak 0\.[0-4] %" 7958
 pair coop_flare flarehost flareclient "RESULT coopflare flarehost seen (59|6[0-9]) pos \\(-?[0-9.]+, [0-9]" "RESULT coopflare flareclient seen (59|6[0-9]) pos \\(-?[0-9.]+, [0-9]" 7918
@@ -245,12 +310,16 @@ run ceiling   200 h "RESULT ceiltest [0-9]+ spots, [0-9]+ tries, leaks 0, unstuc
 for bm in town farm mountain industrial base; do
 run interiors_$bm 200 h "RESULT interiors [0-9]+ houses, pockets 0, stairs_bad 0" --autotest=interiors --mtype=terror --biome=$bm --seed=3
 done
+# (2026-11-27) the desert town: flat roofs, so the whole ground floor is sampled
+run interiors_desert 200 h "RESULT interiors [0-9]+ houses, pockets 0, stairs_bad 0" --autotest=interiors --mtype=terror --biome=town --terrain=desert --seed=3
+run interiors_dry 200 h "RESULT interiors [0-9]+ houses, pockets 0, stairs_bad 0" --autotest=interiors --mtype=terror --biome=farm --terrain=dry --seed=3
 for bm in farm town; do
 run yard_$bm 150 h "RESULT yardtest moved [0-9]+, indoors 0," --autotest=yardtest --mtype=quarantine --biome=$bm --seed=3
 done
 run spectate  200 x "RESULT spectate active true eyes true next true auto true running true noaim true" --autotest=spectate --mtype=terror --biome=farm --seed=3 --day=1
 run daze      150 h "RESULT dazetest home false frozen ([0-3]?[0-9]) % .* cooldown true wall true" --autotest=dazetest --crew=ohar,grey --mtype=crash --biome=farm --seed=3
 run quiet     240 h "RESULT quiettest guns [1-9][0-9]* bad 0 knife true steps true" --autotest=quiettest --crew=grey,grey,grey,grey,grey,grey,grey,grey --mtype=crash --biome=farm --seed=3
+run sabre     120 h "RESULT sabretest shield true near true far true swing true clip true" --autotest=sabretest --crew=jestetan,grey --mtype=crash --biome=farm --seed=3
 run scan    200 h "RESULT scantest base true upgraded true belt true" --autotest=scantest --mtype=terror --biome=town --seed=3 --day=1
 run debugkeys 200 h "RESULT debugkeys ok" --autotest=debugkeys --mtype=crash --biome=farm --seed=3 --day=1
 run daze_base 150 h "RESULT dazetest home true frozen ([0-2]?[0-9]) % .* cooldown true wall true" --autotest=dazebase --attack=1 --crew=ohar,grey
@@ -323,6 +392,7 @@ run ohntest    150 h "RESULT ohntest knows true charged true hurt true" --autote
 run mystest    150 h "RESULT mystest moved true again false alive true" --autotest=mystest --mtype=landed
 run koltest    200 h "RESULT koltest found true up true top [0-9.]+ down true" --autotest=koltest --mtype=terror --biome=town
 run lasertest  120 h "RESULT lasertest drained true waiting true ready true burst true pr_auto true mg_dry true mg_full true edge true" --autotest=lasertest --mtype=landed
+run prone_heavy 200 h "RESULT pronetest stowed true key true inv true forced true back true pistol true standing true" --autotest=pronetest --mtype=crash --biome=farm --seed=3
 run lcshot     150 h "RESULT lcshot hit true shards true hum true ready true" --autotest=lcshot --mtype=landed
 run lcsound    60 s "RESULT lcsound ok"                 tools/test/lcsound.gd
 run plasmatest 150 h "RESULT plasmatest pistol 30 hot true interlock true cannon 6 minigun true rifle 15 grenade true seared true mags_left 0" --autotest=plasmatest --mtype=landed
@@ -371,4 +441,11 @@ timeout 120 $G --headless --path . -s tools/test/cartest.gd > $LOG/cartest.log 2
 if grep -q "RESULT cartest ok" $LOG/cartest.log; then pass=$((pass+1)); report+="OK    cartest\n"; else fail=$((fail+1)); report+="CHYBA cartest $(grep RESULT $LOG/cartest.log | cut -c1-120)\n"; fi
 # (0.72, Ari 22. 11.) the yard forklift is the model v_forklift with collision as it looks
 run forklift 120 s "RESULT forklifttest ok" tools/test/forklifttest.gd
+# (Ari 27. 11.) places, countries and climate of missions (Egypt, Sahara with grass)
+run geo 240 s "RESULT geotest ok" tools/test/geotest.gd
+# (Ari 27. 11.) nothing stands inside anything else (cars in cars, a thing in a house): physics + the visible boxes
+for ov in "terror town temperate 3" "terror town desert 2" "crash farm dry 2" "landed forest tropic 1" "sabotage industrial temperate 2"; do
+  set -- $ov
+  run overlap_$2_$3 200 h "RESULT overlaptest props [0-9]+ pairs 0 .* seen 0 of" --autotest=overlaptest --mtype=$1 --biome=$2 --terrain=$3 --seed=$4 --day=1 --size=large
+done
 echo -e "\n==== VELKÝ TEST: $pass OK, $fail CHYB ====\n$report"

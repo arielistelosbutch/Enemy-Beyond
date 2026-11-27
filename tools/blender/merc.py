@@ -156,7 +156,15 @@ top = [torso(tee), bb(tee, (0, 0.0, 1.435), (0.16, 0.15, 0.03), "spine", 0.01)] 
 for s, x in (("L", 1), ("R", -1)):
     top.append(bb(tee, (0.215 * x, 0, 1.345), (0.105, 0.115, 0.13), "upperarm." + s))      # short sleeves
 piece("Look_TopTee", top)
-piece("Look_TopTank", [torso(tee)])                    # the woman's "no shirt": a tank top
+# the tank top (woman's "no shirt", Game.TOPS "singlet"): a full lower torso, a narrower chest
+# and thin straps over the shoulders, so the bare shoulders show (it no longer reads as a plate)
+tk = [bb(tee, (0, 0, 1.165), (0.38, 0.22, 0.23), "spine", 0.03),
+      bb(tee, (0, 0, 1.33), (0.24, 0.215, 0.14), "spine", 0.02),
+      bb(tee, (0, 0.0, 1.22), (0.36, 0.218, 0.1), "spine", 0.025)]
+for x in (1, -1):
+    tk.append(bb(tee, (0.1 * x, 0.0, 1.415), (0.05, 0.218, 0.05), "spine", 0.008))
+tk.append(bb(tee, (0, 0.104, 1.405), (0.09, 0.012, 0.012), "spine", 0.004))    # the neckline seam
+piece("Look_TopTank", tk)
 
 # ---- trousers (Game.PANTS): cargo pockets and the armoured knee pads are pieces of their own ----
 pk, kp = [], []
@@ -194,6 +202,73 @@ for x in (1, -1):
     v.append(bb(webbing, (0.11 * x, 0.0, 1.448), (0.045, 0.24, 0.012), "spine", 0.004))
     v.append(box(webbing, (0, -0.116, 1.3), (0.04, 0.012, 0.38), rot=(0, 0.6 * x, 0), group="spine"))   # X on the back
 piece("Look_VestRig", v)
+
+leather = mat("Leather", (0.09, 0.06, 0.04), rough=0.6)
+# ---- 0.72.7 (Ari): Komando Štír - kit in the style of 1980s commandos (own design, no film's) ----
+# a cut-off field shirt: torn-off sleeves (bare arms), open collar, two chest pockets (Game.TOPS "cutoff")
+co = [torso(cloth)]
+for x in (1, -1):
+    co.append(box(cloth, (0.05 * x, 0.1, 1.44), (0.07, 0.03, 0.05), rot=(0.5, 0, 0.45 * x), group="spine"))   # open collar flaps
+    co.append(bb(cloth, (0.085 * x, 0.118, 1.33), (0.09, 0.014, 0.085), "spine", 0.006))                    # chest pocket
+    co.append(bb(cloth, (0.085 * x, 0.126, 1.37), (0.094, 0.012, 0.026), "spine", 0.004))                   # its flap
+    co.append(box(webbing, (0.085 * x, 0.133, 1.362), (0.012, 0.004, 0.012), group="spine"))                 # button
+    for k, (dy, dz, h) in enumerate(((-0.07, 1.405, 0.05), (-0.02, 1.398, 0.064), (0.03, 1.402, 0.045), (0.075, 1.396, 0.06))):
+        co.append(box(cloth, (0.195 * x, dy, dz), (0.02, 0.045, h), rot=(0, 0.18 * x * (1 if k % 2 else -1), 0), group="spine"))  # frayed armholes
+co.append(box(webbing, (0.0, 0.117, 1.25), (0.012, 0.006, 0.26), group="spine"))                            # the button strip
+for k in range(4):
+    co.append(box(webbing, (0.0, 0.121, 1.16 + k * 0.06), (0.01, 0.004, 0.01), group="spine"))
+piece("Look_TopCutoff", co)
+
+# crossed ammunition belts over the chest and back (Game.VESTS "bandolier")
+brass = mat("Brass", (0.72, 0.52, 0.2), rough=0.35)
+bullet = mat("BulletCopper", (0.55, 0.3, 0.16), rough=0.4)
+bd = []
+BZ = 1.232                                  # the middle of the cross
+for side_y, sgn in ((0.128, 1), (-0.128, -1)):
+    for a in (0.62, -0.62):
+        d = (math.sin(a), math.cos(a))
+        bd.append(box(leather, (0, side_y, BZ), (0.05, 0.012, 0.46), rot=(0, a, 0), group="spine"))
+        for k in range(-5, 6):
+            t = k * 0.042
+            if abs(t) < 0.03 and a < 0:
+                continue                      # (where the belts cross, one covers the other)
+            bd.append(box(brass, (d[0] * t, side_y + 0.011 * sgn, BZ + d[1] * t), (0.04, 0.012, 0.014), rot=(0, a, 0), group="spine"))
+            bd.append(box(bullet, (d[0] * t + math.cos(a) * 0.0245, side_y + 0.011 * sgn, BZ + d[1] * t - math.sin(a) * 0.0245), (0.012, 0.01, 0.01), rot=(0, a, 0), group="spine"))          # the bullet
+            bd.append(box(bullet, (d[0] * t + math.cos(a) * 0.0325, side_y + 0.011 * sgn, BZ + d[1] * t - math.sin(a) * 0.0325), (0.005, 0.006, 0.006), rot=(0, a, 0), group="spine"))         # its nose
+# each belt is one loop: the front and the back run over one shoulder and join under the other arm
+for a in (0.62, -0.62):
+    sx = 1 if a > 0 else -1                   # the shoulder its upper end lies on
+    top_x, low_x = math.sin(a) * 0.23, -math.sin(a) * 0.23
+    top_z, low_z = BZ + math.cos(a) * 0.23, BZ - math.cos(a) * 0.23
+    bd.append(box(leather, (top_x, 0.0, 1.437), (0.05, 0.268, 0.012), group="spine"))          # over the shoulder
+    bd.append(box(leather, (top_x, 0.122, 1.43), (0.05, 0.012, 0.026), group="spine"))         # (rounding the edge)
+    bd.append(box(leather, (top_x, -0.122, 1.43), (0.05, 0.012, 0.026), group="spine"))
+    sz = low_z + 0.012
+    bd.append(box(leather, (-sx * 0.198, 0.0, sz), (0.012, 0.268, 0.05), group="spine"))               # round the side
+    bd.append(box(leather, (low_x * 0.92 - sx * 0.01, 0.122, sz), (0.06, 0.012, 0.05), group="spine"))  # (into the corners)
+    bd.append(box(leather, (low_x * 0.92 - sx * 0.01, -0.122, sz), (0.06, 0.012, 0.05), group="spine"))
+    bd.append(box(metal, (-sx * 0.206, 0.0, sz), (0.006, 0.05, 0.058), group="spine"))                 # the buckle
+    bd.append(box(leather, (-sx * 0.208, 0.0, sz), (0.004, 0.02, 0.05), group="spine"))
+piece("Look_VestBandolier", bd)
+
+# old-school load-bearing web gear: Y suspenders, a wide pistol belt with ammo pouches,
+# a canteen and a field-dressing pouch on the strap (Game.VESTS "web")
+wg = []
+for x in (1, -1):
+    wg.append(bb(webbing, (0.1 * x, 0.12, 1.27), (0.042, 0.012, 0.34), "spine", 0.004))              # front straps
+    wg.append(bb(webbing, (0.1 * x, 0.0, 1.448), (0.046, 0.24, 0.012), "spine", 0.004))
+    wg.append(box(webbing, (0.045 * x, -0.12, 1.33), (0.04, 0.012, 0.24), rot=(0, -0.35 * x, 0), group="spine"))   # the Y on the back
+    wg.append(bb(metal, (0.1 * x, 0.128, 1.13), (0.03, 0.008, 0.02), "spine", 0.003))              # hooks
+    wg.append(bb(vest, (0.165 * x, 0.085, 0.985), (0.075, 0.07, 0.085), "hips", 0.01))              # ammo pouches
+    wg.append(bb(vest, (0.165 * x, 0.088, 1.03), (0.08, 0.075, 0.02), "hips", 0.005))
+    wg.append(box(metal, (0.165 * x, 0.124, 1.02), (0.012, 0.004, 0.012), group="hips"))
+wg.append(bb(webbing, (0, -0.005, 0.965), (0.38, 0.24, 0.055), "hips", 0.008))                    # the pistol belt
+wg.append(bb(metal, (0, 0.117, 0.965), (0.06, 0.008, 0.035), "hips", 0.004))
+wg.append(cyl(vest, (-0.12, -0.13, 0.93), 0.045, 0.13, verts=10, group="hips"))                    # the canteen
+wg.append(cyl(webbing, (-0.12, -0.13, 1.0), 0.02, 0.02, verts=6, group="hips"))
+wg.append(bb(vest, (0.1, 0.135, 1.36), (0.055, 0.03, 0.06), "spine", 0.006))                       # field dressing
+wg.append(bb(vest, (0.09, -0.135, 0.94), (0.11, 0.04, 0.07), "hips", 0.008))                       # the buttpack
+piece("Look_VestWeb", wg)
 
 # ---- flag on the right shoulder (Game.FLAGS: layout + three colours set by the game) ----
 F1, F2, F3 = mat("Flag1", (0.95, 0.95, 0.95)), mat("Flag2", (0.8, 0.1, 0.1)), mat("Flag3", (0.1, 0.25, 0.6))
@@ -394,6 +469,18 @@ piece("Look_GlassShades", [box(shades, (0.042, 0.117, 1.692), (0.05, 0.006, 0.02
                            box(shades, (0, 0.117, 1.699), (0.036, 0.006, 0.006), group="head")] + temples())
 piece("Look_GlassBallistic", [box(amber, (0, 0.118, 1.692), (0.176, 0.006, 0.032), group="head"),
                               box(shades, (0, 0.119, 1.71), (0.18, 0.008, 0.007), group="head")] + temples())
+# 0.72.7: aviator glasses - thin gold frame, big drop-shaped green lenses (Game.GLASSES "aviator")
+avg = mat("AviatorGold", (0.78, 0.6, 0.22), rough=0.3)
+avl = mat("AviatorLens", (0.08, 0.14, 0.09), rough=0.1)
+av = [box(avg, (0, 0.119, 1.708), (0.04, 0.005, 0.004), group="head"),          # the double bridge
+      box(avg, (0, 0.119, 1.701), (0.026, 0.005, 0.003), group="head")]
+for x in (1, -1):
+    av.append(box(avl, (0.046 * x, 0.117, 1.693), (0.058, 0.005, 0.03), group="head"))
+    av.append(box(avl, (0.05 * x, 0.117, 1.674), (0.044, 0.005, 0.014), rot=(0, -0.25 * x, 0), group="head"))   # the drop
+    av.append(box(avg, (0.046 * x, 0.12, 1.709), (0.062, 0.004, 0.004), group="head"))                         # top rim
+    av.append(box(avg, (0.077 * x, 0.12, 1.69), (0.004, 0.004, 0.036), group="head"))
+    av.append(box(avg, (0.093 * x, 0.05, 1.7), (0.004, 0.13, 0.004), group="head"))                            # temples
+piece("Look_GlassAviator", av)
 scarf = mat("Scarf", (0.36, 0.33, 0.25))
 scarf2 = mat("ScarfLine", (0.06, 0.06, 0.05))
 piece("Look_NeckShemagh", [bb(scarf, (0, 0.01, 1.47), (0.17, 0.165, 0.07), "spine", 0.02),
@@ -511,6 +598,12 @@ for x in (1, -1):
 hs.append(box(metal, (0.115, 0.055, 1.63), (0.008, 0.11, 0.008), rot=(0.45, 0, 0.2), group="head"))   # the microphone
 hs.append(box(webbing, (0.1, 0.108, 1.603), (0.014, 0.016, 0.014), group="head"))
 piece("Gear_Headset", hs)
+# 0.72.7: a rolled cloth headband tied at the back, long tails (Game.HEADGEAR "headband", beret colours)
+hb = [box(bandana, (0, 0.002, 1.735), (0.224, 0.244, 0.024), group="head"),
+      box(bandana, (0.01, -0.128, 1.735), (0.032, 0.022, 0.03), group="head")]                    # the knot
+for (dx, rz, ln) in ((0.022, 0.12, 0.13), (-0.004, -0.1, 0.11)):
+    hb.append(box(bandana, (dx, -0.142, 1.735 - ln / 2), (0.024, 0.006, ln), rot=(0.28, 0, rz), group="head"))
+piece("Gear_Headband", hb)
 # helmet torch (on the left side)
 piece("Gear_Torch", [cyl(metal, (0.138, 0.05, 1.765), 0.022, 0.12, verts=6, rot=(math.pi / 2, 0, 0), group="head"),
                      cyl(lens, (0.138, 0.112, 1.765), 0.02, 0.005, verts=6, rot=(math.pi / 2, 0, 0), group="head")])

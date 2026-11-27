@@ -782,6 +782,78 @@ def energo_nuz():
     p.append(bx(L["coil"], (0, 0.12, 0.017), (0.006, 0.08, 0.004), 0.001))                # spine conductor
     save(p, "Energo_nuz")
 
+def _loft(m, rings, cap=True):
+    """A mesh through rings of points (each ring the same count, in order); ends capped."""
+    import bpy
+    me = bpy.data.meshes.new("loft")
+    vs, fs = [], []
+    n = len(rings[0])
+    for r in rings:
+        vs += [tuple(v) for v in r]
+    for i in range(len(rings) - 1):
+        for k in range(n):
+            a, b = i * n + k, i * n + (k + 1) % n
+            fs.append((a, b, b + n, a + n))
+    if cap:
+        fs.append(tuple(range(n - 1, -1, -1)))
+        last = (len(rings) - 1) * n
+        fs.append(tuple(range(last, last + n)))
+    me.from_pydata(vs, [], fs)
+    me.validate()
+    o = bpy.data.objects.new("loft", me)
+    bpy.context.scene.collection.objects.link(o)
+    o.data.materials.append(m)
+    return o
+
+def savle():
+    """X-WEP-013 / SV-01 (Ari, 0.80): a sabre cut by laser from the alien hull alloy - a long, slightly
+    curved blade (edge on the convex side, -Z, like the knife), dark violet sheen, a glowing laser-cut
+    fuller along both flats, our steel guard with a knuckle bow and a rubber grip. Origin = the grip,
+    blade along +Y like the knife (the game holds it the same way)."""
+    reset(); m = M(); p = []
+    alloy = mat2("SabreAlloy", (0.2, 0.17, 0.25), 0.28, 0.85)       # BSH-02's alloy
+    seam = mat2("SabreSeam", (0.55, 0.35, 0.95), 0.4, emit=1.6)      # the laser-cut fuller
+    y0, y1, N = 0.085, 0.86, 26
+    def cz(t):                       # the blade's centre line: curving back towards the spine at the tip
+        return 0.004 + 0.07 * t * t
+    rings, fuller = [], {1: [], -1: []}
+    for i in range(N + 1):
+        t = i / N
+        y = y0 + (y1 - y0) * t
+        w = 0.034 - 0.01 * t                     # width spine to edge
+        th = 0.0065 - 0.003 * t                  # thickness at the spine
+        if t > 0.9:                              # the point: the edge sweeps up to the spine
+            k = (t - 0.9) / 0.1
+            w *= max(0.04, 1.0 - k)
+            th *= max(0.25, 1.0 - 0.75 * k)
+        zs = cz(t) + 0.017                       # the spine stays on the curve, the edge comes up to it
+        ze = zs - w
+        rings.append([(th / 2, y, zs), (th * 0.45, y, ze + w * 0.35), (0.0, y, ze),
+                      (-th * 0.45, y, ze + w * 0.35), (-th / 2, y, zs)])
+        if 0.04 < t < 0.78:
+            for sd in (1, -1):
+                zf = zs - w * 0.3
+                x = sd * (th * 0.48 + 0.0004)
+                fuller[sd].append([(x, y, zf + 0.0022), (x, y, zf - 0.0022), (x - sd * 0.0003, y, zf - 0.0022), (x - sd * 0.0003, y, zf + 0.0022)])
+    p.append(smooth(_loft(alloy, rings)))
+    for sd in (1, -1):
+        p.append(_loft(seam, fuller[sd]))
+    # grip, guard, knuckle bow, pommel
+    h = cyl(m["poly"], (0, 0.0, 0.004), 0.016, 0.15, verts=12, rot=(PI2, 0, 0))
+    for v in h.data.vertices:
+        v.co.x *= 0.78
+    p.append(smooth(h))
+    for i in range(8):
+        p.append(ring(m["black"], -0.06 + i * 0.017, 0.004, 0.0165, 0.004, verts=12))
+    p.append(bx(m["dark"], (0, 0.077, 0.0), (0.03, 0.014, 0.075), 0.003, seg=2))          # guard
+    p.append(bx(alloy, (0, 0.077, 0.022), (0.034, 0.016, 0.018), 0.003, seg=2))           # alloy quillon block
+    p.append(bx(seam, (0, 0.077, 0.032), (0.035, 0.004, 0.004), 0.0008))
+    bow = [(0, 0.077, -0.036), (0, 0.04, -0.045), (0, -0.0, -0.047), (0, -0.045, -0.04), (0, -0.075, -0.016)]
+    for a, b in zip(bow, bow[1:]):
+        p.append(tb(m["dark"], a, b, 0.0045, verts=8))
+    p.append(smooth(bev(bx(alloy, (0, -0.085, 0.004), (0.026, 0.022, 0.03), 0.006, seg=2), 0.003)))   # pommel
+    save(p, "Savle")
+
 def laser_minigun():
     """X-WEP-006 / LM-01: the minigun's frame (same grips, origin and muzzle height) with a power core where
     the ammo box was, a cable instead of the belt, and six emitter tubes in finned clamps - a separate mesh
@@ -963,7 +1035,7 @@ def plasma_grenade():
 ALL = dict(rifle=rifle, pistol=pistol, shotgun=shotgun, magnum=magnum, sniper=sniper, autocannon=autocannon,
            minigun=minigun, rocket=rocket, plasma_rifle=plasma_rifle, laser_pistol=laser_pistol,
            laser_rifle=laser_rifle, laser_cannon=laser_cannon, baton=baton, knife=knife, smoke=smoke,
-           mine=mine, handheld=handheld, energo_nuz=energo_nuz, laser_minigun=laser_minigun,
+           mine=mine, handheld=handheld, energo_nuz=energo_nuz, savle=savle, laser_minigun=laser_minigun,
            jet_laser_mg=jet_laser_mg, jet_laser_cannon=jet_laser_cannon, plasma_pistol=plasma_pistol,
            plasma_cannon=plasma_cannon, plasma_minigun=plasma_minigun, plasma_grenade=plasma_grenade)
 for k, f in ALL.items():

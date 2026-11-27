@@ -15,6 +15,12 @@ static func climb(b: CharacterBody3D, delta: float, step: float) -> float:
 	var hv := Vector3(b.velocity.x, 0.0, b.velocity.z)
 	if hv.length() < 0.05:
 		return 0.0
+	# (2026-11-27, trhání v co-opu) a body pushing against a wall, a crate or a crowd tried the whole
+	# step (5 test_moves) every physics tick - with a dozen aliens 6-8 ms a tick. After a try that
+	# found no step the next one waits a moment.
+	var now := Time.get_ticks_msec()
+	if now < int(b.get_meta(&"su_wait", 0)):
+		return 0.0
 	var xf := b.global_transform
 	# on the ground - or half up the kerb's edge already (the round bottom of the body rides up
 	# it and then "is not on the floor")
@@ -25,6 +31,11 @@ static func climb(b: CharacterBody3D, delta: float, step: float) -> float:
 	var hit := KinematicCollision3D.new()
 	if not b.test_move(xf, probe, hit):
 		return 0.0                   # nothing in the way
+	var who := hit.get_collider()
+	if who is CharacterBody3D or who is RigidBody3D:
+		b.set_meta(&"su_wait", now + WAIT_MS)
+		return 0.0                   # another body (an alien, a soldier, a barrel), not a kerb
+	b.set_meta(&"su_wait", now + WAIT_MS)    # (cleared again below when it does step up)
 	# (2026-11-22, Ari: „na obrubník je potřeba vyskočit“) the step is tried straight INTO the edge,
 	# not along the walking direction: walking at an angle the old probe got only a couple of cm
 	# over the edge, the round bottom of the capsule then "landed" on the corner a few mm higher and
@@ -55,8 +66,11 @@ static func climb(b: CharacterBody3D, delta: float, step: float) -> float:
 		return 0.0                   # just a slope - move_and_slide manages that itself
 	b.global_position.y += h + 0.005
 	b.velocity.y = 0.0
+	b.set_meta(&"su_wait", 0)
 	return h + 0.005
 
 ## how far over the edge the new floor is looked for (about the body's radius: the capsule must
 ## stand on the tread with its middle, not balance on the corner)
 const REACH := 0.22
+## ms until the next try after one that found no step (a wall, a crowd, a slope)
+const WAIT_MS := 120

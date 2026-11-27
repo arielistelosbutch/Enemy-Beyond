@@ -206,7 +206,7 @@ static func make_acts(gl: Array) -> Array:
 			out.append({"act": "strike", "item": m, "gun": m, "carry": "", "name": "%s – úder" % Game.ITEMS[m]["name"]})
 	return out
 
-const STRIKE_MELEE := ["knife", "energo_nuz", "stun_baton"]
+const STRIKE_MELEE := ["knife", "energo_nuz", "stun_baton", "savle"]
 
 static func clip_id(e: Dictionary) -> String:
 	return "fp_%s_%s" % [e["act"], e["item"]]

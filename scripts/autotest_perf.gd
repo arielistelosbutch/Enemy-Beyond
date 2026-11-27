@@ -579,3 +579,74 @@ static func deadcost(at: Node, p: Node) -> void:
 			if a.dead: dead += 1
 		at.out("RESULT deadcost alive %s dead %s (mrtvých %d)" % [f.call(_dc["a0"], _dc["a1"]), f.call(_dc["d0"], _dc["d1"]), dead])
 		at.get_tree().quit()
+
+## (2026-11-27) Co-op trhání: hostitel + klienti (--players=N), skuteční vetřelci (--crew), každý střílí
+## po nejbližším vetřelci v dávkách, hostitel ve 25. s pošle posily z lodi (reinf_drop) a rozbije pár
+## zdí granátem. Každý počítač měří své snímky; záseky zapíše záznamník výkonu (--perflog=1).
+static var _cp := {}
+static func cperf(at: Node, p: Node) -> void:
+	at._skip_brief()
+	var host: bool = at.mode == "cperfhost"
+	var now := Time.get_ticks_usec()
+	if p == null or not at.m().started() or (_cp.is_empty() and at.m().players().size() < int(Game.cmd_arg("players", "2"))):
+		_last_us = now
+		return
+	p.hp = 1.0e6
+	p.max_hp = 1.0e6
+	if _cp.has("done"):
+		return
+	if _cp.is_empty():
+		_cp = {"t0": at.t, "fr": [], "drop": false, "nade": false, "stalls": 0}
+		p._click_lock = false
+		p.inv["rh"] = {"id": Game.cmd_arg("gun", "rifle"), "loaded": 100000}
+		p._update_held()
+		if Game.perf: Game.perf.set_on(true)
+		at.out("[CPERF] %s start: hráčů %d, vetřelců %d" % [at.mode, at.m().players().size(), at.m().aliens().size()])
+		_last_us = now
+		return
+	var dt := float(now - _last_us) / 1000.0
+	_last_us = now
+	var tt: float = at.t - float(_cp["t0"])
+	if tt > 3.0:
+		(_cp["fr"] as Array).append(dt)
+	var a: Node = at._nearest(p)
+	if a:
+		a.hp = maxf(a.hp, 60.0)      # (they stay alive: the fight goes on all the time)
+		var d: Vector3 = a.global_position + Vector3(0, 1.0, 0) - (p.global_position + Vector3(0, 1.5, 0))
+		p.rotation.y = atan2(-d.x, -d.z)
+		if "pitch" in p:
+			p.pitch = clampf(atan2(d.y, Vector2(d.x, d.z).length()), -1.2, 1.2)
+	var burst := fmod(tt, 3.0) < 1.6
+	if burst and a:
+		Input.action_press("fire")
+	else:
+		Input.action_release("fire")
+	if host and tt > 25.0 and not _cp["drop"]:
+		_cp["drop"] = true
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 77
+		var who := []
+		for i in int(Game.cmd_arg("drop", "5")):
+			who.append(["grey_velitel", "grey", "jestetan", "lihnoun", "grey"][i % 5])
+		at.m().reinf_drop(p.global_position + Vector3(25, 0, 10), who, rng)
+		at.out("[CPERF] posily %d" % who.size())
+	if host and tt > 40.0 and not _cp["nade"]:
+		_cp["nade"] = true
+		at.m().explode(p.global_position + Vector3(6, 0.3, 0), 6.0, 60.0, "", false)
+	if tt > float(Game.cmd_arg("dur", "60")) + (5.0 if host else 0.0):
+		Input.action_release("fire")
+		var fr: Array = _cp["fr"]
+		fr.sort()
+		var avg := 0.0
+		for x in fr: avg += x
+		avg /= maxf(1.0, fr.size())
+		var big := 0
+		for x in fr:
+			if x > 40.0: big += 1
+		var path := ""
+		if Game.perf:
+			Game.perf._flush()
+			path = Game.perf._path
+		at.out("RESULT cperf %s frames %d avg %.1f ms p99 %.1f max %.0f nad40 %d log %s" % [at.mode, fr.size(), avg, fr[int(fr.size() * 0.99)] if fr.size() > 0 else 0.0, fr[-1] if fr.size() > 0 else 0.0, big, path])
+		_cp = {"done": true}
+		at.get_tree().quit()

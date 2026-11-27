@@ -99,6 +99,7 @@ const LIST := {
 	"tp_strike_vse": ["Rifle_Butt", true, false, "hand", 0.0, 99.0],
 	"tp_strike_knife": ["Knife_Stab", true, false, "hand", 0.0, 99.0, "mirror"],      # afk stabs with the left: the knife is in the right
 	"tp_strike_stun_baton": ["Sword_Attack", true, false, "hand", 0.0, 99.0],
+	"tp_strike_savle": ["Sword_Attack", true, false, "hand", 0.0, 99.0],      # (0.80; the game borrows the baton's cut until installed)
 	"tp_heal_vse": ["Fixing_Kneeling", true, true, "hand"],
 	"tp_salute_vse": ["Salute", true, false, "hand", -1, -1, "force"],
 	# drawing a weapon (while "Beru: ..." runs): a long gun off the back, a handgun from the hip

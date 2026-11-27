@@ -156,7 +156,7 @@ func _init() -> void:
 		"sniper", "laser_pistol", "laser_rifle", "laser_cannon", "stun_baton", "knife", "rifle_clip", "sniper_clip",
 		"pistol_clip", "shells", "slugs", "beanbag", "magnum_rounds", "ac_clip", "minigun_belt", "plasma_cell", "rocket", "rocket_ap", "rocket_inc", "grenade",
 		"smoke_grenade", "mine", "sentry", "flare", "medkit", "a_pistol", "a_rifle", "a_heavy", "a_pack", "stit", "stit_x", "vesta",
-		"pancir", "scanner", "radio", "nvg", "energo_nuz", "laser_minigun", "jet_laser_mg", "jet_laser_cannon", "plasma_pistol", "plasma_cannon", "plasma_minigun", "plasma_grenade"]
+		"pancir", "scanner", "radio", "nvg", "energo_nuz", "savle", "laser_minigun", "jet_laser_mg", "jet_laser_cannon", "plasma_pistol", "plasma_cannon", "plasma_minigun", "plasma_grenade"]
 	var crafts := ["ufo_scout", "ufo_raider", "ufo_harvester", "ufo_battleship", "ufo_supply", "sokol", "jestrab", "pelikan", "heli", "dropship"]
 	var all := []
 	var views := {"nvg": Vector3(0.8, 0.45, -0.9), "stit": Vector3(0.25, 0.3, 1.0), "stit_x": Vector3(0.25, 0.3, 1.0), "radio": Vector3(1, 0.5, 0.6), "medkit": Vector3(1, 0.6, 0.5),

@@ -203,6 +203,39 @@ func _ready() -> void:
 		label.visible = false
 		_build_viewmodel()
 		_update_held()
+		_warm_shot.call_deferred()
+
+## (2026-11-27, živý test na Ariho PC) První výstřel kompiloval shader stopy a záblesku u ústí
+## (zásek ~140 ms). Při načítání mise (pod načítací obrazovkou) se stopa a světlo na pár snímků
+## ukáží před kamerou, takže se shadery připraví předem. Jen u vlastního vojáka, nic po síti.
+func _warm_shot() -> void:
+	if not is_instance_valid(cam) or mission == null:
+		return
+	var holder := Node3D.new()
+	holder.name = "WarmShot"
+	cam.add_child(holder)
+	holder.position = Vector3(0, 0, -1.5)
+	if _tracer_mesh == null:
+		_tracer_mesh = BoxMesh.new()
+		_tracer_mesh.size = Vector3(0.02, 0.02, 1.0)
+	for col in [Color(1.0, 0.85, 0.4), Color(0.35, 1.0, 0.45)]:
+		var t := MeshInstance3D.new()
+		t.mesh = _tracer_mesh
+		t.material_override = Game.color_mat(col, true)
+		holder.add_child(t)
+	var fl := OmniLight3D.new()
+	fl.light_color = Color(1.0, 0.8, 0.4)
+	fl.light_energy = 0.01
+	fl.omni_range = 2.0
+	holder.add_child(fl)
+	if mission.has_method("warm_fx"):
+		mission.warm_fx(holder)       # (2026-11-27: i plameny, kouř a úlomky - první požár sekal)
+	if mission.get("wreck"):
+		mission.wreck.warm(holder)      # (27. 11.) plameny hořících stromů a aut
+	for i in 4:
+		await get_tree().process_frame
+	if is_instance_valid(holder):
+		holder.queue_free()
 
 var body_gun: Node3D
 var _shown_gun := "-"
@@ -498,8 +531,8 @@ func _viewmodel_motion(delta: float, speed: float) -> void:
 	var two := Game.two_handed(rid)
 	var base: Vector3 = VM_R.get(rid, VM_ONE_R)
 	var rot := Vector3(0.02, 0.06, 0)
-	if Game.ITEMS.get(rid, {}).get("blunt", false):
-		# club: low on the right, tip leaning out to the right
+	if Game.ITEMS.get(rid, {}).get("blunt", false) or Game.ITEMS.get(rid, {}).get("sabre", false):
+		# club (and the sabre): low on the right, tip leaning out to the right
 		base = Vector3(0.25, -0.27, -0.46)
 		rot = Vector3(-0.1, 0.1, -0.3)
 	var sl := _sight_line() if aiming and (two or pistol_grip()) else {}
@@ -720,7 +753,7 @@ func _apply_gear() -> void:
 			n.visible = (gear >> i) & 1 == 1
 	# 0.57: the vest chosen for looks gives way to real armour (ballistic vest, alloy plates)
 	var armoured := (gear >> 10) & 1 == 1 or (gear >> 11) & 1 == 1
-	for nm in ["Look_VestHarness", "Look_VestCarrier", "Look_VestRig"]:
+	for nm in ["Look_VestHarness", "Look_VestCarrier", "Look_VestRig", "Look_VestBandolier", "Look_VestWeb"]:
 		var v: Node3D = _gear_nodes.get(nm)
 		if v:
 			v.visible = v.get_meta("look_on", nm == "Look_VestHarness") and not armoured
@@ -1501,7 +1534,7 @@ static func hold_want(r: String, l: String, act: int, _act_t: float) -> Dictiona
 		else:
 			want.merge(POSE_PISTOL)
 	elif rule.get("type", "") == "melee":
-		if rule.get("blunt", false):
+		if rule.get("blunt", false) or rule.get("sabre", false):
 			want.merge(POSE_LOOSE_R)       # the club hangs along the arm
 			if act == 2:
 				var ph := clampf(_act_t / 0.45, 0.0, 1.0)
@@ -1526,7 +1559,7 @@ static func hold_want(r: String, l: String, act: int, _act_t: float) -> Dictiona
 			want.merge(POSE_RADIO_L, true)
 		elif l != "":
 			want.merge(POSE_ITEM_L, true)
-		elif not (rule.get("type", "") == "weapon" and l == "" and not two) and not (act == 2 and rule.get("type", "") == "melee" and not rule.get("blunt", false)):
+		elif not (rule.get("type", "") == "weapon" and l == "" and not two) and not (act == 2 and rule.get("type", "") == "melee" and not rule.get("blunt", false) and not rule.get("sabre", false)):
 			want.merge(POSE_LOOSE_L, true)
 	elif l == "radio":
 		# talking on the radio with a long gun: lowered in the right hand
@@ -1570,13 +1603,13 @@ func _hold_pose(delta: float) -> void:
 	if crouching and act != 0:
 		clip = AnimClips.find("tp", ca + "_crouch", held)      # its own movement down on one knee, if there is one
 	if clip.is_empty():
-		clip = AnimClips.find("tp", ca, held)
+		clip = AnimClips.find("tp", ca, _tp_like(ca))
 	if not clip.is_empty():
 		var ct := _act_t
 		if clip.get("natahnout", false) and act != 0:
 			# over the action's own time: the reload of this gun, the blow, the throw
 			var rule: Dictionary = Game.ITEMS.get(held, {})
-			var d: float = {9: (busy_total if busy_total > 0.0 else 0.9), 10: (busy_total if busy_total > 0.0 else 0.8), 1: float(rule.get("reload", 1.6)), 2: (maxf(0.35, float(rule.get("rate", 0.5)) * 0.75) if rule.get("blunt", false) else 0.36), 5: 0.6, 6: 0.8}.get(act, float(clip.get("delka", 1.0)))
+			var d: float = {9: (busy_total if busy_total > 0.0 else 0.9), 10: (busy_total if busy_total > 0.0 else 0.8), 1: float(rule.get("reload", 1.6)), 2: (maxf(0.35, float(rule.get("rate", 0.5)) * 0.75) if rule.get("blunt", false) or rule.get("sabre", false) else 0.36), 5: 0.6, 6: 0.8}.get(act, float(clip.get("delka", 1.0)))
 			ct = _act_t * float(clip.get("delka", 1.0)) / maxf(0.1, d)
 		want.merge(AnimClips.pose(clip, AnimClips.clip_time(clip, ct)), true)
 	if free_arms:
@@ -1587,6 +1620,13 @@ func _hold_pose(delta: float) -> void:
 			var rest: Quaternion = _sk.get_bone_rest(i).basis.get_rotation_quaternion()
 			_sk.set_bone_pose_rotation(i, rest * Quaternion.from_euler(want[bn]))
 	_body_pack(act == 3)
+
+## (0.80) An item without its own third-person movement borrows one: the sabre cuts like the baton.
+const TP_LIKE := {"savle": "stun_baton"}
+func _tp_like(ca: String) -> String:
+	if TP_LIKE.has(held) and AnimClips.get_clip("tp_%s_%s" % [ca, held]).is_empty():
+		return String(TP_LIKE[held])
+	return held
 
 ## Lying down and throwing (0.56, Mixamo): the arms and the trunk only - he stays on his belly.
 func _prone_throw(delta: float) -> void:
@@ -2008,6 +2048,26 @@ func _pl_update_held() -> void:
 	if is_multiplayer_authority():
 		gear = _gear_mask()
 
+## (0.57) Nobody crawls with an autocannon. A heavy gun with a bipod lies on its legs and stays.
+func _prone_heavy(id: String) -> bool:
+	return id != "" and Game.ITEMS.get(id, {}).has("heavy") and not Game.has_mod(id, "dvojnozka", merc)
+
+const PRONE_HEAVY_MSG := "Vleže těžkou zbraň neudržíš - nejdřív vstaň."
+
+## The heavy gun leaves the hands: on the back (or down next to you).
+func _stow_heavy() -> void:
+	var hv := item_in("rh")
+	if hv.is_empty():
+		return
+	if not inv.has("back"):
+		inv["back"] = hv
+		hv["home"] = "back"
+	else:
+		mission.drop_item(hv, global_position + Vector3(0, 0.2, 0) - global_transform.basis.z * 0.6)
+	inv.erase("rh")
+	_update_held()
+	mission.hud.message("S těžkou zbraní se plazit nedá - %s jde %s." % [Game.ITEMS[hv["id"]]["short"], "na záda" if item_in("back") == hv else "k zemi"], 3.0)
+
 ## Moves an item between two slots, taking time like in UFO: the belt is quick,
 ## the backpack is a dig (and you stand still while digging).
 func timed_move(a: String, b: String) -> bool:
@@ -2028,6 +2088,9 @@ func timed_move(a: String, b: String) -> bool:
 				return false
 	var r: Dictionary = after.get("rh", {})
 	var l: Dictionary = after.get("lh", {})
+	if prone and not r.is_empty() and r != inv.get("rh") and _prone_heavy(r["id"]):
+		mission.hud.message(PRONE_HEAVY_MSG, 2.0)
+		return false
 	if not r.is_empty() and Game.two_handed(r["id"]) and not l.is_empty():
 		mission.hud.message("Obouruční zbraň potřebuje obě ruce - štít nejdřív odlož.", 2.0)
 		return false
@@ -2066,6 +2129,8 @@ func draw_slot(src: String) -> void:
 		return
 	var it: Dictionary = inv[src]
 	var why := Game.slot_refuse("rh", it["id"])
+	if why == "" and prone and _prone_heavy(it["id"]):
+		why = PRONE_HEAVY_MSG
 	if why != "":
 		mission.hud.message(why, 2.0)
 		return
@@ -2378,18 +2443,10 @@ func _pl_physics_process(delta: float) -> void:
 		crouching = false
 		Game.play_at(mission, "prone", global_position, -6 if prone else -10)
 		_start_busy(0.8, "Lehám si" if prone else "Vstávám", func(): pass)
-		var hv := item_in("rh")
-		# (0.57) a cannon on its bipod goes down with you: it lies on its legs
-		if prone and not hv.is_empty() and Game.ITEMS[hv["id"]].has("heavy") and not Game.has_mod(hv["id"], "dvojnozka", merc):
-			# nobody crawls with an autocannon: it goes on the back (or down next to you)
-			if not inv.has("back"):
-				inv["back"] = hv
-				hv["home"] = "back"
-			else:
-				mission.drop_item(hv, global_position + Vector3(0, 0.2, 0) - global_transform.basis.z * 0.6)
-			inv.erase("rh")
-			_update_held()
-			mission.hud.message("S těžkou zbraní se plazit nedá - %s jde %s." % [Game.ITEMS[hv["id"]]["short"], "na záda" if item_in("back") == hv else "k zemi"], 3.0)
+	# (2026-11-27) not only when lying down: whatever brings a heavy gun into the hands while
+	# prone (keys 1-6, wheel, inventory, pick-up, debug...) ends up here the same frame
+	if prone and _prone_heavy(item_in("rh").get("id", "")):
+		_stow_heavy()
 	head.position.y = lerp(head.position.y, 0.35 if prone else (1.0 if crouching else 1.6), delta * 6.0)
 	var rh := item_in("rh")
 	var two := not rh.is_empty() and Game.two_handed(rh["id"])
@@ -3355,6 +3412,8 @@ func _shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 	_pl_shoot(slot, wp, rule)
 	PerfLog.took("výstřel", _pt)
 
+const WRECK_CANNON := ["autocannon", "plasma_cannon", "laser_cannon"]     # (27. 11.) tyhle přepůlí kmen
+
 func _pl_shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 	var shell := ""
 	if rule.has("ammo_alt"):
@@ -3469,6 +3528,13 @@ func _pl_shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 				mission.hud.message("Zasáhl jsi spoluhráče %s!" % c.display_name, 2.0)
 			elif c and c.has_method("is_civilian") and not c.dead:
 				mission.shoot_civ.rpc_id(1, c.name)
+			elif c and c.has_meta("wreck") and mission.wreck:
+				# (27. 11.) strom / auto: kanón kácí, laser a plazma pálí, kulky auto jen prostřílí
+				var wid := String(wp["id"])
+				var laser_: bool = Game.ITEMS[wid].get("laser", false)
+				var plasma_: bool = wid.begins_with("plasma_") or rule.get("alien", false)
+				var wk := "cannon" if wid in WRECK_CANNON else ("laser" if laser_ else ("plasma" if plasma_ else "bullet"))
+				mission.wreck.hit_rpc.rpc_id(1, int(c.get_meta("wreck")), base_dmg, wk, laser_ or plasma_ or rule.get("incendiary", false), global_position)
 			elif c and c.has_meta("break"):
 				var bkind := "explosion" if rule.get("incendiary", false) else ("plasma" if String(wp["id"]).begins_with("plasma_") or Game.ITEMS[wp["id"]].get("laser", false) else "bullet")
 				mission.hit_breakable.rpc_id(1, int(c.get_meta("break")), base_dmg, bkind)
@@ -3493,9 +3559,9 @@ func _melee(slot: String, rule: Dictionary) -> void:
 	_swing_left = slot == "lh"
 	if not _swing_left and not rule.get("bayonet", false) and _vr_strike(rule):
 		return
-	var blunt: bool = rule.get("blunt", false)
+	var blunt: bool = rule.get("blunt", false) or rule.get("sabre", false)
 	if blunt:
-		# overhead, right-to-left, left-to-right - never the same twice in a row
+		# overhead, right-to-left, left-to-right - never the same twice in a row (the sabre cuts the same)
 		var k := randi_range(1, 3)
 		if k == _swing_kind:
 			k = k % 3 + 1
@@ -3561,10 +3627,14 @@ func _strike_item() -> String:
 
 ## (Ari) both knives cut the same way: the energy knife takes the knife's blow.
 const STRIKE_LIKE := {"energo_nuz": "knife"}
+## (0.80) ...and until the sabre has its own VR blow (fp_strike_savle), it swings the baton's.
+const STRIKE_ELSE := {"savle": "stun_baton"}
 func _strike_clip(rid: String) -> Dictionary:
 	var c := _fp_find("strike", String(STRIKE_LIKE.get(rid, rid)))
 	if c.get("zdroj", "") != "vr":
 		c = _fp_find("strike", rid)
+	if c.get("zdroj", "") != "vr" and STRIKE_ELSE.has(rid):
+		c = _fp_find("strike", String(STRIKE_ELSE[rid]))
 	return c
 
 const STRIKE_FASTER := 1.25     # (Ari's moves played a little faster than in the headset)
@@ -3726,10 +3796,10 @@ func _melee_hit(rule: Dictionary) -> void:
 			stun *= 1.5          # from behind it never saw it coming
 		mission.hud.hitmarker()
 		Game.play_at(mission, "baton_hit" if rule.get("blunt", false) else "knife_stab", hit.position, -2)
-		_melee_alien.rpc_id(1, a.name, dmg, stun)
+		_melee_alien.rpc_id(1, a.name, dmg, stun, float(rule.get("cut", 0.0)))
 
 @rpc("any_peer", "call_local", "reliable")
-func _melee_alien(alien_name: String, dmg: float, stun: float) -> void:
+func _melee_alien(alien_name: String, dmg: float, stun: float, cut := 0.0) -> void:
 	if not multiplayer.is_server():
 		return
 	var a: Node = mission.actors.get_node_or_null(alien_name)
@@ -3738,7 +3808,10 @@ func _melee_alien(alien_name: String, dmg: float, stun: float) -> void:
 		if stun > 0:
 			a.stun(stun, global_position, self)
 		if dmg > 0 and not a.dead:
+			# (0.80) the alloy sabre SV-01 cuts through part of their armour (alien.taken)
+			mission.hit_cut = cut
 			a.damage(dmg, global_position, self)
+			mission.hit_cut = 0.0
 		mission.hit_quiet = false
 
 ## EN-01 (X-WEP-002): a few strikes with the hot edge, then a few seconds of charging when it is only
@@ -5579,6 +5652,7 @@ func _explosion_fx(p: Vector3, size := 1.0) -> void:
 	sm.radius = 1.8 * size; sm.height = 3.6 * size; sm.radial_segments = 8; sm.rings = 4
 	ball.mesh = sm
 	ball.material_override = Game.color_mat(Color(1.0, 0.55, 0.15), true)
+	ball.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF      # (2026-11-27 výkon: ohnivá koule nevrhá stín)
 	mission.add_child(ball)
 	ball.global_position = p + Vector3.UP * 0.5
 	var tw := create_tween()
@@ -6472,7 +6546,7 @@ func _pick_up() -> void:
 	var slot := ""
 	var pid: String = it["item"]["id"]
 	for s in ["rh", "back", "side", "lh", "b0", "b1", "b2", "b3"] + Game.pack_slots():
-		if not inv.has(s) and Game.slot_refuse(s, pid) == "" and not (s == "rh" and inv.has("lh") and Game.two_handed(pid)):
+		if not inv.has(s) and Game.slot_refuse(s, pid) == "" and not (s == "rh" and inv.has("lh") and Game.two_handed(pid)) and not (s == "rh" and prone and _prone_heavy(pid)):
 			slot = s
 			break
 	if slot == "":

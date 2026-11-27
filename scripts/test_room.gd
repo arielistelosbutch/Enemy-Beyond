@@ -8,7 +8,7 @@ extends Node
 ## - you cannot be hurt and nothing attacks.
 
 const WEAPONS := ["rifle", "pistol", "shotgun", "sniper", "magnum", "minigun", "autocannon", "rocket_launcher",
-	"laser_pistol", "laser_rifle", "laser_cannon", "laser_minigun", "energo_nuz", "plasma_pistol", "plasma_rifle",
+	"laser_pistol", "laser_rifle", "laser_cannon", "laser_minigun", "energo_nuz", "savle", "plasma_pistol", "plasma_rifle",
 	"plasma_cannon", "plasma_minigun", "knife", "stun_baton", "grenade", "plasma_grenade", "smoke_grenade", "medkit", ""]
 const ZOO := ["grey", "grey_velitel", "diskoll", "levit", "levit_velitel", "ohar", "jestetan", "jestetan_velitel", "lihnoun",
 	"zombie", "bijec", "bijec_velitel", "nador", "ohnivec", "myslodej", "kolos"]
