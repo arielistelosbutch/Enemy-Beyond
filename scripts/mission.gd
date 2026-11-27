@@ -27,7 +27,7 @@ var next_alien_id := 0
 var civs_total := 0
 var crew_names := []
 var crew_group := ""
-var hit_cut := 0.0          # (0.80) the hit right now cuts through this share of the armour (alloy sabre SV-01)
+var hit_cut := 0.0          # (0.80) the hit right now cuts through this share of the armour (alloy sabre RZ-94)
 var hit_quiet := false      # (0.72.5) the hit right now is silent: a silenced shot, a knife, a baton
 var hit_kind := ""          # what is hitting an alien right now: bullet / plasma / explosion        # races on this mission (for the result / archive)
 var t := 0.0
@@ -1519,6 +1519,8 @@ func is_out(p: Node) -> bool:
 
 func aliens() -> Array:
 	var out := []
+	if actors == null:      # doors hang in _ready before the actors exist
+		return out
 	for c in actors.get_children():
 		if c.has_method("is_alien"):
 			out.append(c)
@@ -1982,6 +1984,28 @@ func _knock() -> void:
 func _blackout() -> void:
 	_power_out = true
 	Game.play_ui(self, "creak", -6)
+	if mtype() != "radar":
+		_lights_out()
+
+## 2026-11-27 (Ari: „při Blackoutu dál svítí televize, osvětlení benzinky… ať to má grády“): výpadek
+## proudu zhasne i televize a všechno, co ve městě svítí samo (MapGen._civ_glow: benzinka, obchod,
+## parkoviště, sklady, žárovky lamp). Loď vetřelců, náš transportér, radar, auta, svítilny a zbraně
+## svítí dál. Materiály jsou sdílené, po misi se vrátí (`_exit_tree`). Radarová mise má vlastní proud.
+var _glow_saved := {}
+func _lights_out() -> void:
+	for mt in map.get("civ_glow", []):
+		if mt is ShaderMaterial and not _glow_saved.has(mt):
+			_glow_saved[mt] = (mt as ShaderMaterial).get_shader_parameter("emission_energy")
+			(mt as ShaderMaterial).set_shader_parameter("emission_energy", 0.0)
+	for l in map.get("lights", []):
+		if is_instance_valid(l) and l.get_meta("tv", false):
+			l.visible = false
+
+func _glow_back() -> void:
+	for mt in _glow_saved:
+		if is_instance_valid(mt):
+			(mt as ShaderMaterial).set_shader_parameter("emission_energy", _glow_saved[mt])
+	_glow_saved.clear()
 
 ## Things only a frightened mercenary sees and hears. Local, never synced.
 func _hallucinate(delta: float) -> void:
@@ -3118,8 +3142,12 @@ func add_mine(p: Vector3, by: String, face := Vector3.ZERO) -> void:
 	led.position.y = 0.16
 	var side := Vector3(-dir.z, 0, dir.x)
 	var mid: Vector3 = m.global_position + dir * CLAY_WIRE
-	var a: Vector3 = mid - side * CLAY_HALF
-	var b: Vector3 = mid + side * CLAY_HALF
+	# (2026-11-27) parts on the setter's Claymore (Game.MOD_FITS["mine"])
+	var setter: Node = actors.get_node_or_null(by)
+	var sm: Dictionary = setter.merc if setter != null and setter.get("merc") is Dictionary else {}
+	var half: float = CLAY_HALF * Game.part_mult("mine", "wire", sm)
+	var a: Vector3 = mid - side * half
+	var b: Vector3 = mid + side * half
 	# the wire itself: a dark thread 12 cm above the ground, from the mine out to the two pegs
 	var wire_mat := Game.color_mat(Color(0.05, 0.05, 0.04))
 	for seg in [[m.global_position + Vector3(0, 0.15, 0), a], [a, b]]:
@@ -3195,6 +3223,10 @@ func claymore_blast(p: Vector3, dir: Vector3, by: String) -> void:
 		ignite(c)
 	var shooter: Node = actors.get_node_or_null(by)
 	var space := get_world_3d().direct_space_state
+	# (2026-11-27) Wolframové kuličky on the setter's Claymore: harder and further
+	var sm: Dictionary = shooter.merc if shooter != null and shooter.get("merc") is Dictionary else {}
+	var kd: float = Game.part_mult("mine", "dmg", sm)
+	var rr: float = CLAY_R * Game.part_mult("mine", "reach", sm)
 	var hurt := func(at: Vector3) -> float:
 		var to: Vector3 = at - c
 		var d := to.length()
@@ -3202,7 +3234,7 @@ func claymore_blast(p: Vector3, dir: Vector3, by: String) -> void:
 		if d < CLAY_BACK:
 			dmg = 70.0 * (1.0 - d / CLAY_BACK)
 		var flat := Vector3(to.x, 0, to.z)
-		if d < CLAY_R and flat.length() > 0.05:
+		if d < rr and flat.length() > 0.05:
 			var cs: float = flat.normalized().dot(dir)
 			if cs > 0.5 and absf(to.y) < 1.0 + d * 0.25:
 				var cone := clampf((cs - 0.5) / (CLAY_CONE - 0.5), 0.0, 1.0)
@@ -3210,7 +3242,7 @@ func claymore_blast(p: Vector3, dir: Vector3, by: String) -> void:
 				var o := c + Vector3(0, 0.2, 0)
 				if space.intersect_ray(PhysicsRayQueryParameters3D.create(o, at, Game.WORLD)).is_empty() \
 						or space.intersect_ray(PhysicsRayQueryParameters3D.create(o, at + Vector3(0, 0.6, 0), Game.WORLD)).is_empty():
-					dmg = maxf(dmg, (150.0 * (1.0 - d / CLAY_R) + 25.0) * cone)
+					dmg = maxf(dmg, (150.0 * (1.0 - d / rr) + 25.0) * cone * kd)
 		return dmg
 	for a in aliens():
 		if a.dead:
@@ -3260,6 +3292,19 @@ func _sentry_add(nm: String, pos: Vector3, face: Vector3, k: String, by: String,
 
 func sentries() -> Array:
 	return get_tree().get_nodes_in_group("sentry").filter(func(n): return is_instance_valid(n) and not n.is_queued_for_deletion() and not n._gone)
+
+## Host, at the end: {peer: n} turrets standing (not destroyed) that the team takes home - only
+## when the mission was won. The owner is the player who set it down ("P<peer>").
+func sentries_home(success: bool) -> Dictionary:
+	var out := {}
+	if not success:
+		return out
+	for s in sentries():
+		var nm := String(s.owner_name)
+		if nm.begins_with("P") and nm.substr(1).is_valid_int():
+			var peer := int(nm.substr(1))
+			out[peer] = int(out.get(peer, 0)) + 1
+	return out
 
 func sentry_near(pos: Vector3) -> Node:
 	for s in sentries():
@@ -3330,6 +3375,24 @@ func take_pickup(pid: String) -> void:
 	if pickups.has(pid):
 		pickups[pid]["node"].queue_free()
 		pickups.erase(pid)
+
+## (Ari 2026-11-27, co-op) The host decides who gets a thing lying on the ground: before, every
+## machine took it by itself, so two players pressing F at once both had it (and the armory got
+## one more after the mission). The one whose request comes first gets it, the others nothing.
+@rpc("any_peer", "call_local", "reliable")
+func req_pickup(pid: String) -> void:
+	if not multiplayer.is_server():
+		return
+	var id := multiplayer.get_remote_sender_id()
+	id = id if id != 0 else 1
+	if not pickups.has(pid):
+		return
+	var pl: Node = actors.get_node_or_null("P%d" % id)
+	if pl == null or pl.dead:
+		return
+	var item: Dictionary = pickups[pid]["item"]
+	take_pickup.rpc(pid)
+	pl.got_pickup.rpc_id(id, item)
 
 func nearest_pickup(pos: Vector3) -> Dictionary:
 	for pid in pickups:
@@ -3468,11 +3531,14 @@ func _loot(success: bool) -> Dictionary:
 			out["trosky_" + a.race] = int(out.get("trosky_" + a.race, 0)) + 1 if a.race == "kolos" else 1
 		elif a.dead and not a.seared:
 			out["corpse_" + a.race] = int(out.get("corpse_" + a.race, 0)) + 1
-	for a in aliens():
-		if early and _is_reinf(a):
-			continue
-		if a.dead and not a.seared and Campaign.RACE_WEAPON.has(a.race) and r.randf() < 0.6:
-			var w: String = Campaign.RACE_WEAPON[a.race]
+	# (2026-11-27) the alien guns still lying out there: the team takes most of them on the way out
+	# (the ones a soldier carries to the transport count all, see gear_lost / gear_found). Before:
+	# 60 % for every dead alien, so a gun carried home counted twice and one lying there anyway.
+	var pk := pickups.keys()
+	pk.sort()
+	for pid in pk:
+		var w := String((pickups[pid]["item"] as Dictionary).get("id", ""))
+		if Game.ITEMS.has(w) and Game.ITEMS[w].get("alien", false) and r.randf() < 0.6:
 			out[w] = int(out.get(w, 0)) + 1
 	var mt: String = Net.mission_params.get("type", "")
 	var mk: Array = {"crash": [25, 50], "landed": [50, 100], "abduction": [30, 60], "terror": [10, 25], "rescue": [10, 30], "pilot": [5, 15], "bug": [0, 0], "quarantine": [10, 25], "radar": [30, 60], "sabotage": [30, 60], "base": [40, 80], "convoy": [40, 80]}.get(mt, [0, 0])
@@ -3614,6 +3680,10 @@ func _end(success: bool, why: String, airlift := false, abandoned := false) -> v
 		lost += _deserters
 		if not officer_killers.is_empty():
 			Campaign.mark_nemesis(officer_killers)
+		# (2026-11-27) the host's own man: what he holds this very moment (the others report twice a second)
+		var hp1: Node = actors.get_node_or_null("P1")
+		if hp1 != null and hp1.is_multiplayer_authority() and not hp1.dead and kits.has(1):
+			kits_now[1] = hp1._kit_ids()
 		var gl := gear_lost(success)
 		Campaign.add_fallen(fallen_list())       # (0.70: the wall of the fallen; before mission_done saves)
 		for p in players():
@@ -3626,7 +3696,16 @@ func _end(success: bool, why: String, airlift := false, abandoned := false) -> v
 				kb[a.race] = int(kb.get(a.race, 0)) + 1
 		Campaign.count_kills(kb)
 		var wiped: bool = lost >= players().size() + _deserters and not _abandoned
-		camp = Campaign.mission_done(int(Net.mission_params.get("id", -1)), success, tk, tc, lost, civ_saved, civ_dead, crew_names, _loot(success), wiped, kits, q, gl, kits_locker, _fallen_site(wiped and not success, gl, success))
+		# (2026-11-27) found out there and carried home: alien guns are loot, our own things the armory
+		var lt := _loot(success)
+		var to_armory := {}
+		for it in gear_found:
+			if Game.ITEMS[it].get("alien", false):
+				lt[it] = int(lt.get(it, 0)) + int(gear_found[it])
+			else:
+				to_armory[it] = int(gear_found[it])
+		camp = Campaign.mission_done(int(Net.mission_params.get("id", -1)), success, tk, tc, lost, civ_saved, civ_dead, crew_names, lt, wiped, kits, q, gl, kits_locker, _fallen_site(wiped and not success, gl, success))
+		camp += Campaign.gear_brought(to_armory)
 		# what came out of their own lockers: each one crosses it off his own list
 		for peer in gl:
 			var ll := Campaign.locker_part(kits.get(peer, []), gl[peer], kits_locker.get(peer, {}))
@@ -4048,6 +4127,7 @@ func roster() -> Dictionary:
 	return _local_roster
 
 func _exit_tree() -> void:
+	_glow_back()
 	if _nav_cache:
 		_nav_cache.finish()      # (0.62: pečení cest ve vlákně musí doběhnout)
 	if _local:
@@ -4346,6 +4426,15 @@ func _core_hums() -> void:
 
 func _swing(d: Dictionary, side: float, instant := false) -> void:
 	d["open"] = side != 0.0
+	# (2026-11-27) an open door is not in the paths (map_gen bakes doors out): its leaf, standing a metre
+	# into the room by the doorway, does not catch the aliens either - a shut one stops them as before
+	if is_instance_valid(d["body"]) and Game.cmd_arg("oldsqz", "") != "1":
+		for a in aliens():
+			if is_instance_valid(a) and a is PhysicsBody3D:
+				if d["open"]:
+					a.add_collision_exception_with(d["body"])
+				else:
+					a.remove_collision_exception_with(d["body"])
 	if d.has("tween") and (d["tween"] as Tween).is_valid():
 		(d["tween"] as Tween).kill()       # a new push wins over a swing still going
 	if d.has("slide"):
@@ -5965,6 +6054,10 @@ func report_kit_now(ids: Array) -> void:
 ## up or left lying; left behind (dead, down outside): everything he took (it stays out there).
 func gear_lost(success: bool) -> Dictionary:
 	var out := {}
+	var spare := {}
+	# (Ari 2026-11-27) a mission won: turrets still standing go home with whoever set them down;
+	# failed (fled or wiped): they stay out there and are lost. A destroyed one is lost either way.
+	var standing := sentries_home(success)
 	for peer in kits:
 		var pl: Node = actors.get_node_or_null("P%d" % peer)
 		# (0.7x, Ari: "odletí bez úspěchu a věci se vytratí") who flies home alive brings back what
@@ -5974,7 +6067,11 @@ func gear_lost(success: bool) -> Dictionary:
 		# kit home (what he carried when he fell; a deserter's body is gone, so not his)
 		if success and pl != null and left_behind(pl):
 			home = true
-		var now: Array = (kits_now.get(peer, []) as Array).duplicate() if home else []
+		var now: Array = []
+		if home:
+			now = (kits_now.get(peer, []) as Array).duplicate()
+			for k in int(standing.get(peer, 0)):
+				now.append("sentry")
 		var lost := {}
 		for i in kits[peer]:
 			if i in now:
@@ -5982,7 +6079,40 @@ func gear_lost(success: bool) -> Dictionary:
 			else:
 				lost[i] = int(lost.get(i, 0)) + 1
 		out[peer] = lost
+		# (0.72.8, Ari: "zásobníky mizí a objevují se") what he carries home on top of his own kit -
+		# a magazine a teammate passed him, or one picked up off the ground - is not lost to the team
+		for i in now:
+			if Game.ITEMS.has(i):
+				spare[i] = int(spare.get(i, 0)) + 1
+	# (Ari 2026-11-27: "přepis předmětů po misi funguje divně") a won mission: our own things lying
+	# on the ground (a rifle dropped in panic at the Ohař's roar, a gun put down) are picked up on the
+	# way to the transport - the field is ours. Alien guns on the ground: _loot; packs: the pot.
+	if success:
+		for pid in pickups:
+			var iid := String((pickups[pid]["item"] as Dictionary).get("id", ""))
+			if iid == "" or iid == "fallen_kit" or not Game.ITEMS.has(iid):
+				continue
+			if Game.ITEMS[iid]["type"] == "salvage" or Game.ITEMS[iid].get("alien", false):
+				continue
+			spare[iid] = int(spare.get(iid, 0)) + 1
+	# the spares cover the same things missing from someone else's kit (a hand-over is no loss)
+	for peer in out:
+		var lost: Dictionary = out[peer]
+		for i in lost.keys():
+			var cover := mini(int(lost[i]), int(spare.get(i, 0)))
+			if cover > 0:
+				spare[i] = int(spare[i]) - cover
+				lost[i] = int(lost[i]) - cover
+				if int(lost[i]) <= 0:
+					lost.erase(i)
+	# (2026-11-27) what is still over: found out there - an alien gun carried home is loot (for the
+	# laboratory / the market, see _end), anything else of ours goes to the armory
+	gear_found = {}
+	for i in spare:
+		if int(spare[i]) > 0:
+			gear_found[i] = int(spare[i])
 	return out
+var gear_found := {}      # host: {item: n} brought home over the team's kits (gear_lost)
 
 ## A short line for everybody (the Brain calling its guards...).
 @rpc("authority", "call_local", "reliable")

@@ -806,7 +806,7 @@ def _loft(m, rings, cap=True):
     return o
 
 def savle():
-    """X-WEP-013 / SV-01 (Ari, 0.80): a sabre cut by laser from the alien hull alloy - a long, slightly
+    """X-WEP-013 / RZ-94 (Ari, 0.80): a sabre cut by laser from the alien hull alloy - a long, slightly
     curved blade (edge on the convex side, -Z, like the knife), dark violet sheen, a glowing laser-cut
     fuller along both flats, our steel guard with a knuckle bow and a rubber grip. Origin = the grip,
     blade along +Y like the knife (the game holds it the same way)."""

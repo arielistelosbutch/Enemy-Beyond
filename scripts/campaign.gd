@@ -294,8 +294,8 @@ const RESEARCH := {
 	"energo_nuz": {"name": "Energo nůž", "cost": 250, "days": 3.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "energo_nuz",
 		"desc": "X-WEP-002. EN-01: bojový nůž, jehož ostří rozžhaví laserové emitory. Pár silných zásahů, pak se článek několik vteřin nabíjí."},
 	# 0.80 (Ari): between the laser and the plasma - the laser cuts their alloy into a blade
-	"savle": {"name": "Šavle ze slitin", "cost": 350, "days": 4.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "savle",
-		"desc": "X-WEP-013. SV-01: laserem vyříznutá šavle z jejich slitiny. Delší dosah než nůž, prořízne i část jejich pancíře a drží se jednou rukou - štít zůstane v levé. Vyrábí ji dílna ze slitin z vraků."},
+	"savle": {"name": "Šavle RZ-94", "cost": 350, "days": 4.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "savle",
+		"desc": "X-WEP-013. RZ-94: laserem vyříznutá šavle z jejich slitiny. Delší dosah než nůž, prořízne i část jejich pancíře a drží se jednou rukou - štít zůstane v levé. Vyrábí ji dílna ze slitin z vraků."},
 	"laser_pistole": {"name": "Laserová pistole", "cost": 300, "days": 4.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "laser_pistol",
 		"desc": "X-WEP-003. Lehká laserová zbraň do jedné ruky. Krátký dobíjecí cyklus."},
 	"laser_puska": {"name": "Laserová puška", "cost": 400, "days": 5.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "laser_rifle",
@@ -308,15 +308,15 @@ const RESEARCH := {
 	"plazma": {"name": "Plazmové zbraně", "cost": 700, "mk": 30, "days": 8.0, "needs": {"research": ["laser", "vyslech", "moskovium"], "loot": "a_rifle"}, "branch": "zbrane", "icon": "plasma_cell",
 		"desc": "X-WEP-007. Jejich plazma v lidských zbraních. Žádné dobíjení jako u laseru, ale skutečná munice: univerzální plazmový zásobník PL-MAG-01. Otevře výzkum jednotlivých plazmových zbraní."},
 	"plazma_pistole": {"name": "Plazmová pistole PP-01", "cost": 500, "mk": 10, "days": 5.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_pistol",
-		"desc": "X-WEP-008. UAI PP-01, lidský rám kolem jejich plazmového emitoru. Bez čekání na článek, 30 ran na zásobník PL-MAG-01. Při rychlé palbě se přehřívá."},
+		"desc": "X-WEP-008. UAI PP-01, lidský rám kolem jejich plazmového emitoru. Bez čekání na článek, 60 ran na zásobník PL-MAG-01. Při rychlé palbě se přehřívá."},
 	"plazma_puska": {"name": "Plazmová puška PR-01", "cost": 700, "mk": 20, "days": 6.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_rifle",
-		"desc": "X-WEP-009. UAI PR-01, hlavní plazmová puška pěchoty. Nejsilnější rána pušky, další bez čekání na článek, 15 ran na zásobník PL-MAG-01. Při rychlé palbě se přehřívá."},
+		"desc": "X-WEP-009. UAI PR-01, hlavní plazmová puška pěchoty. Nejsilnější rána pušky, další bez čekání na článek, 30 ran na zásobník PL-MAG-01. Při rychlé palbě se přehřívá."},
 	"plazma_granat": {"name": "Plazmový granát PG-01", "cost": 500, "mk": 15, "days": 5.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_grenade",
 		"desc": "X-WEP-010. UAI PG-01: celý zásobník PL-MAG-01 uvolněný naráz. Výroba každého granátu spotřebuje jeden zásobník ze skladu. Ve středu ničivý, k okraji rychle slábne, kryt chrání. Spálí i kořist."},
 	"plazma_kanon": {"name": "Plazmový kanón PC-01", "cost": 1000, "mk": 40, "days": 8.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_cannon",
-		"desc": "X-WEP-011. UAI PC-01, těžký přenosný plazmový kanón. Šestina zásobníku PL-MAG-01 na ránu - šest ničivých výstřelů. Velmi těžký."},
+		"desc": "X-WEP-011. UAI PC-01, těžký přenosný plazmový kanón. Dvanáctina zásobníku PL-MAG-01 na ránu - dvanáct ničivých výstřelů. Velmi těžký."},
 	"plazma_minigun": {"name": "Plazmový minigun PM-01", "cost": 1100, "mk": 40, "days": 8.0, "needs": {"research": "plazma"}, "branch": "zbrane", "icon": "plasma_minigun",
-		"desc": "X-WEP-012. UAI PM-01, šest rotujících plazmových emitorů. 75 pulzů na zásobník PL-MAG-01, krátká, prodloužená nebo úplná dávka. Velmi těžký, při přehřátí se rotor zastaví."},
+		"desc": "X-WEP-012. UAI PM-01, šest rotujících plazmových emitorů. 150 pulzů na zásobník PL-MAG-01, krátká, prodloužená nebo úplná dávka. Velmi těžký, při přehřátí se rotor zastaví."},
 	# materials and gear
 	"vesta": {"name": "Keramické vložky", "cost": 200, "days": 3.0, "needs": {}, "branch": "material", "icon": "vesta",
 		"desc": "Tvrdé keramické pláty do vest ARM-01. Vesta pak zastaví víc ran a střepin."},
@@ -333,6 +333,8 @@ const RESEARCH := {
 		"desc": "X-AIR-001. Pláty z jejich slitin do trupů stíhaček a transportérů: vydrží o třetinu víc zásahů."},
 	"pancir": {"name": "Experimentální pancéřová vesta", "cost": 500, "days": 6.0, "needs": {"research": "slitiny"}, "branch": "material", "icon": "pancir",
 		"desc": "UAI ARM-02. Nosič s deskami z jejich slitin: zastaví víc ran a střepin a trochu i žáru. Dílna ji skládá ze slitin z vraků - každý kus stojí kořist."},
+	"oblek": {"name": "Bojový oblek ze slitin", "cost": 900, "days": 8.0, "needs": {"research": ["pancir", "laser"]}, "branch": "material", "icon": "oblek",
+		"desc": "UAI ARM-03. Až laser umí řezat jejich slitinu, dá se z ní poskládat celý oblek: pláty na hrudi, zádech, ramenou, pažích a nohou přes maskáče. Kryje víc než vesta a lépe snáší plazmu a žár, je ale těžší. Dílna ho skládá ze slitin z vraků."},
 	"moskovium": {"name": "Moskovium 115", "cost": 350, "days": 5.0, "needs": {"research": "slitiny", "loot": "moskovium"}, "branch": "material", "icon": "plasma_cell",
 		"desc": "X-MAT-002. Materiál M-115, supertěžký prvek 115 ze zařízení jejich lodí. Neumíme ho vyrobit ani plně vysvětlit - jen získat z jejich techniky."},
 	# craft and machines
@@ -426,7 +428,7 @@ const SHOP := {
 	"laser_pistol": 600, "laser_rifle": 1200, "laser_cannon": 1800, "laser_minigun": 2200, "energo_nuz": 450, "savle": 900,
 	"rifle": 500, "sniper": 900, "sniper_clip": 70, "shotgun": 500, "magnum": 440, "autocannon": 1200, "minigun": 1500, "rocket_launcher": 1300,
 	"knife": 120, "stun_baton": 360, "scanner": 600, "radio": 80, "nvg": 700, "plasma_rifle": 1800, "plasma_cell": 180, "plasma_pistol": 1200, "plasma_cannon": 3000, "plasma_minigun": 3200, "plasma_grenade": 400,
-	"vesta": 600, "stit": 700, "stit_x": 1400, "pancir": 1300, "sentry": 900,
+	"vesta": 600, "stit": 700, "stit_x": 1400, "pancir": 1300, "oblek": 2400, "sentry": 900,
 }
 const LOCKED_BY := {"mine": "zenijni", "sentry": "strazni_vez", "autocannon": "tezke", "ac_clip": "tezke",
 	"minigun": "tezke", "minigun_belt": "tezke", "rocket_ap": "tezke", "rocket_inc": "tezke",
@@ -435,11 +437,11 @@ const LOCKED_BY := {"mine": "zenijni", "sentry": "strazni_vez", "autocannon": "t
 	"plasma_cannon": "plazma_kanon", "plasma_minigun": "plazma_minigun",
 	"laser_pistol": "laser_pistole", "laser_rifle": "laser_puska", "laser_cannon": "laser_tezky",
 	"laser_minigun": "laser_minigun", "energo_nuz": "energo_nuz", "savle": "savle",
-	"pancir": "pancir", "stit_x": "laser"}
+	"pancir": "pancir", "stit_x": "laser", "oblek": "oblek"}
 ## Alien-tech items also cost Moskovium 115 (the element that powers their ships).
 const SHOP_MK := {"plasma_rifle": 25, "plasma_cell": 3, "laser_cannon": 6, "laser_minigun": 6, "plasma_pistol": 12, "plasma_cannon": 40, "plasma_minigun": 40, "plasma_grenade": 4}
 ## ...and alloys from the wrecks (we cannot make them yet - Vetřelecké slitiny, X-MAT-001).
-const SHOP_AL := {"pancir": 6, "stit_x": 4, "savle": 3, "laser_cannon": 4, "plasma_rifle": 4, "plasma_cannon": 6, "plasma_minigun": 6}
+const SHOP_AL := {"pancir": 6, "oblek": 10, "stit_x": 4, "savle": 3, "laser_cannon": 4, "plasma_rifle": 4, "plasma_cannon": 6, "plasma_minigun": 6}
 ## What the team brings home from a won mission (collected automatically).
 ## Machines that blow up when they fall: what is left are scraps. After this many won missions
 ## with one shot down the workshop puts a whole one together (that counts as the body for research).
@@ -674,7 +676,16 @@ func load_campaign() -> bool:
 		mission_done(mid, false, 0, 0, 0)
 	if active:
 		_claim_mercs()
+		_final_check()
 	return active
+
+## (2026-11-27) Rudá planeta is researched and the Pelikán stands ready, but the Mars mission is not on
+## the globe (the debug "all research" used to skip _add_final) - put it there. Not after the win.
+func _final_check() -> void:
+	if viewer or bool(data.get("won", false)) or bool(data.get("lost", false)):
+		return
+	if researched("ruda_planeta") and pelikan():
+		_add_final()
 
 ## (0.57) Host: a mission has begun - remembered in the save until mission_done closes it.
 func mission_begun(id: int) -> void:
@@ -1420,6 +1431,16 @@ func jet_heavy() -> String:
 	var h := String(data.get("jet_heavy", "missiles"))
 	return h if JET_HEAVY.has(h) and (JET_HEAVY[h][1] == "" or built(JET_HEAVY[h][1])) else "missiles"
 
+## (0.72.8) What the slot flies with when the plasma weapon has no PL-MAG-01 in the armory:
+## the best fitted non-plasma one (the laser if made, else the factory cannon / missiles).
+func jet_fallback(heavy: bool) -> String:
+	if heavy:
+		return "laser_cannon" if built("vzduch_laser_delo") else "missiles"
+	return "laser" if built("vzduch_laser") else "cannon"
+
+func plasma_mags() -> int:
+	return int(data["armory"].get("plasma_cell", 0))
+
 ## The next weapon of that slot we have researched (the button in the hangar cycles through them).
 func cycle_jet_weapon(heavy: bool) -> void:
 	var table: Dictionary = JET_HEAVY if heavy else JET_GUNS
@@ -1444,7 +1465,33 @@ func _repair_jet(days: float) -> void:
 func intercept_params(f: Dictionary) -> Dictionary:
 	return {"intercept": true, "id": f["id"], "ufo": f["kind"], "lat": f["lat"], "lon": f["lon"],
 		"hawks": hawks(), "gun": jet_gun(), "heavy": jet_heavy(), "night": is_night(float(f["lon"]), float(f["lat"])), "jet_armor": built("pancir_letadel"),
-		"plasma_mags": int(data["armory"].get("plasma_cell", 0))}
+		"plasma_mags": plasma_mags(), "plasma_pool": plasma_pool(), "gun_alt": jet_fallback(false), "heavy_alt": jet_fallback(true)}
+
+## (0.72.8) What the fighters may load: whole PL-MAG-01 in the armory + the rest of the opened one
+## (`data["plasma_open"]`, 0..1 of a magazine, kept in the fighters' supply modules).
+func plasma_pool() -> float:
+	return float(plasma_mags()) + clampf(float(data.get("plasma_open", 0.0)), 0.0, 0.999)
+
+## (0.72.8) The fighters burnt `used` magazines' worth (the whole wing, from the host): first the
+## opened magazine, then whole ones; what is left of the last one stays open for the next flight.
+## (Before every flight rounded up per weapon and per pilot, so a few shots cost whole magazines.)
+func spend_plasma(used: float) -> void:
+	if used <= 0.0001 or not active:
+		return
+	var open := clampf(float(data.get("plasma_open", 0.0)), 0.0, 0.999)
+	var need := used
+	var from_open := minf(open, need)
+	open -= from_open
+	need -= from_open
+	var have := plasma_mags()
+	var whole := mini(have, ceili(need - 0.0001))
+	if whole > 0:
+		data["armory"]["plasma_cell"] = have - whole
+		if int(data["armory"]["plasma_cell"]) <= 0:
+			data["armory"].erase("plasma_cell")
+		open = clampf(float(whole) - need, 0.0, 0.999)
+	data["plasma_open"] = open
+	_log("Stíhačky vypálily plazmu za %.1f zásobníku (otevřeno %d nových, v načatém zbývá %d %%)." % [used, whole, int(round(open * 100.0))])
 
 ## The fighters' plasma guns burn the base's PL-MAG-01 magazines (from the armory).
 func spend_plasma_mags(n: int) -> void:
@@ -1959,6 +2006,24 @@ func _gear_lost(kits: Dictionary, lost: Dictionary, lockers: Dictionary) -> Stri
 			data["armory"].erase(it)
 		l.append("%s %dx" % [Game.ITEMS[it]["short"] if Game.ITEMS.has(it) else it, g])
 	return (" Ze skladu ubylo (spotřebováno nebo zůstalo venku): " + ", ".join(l) + ".") if not l.is_empty() else ""
+
+## (2026-11-27) Things of ours the team carried home over what it took (picked up from the ground
+## after a won mission, a friend's piece found out there...): back into the armory.
+func gear_brought(items: Dictionary) -> String:
+	var l := []
+	for it in items:
+		var n := int(items[it])
+		if n <= 0 or not Game.ITEMS.has(it):
+			continue
+		data["armory"][it] = int(data["armory"].get(it, 0)) + n
+		l.append("%s %dx" % [Game.ITEMS[it].get("short", it), n])
+	if l.is_empty():
+		return ""
+	var t := "Tým přivezl navíc do skladu: " + ", ".join(l) + "."
+	_log(t)
+	save()
+	changed.emit()
+	return " " + t
 
 func mission_done(id: int, success: bool, kills: int, captures: int, lost_mercs: int, civ_saved := 0, civ_dead := 0, races := [], loot := {}, wiped := false, kits := {}, q := 1.0, lost_gear := {}, lockers := {}, fallen_site := {}) -> String:
 	# (0.7x Štěnice) not loot: the tracker on their hull

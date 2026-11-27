@@ -262,6 +262,10 @@ func setup(data: Dictionary) -> void:
 	cs.shape = cap
 	cs.position.y = cap.height / 2.0
 	add_child(cs)
+	_cs = cs
+	_cap = cap
+	_full_r = cap.radius
+	_full_h = cap.height
 	body = Node3D.new()
 	add_child(body)
 	var m := _afk_model()
@@ -338,11 +342,16 @@ func _ready() -> void:
 		lp.position = Vector3(0, 1.5, 0)
 		lp.autoplay = true
 	agent = NavigationAgent3D.new()
-	agent.path_desired_distance = 0.6
+	agent.path_desired_distance = 0.6 if _sqz_off else 0.5   # (2026-11-27: 0.6 turned too early - wide bodies cut the corners into door jambs)
 	agent.target_desired_distance = 0.8
 	agent.radius = max(0.4, float(R["r"]))
 	agent.height = 1.3
 	add_child(agent)
+	# (2026-11-27) doors standing open are not in the paths - their leaves do not stop the aliens either
+	if mission and "doors" in mission and not _sqz_off:
+		for d in mission.doors:
+			if d["open"] and is_instance_valid(d["body"]):
+				add_collision_exception_with(d["body"])
 	goal = global_position
 	wait = rng.randf_range(20.0, 50.0)
 	if multiplayer.is_server():
@@ -2145,6 +2154,9 @@ func _go(p: Vector3) -> void:
 		if _jet_to(p):      # in a fight it does not walk: it flies (where the air is open)
 			return
 		airborne = false    # no way through the air from here: down, and on foot
+	if _resume_goal != Vector3.INF and mission.t < _detour_until:
+		_resume_goal = p    # (stepping aside out of a jam: the new goal comes right after)
+		return
 	goal = p
 	agent.target_position = p
 
@@ -3834,6 +3846,8 @@ func _arrived() -> bool:
 		return false
 	if airborne:
 		return true
+	if _detour_check():
+		return false
 	return agent.is_navigation_finished() or global_position.distance_to(goal) < 1.0
 
 var _stuck_base := 0.0
@@ -3842,7 +3856,7 @@ func _walk(speed: float, delta: float) -> void:
 		velocity.x = 0
 		velocity.z = 0
 		return
-	var nxt := agent.get_next_path_position()
+	var nxt := _steer()
 	var dir := nxt - global_position
 	dir.y = 0
 	if dir.length() < 0.05:
@@ -3852,6 +3866,10 @@ func _walk(speed: float, delta: float) -> void:
 	velocity.x = dir.x * speed
 	velocity.z = dir.z * speed
 	_face(global_position + dir, delta)
+	if not _sqz_off:
+		if _push_check(speed, delta):
+			_detour()
+		return
 	# big bodies get stuck in gaps the path thinks are fine: give up that goal
 	if get_slide_collision_count() > 0 and Vector2(get_real_velocity().x, get_real_velocity().z).length() < speed * 0.25:
 		_stuck_base += delta
@@ -3860,6 +3878,153 @@ func _walk(speed: float, delta: float) -> void:
 			_go(_snap(global_position + Vector3(rng.randf_range(-6, 6), 0, rng.randf_range(-6, 6))))
 	else:
 		_stuck_base = 0.0
+
+## (2026-11-27, Tomík: „Bijci, Ještěřani a Líhavci se v úzkých prostorech zasekávají a půlku boje
+## hledají cestu“; Ari: všichni velcí tvorové - „částečná ignorace“ je v pořádku.) The paths are baked
+## for a body 0.4 m wide and 1.6 m tall (map_gen agent_radius / agent_height); the Bijec, Ještěřan,
+## Ohař, Nádor, Ohnivec, Diskoll, Kolos, Mysloděj are wider or taller. Pressing against something on
+## its way and getting nowhere, the body squeezes: for a while its capsule is only as big as the paths
+## count with (the model clips a little into the door frame / under the lintel), until there is room
+## for the whole body again. Only the host moves the aliens; the clients just see the model go through.
+## Still stuck when squeezed: a short step aside (the way it came, a bit to the side), then on to the
+## same goal - not a random spot 6 m away (that was the "half the fight looking for the way").
+## --oldsqz=1 = as before (A/B).
+const SQZ_R := 0.34
+const SQZ_H := 1.55
+const SQZ_AFTER := 0.2        # s pushing and not getting anywhere: squeeze
+const SQZ_HARD := 1.2         # s still stuck: step aside
+var _sqz_off := Game.cmd_arg("oldsqz", "") == "1"
+var _cs: CollisionShape3D
+var _cap: CapsuleShape3D
+var _full_r := 0.0
+var _full_h := 0.0
+var squeezed := false
+var _push_t := 0.0
+var _pin_t := 0.0
+var _sqz_chk := 0.0
+var _sqz_n := 0               # (for the tests: how many times it had to squeeze)
+var _detour_until := -1.0
+var _detour_goal := Vector3.INF
+var _resume_goal := Vector3.INF
+var _detour_n := 0
+
+## The point to walk at. (2026-11-27) The path points lie 0.3-0.4 m above the floor (the baked mesh
+## floats on its voxels) and the agent takes a point as reached only within path_desired_distance in 3D:
+## at a doorstep or a stair the next point sat right above the alien, 0.4 m up, never "reached" - it
+## jittered on the spot for good (test squeeze: even a Šedivák). Points it already stands under are skipped.
+func _steer() -> Vector3:
+	var nxt := agent.get_next_path_position()
+	if _sqz_off:
+		return nxt
+	var me := global_position
+	if Vector2(nxt.x - me.x, nxt.z - me.z).length() > 0.3:
+		return nxt
+	var path := agent.get_current_navigation_path()
+	for k in range(agent.get_current_navigation_path_index() + 1, path.size()):
+		var q: Vector3 = path[k]
+		if Vector2(q.x - me.x, q.z - me.z).length() > 0.3:
+			return q
+	return goal
+
+## true = it has pushed hard for a while (even squeezed): time to step aside.
+func _push_check(speed: float, delta: float) -> bool:
+	if squeezed:
+		_sqz_chk -= delta
+		if _sqz_chk <= 0.0:
+			_sqz_chk = 0.35
+			if _room_for(_full_r, _full_h):
+				_set_capsule(_full_r, _full_h)
+				squeezed = false
+	var walled := false        # (the floor is a slide collision too: only walls, edges, lintels count)
+	for k in get_slide_collision_count():
+		if get_slide_collision(k).get_normal().y < 0.6:
+			walled = true
+			break
+	var real := Vector2(get_real_velocity().x, get_real_velocity().z).length()
+	# pinned flat on a floor tile and not moving at all (seen on a plain 12 m ground box, a Líhavec for
+	# good - the same with the old code): a few cm up out of the floor, gravity puts it back
+	if speed > 0.3 and real < 0.05 and not walled and is_on_floor():
+		_pin_t += delta
+		if _pin_t > 0.35:
+			_pin_t = 0.0
+			var fw := Vector3(velocity.x, 0, velocity.z).normalized()
+			global_position += Vector3(0, 0.06, 0) + fw * 0.04
+	else:
+		_pin_t = 0.0
+	var pushing := walled and speed > 0.3 and real < speed * 0.3
+	if not pushing:
+		_push_t = maxf(0.0, _push_t - delta * 2.0)
+		return false
+	_push_t += delta
+	if not squeezed and _push_t > SQZ_AFTER and _cap and (_full_r > SQZ_R + 0.005 or _full_h > SQZ_H + 0.05):
+		_set_capsule(minf(_full_r, SQZ_R), minf(_full_h, SQZ_H))
+		squeezed = true
+		_sqz_n += 1
+		_sqz_chk = 0.6
+		_push_t = 0.0
+		return false
+	if _push_t > SQZ_HARD:
+		_push_t = 0.0
+		return true
+	return false
+
+func _set_capsule(r: float, h: float) -> void:
+	if _cap == null:
+		return
+	_cap.radius = r
+	_cap.height = maxf(h, r * 2.0 + 0.05)
+	_cs.position.y = _cap.height / 2.0
+
+## Is there room for the whole body here (nothing of the world in the full capsule)?
+func _room_for(r: float, h: float) -> bool:
+	var q := PhysicsShapeQueryParameters3D.new()
+	var c := CapsuleShape3D.new()
+	c.radius = r
+	c.height = maxf(h, r * 2.0 + 0.05)
+	q.shape = c
+	q.collision_mask = collision_mask
+	q.exclude = [get_rid()]
+	q.transform = Transform3D(Basis(), global_position + Vector3(0, c.height / 2.0 + 0.04, 0))
+	for hit in get_world_3d().direct_space_state.intersect_shape(q, 4):
+		var col: Object = hit.get("collider")
+		if col and not (col in get_collision_exceptions()):
+			return false
+	return true
+
+## Stuck even squeezed: a step back the way it came and a bit aside, then the same goal again.
+func _detour() -> void:
+	var n := Vector3.BACK.rotated(Vector3.UP, rotation.y)
+	for k in get_slide_collision_count():
+		if get_slide_collision(k).get_normal().y < 0.6:
+			n = get_slide_collision(k).get_normal()
+			break
+	n.y = 0
+	if n.length() < 0.1:
+		n = Vector3.BACK.rotated(Vector3.UP, rotation.y)
+	n = n.normalized()
+	var side := n.cross(Vector3.UP).normalized() * (1.0 if rng.randf() < 0.5 else -1.0)
+	var keep := goal if _resume_goal == Vector3.INF else _resume_goal
+	var to := _snap(global_position + n * 0.9 + side * 1.1)
+	_detour_n += 1
+	_resume_goal = Vector3.INF
+	goal = to
+	agent.target_position = to
+	_detour_goal = to
+	_resume_goal = keep
+	_detour_until = mission.t + 1.4
+
+## The step aside is done (or took too long): back to where it was going. true = it was detouring.
+func _detour_check() -> bool:
+	if _resume_goal == Vector3.INF:
+		return false
+	if mission.t < _detour_until and global_position.distance_to(_detour_goal) > 0.6:
+		return true
+	var back := _resume_goal
+	_resume_goal = Vector3.INF
+	_detour_goal = Vector3.INF
+	goal = back
+	agent.target_position = back
+	return false
 
 func _face(p: Vector3, delta: float) -> void:
 	var d := p - global_position

@@ -87,6 +87,7 @@ static func run(at: Node, p: Node) -> void:
 				tot += avg
 				n += 1
 			at.out("[SHOULDER] %s %s mode=%s stock_to_shoulder=%.3f worst=%.3f barrel_vs_aim=%.1f" % [gun, st[0], mate._hold_mode(), avg, worst, ang / maxf(1, cnt)])
+			at.out("[HANDS] %s %s %s" % [gun, st[0], hands(mate)])
 			if Game.cmd_arg("snaps", "1") != "0":
 				var c: Vector3 = mate.global_position + Vector3(0, 1.3 if not st[4] else 0.95, 0)
 				var fw: Vector3 = -mate.global_transform.basis.z
@@ -95,7 +96,7 @@ static func run(at: Node, p: Node) -> void:
 					if view == "side":
 						cam.global_position = c + rt * 2.6 + fw * 0.2
 					elif view == "front":
-						cam.global_position = c + fw * 2.6 + rt * 1.0 + Vector3(0, 0.2, 0)
+						cam.global_position = c + fw * 2.6 + rt * 0.3 + Vector3(0, 0.2, 0)
 					else:
 						cam.global_position = c - fw * 2.2 + rt * 0.9 + Vector3(0, 0.35, 0)
 					cam.look_at(c - Vector3(0, 0.1, 0) + fw * 0.2, Vector3.UP)
@@ -119,6 +120,30 @@ static func measure(p: Node) -> Array:
 	var muzzle_dir: Vector3 = -(g.global_transform.basis.z).normalized()
 	var aim: Vector3 = p.aim_dir()
 	return [butt.distance_to(sh), rad_to_deg(muzzle_dir.angle_to(aim))]
+
+## (2026-11-27) Where the hands and the gun are from the neck, in the body's frame (x right, y up,
+## z forward, m): rh, lh, gun = the gun model's centre; roll = how far the gun's "up" leans from the
+## world up (deg), hands_gap = the distance between the hands; both on the gun = the left hand by it.
+static func hands(p: Node) -> String:
+	var sk: Skeleton3D = p._sk
+	if sk == null or p.body_gun == null or p.body_gun.get_child_count() == 0:
+		return ""
+	var bt: Transform3D = p.body.global_transform.orthonormalized()
+	var inv := bt.affine_inverse()
+	var nk: Vector3 = (sk.global_transform * sk.get_bone_global_pose(sk.find_bone("neck"))).origin
+	var rh: Vector3 = (sk.global_transform * sk.get_bone_global_pose(sk.find_bone("hand.R"))).origin
+	var lh: Vector3 = (sk.global_transform * sk.get_bone_global_pose(sk.find_bone("hand.L"))).origin
+	var g: Node3D = p.body_gun.get_child(0)
+	var gc: Vector3 = g.global_transform * ArmIK._aabb(g).get_center()
+	var f := func(v: Vector3) -> String:
+		var l: Vector3 = inv.basis * (v - nk)
+		return "(%.2f %.2f %.2f)" % [l.x, l.y, -l.z]
+	var gb: Basis = g.global_transform.basis.orthonormalized()
+	var fw := -gb.z
+	var flat_up := (Vector3.UP - fw * fw.dot(Vector3.UP)).normalized()
+	var roll := rad_to_deg(gb.y.signed_angle_to(flat_up, fw))
+	var lf: Vector3 = inv.basis * fw
+	return "rh=%s lh=%s gun=%s barrel=(%.2f %.2f %.2f) roll=%.0f hands_gap=%.2f" % [f.call(rh), f.call(lh), f.call(gc), lf.x, lf.y, -lf.z, roll, rh.distance_to(lh)]
 
 ## radiosprint (Ari: „když sprintuješ a zmáčkneš vysílačku, hráč vytáhne třetí ruku“): vlastní
 ## voják s puškou sprintuje a drží T. Z očí: kolik rukou je vidět (`[RADIO] grip_two … radio …`),

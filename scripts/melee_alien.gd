@@ -425,6 +425,8 @@ func _pl_think(delta: float) -> void:
 ## Melee creatures must reach their prey even where the nav mesh gives up:
 ## when the path ends short of the goal, they go straight at it.
 func _arrived() -> bool:
+	if _detour_check():
+		return false
 	return global_position.distance_to(goal) < 1.0
 
 func _walk(speed: float, delta: float) -> void:
@@ -436,7 +438,7 @@ func _walk(speed: float, delta: float) -> void:
 	if agent.is_navigation_finished():
 		dir = goal - global_position
 	else:
-		dir = agent.get_next_path_position() - global_position
+		dir = _steer() - global_position
 	dir.y = 0
 	if dir.length() < 0.05:
 		dir = goal - global_position
@@ -445,6 +447,11 @@ func _walk(speed: float, delta: float) -> void:
 	velocity.x = dir.x * speed
 	velocity.z = dir.z * speed
 	_face(global_position + dir, delta)
+	if not _sqz_off:
+		# (2026-11-27) squeeze through, then a short step aside - see alien._push_check
+		if _push_check(speed, delta):
+			_detour()
+		return
 	# stuck against something: give up this goal
 	if get_slide_collision_count() > 0 and Vector2(get_real_velocity().x, get_real_velocity().z).length() < speed * 0.2:
 		_stuck_t += delta

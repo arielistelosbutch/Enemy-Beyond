@@ -844,3 +844,13 @@ func _hangar() -> void:
 	var hb := _btn(side, "Těžká zbraň: " + String(Campaign.JET_HEAVY[Campaign.jet_heavy()][0]), func(): Campaign.cycle_jet_weapon(true); refresh())
 	gb.disabled = Campaign.viewer
 	hb.disabled = Campaign.viewer
+	# (0.72.8) the plasma guns feed on PL-MAG-01 from the armory - without them they stay at home
+	if Campaign.jet_gun() == "plasma" or Campaign.jet_heavy() == "plasma_cannon":
+		var pm := Campaign.plasma_mags()
+		if Campaign.plasma_pool() < 0.02:
+			_lbl(side, "Ve zbrojnici nejsou PL-MAG-01: plazma zůstane doma, poletí %s / %s." % [
+				String(Campaign.JET_GUNS[Campaign.jet_fallback(false)][0]) if Campaign.jet_gun() == "plasma" else String(Campaign.JET_GUNS[Campaign.jet_gun()][0]),
+				String(Campaign.JET_HEAVY[Campaign.jet_fallback(true)][0]) if Campaign.jet_heavy() == "plasma_cannon" else String(Campaign.JET_HEAVY[Campaign.jet_heavy()][0])], UiSkin.BAD, 8)
+		else:
+			var op := int(round((Campaign.plasma_pool() - pm) * 100.0))
+			_lbl(side, "PL-MAG-01 ve zbrojnici: %d%s (dělo 4 rány, kulomet 130 ran ze zásobníku; dělí se mezi piloty)" % [pm, (" + načatý %d %%" % op) if op > 0 else ""], DIM, 8)

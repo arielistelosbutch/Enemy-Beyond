@@ -56,6 +56,7 @@ run firemode    60 s "RESULT firemode ok"                tools/test/firemodetest
 run mtypes      60 s "RESULT missiontypes ok"            tools/test/missiontypes.gd
 run alloy       60 s "RESULT alloytest ok"               tools/test/alloytest.gd
 run stack       60 s "RESULT stacktest ok"               tools/test/stacktest.gd
+run plasmamag   60 s "RESULT plasmamag ok"               tools/test/plasmamagtest.gd
 run basesell    60 s "RESULT basesell ok"                tools/test/basesell.gd
 run convoy      300 h "RESULT convoytest saved true banner true .* finished true" --autotest=convoytest --mtype=convoy --biome=forest --hold=90
 run convoy_fail 300 h "Vetřelci rozbili náklad konvoje"  --autotest=convoytest --mtype=convoy --biome=farm --group=bijci --fail=1
@@ -319,6 +320,10 @@ done
 run spectate  200 x "RESULT spectate active true eyes true next true auto true running true noaim true" --autotest=spectate --mtype=terror --biome=farm --seed=3 --day=1
 run daze      150 h "RESULT dazetest home false frozen ([0-3]?[0-9]) % .* cooldown true wall true" --autotest=dazetest --crew=ohar,grey --mtype=crash --biome=farm --seed=3
 run quiet     240 h "RESULT quiettest guns [1-9][0-9]* bad 0 knife true steps true" --autotest=quiettest --crew=grey,grey,grey,grey,grey,grey,grey,grey --mtype=crash --biome=farm --seed=3
+run lawn_scout 150 h "RESULT lawntest scout inside 0" --autotest=lawntest --mtype=landed --ufo=scout --biome=farm --seed=3
+run lawn_giant 200 h "RESULT lawntest battleship inside 0" --autotest=lawntest --mtype=crash --ufo=battleship --biome=farm --seed=3
+run darktown  200 h "RESULT darktest civ [1-9][0-9]* off ([0-9]+) tv ([0-9]+)/\2 lamps_on 0 ufo_glow [1-9]" --autotest=darktest --mtype=terror --biome=town --seed=3 --hour=23
+run shielddraw 120 h "RESULT shielddraw rifle true sabre true swap true stow true" --autotest=shielddraw --mtype=crash --biome=farm --seed=3
 run sabre     120 h "RESULT sabretest shield true near true far true swing true clip true" --autotest=sabretest --crew=jestetan,grey --mtype=crash --biome=farm --seed=3
 run scan    200 h "RESULT scantest base true upgraded true belt true" --autotest=scantest --mtype=terror --biome=town --seed=3 --day=1
 run debugkeys 200 h "RESULT debugkeys ok" --autotest=debugkeys --mtype=crash --biome=farm --seed=3 --day=1
@@ -348,7 +353,7 @@ run civdeath    150 h "RESULT civdeath 10 deaths bad 0" --autotest=civdeath --mt
 run flare       200 h "RESULT flaretest life (59|6[0-9]) lit true moved 0.00" --autotest=flaretest --mtype=crash --biome=farm
 run claymore    200 h "RESULT claytest placed 1 faces true levit_over true fired true walker_hit true levit_in_wedge [1-9][0-9]* behind_6m 0" --autotest=claytest --mtype=crash --biome=farm --crew=grey,grey,levit --seed=3
 run sentry      200 h "RESULT sentrytest kind rifle placed 1 faces true still_shots 0 shots [1-9][0-9]* dealt [1-9][0-9]* kills 1 behind 0 friendly 0 topped 20 folded true kept true left [0-9]* wrecked true" --autotest=sentrytest --mtype=crash --biome=farm --crew=grey,grey --seed=3
-run sentry_pl   200 h "RESULT sentrytest kind plasma placed 1 faces true still_shots 0 shots [1-9][0-9]* dealt [1-9][0-9]* kills 1 behind 0 friendly 0 topped 20 folded true kept true left [0-9]* wrecked true" --autotest=sentrytest --mtype=crash --biome=farm --crew=grey,grey --seed=3 --tier=plasma
+run sentry_pl   200 h "RESULT sentrytest kind plasma placed 1 faces true still_shots 0 shots [1-9][0-9]* dealt [1-9][0-9]* kills 1 behind 0 friendly 0 topped 40 folded true kept true left [0-9]* wrecked true" --autotest=sentrytest --mtype=crash --biome=farm --crew=grey,grey --seed=3 --tier=plasma
 run frag        200 h "RESULT fragtest wood [5-8]/8 bare [0-8]/8 hurt6m [1-9]" --autotest=fragtest --mtype=crash --biome=farm --crew=grey,grey
 run radar       150 h "RESULT radar solo true scanner true kit_scanner false kit_radio false" --autotest=radartest --mtype=crash --biome=farm --day=1
 run rampcheck   200 h "RESULT rampcheck shut true open true" --autotest=rampcheck --prep=1
@@ -373,7 +378,11 @@ run leaveany    150 h "RESULT leaveany early_block true done true finished true"
 run reinf_early 90 h "success=true why=Úkol splněn, ale tým odletěl před posilami" --autotest=coopevachost --port=7939 --players=1 --reinf=early
 run safeend     150 h "RESULT safeend finished true hp ([0-9.]+) -> \\1 shots 0 stress_rise 20.1" --autotest=safeend
 run recovery_mission 150 h "RESULT recoverymission ufo true crew [1-9][0-9]* near true kits 2 left 0 carried 2 done true brought 2 dead_brings 0" --autotest=recoverymission --oftype=crash
-run failkit     90 h "RESULT failkit aboard true walk_safe true walk_field true same_as_won true left_behind true fell_won true" --autotest=failkit
+run failkit     90 h "RESULT failkit aboard true walk_safe true walk_field true same_as_won true left_behind true fell_won true ground_won true ground_fail true friend true pickup_once true" --autotest=failkit
+run newmods    90 h "RESULT newmods sabre_cd 0.60->0.48 draw 0.60 wire 2.8->4.5 turret_ammo 60->90 hp 160->256 turn 1.6 range 1.2 ui_guns true" --autotest=newmods --mtype=crash --biome=farm --seed=3
+run suitwear   90 h "RESULT suitwear bit true visible true vest_hidden true icon true research true shop true" --autotest=suitwear --mtype=crash --biome=farm --seed=3
+run sentryhome  200 h "RESULT sentryhome placed 1 carried false won_back true failed_lost true wrecked_lost true" --autotest=sentryhome --mtype=crash --biome=farm --crew=grey,grey --seed=3
+run sentryrange 200 h "RESULT sentryrange dist (3[5-9]|4[0-9]) shots [1-9][0-9]* first_ms ([3-9][0-9][0-9]|[0-9]{4}) turned [0-9.]+ range 50" --autotest=sentryrange --mtype=crash --biome=farm --crew=grey,grey --seed=3
 run suit        100 h "RESULT suittest down true"        --autotest=suittest --group=sedaci --mtype=crash
 run levgrab     100 h "RESULT levgrab ko true carried true" --autotest=levgrab --group=levite --mtype=crash
 run mirotest   150 h "RESULT mirotest frenzy true .* mending true .* healed true" --autotest=mirotest --group=levite --mtype=landed
@@ -395,7 +404,7 @@ run lasertest  120 h "RESULT lasertest drained true waiting true ready true burs
 run prone_heavy 200 h "RESULT pronetest stowed true key true inv true forced true back true pistol true standing true" --autotest=pronetest --mtype=crash --biome=farm --seed=3
 run lcshot     150 h "RESULT lcshot hit true shards true hum true ready true" --autotest=lcshot --mtype=landed
 run lcsound    60 s "RESULT lcsound ok"                 tools/test/lcsound.gd
-run plasmatest 150 h "RESULT plasmatest pistol 30 hot true interlock true cannon 6 minigun true rifle 15 grenade true seared true mags_left 0" --autotest=plasmatest --mtype=landed
+run plasmatest 150 h "RESULT plasmatest pistol 60 hot true interlock true cannon 12 minigun true rifle 30 grenade true seared true mags_left 0" --autotest=plasmatest --mtype=landed
 run shieldtest 100 h "RESULT shieldtest stit low 10 up 2 broke true after [0-9]+ plasma 4 knock true vest 16/13 worn true" --autotest=shieldtest --mtype=landed
 run shield_x  100 h "RESULT shieldtest stit_x low 10 up 1 broke true after [0-9]+ plasma 2 knock true vest 16/13 worn true" --autotest=shieldtest --mtype=landed --shield=stit_x
 run gearloss    60 h "RESULT gearloss order_wait true arrived true sold true won_grenades 4->3 clips_kept true lost_grenades 1 vests 1" --autotest=gearloss
@@ -415,6 +424,8 @@ run civpanic   150 h "RESULT civpanic hidden [1-9][0-9]* locked [1-9][0-9]* knoc
 run nvgtest    120 h "RESULT nvgtest blind true recover true shot true torch true low true dead true off true" --autotest=nvgtest --mtype=landed --hour=23
 run civstuck_town 150 h "RESULT civstuck .* spawn_in_wall 0 .* longest_wall 0\.[0-9] s longest_stuck [0-7]\.[0-9] s" --autotest=civstuck --mtype=terror --biome=town --seed=4 --hour=13
 run civstuck_farm 150 h "RESULT civstuck .* spawn_in_wall 0 .* longest_wall 0\.[0-9] s longest_stuck [0-7]\.[0-9] s" --autotest=civstuck --mtype=terror --biome=farm --seed=7 --hour=13
+# (2026-11-27) big aliens through doors, corridors and up stairs into houses (before: Bijec, Kolos 0-1 of 5)
+run squeeze_town 600 h "RESULT squeeze mode walk fail [01] " --autotest=squeeze --mtype=terror --biome=town --seed=3 --day=1 --difficulty=normal --mode=walk --tries=5 --limit=35 --races=bijec,kolos,lihnoun,nador,ohnivec
 run tunetest   160 h "RESULT tunetest diff normal" --autotest=tunetest --mtype=crash --biome=farm --seed=3 --hour=13
 run ai_late    160 h "RESULT aitest jestetan late 1 dmg [1-9][0-9][0-9]" --autotest=aitest --mtype=crash --biome=farm --late=1 --seed=5 --hour=13
 run latetest   120 h "RESULT latetest pack [2-9] nemesis [1-9][0-9]* marked true waves 2 added [2-9]" --autotest=latetest --mtype=crash --biome=farm --late=1 --seed=5 --hour=23

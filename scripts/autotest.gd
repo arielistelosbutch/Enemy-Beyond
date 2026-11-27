@@ -101,6 +101,7 @@ func _process(delta: float) -> void:
 		"dazetest", "dazebase": preload("res://scripts/autotest_daze.gd").run(self, p)
 		"quiettest": preload("res://scripts/autotest_quiet.gd").run(self, p)
 		"sabretest": preload("res://scripts/autotest_sabre.gd").run(self, p)
+		"shielddraw": preload("res://scripts/autotest_sabre.gd").draw(self, p)
 		"scantest": preload("res://scripts/autotest_scan.gd").run(self, p)
 		"debugkeys": preload("res://scripts/autotest_debugkeys.gd").run(self, p)
 		"quiethost", "quietclient": preload("res://scripts/autotest_quiet.gd").pair(self, p)
@@ -111,6 +112,7 @@ func _process(delta: float) -> void:
 		"civpanic": preload("res://scripts/autotest_civnvg.gd").civpanic(self, p)
 		"nvgtest": preload("res://scripts/autotest_civnvg.gd").nvgtest(self, p)
 		"civstuck": preload("res://scripts/autotest_civnvg.gd").civstuck(self, p)
+		"squeeze": preload("res://scripts/autotest_squeeze.gd").run(self, p)
 		"civlooks": preload("res://scripts/autotest_civnvg.gd").civlooks(self, p)
 		"radartest": FL.radar(self, p)
 		"tasktest": preload("res://scripts/autotest_task.gd").run(self, p)
@@ -151,6 +153,10 @@ func _process(delta: float) -> void:
 		"pothost", "potclient": _potcoop(p)
 		"safeend": _safeend(p)
 		"failkit": _failkit(p)
+		"newmods": _newmods(p)
+		"suitwear": _suitwear(p)
+		"sentryhome": _sentryhome(p)
+		"sentryrange": _sentryrange(p)
 		"recoverymission": _recoverymission(p)
 		"coopevachost", "coopevacclient": _coopevac(p)
 		"safeouthost", "safeoutclient": _safeout(p)
@@ -335,6 +341,8 @@ func _process(delta: float) -> void:
 		"hitbox": _hitbox(p)
 		"ufohull", "hullhost", "hullclient": preload("res://scripts/autotest_hull.gd").run(self, p)
 		"ufoentry": preload("res://scripts/autotest_entry.gd").run(self, p)
+		"lawntest": preload("res://scripts/autotest_entry.gd").lawn(self, p)
+		"darktest": preload("res://scripts/autotest_entry.gd").dark(self, p)
 		"leaktest", "leakmap", "leakhost", "leakclient": preload("res://scripts/autotest_leak.gd").run(self, p)
 		"pockettest": _pockettest(p)
 		"wedgetest": _wedgetest(p)
@@ -465,7 +473,7 @@ func _process(delta: float) -> void:
 			if t > 25.0:
 				out("RESULT players=%d aliens=%d" % [m().players().size(), m().aliens().size()])
 				get_tree().quit()
-	if t > (300.0 if mode in ["sightshot", "scopelens", "lasttest", "lasthost", "lastclient"] else 120.0) and mode != "campaign" and mode != "tactics" and mode != "dirtest":
+	if t > (float(Game.cmd_arg("timeout", "1500")) if mode == "squeeze" else 300.0 if mode in ["sightshot", "scopelens", "lasttest", "lasthost", "lastclient"] else 120.0) and mode != "campaign" and mode != "tactics" and mode != "dirtest":
 		out("TIMEOUT")
 		get_tree().quit()
 
@@ -2722,6 +2730,79 @@ func _safeend(p: Node) -> void:
 	out("RESULT safeend finished %s hp %.1f -> %.1f shots %d stress_rise %.1f fall %.1f" % [m().finished, hp0, p.hp, shots, rise, fall])
 	get_tree().quit()
 
+## (Ari 2026-11-27) ARM-03, the alloy suit over the camouflage: seen on the body (the vest of the look
+## and the cargo pockets go), synced in the gear mask, and how much of a hit it stops next to the vests.
+func _suitwear(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.hp = 5000.0
+	p.max_hp = 5000.0
+	var got := {}
+	for ar in ["", "vesta", "pancir", "oblek"]:
+		for kind in ["", "plasma", "claw"]:
+			p.armor = ar
+			p.vest_wear = 0.0
+			p.stim_until = -1.0
+			var h0: float = p.hp
+			p.hurt(100.0, p.global_position + Vector3(0, 0, -20), false, kind)
+			got["%s/%s" % [ar if ar != "" else "none", kind if kind != "" else "bullet"]] = h0 - p.hp
+	p.armor = "oblek"
+	p.gear = p._gear_mask()
+	p._apply_gear()
+	var sn: Node3D = p._gear_nodes.get("Gear_Suit")
+	var vest: Node3D = p._gear_nodes.get("Look_VestHarness")
+	var line := ""
+	for k in got:
+		line += " %s %.0f" % [k, got[k]]
+	out("RESULT suitwear bit %s visible %s vest_hidden %s icon %s research %s shop %s%s" % [(p.gear >> 12) & 1 == 1, sn != null and sn.visible,
+		vest == null or not vest.visible, ResourceLoader.exists("res://assets/icons/oblek.png"), Campaign.RESEARCH.has("oblek"), Campaign.SHOP.has("oblek") and Campaign.SHOP_AL.has("oblek"), line])
+	get_tree().quit()
+
+## (Ari 2026-11-27) parts on the RZ-94 sabre, the Claymore and the ST-01 turret: without and with.
+func _newmods(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	for a in m().aliens():
+		a.queue_free()
+	var mc: Dictionary = p.merc
+	mc["mods"] = {}
+	mc["fit"] = {}
+	# the sabre: a swing's cool-down, the cut
+	var rule: Dictionary = Game.ITEMS["savle"]
+	p._melee("rh", rule)
+	var cd0: float = p.fire_cd
+	mc["mods"]["savle"] = ["vyvazeni", "brus", "ergo", "pouzdro"]
+	mc["fit"]["savle"] = {"vyvazeni": "vyvazeni", "brus": "brus", "ergo": "ergo", "pouzdro": "pouzdro"}
+	p._melee("rh", rule)
+	var cd1: float = p.fire_cd
+	var draw: float = Game.fetch_time("savle", "side", mc) / Game.fetch_time("savle", "side", {})
+	# the Claymore: the wire's half-length, the blast at 10 m in front
+	var at: Vector3 = p.global_position + Vector3(0, 0, -3)
+	m().add_mine(at, String(p.name), Vector3(0, 0, -1))
+	var mn0: Dictionary = m().mines[-1]
+	var w0: float = (mn0["a"] as Vector3).distance_to(mn0["b"])
+	mc["mods"]["mine"] = ["kulicky", "drat", "nozky"]
+	mc["fit"]["mine"] = {"kulicky": "kulicky", "drat": "drat", "nozky": "nozky"}
+	m().add_mine(at + Vector3(4, 0, 0), String(p.name), Vector3(0, 0, -1))
+	var mn1: Dictionary = m().mines[-1]
+	var w1: float = (mn1["a"] as Vector3).distance_to(mn1["b"])
+	# the turret: ammo, hp, turning, reach
+	m().req_sentry(p.global_position + Vector3(3, 0, 3), Vector3(0, 0, -1), String(p.name), -1, "rifle")
+	mc["mods"]["sentry"] = ["zasobnik", "servo", "plechy", "cidlo"]
+	mc["fit"]["sentry"] = {"zasobnik": "zasobnik", "servo": "servo", "plechy": "plechy", "cidlo": "cidlo"}
+	m().req_sentry(p.global_position + Vector3(-3, 0, 3), Vector3(0, 0, -1), String(p.name), -1, "rifle")
+	await get_tree().create_timer(0.3).timeout
+	var st: Array = m().sentries()
+	var s0: Node = st[0]
+	var s1: Node = st[1]
+	out("RESULT newmods sabre_cd %.2f->%.2f draw %.2f wire %.1f->%.1f turret_ammo %d->%d hp %.0f->%.0f turn %.1f range %.1f ui_guns %s" % [cd0, cd1, draw, w0, w1, s0.ammo_max(), s1.ammo_max(), s0.hp, s1.hp, s1.k_turn, s1.k_range,
+		Game.MOD_FITS.has("savle") and Game.MOD_FITS.has("mine") and Game.MOD_FITS.has("sentry")])
+	get_tree().quit()
+
 ## (0.7x, Ari: "odletí z mise bez úspěchu a věci se vytratí") a failed mission: who stands at the
 ## transport keeps what he still carries, who stays out there (down, dead) loses all he took.
 func _failkit(p: Node) -> void:
@@ -2758,7 +2839,154 @@ func _failkit(p: Node) -> void:
 	var site: Dictionary = m()._fallen_site(false, bw, true)
 	var fell_won: bool = bw[1] == a[1] and int(bw[78].get("rifle", 0)) == 1 and (site.get("brought", []) as Array).size() == 1 \
 		and (site["brought"][0]["armory"] as Dictionary).is_empty() and site["brought"][0].has("mods")
-	out("RESULT failkit aboard %s walk_safe %s walk_field %s same_as_won %s left_behind %s fell_won %s" % [aboard, walk_safe, walk_field, same_won, left, fell_won])
+	# (Ari 2026-11-27) a rifle dropped in panic and left lying: a won mission takes it home, a failed
+	# one does not; a friend who carried it home makes up for it; an alien gun carried home is found
+	p.global_position = m().map["evac"] + Vector3(0, 0.3, 0)
+	p.downed = false
+	m()._abandoned = false
+	m().kits.erase(78)
+	m().kits_now.erase(78)
+	m().kits_now[1] = ["rifle_clip", "vesta", "a_rifle"]           # no rifle in hand, an alien gun
+	m().drop_item({"id": "rifle"}, p.global_position + Vector3(2, 0, 0))
+	await get_tree().create_timer(0.2).timeout
+	var gw: Dictionary = m().gear_lost(true)
+	var ground_won: bool = not gw[1].has("rifle") and int(m().gear_found.get("a_rifle", 0)) == 1
+	var gf: Dictionary = m().gear_lost(false)
+	var ground_fail: bool = int(gf[1].get("rifle", 0)) == 1
+	for pid in m().pickups.keys():
+		m().take_pickup(pid)
+	m().kits_now[77] = ["rifle", "rifle", "rifle_clip", "vesta"]    # the friend picked it up
+	var gm: Dictionary = m().gear_lost(false)
+	var friend: bool = not gm[1].has("rifle") and not gm[77].has("rifle") and not m().gear_found.has("rifle")
+	# the host hands out what lies on the ground: one request = one piece (two at once: one gets it)
+	p.inv.erase("lh")
+	var held: int = p.inv.size()
+	m().drop_item({"id": "grenade"}, p.global_position)
+	await get_tree().create_timer(0.2).timeout
+	var gpid: String = m().pickups.keys()[0]
+	m().req_pickup(gpid)
+	m().req_pickup(gpid)
+	var once: bool = p.inv.size() == held + 1 and m().pickups.is_empty()
+	out("RESULT failkit aboard %s walk_safe %s walk_field %s same_as_won %s left_behind %s fell_won %s ground_won %s ground_fail %s friend %s pickup_once %s" % [aboard, walk_safe, walk_field, same_won, left, fell_won, ground_won, ground_fail, friend, once])
+	get_tree().quit()
+
+## (Ari 2026-11-27) the turret's reach is 50 m (was 25) and it turns onto a target before firing:
+## an alien moving 40 m away gets shot; the first shot comes only after the head is on it.
+func _sentryrange(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.hp = 5000.0
+	var g: Node = null
+	for a in m().aliens():
+		if g == null and a.race == "grey":
+			g = a
+		else:
+			a.queue_free()
+	g.set_physics_process(false)
+	g.global_position = p.global_position + Vector3(0, -200, 0)
+	p.inv["p0"] = {"id": "sentry"}
+	var ss: PhysicsDirectSpaceState3D = m().get_world_3d().direct_space_state
+	var dist := 40.0
+	for k in 32:
+		var yaw := k * TAU / 32.0
+		var fw := Vector3(-sin(yaw), 0, -cos(yaw))
+		var o: Vector3 = p.global_position + Vector3(0, 1.0, 0)
+		if ss.intersect_ray(PhysicsRayQueryParameters3D.create(o, o + fw * (dist + 3.0), Game.WORLD | Game.GLASS)).is_empty():
+			p.rotation.y = yaw
+			break
+	p.head.rotation.x = 0.0
+	await get_tree().physics_frame
+	p._place_sentry()
+	await get_tree().create_timer(6.5).timeout
+	var st: Array = m().sentries()
+	if st.is_empty():
+		out("RESULT sentryrange placed 0")
+		get_tree().quit()
+		return
+	var s: Node = st[0]
+	var fwd: Vector3 = -s.global_transform.basis.z
+	fwd.y = 0
+	fwd = fwd.normalized()
+	var side := Vector3(-fwd.z, 0, fwd.x)
+	p.global_position = s.global_position - fwd * 3.0 + side * 2.0 + Vector3(0, 0.3, 0)
+	# off to the side of its arc (0.9 rad) at 40 m: the head has to turn there first
+	# the widest angle in its arc (up to 0.95 rad, either side) where it can see 40 m out
+	var spot := Vector3.INF
+	for k in 20:
+		var ang: float = (0.95 - (k / 2) * 0.05) * (1.0 if k % 2 == 0 else -1.0)
+		var at: Vector3 = s.global_position + (fwd * cos(ang) + side * sin(ang)) * dist
+		var gh := ss.intersect_ray(PhysicsRayQueryParameters3D.create(at + Vector3(0, 6, 0), at + Vector3(0, -6, 0), Game.WORLD))
+		if gh.is_empty():
+			continue
+		g.global_position = gh.position + Vector3(0, 0.1, 0)
+		if s._sees(g):
+			spot = g.global_position
+			break
+	if spot == Vector3.INF:
+		out("RESULT sentryrange nospot")
+		get_tree().quit()
+		return
+	g.hp = 5000.0
+	g._speed = 1.5
+	var yaw0: float = s.yaw
+	var t0 := Time.get_ticks_msec()
+	var first_ms := -1
+	var yaw_at_first := 0.0
+	var a0: int = s.fired
+	for i in 200:
+		await get_tree().physics_frame
+		if s.fired > a0 and first_ms < 0:
+			first_ms = Time.get_ticks_msec() - t0
+			yaw_at_first = s.yaw
+	var shots: int = s.fired - a0
+	var turned: float = absf(yaw_at_first - yaw0)
+	if shots == 0:
+		out("[SR] watch %s moving %s sees %s target %s" % [s._watchable(g), s._moving(g), s._sees(g), s._target])
+	out("RESULT sentryrange dist %.0f shots %d first_ms %d turned %.2f range %.0f" % [g.global_position.distance_to(s.global_position), shots, first_ms, turned, s.RANGE])
+	get_tree().quit()
+
+## (Ari 2026-11-27) a turret set down on the mission: won -> it comes home (not lost), failed (fled,
+## wiped) -> it stays there and is lost; a destroyed one is lost either way. Real placement, real
+## kit reports; a second turret of a co-op player (P77, walked out at the transport) the same.
+func _sentryhome(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.hp = 5000.0
+	for a in m().aliens():
+		a.set_physics_process(false)
+		a.global_position += Vector3(0, -200, 0)
+	p.inv["p0"] = {"id": "sentry"}
+	m().kits[1] = ["sentry"]
+	m().kits_now[1] = ["sentry"]
+	p.head.rotation.x = 0.0
+	await get_tree().physics_frame
+	p._place_sentry()
+	await get_tree().create_timer(6.5).timeout
+	var placed: int = m().sentries().size()
+	await get_tree().create_timer(4.0).timeout      # (the kit is reported every 3 s - without the turret)
+	var carried: bool = "sentry" in (m().kits_now.get(1, []) as Array)
+	# a co-op player's turret
+	m().kits[77] = ["sentry", "rifle"]
+	m().kits_now[77] = ["rifle"]
+	m()._out_safe[77] = true
+	m()._sentry_add("Sentry_test77", p.global_position + Vector3(9, 0, 0), Vector3(0, 0, -1), "rifle", "P77", -1)
+	await get_tree().create_timer(0.3).timeout
+	var won: Dictionary = m().gear_lost(true)
+	var lost: Dictionary = m().gear_lost(false)
+	var won_ok: bool = not won[1].has("sentry") and not won[77].has("sentry")
+	var lost_ok: bool = int(lost[1].get("sentry", 0)) == 1 and int(lost[77].get("sentry", 0)) == 1
+	# a wrecked turret: lost even when the mission is won
+	var s: Node = m().get_node_or_null("Sentry_test77")
+	if s:
+		m().explode(s.global_position + Vector3(0.5, 0.3, 0), 3.0, 400.0, "-", true)
+	await get_tree().create_timer(0.5).timeout
+	var won2: Dictionary = m().gear_lost(true)
+	var wreck_ok: bool = int(won2[77].get("sentry", 0)) == 1 and not won2[1].has("sentry")
+	out("RESULT sentryhome placed %d carried %s won_back %s failed_lost %s wrecked_lost %s" % [placed, carried, won_ok, lost_ok, wreck_ok])
 	get_tree().quit()
 
 ## (Ari 2026-11-26) "Vyzvednout padlé": the site of a wiped team - same map, the bodies with their
@@ -3565,7 +3793,7 @@ func _lasertest(p: Node) -> void:
 	p.mg_heat = 0.0
 	p.fire_cd = 0.0
 	Input.action_press("fire")
-	await get_tree().create_timer(3.6).timeout
+	await get_tree().create_timer(0.3 + Game.mag_size("plasma_rifle") * 0.23).timeout
 	Input.action_release("fire")
 	var pr_left := int(p.inv["rh"]["loaded"])
 	var pr_hot: bool = p._mg_hot

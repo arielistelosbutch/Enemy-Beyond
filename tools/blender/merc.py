@@ -650,6 +650,42 @@ piece("Gear_Plate", [box(alloy, (0, 0.13, 1.3), (0.4, 0.07, 0.36), group="spine"
                      box(alloy, (-0.25, 0, 1.43), (0.14, 0.17, 0.1), group="upperarm.R"),
                      box(alloy, (0.1, 0.09, 0.72), (0.12, 0.05, 0.2), group="thigh.L"),
                      box(alloy, (-0.1, 0.09, 0.72), (0.12, 0.05, 0.2), group="thigh.R")])
+# (Ari 2026-11-27) ARM-03 "Krunýř": a combat suit of alien alloy worn OVER the camouflage - plates
+# on the chest, back, belly, shoulders, arms, thighs, knees and shins; the uniform shows at the
+# joints. Own design: segmented slate plates with dark trim and thin amber seams. Rigid on the
+# same 15 bones as everything else (the afk movements and the grips stay as they are).
+suitm = mat("SuitAlloy", (0.115, 0.125, 0.15), rough=0.32)
+suitt = mat("SuitTrim", (0.045, 0.048, 0.055), rough=0.5)
+suitg = mat("SuitGlow", (1.0, 0.55, 0.15), emit=1.6)
+su = [bb(suitm, (0, 0.135, 1.31), (0.35, 0.055, 0.24), "spine", 0.03),           # chest plate
+      bb(suitt, (0, 0.128, 1.44), (0.27, 0.075, 0.05), "spine", 0.015),          # collar ridge
+      bb(suitt, (0, 0.0, 1.462), (0.19, 0.19, 0.045), "spine", 0.015),           # gorget round the neck
+      bb(suitm, (0, -0.135, 1.30), (0.35, 0.05, 0.27), "spine", 0.03),           # back plate
+      bb(suitt, (0, -0.163, 1.28), (0.06, 0.02, 0.24), "spine", 0.008),          # the spine ridge
+      box(suitg, (0, 0.1635, 1.345), (0.2, 0.006, 0.01), group="spine"),         # amber seams
+      box(suitg, (0, 0.1635, 1.255), (0.12, 0.006, 0.008), group="spine"),
+      box(suitg, (0, -0.174, 1.38), (0.012, 0.006, 0.07), group="spine")]
+for i, (zc, w) in enumerate(((1.163, 0.31), (1.118, 0.3))):                       # belly bands
+    su.append(bb(suitm if i == 0 else suitt, (0, 0.122, zc), (w, 0.05, 0.038), "spine", 0.01))
+su.append(bb(suitm, (0, 0.118, 1.068), (0.27, 0.05, 0.04), "hips", 0.01))
+for x in (1, -1):
+    su.append(bb(suitm, (0.196 * x, 0.0, 1.27), (0.028, 0.2, 0.22), "spine", 0.01))   # side panels
+for s, x in (("L", 1), ("R", -1)):
+    U, F, T, S = "upperarm." + s, "forearm." + s, "thigh." + s, "shin." + s
+    su.append(bb(suitm, (0.25 * x, 0, 1.432), (0.15, 0.19, 0.085), U, 0.03))      # pauldron, two layers
+    su.append(bb(suitt, (0.262 * x, 0, 1.375), (0.12, 0.172, 0.05), U, 0.015))
+    su.append(box(suitg, (0.25 * x, 0.096, 1.432), (0.08, 0.006, 0.008), group=U))
+    su.append(bb(suitm, (0.271 * x, 0, 1.225), (0.026, 0.1, 0.12), U, 0.008))    # outer upper-arm plate
+    su.append(bb(suitt, (0.232 * x, -0.055, 1.135), (0.075, 0.035, 0.06), F, 0.012))   # elbow cop
+    su.append(bb(suitm, (0.235 * x, 0, 1.035), (0.106, 0.116, 0.14), F, 0.02))   # vambrace
+    su.append(box(suitg, (0.235 * x, 0.059, 1.035), (0.05, 0.004, 0.006), group=F))
+    su.append(bb(suitm, (0.1 * x, 0.088, 0.865), (0.14, 0.03, 0.13), T, 0.012))   # tasset
+    su.append(bb(suitm, (0.1 * x, 0.093, 0.70), (0.13, 0.03, 0.17), T, 0.012))    # thigh plate
+    su.append(bb(suitt, (0.176 * x, 0, 0.68), (0.024, 0.12, 0.16), T, 0.008))    # outer thigh
+    su.append(bb(suitt, (0.1 * x, 0.083, 0.52), (0.12, 0.04, 0.1), S, 0.018))     # knee cop
+    su.append(bb(suitm, (0.1 * x, 0.08, 0.33), (0.112, 0.028, 0.25), S, 0.012))   # shin greave
+    su.append(box(suitg, (0.1 * x, 0.0955, 0.40), (0.006, 0.004, 0.07), group=S))
+piece("Gear_Suit", su)
 piece("Gear_Scanner", [box(scan, (0.25, 0.08, 0.82), (0.05, 0.14, 0.09), group="hand.L"),
                        box(screen, (0.25, 0.1, 0.87), (0.04, 0.08, 0.005), group="hand.L")])
 
@@ -787,5 +823,13 @@ if "--preview" in sys.argv:
         preview(sys.argv[i + 3], target=(0, 0, 1.05), dist=2.4, angle=float(sys.argv[i + 4]), height=0.1, res=(400, 600))
     else:
         preview(sys.argv[i + 3], target=(0, 0, 1.0), dist=2.6 if "--kit" in sys.argv else 3.4, angle=float(sys.argv[i + 4]), height=0.25, res=(420, 560) if "--kit" in sys.argv else (480, 480))
+elif "--suit" in sys.argv:
+    # (2026-11-27) the ARM-03 suit on its own (assets/models/oblek.glb: icon, encyclopedia, armory),
+    # in the rest pose, without the bones; turned to stand as the guns do (Blender -Y = Godot front)
+    so = [o for o in meshes if o.name == "Gear_Suit"][0]
+    so.modifiers.clear()
+    so.parent = None
+    so.vertex_groups.clear()
+    export_glb(OUT, [so], animations=False)
 else:
     export_glb(OUT, [rig] + meshes, animations=True)

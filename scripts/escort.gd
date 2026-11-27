@@ -135,6 +135,7 @@ func _ready() -> void:
 		_say("PŘEPADENÍ! Řídíš %s - uhýbej (A/D), Shift forsáž. Vydrž, dokud to nevzdají." % Campaign.CRAFT_NAMES.get(tr_kind, "transport"), 6.0)
 	elif not down:
 		_say("PŘEPADENÍ! Malá UFO jdou po transportu. Sestřel je, než ho rozstřílejí.", 6.0)
+		_mag_say()
 	else:
 		_say("PŘEPADENÍ! Sedíš v transportu a díváš se, jak ho stíhačky brání.", 6.0)
 
@@ -567,6 +568,7 @@ func _end(o: String) -> void:
 		_end_all.rpc(o)
 		outcome = ""
 	outcome = o
+	_report_plasma()
 	match o:
 		"repelled":
 			_say("ÚTOK ODRAŽEN. Transport pokračuje k cíli.", 6.0)
@@ -587,7 +589,7 @@ func _finish() -> void:
 	if net and not multiplayer.is_server():
 		get_tree().change_scene_to_file("res://scenes/Main.tscn")
 		return
-	Campaign.spend_plasma_mags(plasma_mags_used())
+	Campaign.spend_plasma(plasma_total())
 	Net.last_result = Campaign.escort_done(int(params.get("craft", -1)), outcome, tr_hp, lost_jets)
 	Game.load_scene("res://scenes/Geoscape.tscn")
 

@@ -305,6 +305,8 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 		_ufo(Vector3((ux + 1) * BLOCK, 0, (uz + 1) * BLOCK))
 	if site != "":
 		_site_spawns()
+	else:
+		_lawn_off()
 	if Game.autotest() != "": print("[MAP] ufo done")
 	Game.load_step(Game.BUILD_TILES_TO + 0.03)
 	_war_scars(grid, params)
@@ -316,6 +318,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	_wrecks()
 	_shootable_lamps()
 	Game.load_step(Game.BUILD_TILES_TO + 0.05)
+	_civ_glow()
 	_zfix()
 	Game.load_step(Game.BUILD_TILES_TO + 0.10)
 	if Game.autotest() != "zfight" and Game.cmd_arg("nomerge", "") != "all":
@@ -783,6 +786,141 @@ static func _grass_mat(kind: String) -> ShaderMaterial:
 			pass
 	_grass_mats[kind] = m
 	return m
+
+## 2026-11-27 (Ari: „v některých UFO je pořád uvnitř trávník“): bloky pod lodí („ufo“) dostanou trávu
+## přes celý blok a loď se postaví až na ni – stébla 0,5–1,1 m trčela podlahou (0,1 m) místností,
+## u obřích lodí ve všech halách. Po postavení lodi se vyhodí stébla pod jejím půdorysem: malé lodě
+## podle sítě „Hull“ do výšky 1,2 m (sukně, ne křídla nahoře), obří podle tvaru trupu (zaoblený
+## čtverec), k tomu spálená / udusaná zem kolem (havárie 8,5 m, přistání 6,5 m, obří 28 m) a 0,6 m
+## okraj. Mapa je ze semínka, takže stejně na všech počítačích; `--oldlawn=1` = postaru.
+## 2026-11-27 (Ari: „při Blackoutu dál svítí televize, osvětlení benzinky…“): které svítící materiály
+## patří lidem a při výpadku proudu zhasnou (pruhy a displeje benzinky, cedule a lednice obchodu,
+## okénko a automat parkoviště, světla pod stropem skladu a hangáru, žárovky a čočky lamp – i z dílků).
+## Spočítá se před slučováním sítí (každý kus má ještě svou polohu). Zůstává, co svítí loď vetřelců
+## (model i haly obří lodi do 34 m od středu), náš transportér, radarová věž a auta (Ari: světla aut
+## nechat). Materiály jsou sdílené (Game.color_mat), takže stačí jim stáhnout emission_energy.
+func _civ_glow() -> void:
+	var keep := {}
+	var dark := {}
+	var u: Node = info.get("ufo_node")
+	var uc: Vector3 = info.get("ufo", Vector3.ZERO)
+	var ur := 34.0 if us > 2 else 14.0
+	var radar := []
+	for lm in info["landmarks"]:
+		if lm[0] == "radar":
+			radar.append(lm[1] + Vector3(BLOCK / 2, 0, BLOCK / 2))
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		var mats := []
+		if mi.material_override != null:
+			mats.append(mi.material_override)
+		for i in (mi.mesh.get_surface_count() if mi.mesh != null else 0):
+			var sm := mi.get_surface_override_material(i)
+			if sm != null:
+				mats.append(sm)
+		var glow := []
+		for mt in mats:
+			if mt is ShaderMaterial:
+				var ee = (mt as ShaderMaterial).get_shader_parameter("emission_energy")
+				if ee != null and float(ee) > 0.0:
+					glow.append(mt)
+		if glow.is_empty():
+			continue
+		var p := mi.position          # (in root's space: the map may not be in the tree yet)
+		var up_n: Node = mi.get_parent()
+		while up_n != null and up_n != root and up_n is Node3D:
+			p = (up_n as Node3D).transform * p
+			up_n = up_n.get_parent()
+		var ours := (u != null and u.is_ancestor_of(mi)) or (uc != Vector3.ZERO and Vector2(p.x - uc.x, p.z - uc.z).length() < ur)
+		var host: Node = mi
+		while host != null and host != root and not ours:
+			if host.is_in_group("our_ship") or String(host.get_meta("model", "")).begins_with("v_car") \
+					or String(host.get_meta("model", "")) in ["dropship", "heli", "pelican", "sokol"]:
+				ours = true
+			host = host.get_parent()
+		if not ours and _sky_x >= 0 and Vector2(p.x - (_sky_x + 0.5) * BLOCK, p.z - 1.5 * BLOCK).length() < 10.0:
+			ours = true
+		for rp in radar:
+			if Vector2(p.x - rp.x, p.z - rp.z).length() < 9.0:
+				ours = true
+		for mt in glow:
+			if ours:
+				keep[mt] = true
+			else:
+				dark[mt] = true
+	var out := []
+	for mt in dark:
+		if not keep.has(mt):
+			out.append(mt)
+	info["civ_glow"] = out
+
+const LAWN_BINS := 72
+func _lawn_off() -> void:
+	var c: Vector3 = info.get("ufo", Vector3.ZERO)
+	if c == Vector3.ZERO or Game.cmd_arg("oldlawn", "") != "":
+		return
+	var bins := PackedFloat32Array()
+	bins.resize(LAWN_BINS)
+	var ground := 28.0 if us > 2 else (8.5 if mtype == "crash" else 6.5)
+	for i in LAWN_BINS:
+		var a := TAU * i / LAWN_BINS
+		var d := Vector3(sin(a), 0, cos(a))
+		bins[i] = ground
+		if us > 2:
+			bins[i] = maxf(bins[i], 23.0 / pow(pow(absf(d.x), 4.0) + pow(absf(d.z), 4.0), 0.25) * 1.04)
+	var u: Node3D = info.get("ufo_node")
+	if us <= 2 and u != null:
+		var hull := u.get_node_or_null("Hull") as MeshInstance3D
+		if hull != null and hull.mesh != null:
+			var xf := u.transform * hull.transform
+			var hb := PackedFloat32Array()
+			hb.resize(LAWN_BINS)
+			for v in hull.mesh.get_faces():
+				var w: Vector3 = xf * v
+				if w.y > 1.2:
+					continue
+				var dx := w.x - c.x
+				var dz := w.z - c.z
+				var i := int(fposmod(atan2(dx, dz), TAU) / TAU * LAWN_BINS) % LAWN_BINS
+				hb[i] = maxf(hb[i], Vector2(dx, dz).length())
+			for i in LAWN_BINS:      # neighbours too (a long edge between two vertices leaves a bin empty)
+				var m := maxf(hb[i], maxf(hb[(i + 1) % LAWN_BINS], hb[(i + LAWN_BINS - 1) % LAWN_BINS]))
+				bins[i] = maxf(bins[i], m)
+	var far := 0.0
+	for b in bins:
+		far = maxf(far, b)
+	far += 0.6
+	var cut := 0
+	for n in root.get_children():
+		var mi := n as MultiMeshInstance3D
+		if mi == null or mi.multimesh == null or not (mi.material_override is ShaderMaterial) \
+				or (mi.material_override as ShaderMaterial).shader != GRASS_SHADER:
+			continue
+		var o: Vector3 = mi.position
+		var nx := clampf(c.x, o.x, o.x + BLOCK)
+		var nz := clampf(c.z, o.z, o.z + BLOCK)
+		if Vector2(nx - c.x, nz - c.z).length() > far:
+			continue
+		var mm := mi.multimesh
+		var xs: Array[Transform3D] = []
+		var cd: Array[Color] = []
+		for k in mm.instance_count:
+			var t := mm.get_instance_transform(k)
+			var dx: float = o.x + t.origin.x - c.x
+			var dz: float = o.z + t.origin.z - c.z
+			var i := int(fposmod(atan2(dx, dz), TAU) / TAU * LAWN_BINS) % LAWN_BINS
+			if Vector2(dx, dz).length() < bins[i] + 0.6:
+				cut += 1
+				continue
+			xs.append(t)
+			cd.append(mm.get_instance_custom_data(k))
+		if xs.size() == mm.instance_count:
+			continue
+		mm.instance_count = xs.size()
+		for k in xs.size():
+			mm.set_instance_transform(k, xs[k])
+			mm.set_instance_custom_data(k, cd[k])
+	info["lawn_cut"] = cut
 
 ## Scatters blades over a block. `keep` filters positions (e.g. not on the road).
 func _grass(o: Vector3, count: int, kind := "grass", min_h := 0.6, max_h := 1.3, keep := Callable()) -> void:
@@ -3016,6 +3154,7 @@ func _tv_unit(p: Vector3, yaw: float) -> void:
 	glow.light_energy = 0.5
 	glow.omni_range = 3.0
 	glow.set_meta("flicker", true)
+	glow.set_meta("tv", true)       # (2026-11-27: zhasne při výpadku proudu)
 	root.add_child(glow)
 	glow.position = _at(p, yaw, Vector3(0.12, 0.9, -0.6))
 	info["lights"].append(glow)

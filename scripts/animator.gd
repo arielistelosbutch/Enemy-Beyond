@@ -876,7 +876,7 @@ func _build_scene(show := "") -> void:
 	model.scale = Vector3(-1, 1, 1)
 	world.add_child(model)
 	Game.apply_look(model, Game.merc.get("look", {}))
-	for gname in ["Gear_Scanner", "Gear_Plate", "Gear_Grenade", "Gear_Flare"]:
+	for gname in ["Gear_Scanner", "Gear_Plate", "Gear_Suit", "Gear_Grenade", "Gear_Flare"]:
 		var gn := model.find_child(gname, true, false)
 		if gn:
 			gn.visible = false

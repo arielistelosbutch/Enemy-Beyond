@@ -110,3 +110,46 @@ static func run(at: Node, p: Node) -> void:
 	at.out("[SABRE] swing %s (hp %.0f)  clip %s -> %s" % [swing_ok, vic.hp, like, clip_ok])
 	at.out("RESULT sabretest shield %s near %s far %s swing %s clip %s" % [shield_ok, near_ok, far_ok, swing_ok, clip_ok])
 	at.get_tree().quit()
+
+## shielddraw (Ari 2026-11-27: „štít se nenasadí z hotbaru“): štít na opasku a klávesa opasku
+##  - rifle: s puškou v rukou jde štít na levou ruku a puška na záda,
+##  - sabre: se šavlí v ruce jde štít na ruku a šavle zůstane,
+##  - swap: druhý štít z opasku vymění ten na ruce (starý jde na jeho místo),
+##  - stow: klávesa prázdného slotu, odkud štít přišel, ho vrátí na opasek.
+## Výsledek „RESULT shielddraw rifle … sabre … swap … stow …“.
+static func draw(at: Node, p: Node) -> void:
+	if p == null: return
+	at._skip_brief()
+	if at.step > 0 or not at.m().started(): return
+	at.step = 1
+	at.m().hud.inventory_open = false
+	var wait := func():
+		for i in 120:
+			await at.get_tree().physics_frame
+			if p.busy <= 0.0: break
+		await at.get_tree().physics_frame
+	for s in ["rh", "lh", "back", "side", "b0", "b1", "b2", "b3"]:
+		p.inv.erase(s)
+	p.inv["rh"] = {"id": "rifle", "loaded": 30}
+	p.inv["b0"] = {"id": "stit"}
+	p.busy = 0.0
+	p._update_held()
+	p._belt_key(0)
+	await wait.call()
+	var rifle_ok: bool = p.item_in("lh").get("id", "") == "stit" and not p.inv.has("rh") \
+		and p.item_in("back").get("id", "") == "rifle" and p.held_l == "stit"
+	at.out("[SHIELD] rifle %s lh %s rh %s back %s held_l %s" % [rifle_ok, p.item_in("lh"), p.item_in("rh"), p.item_in("back"), p.held_l])
+	p.inv["rh"] = {"id": "savle"}
+	p.inv["b1"] = {"id": "stit_x"}
+	p._update_held()
+	p._belt_key(1)
+	await wait.call()
+	var sabre_ok: bool = p.item_in("rh").get("id", "") == "savle" and p.item_in("lh").get("id", "") == "stit_x" and p.held == "savle"
+	var swap_ok: bool = p.item_in("b1").get("id", "") == "stit"
+	at.out("[SHIELD] sabre %s swap %s lh %s rh %s b1 %s" % [sabre_ok, swap_ok, p.item_in("lh"), p.item_in("rh"), p.item_in("b1")])
+	p.inv.erase("b1")
+	p._belt_key(1)
+	await wait.call()
+	var stow_ok: bool = not p.inv.has("lh") and p.item_in("b1").get("id", "") == "stit_x" and p.item_in("rh").get("id", "") == "savle"
+	at.out("RESULT shielddraw rifle %s sabre %s swap %s stow %s" % [rifle_ok, sabre_ok, swap_ok, stow_ok])
+	at.get_tree().quit()

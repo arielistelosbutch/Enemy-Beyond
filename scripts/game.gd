@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.72.7 prototyp"
-const VERSION_NUM := "0.72.7"
+const VERSION := "0.72.8 prototyp"
+const VERSION_NUM := "0.72.8"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -16,10 +16,10 @@ const ITEMS := {
 	"autocannon": {"name": "Těžký kanón", "short": "Kanón", "weight": 16, "type": "weapon", "two": true, "heavy": 0.72, "brace": true, "ammo": "ac_clip", "damage": 150, "ap": true, "incendiary": true, "spread": 1.3, "rate": 1.9, "auto": false, "sound": "autocannon", "noise": 75.0, "muzzle": 1.2, "reload": 3.0, "kick": 3.0},
 	"minigun": {"name": "Minigun", "short": "Minigun", "weight": 20, "type": "weapon", "two": true, "heavy": 0.6, "brace": true, "ammo": "minigun_belt", "damage": 15, "spread": 3.4, "rate": 0.05, "auto": true, "spinup": 0.9, "heat": 0.0085, "sound": "minigun", "noise": 75.0, "muzzle": 0.86, "reload": 4.0, "kick": 0.4},
 	"rocket_launcher": {"name": "Raketomet", "short": "Raketomet", "weight": 12, "type": "weapon", "two": true, "heavy": 0.85, "ammo": "rocket", "ammo_alt": ["rocket_ap", "rocket_inc"], "damage": 160, "splash": 4.5, "spread": 0.8, "rate": 1.0, "auto": false, "projectile": true, "sound": "launch", "noise": 80.0, "muzzle": 0.9, "reload": 3.0, "kick": 3.0},
-	"plasma_rifle": {"name": "Plazmová puška PR-01", "short": "PR-01", "weight": 6, "type": "weapon", "modes": true, "two": true, "ammo": "plasma_cell", "cap": 15, "falloff": [35.0, 80.0], "damage": 75, "spread": 0.8, "rate": 0.21, "auto": true, "heat": 0.06, "sound": "plasma", "noise": 34.0, "muzzle": 0.8, "reload": 1.3, "kick": 0.5},
-	"plasma_pistol": {"name": "Plazmová pistole PP-01", "short": "PP-01", "weight": 3, "type": "weapon", "ammo": "plasma_cell", "cap": 30, "falloff": [20.0, 50.0], "damage": 34, "spread": 1.3, "rate": 0.28, "auto": false, "heat": 0.14, "sound": "plasma_p", "noise": 28.0, "muzzle": 0.21, "reload": 1.4, "kick": 0.4},
-	"plasma_cannon": {"name": "Plazmový kanón PC-01", "short": "PC-01", "weight": 15, "type": "weapon", "two": true, "heavy": 0.72, "brace": true, "ammo": "plasma_cell", "cap": 6, "damage": 290, "pc": true, "spread": 0.9, "rate": 0.9, "auto": false, "heat": 0.2, "sound": "plasma_cannon", "noise": 60.0, "muzzle": 0.86, "reload": 3.0, "kick": 1.2},
-	"plasma_minigun": {"name": "Plazmový minigun PM-01", "short": "PM-01", "weight": 20, "type": "weapon", "two": true, "heavy": 0.58, "brace": true, "ammo": "plasma_cell", "cap": 75, "damage": 26, "spread": 3.0, "rate": 0.08, "auto": true, "bursts": [5, 10, 0], "spinup": 0.7, "heat": 0.0134, "sound": "plasma_mg", "noise": 70.0, "muzzle": 0.86, "reload": 3.5, "kick": 0.4},
+	"plasma_rifle": {"name": "Plazmová puška PR-01", "short": "PR-01", "weight": 6, "type": "weapon", "modes": true, "two": true, "ammo": "plasma_cell", "cap": 30, "falloff": [35.0, 80.0], "damage": 75, "spread": 0.8, "rate": 0.21, "auto": true, "heat": 0.03, "sound": "plasma", "noise": 34.0, "muzzle": 0.8, "reload": 1.3, "kick": 0.5},
+	"plasma_pistol": {"name": "Plazmová pistole PP-01", "short": "PP-01", "weight": 3, "type": "weapon", "ammo": "plasma_cell", "cap": 60, "falloff": [20.0, 50.0], "damage": 34, "spread": 1.3, "rate": 0.28, "auto": false, "heat": 0.14, "sound": "plasma_p", "noise": 28.0, "muzzle": 0.21, "reload": 1.4, "kick": 0.4},
+	"plasma_cannon": {"name": "Plazmový kanón PC-01", "short": "PC-01", "weight": 15, "type": "weapon", "two": true, "heavy": 0.72, "brace": true, "ammo": "plasma_cell", "cap": 12, "damage": 290, "pc": true, "spread": 0.9, "rate": 0.9, "auto": false, "heat": 0.2, "sound": "plasma_cannon", "noise": 60.0, "muzzle": 0.86, "reload": 3.0, "kick": 1.2},
+	"plasma_minigun": {"name": "Plazmový minigun PM-01", "short": "PM-01", "weight": 20, "type": "weapon", "two": true, "heavy": 0.58, "brace": true, "ammo": "plasma_cell", "cap": 150, "damage": 26, "spread": 3.0, "rate": 0.08, "auto": true, "bursts": [5, 10, 0], "spinup": 0.7, "heat": 0.0067, "sound": "plasma_mg", "noise": 70.0, "muzzle": 0.86, "reload": 3.5, "kick": 0.4},
 	"sniper": {"name": "Odstřelovací puška", "short": "Odstřelovačka", "weight": 9, "type": "weapon", "two": true, "ammo": "sniper_clip", "damage": 120, "ap": true, "spread": 0.25, "hip": 5.0, "scope": true, "rate": 1.3, "auto": false, "sound": "sniper", "noise": 75.0, "muzzle": 1.07, "reload": 2.4, "kick": 3.5, "ext_mag": 8},
 	# lasers: no magazines - the cell recharges by itself after a short pause (cap = shots in the cell)
 	"laser_pistol": {"name": "Laserová pistole LP-01", "short": "Laser. pistole", "weight": 2, "type": "weapon", "ammo": "", "laser": true, "cap": 1, "recharge": 2.0, "falloff": [25.0, 60.0], "damage": 42, "spread": 1.0, "rate": 0.3, "auto": false, "sound": "laser_p", "noise": 25.0, "muzzle": 0.21, "kick": 0.3},
@@ -29,9 +29,9 @@ const ITEMS := {
 	"stun_baton": {"name": "Omračovací obušek", "short": "Obušek", "weight": 2, "type": "melee", "blunt": true, "damage": 4, "stun": 42, "reach": 2.1, "rate": 0.8, "sound": "zap"},
 	"knife": {"name": "Bojový nůž", "short": "Nůž", "weight": 1, "type": "melee", "damage": 38, "backstab": 3.0, "reach": 1.7, "rate": 0.45, "sound": "swish"},
 	"energo_nuz": {"name": "Energo nůž EN-01", "short": "Energo nůž", "weight": 1, "type": "melee", "damage": 38, "edge": 66, "backstab": 3.0, "reach": 1.7, "rate": 0.5, "sound": "swish"},
-	# 0.80 (Ari): SV-01, a sabre cut by laser from their alloy - a long reach, a hard cut that goes through
+	# 0.80 (Ari): RZ-94, a sabre cut by laser from their alloy - a long reach, a hard cut that goes through
 	# half of their armour ("cut"); one-handed, so the shield stays in the left hand
-	"savle": {"name": "Šavle ze slitin SV-01", "short": "Šavle", "weight": 2, "type": "melee", "sabre": true, "damage": 75, "cut": 0.5, "backstab": 2.0, "reach": 2.45, "rate": 0.6, "sound": "swish"},
+	"savle": {"name": "Šavle RZ-94", "short": "RZ-94", "weight": 2, "type": "melee", "sabre": true, "damage": 75, "cut": 0.5, "backstab": 2.0, "reach": 2.45, "rate": 0.6, "sound": "swish"},
 	"rifle_clip": {"name": "Zásobník pušky", "short": "Zás. puška", "weight": 3, "type": "ammo", "rounds": 20},
 	"sniper_clip": {"name": "Zásobník odstřelovačky", "short": "Zás. odstř.", "weight": 1, "type": "ammo", "rounds": 5},
 	"pistol_clip": {"name": "Zásobník pistole", "short": "Zás. pistole", "weight": 1, "type": "ammo", "rounds": 15},
@@ -42,7 +42,7 @@ const ITEMS := {
 	"magnum_rounds": {"name": "Náboje Magnum", "short": "Náb. Magnum", "weight": 1, "type": "ammo", "rounds": 6},
 	"ac_clip": {"name": "Zásobník kanónu", "short": "Zás. kanón", "weight": 5, "type": "ammo", "rounds": 5},
 	"minigun_belt": {"name": "Muniční kontejner minigunu", "short": "Kontejner MG", "weight": 8, "type": "ammo", "rounds": 300},
-	"plasma_cell": {"name": "Plazmový zásobník PL-MAG-01", "short": "PL-MAG", "weight": 2, "type": "ammo", "rounds": 20},
+	"plasma_cell": {"name": "Plazmový zásobník PL-MAG-01", "short": "PL-MAG", "weight": 2, "type": "ammo", "rounds": 40},
 	"rocket": {"name": "Výbušná raketa", "short": "Raketa", "weight": 4, "type": "ammo", "rounds": 1},
 	"rocket_ap": {"name": "Průbojná raketa", "short": "Průb. raketa", "weight": 4, "type": "ammo", "rounds": 1},
 	"rocket_inc": {"name": "Zápalná raketa", "short": "Záp. raketa", "weight": 4, "type": "ammo", "rounds": 1},
@@ -71,6 +71,8 @@ const ITEMS := {
 		"wear": {"plasma": 1.1, "heat": 1.5, "acid": 1.6, "": 1.0}},
 	"vesta": {"name": "Balistická vesta „Želva“", "short": "Vesta", "weight": 4, "type": "armor", "protect": 0.8},
 	"pancir": {"name": "Experimentální pancéřová vesta ARM-02", "short": "ARM-02", "weight": 5, "type": "armor", "protect": 0.66},
+	# (Ari 2026-11-27) ARM-03: a whole suit of their alloy over the camouflage - chest, back, arms, legs
+	"oblek": {"name": "Bojový oblek ze slitin ARM-03", "short": "ARM-03", "weight": 7, "type": "armor", "protect": 0.55},
 	"scanner": {"name": "Detektor pohybu", "short": "Detektor", "weight": 4, "type": "scanner"},
 	"radio": {"name": "Vysílačka", "short": "Vysílačka", "weight": 1, "type": "radio"},
 	"nvg": {"name": "Noktovizor NVG-01", "short": "Noktovizor", "weight": 1, "type": "nvg"},
@@ -121,11 +123,11 @@ const MODS := {
 	"fokus": {"name": "Magnetický fokusér", "price": 280, "slot": "hlaven", "w": 0.35, "spread": 0.75, "heat": 1.25, "desc": "Prstence kolem emitoru stáhnou plazmu do užšího proudu: o čtvrtinu menší rozptyl. Emitor se ale víc zahřívá."},
 	"motor": {"name": "Výkonnější pohon rotoru", "price": 260, "w": 0.7, "spin": 0.55, "draw": 1.05, "desc": "Silnější elektromotor s větším akumulátorem: hlavně se roztočí skoro dvakrát rychleji. Pohon je ale o dost těžší."},
 	"zamerovac": {"name": "Taktický zaměřovač", "price": 180, "slot": "optika", "w": 0.4, "desc": "Jednoduchý zaměřovač na těžkou zbraň: o něco přesnější na střední vzdálenost."},
-	"ergo": {"name": "Ergonomická rukojeť", "price": 120, "w": 0.1, "desc": "Rukojeť, která sedí v dlani: u revolveru menší postih za zpětný ráz, u nože jistější a o kus delší sek."},
+	"ergo": {"name": "Ergonomická rukojeť", "price": 120, "w": 0.1, "desc": "Rukojeť, která sedí v dlani: u revolveru menší postih za zpětný ráz, u nože a šavle jistější a o kus delší sek."},
 	"rychlonabijec": {"name": "Rychlonabíječ", "price": 110, "w": 0.1, "desc": "Šest nábojů v kroužku najednou do bubínku: přebíjení zabere zlomek času."},
 	"kompenzator": {"name": "Kompenzační úsťový modul", "price": 160, "slot": "hlaven", "w": 0.2, "desc": "Méně zdvihu hlavně po ráně. Výstřel je ale ještě hlasitější."},
 	"pocitac": {"name": "Zaměřovací počítač", "price": 350, "w": 0.8, "desc": "Spočítá předstih na pohyblivý cíl: raketa letí přesněji."},
-	"pouzdro": {"name": "Odlehčené taktické pouzdro", "price": 60, "desc": "Nůž vyjde z pouzdra na jeden pohyb: rychlejší tasení."},
+	"pouzdro": {"name": "Odlehčené taktické pouzdro", "price": 60, "draw": 0.6, "desc": "Čepel vyjde z pouzdra na jeden pohyb: rychlejší tasení."},
 	"akumulator": {"name": "Vysokokapacitní akumulátor", "price": 200, "w": 0.3, "desc": "Větší článek v rukojeti obušku: víc výbojů na misi."},
 	"lehky": {"name": "Odlehčená konstrukce", "price": 120, "w": -0.3, "desc": "Kompozitní tělo obušku: rychleji v ruce, rychlejší rána."},
 	"diagnostika": {"name": "Diagnostický indikátor", "price": 90, "desc": "Displej na rukojeti: ukáže, kolik energie v obušku zbývá."},
@@ -134,6 +136,18 @@ const MODS := {
 	"clanek": {"name": "Vysokokapacitní článek", "price": 240, "slot": "clanek", "w": 0.5, "charge": 1.4, "ads": 0.95, "desc": "Větší napájecí článek: zbraň se mezi výstřely nabije o dost rychleji. Je ale o půl kila těžší a vpředu objemnější."},
 	"cocka": {"name": "Zaostřovací čočka", "price": 260, "slot": "hlaven", "w": 0.25, "dmg": 1.2, "charge": 0.85, "desc": "Nástavec s čočkou, který stáhne paprsek do užšího svazku: o pětinu silnější zásah. Článek se ale po ráně nabíjí déle."},
 	"rukojet": {"name": "Přední rukojeť", "price": 140, "slot": "spodek", "w": 0.3, "ads": 0.92, "desc": "Poloviční zpětný ráz, rozptyl při dávce roste pomaleji, klidnější ruce. Do oka jde o chlup pomaleji."},
+	# (Ari 2026-11-27: "přidej modifikátory i na zbraně, které přibyly, klidně i na claymore, věž a šavli")
+	# RZ-94 (šavle): each its own slot
+	"brus": {"name": "Výbrus ostří", "price": 240, "cut": 0.25, "dmg": 0.95, "desc": "Ostří přebroušené laserem do tenké hrany: sek projde ještě větším kusem pancíře vetřelců. Čepel se ale rychleji otupí o kosti - rána je o chlup slabší."},
+	"vyvazeni": {"name": "Vyvážená čepel", "price": 180, "w": 0.2, "rate": 0.8, "desc": "Závaží v hlavici posune těžiště k ruce: seká se o pětinu rychleji. Šavle je o kus těžší."},
+	# MC-18 Claymore
+	"kulicky": {"name": "Wolframové kuličky", "price": 150, "w": 0.4, "dmg": 1.25, "reach": 1.15, "desc": "Těžší náplň místo ocelových kuliček: silnější zásah a o kus dál. Mina je ale o skoro půl kila těžší."},
+	"drat": {"name": "Dlouhý nástražný drát", "price": 90, "wire": 1.6, "desc": "Delší cívka drátu: přehradí o polovinu širší průchod. Jenže zakopne o něj i kdokoli z vás - pozor, kam ji stavíš."},
+	"nozky": {"name": "Rychloupínací nožky", "price": 70, "build": 0.6, "desc": "Nožky s pružinou a drát na navijáku: Claymore stojí skoro za polovinu času."},
+	# ST-01 strážní věž (+ prodloužený zásobník)
+	"servo": {"name": "Rychlejší servomotor", "price": 220, "w": 0.6, "turn": 1.6, "desc": "Silnější motor v hlavě věže: k cíli se otočí o dost rychleji a dřív vystřelí. Věž je těžší."},
+	"plechy": {"name": "Pancéřové plechy", "price": 260, "w": 2.0, "hp": 1.6, "desc": "Ocelové plechy kolem hlavy a nohou: věž snese víc zásahů, než ji vetřelci rozstřílí. Je ale o dvě kila těžší."},
+	"cidlo": {"name": "Citlivější čidlo pohybu", "price": 280, "range": 1.2, "desc": "Lepší čidlo s větší čočkou: věž si všimne pohybu dál a maskovaného vetřelce pozná o kus dřív."},
 }
 ## The slots a part goes into (only one part per slot); a part without one has a slot of its own.
 const MOD_SLOTS := {"optika": "Mířidla", "hlaven": "Ústí hlavně", "spodek": "Pod hlavní", "bok_l": "Levá lišta",
@@ -162,6 +176,9 @@ const MOD_FITS := {
 	"knife": ["ergo", "pouzdro"],
 	"energo_nuz": ["pouzdro"],
 	"stun_baton": ["akumulator", "lehky", "diagnostika"],
+	"savle": ["brus", "vyvazeni", "ergo", "pouzdro"],
+	"mine": ["kulicky", "drat", "nozky"],
+	"sentry": ["zasobnik", "servo", "plechy", "cidlo"],
 }
 ## Where a part's model sits on a gun (the gun model's own space; parts without an entry are not
 ## seen): a point, or a whole transform (turned under the barrel, smaller on a pistol).

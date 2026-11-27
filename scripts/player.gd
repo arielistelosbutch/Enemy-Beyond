@@ -248,7 +248,7 @@ var _gear_nodes := {}
 var _last_body_pos := Vector3.ZERO
 var _body_speed := 0.0
 const GEAR_BITS := ["Gear_Belt0", "Gear_Belt1", "Gear_Belt2", "Gear_Belt3", "Gear_Backpack", "Gear_Grenade",
-	"Gear_Flare", "Gear_Medkit", "Gear_Holster", "Gear_Scanner", "Gear_Vest", "Gear_Plate"]
+	"Gear_Flare", "Gear_Medkit", "Gear_Holster", "Gear_Scanner", "Gear_Vest", "Gear_Plate", "Gear_Suit"]
 var armor := ""        # worn armour id (vesta / pancir), from the loadout
 var _body_cs: CollisionShape3D
 var _body_cap: CapsuleShape3D
@@ -744,6 +744,7 @@ func _gear_mask() -> int:
 		if id == "medkit": m |= 1 << 7
 		if (id == "pistol" or id == "magnum") and s != "rh" and s != "lh": m |= 1 << 8
 	if armor == "vesta" or armor == "pancir": m |= 1 << 10      # (ARM-02 is a vest too)
+	if armor == "oblek": m |= 1 << 12      # (2026-11-27) ARM-03, the alloy suit over the camouflage
 	return m
 
 func _apply_gear() -> void:
@@ -752,11 +753,17 @@ func _apply_gear() -> void:
 		if n:
 			n.visible = (gear >> i) & 1 == 1
 	# 0.57: the vest chosen for looks gives way to real armour (ballistic vest, alloy plates)
-	var armoured := (gear >> 10) & 1 == 1 or (gear >> 11) & 1 == 1
+	var suit := (gear >> 12) & 1 == 1
+	var armoured := (gear >> 10) & 1 == 1 or (gear >> 11) & 1 == 1 or suit
 	for nm in ["Look_VestHarness", "Look_VestCarrier", "Look_VestRig", "Look_VestBandolier", "Look_VestWeb"]:
 		var v: Node3D = _gear_nodes.get(nm)
 		if v:
 			v.visible = v.get_meta("look_on", nm == "Look_VestHarness") and not armoured
+	# (2026-11-27) under the ARM-03 suit's thigh and knee plates: no cargo pockets, no knee pads
+	for nm in ["Look_PantsCargo", "Look_KneePads"]:
+		var v2: Node3D = _gear_nodes.get(nm)
+		if v2:
+			v2.visible = v2.get_meta("look_on", false) and not suit
 
 func _animate_body(delta: float) -> void:
 	if body_anim == null:
@@ -986,10 +993,11 @@ const SHOULDER_POCKET := Vector3(-0.05, -0.04, 0.03)      # from the shoulder jo
 const SHOULDER_BEND := [["spine", 0.45], ["neck", 0.3]]   # how much of the look up/down each bone takes
 const MODE_BEND := {"hip": [["spine", 0.2], ["neck", 0.5]], "pistol": [["spine", 0.35], ["neck", 0.35]]}
 const TUBE_POCKET := Vector3(0.08, 0.11, 0.0)       # the tube's axis over the shoulder, beside the head
-const TUBE_REST := 0.42                             # where along the tube (from its back end) it lies on it
+const TUBE_REST := 0.42                             # (old: where along the tube it lay on the shoulder)
+const TUBE_GRIP := 0.24                             # m the right-hand grip is in front of the shoulder (on the shoulder)
 const HIP_POCKET := Vector3(0.2, 0.12, 0.3)         # the right hand's grip from the hips (x right, y up, z forward)
 const HIP_PITCH := 0.45                             # from the hip the barrel follows the look only this far up/down
-const PISTOL_POCKET := Vector3(0.05, -0.07, 0.48)   # the grip from the neck: out in front, under the eyes
+const PISTOL_POCKET := Vector3(0.03, 0.1, 0.38)     # the grip from the neck: out in front, the sights at the eyes
 const KICK_BACK := 0.035           # m into the shoulder per shot (x the gun's kick, capped)
 const KICK_RISE := 0.07            # rad the muzzle rises per shot
 const KICK_TIME := 0.075           # s the kick dies away
@@ -1016,16 +1024,26 @@ func _shoulder_ok() -> bool:
 		return false
 	if Game.tweaks.get("shoulder/" + held, true) == false:
 		return false      # (a gun can be left as the movement holds it: tweak "shoulder/<gun>": false)
-	if _hold_mode() == "rifle" and not _NO_CARRY:
-		return true      # (2026-11-26: a rifle stays in the shoulder - lowered when not aiming)
+	if not _NO_CARRY:
+		return true      # (2026-11-26 rifles, 2026-11-27 heavies and pistols: always held - lowered when not aiming)
 	return aiming or Time.get_ticks_msec() / 1000.0 - _fired_at < SHOULDER_HOLD
 static var _NO_CARRY := Game.cmd_arg("nocarry", "") == "1"      # (A/B: the walks and runs as the movements carry it)
 
-## Low ready (no aiming, no shot for a while) - only the rifles.
+## Low ready (no aiming, no shot for a while) - every hold mode.
 func _carry_on() -> bool:
-	if _hold_mode() != "rifle" or _NO_CARRY:
+	if _hold_mode() == "" or _NO_CARRY:
 		return false
 	return not aiming and Time.get_ticks_msec() / 1000.0 - _fired_at >= CARRY_HOLD
+
+## ---- (2026-11-27, Ari: těžké zbraně a pistole zvenku „drží divně“) The low ready of the other
+## modes, after the real carries: a minigun / cannon on a sling at the hip, muzzle forward and a
+## little down ("hip carry"); the rocket tube held low across the front (only aiming / firing on the
+## shoulder, as an AT4 or an RPG gunner does); a pistol in both hands close to the chest, muzzle down
+## in front ("compressed ready"), aiming = both arms out under the eyes (isosceles stance).
+## [down standing/walking, down running, turn to his left] in rad
+const CARRY_MODE := {"rifle": [0.3, 0.42, 0.22], "hip": [0.28, 0.36, 0.1], "tube": [0.2, 0.28, 0.3], "pistol": [0.35, 0.5, 0.05]}
+const TUBE_LOW := Vector3(0.16, 0.02, 0.2)           # the tube's right-hand grip carried low: from the hips (x right, y up, z forward)
+const PISTOL_LOW := Vector3(0.02, -0.2, 0.2)        # the pistol's grip at the compressed ready (in front of the chest, elbows in): from the neck (flat: x right, y up, z forward)
 
 ## How far the chest is turned from the calm stand (about up, rad; skeleton space - the clips twist
 ## the body: the rifle walk 18 degrees, the run swings with the stride).
@@ -1051,9 +1069,10 @@ func _carry_dir(look: Vector3) -> Vector3:
 		fl = -body.global_transform.basis.z
 	fl = fl.normalized()
 	var runk := clampf((_body_speed - 2.0) / 1.6, 0.0, 1.0)
-	var dn := lerpf(CARRY_DOWN, CARRY_DOWN_RUN, runk)
+	var cm: Array = CARRY_MODE.get(_hold_mode(), [CARRY_DOWN, CARRY_DOWN_RUN, CARRY_YAW])
+	var dn := lerpf(cm[0], cm[1], runk)
 	var lp := asin(clampf(look.y, -1.0, 1.0)) * CARRY_LOOK
-	fl = Basis(Vector3.UP, CARRY_YAW) * fl      # (+ about up = to his left)
+	fl = Basis(Vector3.UP, float(cm[2])) * fl      # (+ about up = to his left)
 	var p := lp - dn
 	return (fl * cos(p) + Vector3.UP * sin(p)).normalized()
 
@@ -1069,7 +1088,18 @@ func _hold_mode() -> String:
 		return "hip"
 	if Game.two_handed(held):
 		return "rifle"
-	return ""      # pistols: as the motion holds them (Ari 2026-11-16: the outstretched hold looked bad)
+	if held in PISTOLS:
+		return "pistol"      # (2026-11-27: back, with the compressed ready and a closer two-hand aim)
+	return ""
+const PISTOLS := ["pistol", "magnum", "laser_pistol", "plasma_pistol"]
+
+## Column by column (the bases may be mirrored - no slerp; the users orthonormalize them).
+static func _basis_mix(a: Basis, b: Basis, k: float) -> Basis:
+	return Basis(a.x.lerp(b.x, k), a.y.lerp(b.y, k), a.z.lerp(b.z, k))
+
+## The calm stand (not its idle_2.. fidgets, in any set): where the hands' grip is taken from.
+func _calm_stand() -> bool:
+	return _bclip_id.trim_suffix("_heavy").trim_suffix("_pistol") == "tp_body_idle" and _fade_from.is_empty()
 
 ## 0..1: how much of the last shot's kick is still in the gun
 func _kick_now() -> float:
@@ -1110,11 +1140,42 @@ func _shoulder_gun(w: Transform3D, rh: Vector3, lh: Vector3, m: Node3D) -> Trans
 	var skt := _sk.global_transform
 	var sh := (skt * _sk.get_bone_global_pose(ui)).origin
 	var D := aim_dir()
-	if mode == "rifle" and _carry_k > 0.001:
+	var hr := _hand_r
+	var hl := _bone("hand.L")
+	var old_r := _sk.get_bone_global_pose(hr).basis.orthonormalized()
+	var old_l := _sk.get_bone_global_pose(hl).basis.orthonormalized() if hl >= 0 else Basis()
+	var sb := skt.basis
+	# (2026-11-26 rifles, 2026-11-27 all) the hands sit on the gun as the calm stand holds it (taken
+	# once per gun): each movement's own grip differs a little, and switching stand / walk / run made
+	# the hands jump
+	var idle := _calm_stand()      # (not the idle_2.. fidgets)
+	var calm := not _grip_rel.has(held) or (idle and not bool((_grip_rel[held] as Array)[4]))
+	if calm:
+		var wi := w.affine_inverse()
+		var wb := w.basis.orthonormalized().inverse()
+		var arms := {}
+		for bn in ARM_BONES:
+			var bi := _bone(bn)
+			if bi >= 0:
+				arms[bi] = _sk.get_bone_pose_rotation(bi)
+		var fresh := [wi * rh, wi * lh, wb * (sb * old_r), wb * (sb * old_l), idle, arms, 0]
+		if _grip_rel.has(held) and idle:
+			# (2026-11-27) the first grip was taken outside the calm stand: go over to the calm one in
+			# ~12 frames, not in one jump (blendtest: the right hand jumped 22 degrees)
+			var o: Array = _grip_rel[held]
+			var n := int(o[6]) + 1 if o.size() > 6 else 1
+			var k := clampf(n / 12.0, 0.0, 1.0)
+			fresh = [(o[0] as Vector3).lerp(fresh[0], k), (o[1] as Vector3).lerp(fresh[1], k),
+				_basis_mix(o[2], fresh[2], k), _basis_mix(o[3], fresh[3], k), k >= 1.0, arms, n]
+			if k < 1.0:
+				fresh[5] = o[5]
+		_grip_rel[held] = fresh
+	var gr: Array = _grip_rel[held]
+	if _carry_k > 0.001:
 		var cd := _carry_dir(D)
 		var tw := _torso_twist()
-		if absf(tw) > 0.0001:
-			cd = Basis(Vector3.UP, -tw * CARRY_TWIST) * cd      # (the lowered gun turns a little with the chest)
+		if absf(tw) > 0.0001 and mode == "rifle":
+			cd = Basis(Vector3.UP, -tw * CARRY_TWIST) * cd      # (the lowered gun turns a little with the chest; the others stay straight ahead - Ari: running they went to the side)
 		D = D.slerp(cd, _carry_k).normalized()
 	if mode == "hip":
 		var fl := Vector3(D.x, 0.0, D.z).normalized()
@@ -1135,21 +1196,36 @@ func _shoulder_gun(w: Transform3D, rh: Vector3, lh: Vector3, m: Node3D) -> Trans
 	var extra := Game._v3(Game.tweaks.get("shoulder_at/" + held, null), Vector3.ZERO)
 	match mode:
 		"tube":
-			anchor = m.transform * Vector3(box.get_center().x, box.position.y + box.size.y * 0.62, lerpf(box.end.z, box.position.z, TUBE_REST))      # (the axis: the grips hang under it)
+			# (2026-11-27) the axis over the shoulder where the right hand's grip is along it, that grip
+			# TUBE_GRIP in front of the shoulder (before: the rest point fixed on the tube - the hands
+			# reached back behind the shoulder)
+			var rm: Vector3 = m.transform.affine_inverse() * (gr[0] as Vector3)
+			anchor = m.transform * Vector3(box.get_center().x, box.position.y + box.size.y * 0.62, rm.z)      # (the axis: the grips hang under it)
 			var pk := TUBE_POCKET + extra
-			pocket = sh + right * pk.x + Vector3.UP * pk.y + D * pk.z
+			pocket = sh + right * pk.x + Vector3.UP * pk.y + D * (pk.z + TUBE_GRIP)
+			if _carry_k > 0.001:
+				# (2026-11-27) carried low across the front: the right hand's grip by the hips
+				var hi := _bone("hips")
+				var hp: Vector3 = (skt * _sk.get_bone_global_pose(hi)).origin if hi >= 0 else global_position + Vector3.UP
+				var fr := Vector3(right.x, 0.0, right.z).normalized()
+				anchor = anchor.lerp(gr[0] as Vector3, _carry_k)
+				pocket = pocket.lerp(hp + fr * TUBE_LOW.x + Vector3.UP * TUBE_LOW.y + flat * TUBE_LOW.z, _carry_k)
 		"hip":
-			anchor = w.affine_inverse() * rh
+			anchor = gr[0]
 			var hi := _bone("hips")
 			var hp: Vector3 = (skt * _sk.get_bone_global_pose(hi)).origin if hi >= 0 else global_position + Vector3.UP
 			var pk := HIP_POCKET + extra
 			pocket = hp + right * pk.x + Vector3.UP * pk.y + flat * pk.z
 		"pistol":
-			anchor = w.affine_inverse() * rh
+			anchor = gr[0]
 			var ni := _bone("neck")
 			var nk: Vector3 = (skt * _sk.get_bone_global_pose(ni)).origin if ni >= 0 else sh
 			var pk := PISTOL_POCKET + extra
 			pocket = nk + right * pk.x + up * pk.y + D * pk.z
+			if _carry_k > 0.001:
+				# (2026-11-27) the compressed ready: both hands close to the chest, the muzzle down
+				var fr := Vector3(right.x, 0.0, right.z).normalized()
+				pocket = pocket.lerp(nk + fr * PISTOL_LOW.x + Vector3.UP * PISTOL_LOW.y + flat * PISTOL_LOW.z, _carry_k)
 		_:
 			anchor = m.transform * Vector3(box.get_center().x, box.position.y + box.size.y * 0.55, box.end.z)
 			var pk := SHOULDER_POCKET + extra
@@ -1173,35 +1249,13 @@ func _shoulder_gun(w: Transform3D, rh: Vector3, lh: Vector3, m: Node3D) -> Trans
 	var to_f := F * w.affine_inverse()
 	var r_at := to_f * rh
 	var l_at := to_f * lh
-	var hr := _hand_r
-	var hl := _bone("hand.L")
-	var old_r := _sk.get_bone_global_pose(hr).basis.orthonormalized()
-	var old_l := _sk.get_bone_global_pose(hl).basis.orthonormalized() if hl >= 0 else Basis()
-	var sb := skt.basis
-	var g_r := Basis()      # (rifle: where the hands sit on the gun - fixed, see below)
-	var g_l := Basis()
-	var fixed := false
-	if mode == "rifle":
-		# (2026-11-26) the hands sit on the gun as the calm stand holds it (taken once per gun): each
-		# movement's own grip differs a little, and switching stand / walk / run made the hands jump
-		var idle := _bclip_id == "tp_body_idle" and _fade_from.is_empty()      # (not the idle_2.. fidgets)
-		var calm := not _grip_rel.has(held) or (idle and not bool((_grip_rel[held] as Array)[4]))
-		var wi := w.affine_inverse()
-		var wb := w.basis.orthonormalized().inverse()
-		if calm:
-			var arms := {}
-			for bn in ARM_BONES:
-				var bi := _bone(bn)
-				if bi >= 0:
-					arms[bi] = _sk.get_bone_pose_rotation(bi)
-			_grip_rel[held] = [wi * rh, wi * lh, wb * (sb * old_r), wb * (sb * old_l), idle, arms]
-		var gr: Array = _grip_rel[held]
-		r_at = F * (gr[0] as Vector3)
-		l_at = F * (gr[1] as Vector3)
-		var fb := F.basis.orthonormalized()
-		g_r = (sb.inverse() * fb * (gr[2] as Basis)).orthonormalized()
-		g_l = (sb.inverse() * fb * (gr[3] as Basis)).orthonormalized()
-		fixed = true
+	# the hands on the gun as the calm stand held them (taken above)
+	r_at = F * (gr[0] as Vector3)
+	l_at = F * (gr[1] as Vector3)
+	var fb := F.basis.orthonormalized()
+	var g_r := (sb.inverse() * fb * (gr[2] as Basis)).orthonormalized()
+	var g_l := (sb.inverse() * fb * (gr[3] as Basis)).orthonormalized()
+	var fixed := true
 	if mode != "rifle":
 		# the heavies and the handguns: the left hand on the gun's own fore grip (Dílna "grip/<gun>")
 		var g := ArmIK.grips(held, m)
@@ -1222,13 +1276,19 @@ func _shoulder_gun(w: Transform3D, rh: Vector3, lh: Vector3, m: Node3D) -> Trans
 		r_pole = Vector3.DOWN * 0.3 + right * 0.15
 	var r_hint: Vector3 = (skt * _sk.get_bone_global_pose(er)).origin + r_pole if er >= 0 else Vector3.ZERO
 	var l_hint: Vector3 = (skt * _sk.get_bone_global_pose(el)).origin + Vector3.DOWN * 0.3 - right * (0.1 if mode == "pistol" else 0.0) if el >= 0 else Vector3.ZERO
-	if mode == "rifle":
-		# (2026-11-26) the elbows from the body, not from the movement's own elbows: those jump
-		# between the clips (stand / walk / run), and the arm with them - right elbow down and out,
-		# left elbow down under the fore-end
-		var flat_r := Vector3(right.x, 0.0, right.z).normalized()
-		r_hint = sh + Vector3.DOWN * 0.45 + flat_r * 0.22
-		l_hint = l_at + Vector3.DOWN * 0.4 - flat_r * 0.05
+	# (2026-11-26 rifle, 2026-11-27 all) the elbows from the body, not from the movement's own
+	# elbows: those jump between the clips (stand / walk / run), and the arm with them
+	var flat_r := Vector3(right.x, 0.0, right.z).normalized()
+	match mode:
+		"rifle":      # right elbow down and out, left elbow down under the fore-end
+			r_hint = sh + Vector3.DOWN * 0.45 + flat_r * 0.22
+			l_hint = l_at + Vector3.DOWN * 0.4 - flat_r * 0.05
+		"hip", "tube":      # the gun low: both elbows back and out, by the body
+			r_hint = sh + Vector3.DOWN * 0.4 + flat_r * 0.25 - flat * 0.2
+			l_hint = l_at + Vector3.DOWN * 0.3 - flat_r * 0.2 - flat * 0.15
+		"pistol":      # isosceles: the elbows down, a little out to each side
+			r_hint = sh + Vector3.DOWN * 0.45 + flat_r * 0.18
+			l_hint = l_at + Vector3.DOWN * 0.35 - flat_r * 0.3 - flat * 0.1
 	if fixed and _grip_rel[held].size() > 5:
 		# (the IK starts from the calm stand's arms: from each movement's own arms the bones twisted
 		# along as the movement changed - the stand / walk / run arms differ by up to 60 degrees)
@@ -1242,7 +1302,7 @@ func _shoulder_gun(w: Transform3D, rh: Vector3, lh: Vector3, m: Node3D) -> Trans
 	# the hands turn with the gun
 	var rs := (sb.inverse() * to_f.basis.orthonormalized() * sb).orthonormalized()
 	_hand_turn(hr, _hand_smooth(hr, g_r if fixed else rs * old_r))
-	if hl >= 0 and mode == "rifle":
+	if hl >= 0 and mode != "pistol":
 		_hand_turn(hl, _hand_smooth(hl, g_l))
 	for bi in arm_was:
 		_sk.set_bone_pose_rotation(bi, (arm_was[bi] as Quaternion).slerp(_sk.get_bone_pose_rotation(bi), _sh_k))
@@ -2128,6 +2188,9 @@ func draw_slot(src: String) -> void:
 	if busy > 0 or not inv.has(src) or src == "rh":
 		return
 	var it: Dictionary = inv[src]
+	if Game.is_shield(it["id"]):
+		_draw_shield(src)
+		return
 	var why := Game.slot_refuse("rh", it["id"])
 	if why == "" and prone and _prone_heavy(it["id"]):
 		why = PRONE_HEAVY_MSG
@@ -2181,6 +2244,59 @@ func draw_slot(src: String) -> void:
 		inv["rh"] = it
 		_update_held()
 		Game.play_ui(self, "reload", -16))
+
+## A shield from the belt/backpack (hotbar key) goes onto the LEFT arm, not into the hands.
+## A long gun in the hands goes away first (it needs both hands); a one-handed weapon
+## (pistol, knife, sabre) stays. A shield already on the arm swaps into the shield's slot.
+func _draw_shield(src: String) -> void:
+	var it: Dictionary = inv[src]
+	var old := item_in("lh")
+	var rh := item_in("rh")
+	var put := ""
+	if not rh.is_empty() and Game.two_handed(rh["id"]):
+		var home: String = rh.get("home", "")
+		if home != "" and home != src and not inv.has(home) and Game.slot_refuse(home, rh["id"]) == "":
+			put = home
+		elif not inv.has("back") and Game.slot_refuse("back", rh["id"]) == "":
+			put = "back"               # a long gun goes on the back (slot 1)
+		elif old.is_empty() and Game.slot_refuse(src, rh["id"]) == "":
+			put = src
+		else:
+			put = _free_slot([src])
+		if put == "":
+			mission.hud.message("Dlouhá zbraň potřebuje obě ruce a není kam ji uklidit - štít nejde nasadit.", 2.0)
+			return
+	var t: float = Game.fetch_time(it["id"], src, merc)
+	if put != "":
+		t += Game.fetch_time(rh["id"], put, merc) * 0.6
+	t *= 0.65 if Game.has_talent(merc, "rychle_prebiti") else 1.0
+	var dig := src.begins_with("p") or put.begins_with("p")
+	busy_stand = dig
+	if dig:
+		_pack_sounds()
+	if src.begins_with("b"):
+		it["home"] = src
+	_start_busy(t, ("Hrabu se v batohu" if dig else "Beru") + ": " + Game.ITEMS[it["id"]]["short"], func():
+		busy_stand = false
+		if inv.get(src) != it or inv.get("lh", {}) != old or (not rh.is_empty() and inv.get("rh") != rh):
+			return
+		inv.erase(src)
+		if not old.is_empty():
+			inv[src] = old
+			if src.begins_with("b"):
+				old["home"] = src
+		if put != "":
+			inv.erase("rh")
+			inv[put] = rh
+			if put in ["back", "side", "b0", "b1", "b2", "b3"]:
+				rh["home"] = put
+		inv["lh"] = it
+		_update_held()
+		Game.play_ui(self, "reload", -16))
+
+## The shield's own belt key again: the shield goes off the arm back to that slot.
+func _stow_shield(slot: String) -> void:
+	timed_move("lh", slot)
 
 ## Puts what the hands hold away (home, else a free slot) - hands empty.
 func holster() -> void:
@@ -2298,7 +2414,10 @@ func _radio_tick(delta: float) -> void:
 func _belt_key(i: int) -> void:
 	var slot := "b%d" % i
 	if not inv.has(slot):
-		if inv.has("rh"):
+		var lh := item_in("lh")
+		if not lh.is_empty() and lh.get("home", "") == slot and busy <= 0:
+			_stow_shield(slot)
+		elif inv.has("rh"):
 			timed_move("rh", slot)
 		return
 	var id: String = inv[slot]["id"]
@@ -2915,8 +3034,19 @@ func _pl_kit_tick(delta: float) -> void:
 	_kit_t -= delta
 	if _kit_t > 0.0:
 		return
-	_kit_t = 3.0
-	mission.report_kit_now.rpc_id(1, _kit_ids())      # (2026-11-26: the dead keep it too - a won mission takes it home)
+	# (2026-11-27) twice a second, but sent only when it changed: a grenade thrown or a gun picked
+	# up just before the take-off still counts (before: once in 3 s, the last change could be missed)
+	_kit_t = 0.5
+	var ids := _kit_ids()
+	ids.sort()
+	if ids == _kit_sent and _kit_resend > 0:
+		_kit_resend -= 1
+		return
+	_kit_sent = ids
+	_kit_resend = 10
+	mission.report_kit_now.rpc_id(1, ids)      # (2026-11-26: the dead keep it too - a won mission takes it home)
+var _kit_sent := []
+var _kit_resend := 0
 
 ## Host: more of something was taken than the base has - it stays in the armory.
 @rpc("any_peer", "call_local", "reliable")
@@ -3553,6 +3683,8 @@ func _pl_shoot(slot: String, wp: Dictionary, rule: Dictionary) -> void:
 ## (a living alien is worth more).
 func _melee(slot: String, rule: Dictionary) -> void:
 	fire_cd = rule["rate"] * (0.8 if rule.get("blunt", false) and Game.has_mod("stun_baton", "lehky", merc) else 1.0)
+	if rule.get("sabre", false):
+		fire_cd *= Game.part_mult("savle", "rate", merc)      # (2026-11-27) Vyvážená čepel
 	if Game.has_talent(merc, "rvac"): fire_cd /= 1.5      # (0.62) talent Rváč: a quicker blow
 	_swing = 1.0
 	_sw_last = -1.0
@@ -3753,11 +3885,17 @@ func _melee_hit(rule: Dictionary) -> void:
 	var from := cam.global_position
 	var dir := -cam.global_transform.basis.z
 	# (0.57) the knife's ergonomic grip: a surer, a little longer cut
-	var ergo: bool = rule == Game.ITEMS["knife"] and Game.has_mod("knife", "ergo", merc)
+	var ergo: bool = (rule == Game.ITEMS["knife"] and Game.has_mod("knife", "ergo", merc)) \
+		or (rule.get("sabre", false) and Game.has_mod("savle", "ergo", merc))
 	if ergo:
 		rule = rule.duplicate()
 		rule["reach"] = float(rule["reach"]) + 0.25
 		rule["damage"] = float(rule["damage"]) * 1.15
+	if rule.get("sabre", false) and Game.has_mod("savle", "brus", merc):
+		# (2026-11-27) Výbrus ostří: through more of their armour, a hair weaker
+		rule = rule.duplicate()
+		rule["cut"] = minf(0.9, float(rule.get("cut", 0.0)) + float(Game.MODS["brus"]["cut"]))
+		rule["damage"] = float(rule["damage"]) * float(Game.MODS["brus"]["dmg"])
 	if Game.has_talent(merc, "rvac"):
 		rule = rule.duplicate()
 		rule["damage"] = float(rule["damage"]) * 1.5      # (0.62) talent Rváč: a harder blow
@@ -3808,7 +3946,7 @@ func _melee_alien(alien_name: String, dmg: float, stun: float, cut := 0.0) -> vo
 		if stun > 0:
 			a.stun(stun, global_position, self)
 		if dmg > 0 and not a.dead:
-			# (0.80) the alloy sabre SV-01 cuts through part of their armour (alien.taken)
+			# (0.80) the alloy sabre RZ-94 cuts through part of their armour (alien.taken)
 			mission.hit_cut = cut
 			a.damage(dmg, global_position, self)
 			mission.hit_cut = 0.0
@@ -5308,7 +5446,7 @@ func _throw(kind: String, from_slot := "") -> void:
 		return
 	var t := 0.4 if (slot == "lh" or slot == "rh") else Game.fetch_time(kind, slot) + 0.3
 	if kind == "mine":
-		t += 1.4      # (0.80) the Claymore: legs into the ground, aim it, run the tripwire out
+		t += 1.4 * Game.part_mult("mine", "build", merc)      # (0.80) the Claymore: legs into the ground, aim it, run the tripwire out (Rychloupínací nožky: faster)
 	busy_stand = slot.begins_with("p")
 	_start_busy(t, "Házím" if kind != "mine" else "Stavím Claymore", func():
 		busy_stand = false
@@ -5697,6 +5835,13 @@ func hurt(dmg: float, from: Vector3, acid := false, kind := "") -> void:
 			pr = lerpf(pr, 1.0, vest_wear)
 			if kind in ["plasma", "heat"]:
 				vest_wear = minf(0.6, vest_wear + 0.07)
+		elif armor == "oblek":
+			# (Ari 2026-11-27) ARM-03: the whole body in alloy plates (the vest guards the chest only) -
+			# more of every kind of hit, claws and blows find fewer gaps; plasma burns it slower
+			pr = lerpf(pr, 1.0, {"plasma": 0.35, "laser": 0.1, "heat": 0.25, "claw": 0.12, "blow": 0.25, "blast": -0.25}.get(kind, 0.0))
+			pr = lerpf(pr, 1.0, vest_wear)
+			if kind in ["plasma", "heat"]:
+				vest_wear = minf(0.45, vest_wear + 0.04)
 		dmg *= lerpf(pr, 1.0, 0.67) if acid else pr
 	# a shield in the left hand stops most of what comes from the front
 	var sh := item_in("lh")
@@ -6528,32 +6673,43 @@ func _pick_up() -> void:
 	var it: Dictionary = mission.nearest_pickup(global_position)
 	if it.is_empty():
 		return
-	if String(it["item"]["id"]) == "fallen_kit":
-		# (Ari 2026-11-26) a fallen friend's kit: it goes home with whoever carries it to the transport
-		mission.take_pickup.rpc(it["pid"])
-		mission._kit_taken.rpc_id(1, int(it["item"].get("rec", -1)), multiplayer.get_unique_id())
-		mission.hud.message("Vzal jsi výstroj padlého (%s). Domů se vrátí, jen když ji doneseš do transportu živý." % String(it["item"].get("name", "?")), 4.0)
-		Game.play_ui(mission, "pickup", -6)
-		return
-	if Game.ITEMS[it["item"]["id"]]["type"] == "salvage":
-		# an alien's pack: tools, alloy offcuts, a strange device - worth money to the right people
-		mission.take_pickup.rpc(it["pid"])
-		var v := int(it["item"].get("value", 100))
-		salvage += v
-		mission.hud.message("Batoh vetřelce: %s. +%d kr do společné hromádky týmu." % [it["item"].get("what", "cizí technologie"), v], 3.0)
-		Game.play_ui(self, "ping", -8)
-		return
-	var slot := ""
-	var pid: String = it["item"]["id"]
-	for s in ["rh", "back", "side", "lh", "b0", "b1", "b2", "b3"] + Game.pack_slots():
-		if not inv.has(s) and Game.slot_refuse(s, pid) == "" and not (s == "rh" and inv.has("lh") and Game.two_handed(pid)) and not (s == "rh" and prone and _prone_heavy(pid)):
-			slot = s
-			break
-	if slot == "":
+	var iid := String(it["item"]["id"])
+	if iid != "fallen_kit" and Game.ITEMS[iid]["type"] != "salvage" and _pickup_slot(iid) == "":
 		mission.hud.message("Nemáš kam to dát.", 1.5)
 		return
-	mission.take_pickup.rpc(it["pid"])
-	var item: Dictionary = it["item"]
+	# (Ari 2026-11-27) the host hands it out (see mission.req_pickup) - two at once no longer both get it
+	mission.req_pickup.rpc_id(1, it["pid"])
+
+func _pickup_slot(pid: String) -> String:
+	for s in ["rh", "back", "side", "lh", "b0", "b1", "b2", "b3"] + Game.pack_slots():
+		if not inv.has(s) and Game.slot_refuse(s, pid) == "" and not (s == "rh" and inv.has("lh") and Game.two_handed(pid)) and not (s == "rh" and prone and _prone_heavy(pid)):
+			return s
+	return ""
+
+## The host gave me what I picked up (mission.req_pickup).
+@rpc("any_peer", "call_local", "reliable")
+func got_pickup(item: Dictionary) -> void:
+	if not multiplayer.get_remote_sender_id() in [0, 1] or not is_multiplayer_authority():
+		return
+	if String(item["id"]) == "fallen_kit":
+		# (Ari 2026-11-26) a fallen friend's kit: it goes home with whoever carries it to the transport
+		mission._kit_taken.rpc_id(1, int(item.get("rec", -1)), multiplayer.get_unique_id())
+		mission.hud.message("Vzal jsi výstroj padlého (%s). Domů se vrátí, jen když ji doneseš do transportu živý." % String(item.get("name", "?")), 4.0)
+		Game.play_ui(mission, "pickup", -6)
+		return
+	if Game.ITEMS[item["id"]]["type"] == "salvage":
+		# an alien's pack: tools, alloy offcuts, a strange device - worth money to the right people
+		var v := int(item.get("value", 100))
+		salvage += v
+		mission.hud.message("Batoh vetřelce: %s. +%d kr do společné hromádky týmu." % [item.get("what", "cizí technologie"), v], 3.0)
+		Game.play_ui(self, "ping", -8)
+		return
+	var slot := _pickup_slot(String(item["id"]))
+	if slot == "":
+		# (the hands filled up meanwhile) it goes back down
+		mission.drop_item(item, global_position + Vector3(0, 0.3, 0))
+		mission.hud.message("Nemáš kam to dát.", 1.5)
+		return
 	inv[slot] = item
 	if slot != "rh" and not slot.begins_with("p"):
 		item["home"] = slot

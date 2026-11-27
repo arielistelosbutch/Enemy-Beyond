@@ -9,17 +9,39 @@ extends Node3D
 ## seconds (missile salvo, point-blank burst) it explodes in the air instead.
 ## Below half structure it tries to flee; far enough away = escaped.
 
+## (0.72.8, Ari: "air fights are too easy, mainly the bigger UFOs") tougher hulls, every gun turret fires
+## on its own (`guns` = turrets, `gun_cd` = seconds between a turret's shots, `bolt` = hull damage of a hit,
+## `range` = how far it fires), the big ones swing their broadside on to the attacker, the giants carry
+## a field (`field`). Before: 70/170/360/520/640 hp, one shared gun 1.4-2.2 s / sqrt(guns), 9 (13.5) per hit.
 const UFO_KINDS := {
-	"scout": {"name": "Průzkumník (malé UFO)", "hp": 70.0, "speed": 62.0, "turn": 1.6, "guns": 1, "aliens": 0, "armor": 1.0, "scale": 2.2},
-	"raider": {"name": "Nájezdník (střední UFO)", "hp": 170.0, "speed": 52.0, "turn": 1.0, "guns": 2, "aliens": 1, "armor": 0.6, "scale": 2.0},
-	"harvester": {"name": "Sklízeč (velké UFO)", "hp": 360.0, "speed": 42.0, "turn": 0.6, "guns": 3, "aliens": 3, "armor": 0.35, "scale": 1.8},
+	"scout": {"name": "Průzkumník (malé UFO)", "hp": 80.0, "speed": 66.0, "turn": 1.7, "guns": 1, "aliens": 0, "armor": 1.0, "scale": 2.2,
+		"gun_cd": [2.2, 3.2], "bolt": 9.0, "range": 700.0, "field": 0.0, "flee": 0.5, "shake": 0.6},
+	"raider": {"name": "Nájezdník (střední UFO)", "hp": 200.0, "speed": 56.0, "turn": 1.1, "guns": 2, "aliens": 1, "armor": 0.5, "scale": 2.0,
+		"gun_cd": [2.0, 3.0], "bolt": 10.0, "range": 800.0, "field": 0.0, "flee": 0.3, "shake": 0.4},
+	"harvester": {"name": "Sklízeč (velké UFO)", "hp": 500.0, "speed": 44.0, "turn": 0.65, "guns": 3, "aliens": 3, "armor": 0.3, "scale": 1.8,
+		"gun_cd": [2.0, 3.0], "bolt": 11.0, "range": 900.0, "field": 0.0, "flee": 0.4, "shake": 0.18},
 	# 0.56: the giants fly too, late in the war - the same hulls you walk round when they land
-	"supply": {"name": "Zásobovací loď (obří UFO)", "hp": 520.0, "speed": 36.0, "turn": 0.4, "guns": 3, "aliens": 5, "armor": 0.25, "scale": 1.5},
-	"battleship": {"name": "Bitevní loď (obří UFO)", "hp": 640.0, "speed": 32.0, "turn": 0.35, "guns": 5, "aliens": 6, "armor": 0.2, "scale": 1.5},
+	"supply": {"name": "Zásobovací loď (obří UFO)", "hp": 850.0, "speed": 38.0, "turn": 0.45, "guns": 4, "aliens": 5, "armor": 0.2, "scale": 1.5,
+		"gun_cd": [1.9, 2.9], "bolt": 14.0, "range": 950.0, "field": 120.0, "flee": 0.35, "shake": 0.1},
+	"battleship": {"name": "Bitevní loď (obří UFO)", "hp": 1150.0, "speed": 34.0, "turn": 0.4, "guns": 6, "aliens": 6, "armor": 0.15, "scale": 1.5,
+		"gun_cd": [2.0, 3.0], "bolt": 16.0, "range": 1000.0, "field": 240.0, "flee": 0.0, "shake": 0.08},
 }
 const CANNON_DMG := 3.0
 const MISSILE_DMG := 38.0
 const TIME_LIMIT := 150.0
+const TIME_LIMIT_BIG := 210.0   # (0.72.8) fuel against the giants: their hulls take longer
+const CREW_HP := 0.55            # (0.72.8) the hull and field per extra fighter in the air (2 = ×1.55, 3 = ×2.1)
+var _gun_cd := []               # (0.72.8) one cooldown per turret (host / solo)
+
+## (0.72.8) More pilots, more hull: a co-op wing of three no longer shreds a Sklízeč in seconds.
+func crew_k() -> float:
+	return 1.0 + CREW_HP * maxf(0.0, float(pilots.size() - 1))
+
+func field_max() -> float:
+	return float(UFO_KINDS.get(kind, {}).get("field", 0.0)) * crew_k()
+
+func time_limit() -> float:
+	return TIME_LIMIT_BIG if kind in ["supply", "battleship"] else TIME_LIMIT
 
 var params := {}
 var kind := "raider"
@@ -50,17 +72,41 @@ const HEAVY_INFO := {"missiles": {"name": "RAKETY", "ammo": 4},
 	"laser_cannon": {"name": "LASER. DĚLO", "ammo": -1, "charge": 1.2, "cd": 2.5, "dmg": 45.0},
 	"plasma_cannon": {"name": "PLAZM. DĚLO", "ammo": 5, "charge": 0.8, "cd": 1.6, "dmg": 90.0}}
 var cannon_cd := 0.0
-const MG_PER_MAG := 65         # plasma machine gun shots out of one PL-MAG-01
-const PC_PER_MAG := 2          # plasma cannon shots out of one
+const GUN_NAMES := {"cannon": "kanón", "laser": "laserový kulomet", "plasma": "plazmový kulomet"}
+var mag_note := ""              # (0.72.8) why a fitted plasma weapon stayed at home
+const MG_PER_MAG := 130        # plasma machine gun shots out of one PL-MAG-01
+const PC_PER_MAG := 4          # plasma cannon shots out of one
 var ammo0 := 0
 var heavy0 := 0
 ## How many magazines this flight burnt (the host takes them off the armory).
-func plasma_mags_used() -> int:
-	var n := 0
+## (0.72.8) in parts of a magazine: a burst no longer throws a whole PL-MAG-01 away (it used to round
+## up for each weapon on every flight, so a few shots cost two magazines - "the magazines vanish")
+func plasma_used() -> float:
+	var n := 0.0
 	if gun == "plasma":
-		n += ceili(float(ammo0 - maxi(ammo, 0)) / MG_PER_MAG)
+		n += float(ammo0 - maxi(ammo, 0)) / MG_PER_MAG
 	if heavy == "plasma_cannon":
-		n += ceili(float(heavy0 - maxi(heavy_ammo, 0)) / PC_PER_MAG)
+		n += float(heavy0 - maxi(heavy_ammo, 0)) / PC_PER_MAG
+	return n
+
+func plasma_mags_used() -> int:
+	return ceili(plasma_used() - 0.0001)
+
+## (0.72.8) The other pilots' plasma: each says what he burnt as the fight ends; the host books it all.
+var _wing_plasma := {}
+func _report_plasma() -> void:
+	if net and me_pilot and not multiplayer.is_server():
+		_plasma_from.rpc_id(1, plasma_used())
+
+@rpc("any_peer", "reliable")
+func _plasma_from(n: float) -> void:
+	if multiplayer.is_server():
+		_wing_plasma[multiplayer.get_remote_sender_id()] = clampf(n, 0.0, 20.0)
+
+func plasma_total() -> float:
+	var n := plasma_used()
+	for pid in _wing_plasma:
+		n += float(_wing_plasma[pid])
 	return n
 # X-AIR-003: the laser machine gun fires from an energy reserve; shot dry it charges all the way
 var cell := 1.0
@@ -168,23 +214,44 @@ func _loadout() -> void:
 	if not GUN_INFO.has(gun): gun = "cannon"
 	if not HEAVY_INFO.has(heavy): heavy = "missiles"
 	# X-WEP-007: the plasma guns feed on the base's PL-MAG-01 magazines (in the fighters' supply modules)
-	var mags := int(params.get("plasma_mags", 99))
-	if gun == "plasma" and mags <= 0: gun = "cannon"
+	# (0.72.8) the cannon takes its magazines first (it is the big punch), the machine gun the rest;
+	# with none left a plasma slot flies with the best other fitted weapon - and the pilot is told
+	# (it used to fall back to missiles without a word, so a fitted plasma cannon "did not work")
+	# (0.72.8) the pool is in magazines with the opened one's rest ("plasma_pool"), shared fairly by
+	# the pilots in the air (each used to load the whole armory and only the host's use was counted)
+	var pool := float(params.get("plasma_pool", params.get("plasma_mags", float(Game.cmd_arg("mags", "99")))))
+	var n_pil := maxi(1, (params.get("pilots", [1]) as Array).size())
+	var mags := pool / float(n_pil)
+	var no_mag := []
+	if heavy == "plasma_cannon":
+		var shots := mini(int(HEAVY_INFO[heavy]["ammo"]), int(floor(mags * PC_PER_MAG + 0.001)))
+		if shots <= 0:
+			heavy = String(params.get("heavy_alt", Game.cmd_arg("heavy_alt", "missiles")))
+			no_mag.append("plazmové dělo")
+		else:
+			heavy_ammo = shots
+			mags -= float(shots) / PC_PER_MAG
+	var mg_shots := int(floor(mags * MG_PER_MAG + 0.001))
+	if gun == "plasma" and mg_shots <= 0:
+		gun = String(params.get("gun_alt", Game.cmd_arg("gun_alt", "cannon")))
+		no_mag.append("plazmový kulomet")
+	if not GUN_INFO.has(gun): gun = "cannon"
+	if not HEAVY_INFO.has(heavy): heavy = "missiles"
 	ammo = int(GUN_INFO[gun]["ammo"])
 	if gun == "plasma":
-		ammo = mini(ammo, mags * MG_PER_MAG)
-		mags -= ceili(float(ammo) / MG_PER_MAG)
-	if heavy == "plasma_cannon" and mags <= 0: heavy = "missiles"
-	heavy_ammo = int(HEAVY_INFO[heavy]["ammo"])
-	if heavy == "plasma_cannon":
-		heavy_ammo = mini(heavy_ammo, mags * PC_PER_MAG)
+		ammo = mini(ammo, mg_shots)
+	if heavy != "plasma_cannon":
+		heavy_ammo = int(HEAVY_INFO[heavy]["ammo"])
+	if not no_mag.is_empty():
+		mag_note = "Ve zbrojnici nejsou zásobníky PL-MAG-01 pro %s - letíš s: %s, %s." % [" ani ".join(no_mag),
+			String(GUN_NAMES.get(gun, gun)), String(HEAVY_INFO[heavy]["name"]).to_lower()]
 	ammo0 = ammo
 	heavy0 = heavy_ammo
 	missiles = heavy_ammo if heavy == "missiles" else 0
 
 ## X-AIR-001: alloy plates in our hulls - every hit takes a quarter less (a third more hits to go down).
 func armor_k() -> float:
-	return 0.75 if params.get("jet_armor", false) else 1.0
+	return 0.75 if params.get("jet_armor", Game.cmd_arg("armor", "0") == "1") else 1.0
 
 func _ready() -> void:
 	Game.play_music("interception")
@@ -194,8 +261,6 @@ func _ready() -> void:
 	var k: Dictionary = UFO_KINDS[kind]
 	ufo_hp = k["hp"]
 	ufo_max = k["hp"]
-	if kind == "battleship":
-		field = FIELD_MAX
 	_world()
 	_loadout()
 	var n_hawks := int(params.get("hawks", int(Game.cmd_arg("hawks", "0"))))
@@ -220,6 +285,12 @@ func _ready() -> void:
 		# not flying (more players than jets): ride along on the host's wing
 		jet = others[pilots[0]]["node"]
 		down = true
+	# (0.72.8) more fighters = a tougher hull and a stronger field (every machine knows the pilots)
+	ufo_max = float(k["hp"]) * crew_k()
+	ufo_hp = ufo_max
+	field = field_max()
+	for g in int(k["guns"]):
+		_gun_cd.append(randf_range(1.5, 3.0) + g * 0.35)
 	ufo = Game.model("ufo_" + kind)
 	add_child(ufo)
 	ufo.scale = Vector3.ONE * float(k["scale"])
@@ -268,6 +339,15 @@ func _ready() -> void:
 	add_child(music)
 	music.play()
 	_say("KONTAKT: %s. Přivést k zemi poškozené = posádka a kořist. Rozstřílet = nic." % k["name"], 6.0)
+	_mag_say()
+
+## (0.72.8) After the opening line: the plasma weapon left at home for want of magazines.
+func _mag_say() -> void:
+	if mag_note == "":
+		return
+	get_tree().create_timer(6.2).timeout.connect(func():
+		if is_inside_tree() and outcome == "":
+			_say(mag_note, 7.0))
 
 ## 0.57: the sky over the fight, in our style: a painted gradient with stars, the moon (or the sun by day),
 ## a deck of soft clouds lit from that side, and far below the Earth - land and sea in big pixels,
@@ -786,7 +866,7 @@ func _projectiles(delta: float) -> void:
 		var nxt: Vector3 = n.global_position + bo["vel"] * delta
 		bo["life"] -= delta
 		if me_pilot and not down and _seg_hits(n.global_position, nxt, jet.global_position, 4.0):
-			jet_hp -= 9.0 * (1.5 if kind in ["supply", "battleship"] else 1.0) * armor_k()      # (their heavy plasma cannons)
+			jet_hp -= float(UFO_KINDS.get(kind, {}).get("bolt", 9.0)) * armor_k()      # (their heavy plasma cannons)
 			if jet_hp <= 0 and net:
 				down = true
 				jet.visible = false
@@ -853,11 +933,11 @@ func _field_absorb(d: float) -> float:
 	return d - took
 
 func _field_tick(delta: float) -> void:
-	if kind == "battleship" and t - _field_hit_t > 3.0:
-		field = minf(FIELD_MAX, field + 12.0 * delta)
+	if field_max() > 0.0 and t - _field_hit_t > 3.0:
+		field = minf(field_max(), field + 14.0 * crew_k() * delta)
 
 func _damage_ufo(d: float, at: Vector3) -> void:
-	if kind == "battleship" and field > 0.0:
+	if field > 0.0:
 		var l := OmniLight3D.new()
 		l.light_color = Color(0.45, 0.7, 1.0)
 		l.light_energy = 6.0
@@ -880,7 +960,8 @@ func _ufo_ai(delta: float) -> void:
 	var k: Dictionary = UFO_KINDS[kind]
 	_field_tick(delta)
 	# (a Průzkumník runs as soon as it is hurt; a Nájezdník does not shy away from a fight)
-	if not fleeing and ufo_hp < ufo_max * (0.3 if kind == "raider" else 0.5):
+	# (0.72.8: the Bitevní loď never runs - it fights to the end)
+	if not fleeing and ufo_hp < ufo_max * float(k.get("flee", 0.5)):
 		fleeing = true
 		_say("UFO je poškozené a zrychluje - utíká!", 2.5)
 	var tg := _target()
@@ -891,6 +972,11 @@ func _ufo_ai(delta: float) -> void:
 	weave += delta
 	if fleeing:
 		want = away.normalized().lerp(ufo_dir, 0.3)
+	elif int(k["guns"]) >= 3 and away.length() < float(k.get("range", 700.0)):
+		# (0.72.8) the big ones swing their broadside on to the attacker so every turret bears,
+		# and slide away from a jet that sits right on top of them
+		var side_dir := away.normalized().cross(Vector3.UP) * (1.0 if sin(weave * 0.25) >= 0.0 else -1.0)
+		want = side_dir.lerp(away.normalized(), 0.6 if away.length() < 180.0 else 0.15)
 	elif away.length() < 250:
 		# break away to the side when the jet is close
 		want = away.normalized().rotated(Vector3.UP, sin(weave * 0.7) * 1.2)
@@ -906,11 +992,11 @@ func _ufo_ai(delta: float) -> void:
 	var to_ufo := (ufo.global_position - tpos)
 	var aimed: bool = (tg["fwd"] as Vector3).dot(to_ufo.normalized()) > 0.985 and to_ufo.length() < 500.0
 	if ufo_jink_cd <= 0.0 and (threat or (aimed and randf() < delta * 3.0)):
-		ufo_jink_cd = randf_range(0.9, 2.0) * (1.6 if kind in ["harvester", "supply", "battleship"] else 1.0)
+		ufo_jink_cd = randf_range(0.7, 1.6) * (1.6 if kind in ["harvester", "supply", "battleship"] else 1.0)
 		var perp := ufo_dir.cross(Vector3.UP).normalized() * (1.0 if randf() < 0.5 else -1.0)
-		ufo_jink = (perp + Vector3(0, randf_range(-0.5, 0.5), 0)).normalized() * spd * (1.6 if kind == "scout" else 1.1)
+		ufo_jink = (perp + Vector3(0, randf_range(-0.6, 0.6), 0)).normalized() * spd * (1.7 if kind == "scout" else 1.15)
 		# a sharp jink can shake off a missile (small, nimble UFOs much more often)
-		var shake: float = {"scout": 0.6, "raider": 0.35, "harvester": 0.15}.get(kind, 0.08)
+		var shake: float = float(k.get("shake", 0.08))
 		for rk in rockets:
 			if not rk.get("lost", false) and (rk["node"] as Node3D).global_position.distance_to(ufo.global_position) < 160.0 and randf() < shake:
 				rk["lost"] = true
@@ -923,20 +1009,49 @@ func _ufo_ai(delta: float) -> void:
 	# smoke when damaged
 	if ufo_hp < ufo_max * 0.5 and randf() < delta * 8.0:
 		_puff(ufo.global_position)
-	if k["guns"] > 0:
-		ufo_fire_cd -= delta
-		var d := tpos.distance_to(ufo.global_position)
-		if ufo_fire_cd <= 0 and d < 700 and tg["alive"]:
-			ufo_fire_cd = randf_range(1.4, 2.2) / sqrt(float(k["guns"])) * (1.6 if kind == "scout" else 1.0)
+	# (0.72.8) every turret fires on its own; with several jets about they split their fire (turret i
+	# takes the i-th nearest), so a wing no longer hides behind whoever is closest
+	if k["guns"] > 0 and ufo_fire_cd < 900.0:
+		while _gun_cd.size() < int(k["guns"]):
+			_gun_cd.append(randf_range(1.5, 3.0))
+		var tgs := _targets()
+		var cd_r: Array = k.get("gun_cd", [2.0, 3.0])
+		for gi in _gun_cd.size():
+			_gun_cd[gi] = float(_gun_cd[gi]) - delta
+			if float(_gun_cd[gi]) > 0.0 or tgs.is_empty():
+				continue
+			var tt: Dictionary = tgs[gi % tgs.size()]
+			var tp: Vector3 = tt["pos"]
+			var d := tp.distance_to(ufo.global_position)
+			if d > float(k.get("range", 700.0)):
+				_gun_cd[gi] = 0.3
+				continue
+			_gun_cd[gi] = randf_range(float(cd_r[0]), float(cd_r[1])) * (0.8 if fleeing else 1.0)
 			# precise lead on the jet's real motion - a break with A/D is how you make it miss
-			var jv: Vector3 = tg["vel"]
-			var lead := _decoy_aim(tpos + jv * (d / 300.0), tpos)
+			var jv: Vector3 = tt["vel"]
+			var lead := _decoy_aim(tp + jv * (d / 300.0), tp)
 			var dir := (lead - ufo.global_position).normalized()
 			dir = (dir + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.012).normalized()
+			# the turrets sit round the rim
+			var rim := Vector3(cos(TAU * gi / _gun_cd.size()), 0, sin(TAU * gi / _gun_cd.size())) * _ufo_radius() * 0.4
+			var from := ufo.global_position + rim + dir * (_ufo_radius() + 2)
 			if net:
-				_bolt.rpc(ufo.global_position + dir * (_ufo_radius() + 2), dir)
+				_bolt.rpc(from, dir)
 			else:
-				_bolt(ufo.global_position + dir * (_ufo_radius() + 2), dir)
+				_bolt(from, dir)
+
+## (0.72.8) The jets still flying, nearest first (for the turrets).
+func _targets() -> Array:
+	var out := []
+	if me_pilot and not down:
+		out.append({"pos": jet.global_position, "vel": -jet.global_transform.basis.z * speed + slide})
+	for pid in others:
+		var o: Dictionary = others[pid]
+		if not o["down"]:
+			out.append({"pos": (o["node"] as Node3D).global_position, "vel": o["vel"]})
+	var up := ufo.global_position
+	out.sort_custom(func(a, b): return (a["pos"] as Vector3).distance_to(up) < (b["pos"] as Vector3).distance_to(up))
+	return out
 
 ## The jet the UFO cares about: the nearest one still flying.
 func _target() -> Dictionary:
@@ -1105,7 +1220,7 @@ func _judge() -> void:
 		_end("shot_down")
 	elif fleeing and (_target()["pos"] as Vector3).distance_to(ufo.global_position) > 1500:
 		_end("escaped")
-	elif t > TIME_LIMIT:
+	elif t > time_limit():
 		_end("fuel")
 
 func _all_down() -> bool:
@@ -1122,6 +1237,7 @@ func _end(o: String) -> void:
 		_end_all.rpc(o)
 		outcome = ""
 	outcome = o
+	_report_plasma()
 	if (not net or multiplayer.is_server()) and o in ["crashed", "destroyed"]:
 		_pay_pilots()
 	Game.play_ui(self, "explosion", 2)
@@ -1162,7 +1278,8 @@ func _finish() -> void:
 		# a co-op pilot: back to the lobby (or the host's globe view)
 		get_tree().change_scene_to_file("res://scenes/Main.tscn")
 		return
-	Campaign.spend_plasma_mags(plasma_mags_used())
+	print("[AIR] plasma mine %.2f wing %s" % [plasma_used(), _wing_plasma])
+	Campaign.spend_plasma(plasma_total())
 	var lost := 0
 	if net:
 		for pid in others:
@@ -1605,9 +1722,9 @@ func _draw_hud() -> void:
 	elif charge > 0.0 or missile_cd > 0.0:
 		_hbar(c, Rect2(sz.x - 60, sz.y - 39, 50, 6), charge if charge > 0.0 else 1.0 - clampf(missile_cd / float(HEAVY_INFO[heavy]["cd"]), 0.0, 1.0),
 			Color(0.8, 0.4, 1.0) if heavy == "laser_cannon" else Color(0.4, 1.0, 0.5))
-	var fuel := maxf(0, TIME_LIMIT - t)
+	var fuel := maxf(0, time_limit() - t)
 	txt.call(Vector2(sz.x - 196, sz.y - 16), "PALIVO", lab, 8)
-	_hbar(c, Rect2(sz.x - 120, sz.y - 23, 110, 7), fuel / TIME_LIMIT, amber if fuel > 30 else bad)
+	_hbar(c, Rect2(sz.x - 120, sz.y - 23, 110, 7), fuel / time_limit(), amber if fuel > 30 else bad)
 	if charge > 0.0:
 		c.draw_rect(Rect2(mid.x - 60, mid.y + 40, 120, 6), Color(0, 0, 0, 0.5))
 		c.draw_rect(Rect2(mid.x - 60, mid.y + 40, 120 * charge, 6), Color(0.8, 0.4, 1.0) if heavy == "laser_cannon" else Color(0.4, 1.0, 0.5))
@@ -1746,8 +1863,10 @@ func _process(_d: float) -> void:
 	if Game.autotest() in ["airhost", "airclient"] and (outcome != "" or t > 100) and not _shot_done.has("sfx"):
 		_shot_done["sfx"] = true
 		print("RESULT airsfx %s shots %d missiles %d" % [Game.autotest(), int(sfx_heard.get("cannon_jet", 0)) + int(sfx_heard.get("laser", 0)) + int(sfx_heard.get("plasma", 0)), int(sfx_heard.get("missile_launch", 0))])
-	if Game.autotest() in ["air", "airhost", "airclient"] and ((outcome != "" and end_t > 2.0) or t > 100):
+	if Game.autotest() in ["air", "airhost", "airclient"] and ((outcome != "" and end_t > 2.0) or t > float(Game.cmd_arg("airlen", "100"))):
 		print("[AIR-%s] end outcome=%s ufo_hp=%.0f me_hp=%.0f others=%s" % [Game.autotest(), outcome, ufo_hp, jet_hp, others.keys()])
+		# (0.72.8) the balance line: how long the fight took, what is left of each side, the loadout
+		print("RESULT airbal %s kind %s gun %s heavy %s hawk %s outcome %s t %.1f ufo %.0f/%.0f jet %.0f plasma %.2f wing %s note '%s'" % [Game.autotest(), kind, gun, heavy, hawk, outcome if outcome != "" else "time", t - end_t, maxf(ufo_hp, 0), ufo_max, jet_hp, plasma_used(), _wing_plasma.values(), mag_note])
 		get_tree().quit()
 
 ## (0.7x) --autotest=airfx: the new air combat bits one by one (lead, decoy vs. a shot, cracks and

@@ -1307,7 +1307,7 @@ func _begin_escort(c: Dictionary) -> void:
 	Campaign.save()
 	var ep := {"escort": true, "craft": int(c["id"]), "transport": c["kind"], "jet_armor": Campaign.built("pancir_letadel"), "escort_n": int(c.get("escort", 0)), "pilots": c.get("pilots", []), "driver": int(c.get("driver", 0)),
 		# (0.72.5) the guns fitted in the hangar fly along (before: factory cannon and missiles)
-		"gun": Campaign.jet_gun(), "heavy": Campaign.jet_heavy(), "hawks": Campaign.hawks(), "plasma_mags": int(Campaign.data["armory"].get("plasma_cell", 0))}
+		"gun": Campaign.jet_gun(), "heavy": Campaign.jet_heavy(), "hawks": Campaign.hawks(), "plasma_mags": Campaign.plasma_mags(), "plasma_pool": Campaign.plasma_pool(), "gun_alt": Campaign.jet_fallback(false), "heavy_alt": Campaign.jet_fallback(true)}
 	ep["night"] = Campaign.is_night(float(c.get("lon", Campaign.BASE_LON)), float(c.get("lat", Campaign.BASE_LAT)))      # day or night where they meet
 	if Net.is_online():
 		Net.start_escort(ep)
