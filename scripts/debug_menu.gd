@@ -205,6 +205,7 @@ func all_research() -> void:
 	for id in Campaign.UPGRADES:
 		if not id in Campaign.data["built"]:
 			Campaign.data["built"].append(id)
+	Campaign._final_check()      # (2026-11-27) the Mars mission, if the Pelikán is already built
 
 func _all_research() -> void:
 	_camp(all_research, "Veškerý výzkum hotový (i vylepšení z dílny).")

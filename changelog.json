@@ -1,4 +1,18 @@
 {
+ "0.72.8": [
+   "Plazmové dělo na stíhačce už letí s plazmou, když jsou ve zbrojnici zásobníky PL-MAG-01. Bez nich poletí nejlepší jiná zbraň a pilot se to dozví. Spotřeba se počítá po ranách (načatý zásobník zůstává) a v co-opu se zásoba dělí mezi piloty.",
+   "Souboje ve vzduchu jsou těžší: větší UFO mají silnější trup, každá věž střílí sama a velké lodě se natáčí bokem. V co-opu mají UFO víc trupu podle počtu pilotů.",
+   "Plazmové zásobníky vydrží dvakrát déle: puška 30 ran, pistole 60, kanón 12, minigun 150 pulzů. Plazmová věž má víc nábojů.",
+   "Strážní věž střílí na 50 m, natočí se za cílem, než začne pálit, a po splněné misi se vrací do skladu (po neúspěchu zůstane na místě).",
+   "Výbava po misi: věci, které jsme si předali nebo sebrali ze země, už nemizí, po splněné misi jde domů i to, co leží na zemi, a dva hráči už nesberou tutéž věc.",
+   "Nové díly: na šavli (výbrus, vyvážená čepel, rukojeť, pouzdro), na Claymore (kuličky, delší drát, rychlé nožky) a na strážní věž (zásobník, servo, pláty, čidlo). Šavle se teď jmenuje RZ-94.",
+   "Bojový oblek ze slitin ARM-03: pláty ze slitin vetřelců přes maskáče, chrání lépe než pancíř ARM-02. Odemkne ho výzkum po laserech a pancíři, vyrábí se v dílně.",
+   "Štít jde vzít z opasku klávesou a jednoruční zbraň zůstane v pravé ruce. V lodích UFO už neroste tráva skrz podlahu.",
+   "Výpadek proudu na teroru zhasne opravdu všechno lidské (lampy, televize, cedule, lednice, benzinku), loď vetřelců svítí dál.",
+   "Pistole, raketomet, minigun a kanóny drží vojáci zvenku přirozeněji, pistole míří obouruč tam, kam mají.",
+   "Velcí vetřelci (Bijec, Kolos, Ještěřan a další) už se nezasekávají ve dveřích, na chodbách a na schodech.",
+   "Mise na Mars se objeví, i když byl výzkum dokončený přes debug mód."
+ ],
  "0.72.7": [
   "Šavle SV-01 ze slitin vetřelců: delší než nůž, velmi účinná zblízka a drží se jednou rukou, takže jde se štítem. Odemkne ji výzkum po laserech, vyrábí se v dílně.",
   "Komando Štír: v tvorbě vojáka → Šablony je sedm hotových vojáků z vlastní party z 80. let. K tomu nové oblečení (košile bez rukávů, tílko, pásy s náboji křížem, staré polní popruhy, pilotky, čelenka) a vojáci občas dostanou přezdívku.",

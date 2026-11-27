@@ -1,7 +1,7 @@
 extends StaticBody3D
 ## (0.80, Ari: "tu věž tam můžeš přidat… lepší zbraně s výzkumem") ST-01, strážní věž.
 ## A tripod with a turning head and a motion sensor: it fires at an alien that MOVES in front
-## of it (±60° from where it was set facing, up to 25 m, a clear line of sight) - one that lies
+## of it (±60° from where it was set facing, up to 50 m, a clear line of sight) - one that lies
 ## still in cover is safe from it. The host decides everything (who, when, hit or miss) and sends
 ## the shot to all; a player in the line of fire stops it. Research changes what it carries:
 ## ST-01 a rifle (rifle magazines, F to top up), Laserová věž (its own cell, recharges slowly),
@@ -9,11 +9,14 @@ extends StaticBody3D
 const KINDS := {
 	"rifle": {"name": "Strážní věž ST-01", "dmg": 24.0, "rate": 0.2, "start": 40, "max": 60, "ammo": "rifle_clip", "snd": "rifle", "noise": 40.0},
 	"laser": {"name": "Laserová věž ST-02", "dmg": 34.0, "rate": 0.5, "start": 40, "max": 40, "ammo": "", "snd": "laser", "noise": 22.0, "recharge": 3.0},
-	"plasma": {"name": "Plazmová věž ST-03", "dmg": 68.0, "rate": 0.85, "start": 20, "max": 40, "ammo": "plasma_cell", "snd": "plasma", "noise": 30.0},
+	"plasma": {"name": "Plazmová věž ST-03", "dmg": 68.0, "rate": 0.85, "start": 40, "max": 80, "ammo": "plasma_cell", "snd": "plasma", "noise": 30.0},
 }
-const RANGE := 25.0
+const RANGE := 50.0       # (Ari 2026-11-27: dřív 25 m, dvojnásob)
 const ARC := 1.05          # ±60° from the facing it was set up with
 const TURN := 2.6          # rad/s of the head
+const SETTLE := 0.25       # (Ari 2026-11-27) s on target before it fires: it turns after it first
+const SWEEP := 0.45        # idle: the head sweeps slowly ±this (rad) - it watches its arc
+const AIM_EVERY := 0.1     # s between head updates to the others
 const HP := 160.0
 const MUZZLE := Vector3(0, 0.08, -0.74)
 const PIVOT_Y := 0.62
@@ -30,6 +33,8 @@ var _scan_t := 0.0
 var _target: Node = null
 var _charge_t := 0.0
 var _aim_send := 0.0
+var _on_target := 0.0
+var _sweep_t := 0.0
 var _gone := false
 var fired := 0             # (host) shots so far - for the test
 var head: Node3D
@@ -40,13 +45,20 @@ func setup(m: Node, k: String, by: String, face: Vector3, rounds: int) -> void:
 	mission = m
 	kind = k if KINDS.has(k) else "rifle"
 	owner_name = by
+	# (2026-11-27) parts on the owner's ST-01 (Game.MOD_FITS["sentry"]) - the same on every machine
+	var ow: Node = m.actors.get_node_or_null(by) if m.get("actors") else null
+	var om: Dictionary = ow.merc if ow != null and ow.get("merc") is Dictionary else {}
+	k_max = 1.5 if Game.has_mod("sentry", "zasobnik", om) else 1.0
+	k_turn = Game.part_mult("sentry", "turn", om)
+	k_range = Game.part_mult("sentry", "range", om)
+	hp = HP * Game.part_mult("sentry", "hp", om)
 	var f := Vector3(face.x, 0, face.z)
 	if f.length() < 0.01:
 		f = Vector3(0, 0, -1)
 	face_yaw = atan2(-f.x, -f.z)
 	rotation.y = face_yaw
 	ammo = rounds if rounds >= 0 else int(KINDS[kind]["start"])
-	ammo = mini(ammo, int(KINDS[kind]["max"]))
+	ammo = mini(ammo, ammo_max())
 	collision_layer = 1
 	collision_mask = 0
 	add_to_group("sentry")
@@ -74,8 +86,11 @@ func setup(m: Node, k: String, by: String, face: Vector3, rounds: int) -> void:
 func display_name() -> String:
 	return String(KINDS[kind]["name"])
 
+var k_max := 1.0
+var k_turn := 1.0
+var k_range := 1.0
 func ammo_max() -> int:
-	return int(KINDS[kind]["max"])
+	return int(round(int(KINDS[kind]["max"]) * k_max))
 
 func ammo_item() -> String:
 	return String(KINDS[kind]["ammo"])
@@ -104,38 +119,61 @@ func _physics_process(dt: float) -> void:
 	if _scan_t <= 0.0:
 		_scan_t = 0.25
 		_target = _pick()
+	_aim_send -= dt
 	if _target == null or not is_instance_valid(_target) or _target.dead:
 		_target = null
+		_on_target = 0.0
+		# nothing to shoot: a slow sweep over its arc (seen by all)
+		_sweep_t += dt
+		var old := yaw
+		yaw = move_toward(yaw, sin(_sweep_t * 0.6) * SWEEP, TURN * k_turn * 0.25 * dt)
+		if _aim_send <= 0.0 and absf(yaw - old) > 0.0001:
+			_aim_send = AIM_EVERY * 2.0
+			_aim.rpc(yaw)
 		return
 	var to: Vector3 = _target.global_position - global_position
 	_want = clampf(wrapf(atan2(-to.x, -to.z) - face_yaw, -PI, PI), -ARC, ARC)
-	yaw = move_toward(yaw, _want, TURN * dt)
-	_aim_send -= dt
+	yaw = move_toward(yaw, _want, TURN * k_turn * dt)
 	if _aim_send <= 0.0:
-		_aim_send = 0.15
+		_aim_send = AIM_EVERY
 		_aim.rpc(yaw)
-	if absf(yaw - _want) < 0.07 and _cd <= 0.0 and ammo > 0 and _clear_line(_target):
+	# it fires only after it has turned onto the target and held it a moment
+	if absf(yaw - _want) < 0.07:
+		_on_target += dt
+	else:
+		_on_target = 0.0
+	if _on_target >= SETTLE and _cd <= 0.0 and ammo > 0 and _moving(_target) and _clear_line(_target):
 		_shoot(_target)
 
-## A moving alien, in the arc, in range, seen; the nearest wins.
+func _moving(a: Node) -> bool:
+	return float(a.get("_speed")) > 0.35 or bool(a.get("flying")) or a.state == a.S.COMBAT
+
+## Can it watch this one (in the arc, in range, seen)?
+func _watchable(a: Node) -> bool:
+	if a == null or not is_instance_valid(a) or a.dead or a.get("husk"):
+		return false
+	var to: Vector3 = a.global_position - global_position
+	var d := to.length()
+	if d > RANGE * k_range or d < 0.6:
+		return false
+	if absf(wrapf(atan2(-to.x, -to.z) - face_yaw, -PI, PI)) > ARC + 0.05:
+		return false
+	if a.get("cloak") and d > 6.0 * k_range * k_range:
+		return false
+	return _sees(a)
+
+## A moving alien, in the arc, in range, seen; the nearest wins. The one it already follows stays
+## its target while it can watch it (even standing still - it waits for it to move again).
 func _pick() -> Node:
+	if _target != null and _watchable(_target):
+		return _target
 	var best: Node = null
-	var bd := RANGE
+	var bd := RANGE * k_range
 	for a in mission.aliens():
 		if a.dead or a.get("husk"):
 			continue
-		var to: Vector3 = a.global_position - global_position
-		var d := to.length()
-		if d > bd or d < 0.6:
-			continue
-		if absf(wrapf(atan2(-to.x, -to.z) - face_yaw, -PI, PI)) > ARC + 0.05:
-			continue
-		var moving: bool = float(a.get("_speed")) > 0.35 or bool(a.get("flying")) or a.state == a.S.COMBAT
-		if not moving:
-			continue
-		if a.get("cloak") and d > 6.0:
-			continue
-		if not _sees(a):
+		var d: float = a.global_position.distance_to(global_position)
+		if d > bd or not _moving(a) or not _watchable(a):
 			continue
 		bd = d
 		best = a
@@ -175,7 +213,7 @@ func _shoot(a: Node) -> void:
 	var from := _muzzle()
 	var to := _aim_at(a)
 	var d := from.distance_to(to)
-	var chance := clampf(0.92 - d / 45.0, 0.35, 0.92)
+	var chance := clampf(0.92 - d / 90.0, 0.35, 0.92)    # (range doubled: the same fall-off over 50 m)
 	if float(a.get("_speed")) > 3.0:
 		chance *= 0.7
 	if Game.veteran():
