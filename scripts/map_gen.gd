@@ -1,4 +1,5 @@
 extends RefCounted
+const WreckScript := preload("res://scripts/wreck.gd")
 ## Builds a random night map from 12 m blocks, like UFO's map blocks: fields,
 ## pastures, a farmhouse, a barn, woods, a road, the crashed UFO and the
 ## Kondor (dropship). Same seed = same map on every machine.
@@ -64,6 +65,15 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 		terrain = "snow"
 	info["size"] = BLOCK * N
 	info["terrain"] = terrain
+	# (Ari 27. 11.) the trees of the place: the Americas have cacti in the deserts, the Old World palms
+	var lon := float(params.get("lon", 0.0))
+	match terrain:
+		"desert": flora = "desert_am" if lon < -30.0 else "desert"
+		"dry": flora = "dry_am" if lon < -30.0 else "dry"
+		"tropic": flora = "tropic"
+		_: flora = ""
+	if Game.cmd_arg("oldflora", "") == "1":
+		flora = ""
 	if mtype == "mars":
 		N = 8
 		terrain = "mars"
@@ -303,6 +313,7 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	_borders()
 	_clear_doors()
 	_untangle()
+	_wrecks()
 	_shootable_lamps()
 	Game.load_step(Game.BUILD_TILES_TO + 0.05)
 	_zfix()
@@ -315,6 +326,20 @@ func build(parent: Node3D, map_seed: int, params := {}) -> Dictionary:
 	Game.load_step(Game.BUILD_MAP_TO)
 	if Game.autotest() != "": print("[MAP] nav done %d ms" % (Time.get_ticks_msec() - _t0))
 	return info
+
+## (Ari 27. 11.) Stromy a auta, které jde zapálit, pokácet a vyhodit do vzduchu (Wreck v misi):
+## seznam v pořadí potomků mapy (na všech počítačích stejný), každé tělo kolize dostane index.
+func _wrecks() -> void:
+	info["wrecks"] = []
+	if capturing or Game.cmd_arg("nowreck", "") == "1":
+		return
+	for n in root.get_children():
+		if not n is Node3D or (n as Node).is_queued_for_deletion():
+			continue
+		if WreckScript.kind_of(String((n as Node).get_meta("model", ""))) == "":
+			continue
+		WreckScript.tag(n, info["wrecks"].size())
+		info["wrecks"].append(n)
 
 ## (Ari 17. 11.) Street lamps and bulbs can be shot out: a small glass body round each lens
 ## (Mission._break turns the light off for good - on every machine, the break is an rpc).
@@ -710,6 +735,10 @@ func _ground(o: Vector3, tex: String) -> void:
 		tex = "snow"
 	elif terrain == "desert" and tex in ["grass", "dirt"]:
 		tex = "sand"
+	elif terrain == "dry" and tex == "grass":
+		tex = "grass_dry"
+	elif terrain == "tropic" and tex == "grass":
+		tex = "grass_jungle"
 	box(o + Vector3(BLOCK / 2, -0.25, BLOCK / 2), Vector3(BLOCK, 0.5, BLOCK), Game.mat(tex, 0.5))
 
 # ---- grass: thousands of small blades that sway in the wind ----------------------------------
@@ -764,6 +793,12 @@ func _grass(o: Vector3, count: int, kind := "grass", min_h := 0.6, max_h := 1.3,
 	if terrain == "desert":
 		count = count / 5
 		kind = "dry"
+	elif terrain == "dry":
+		count = count * 2 / 3
+		kind = "dry"
+	elif terrain == "tropic":
+		count = count * 4 / 3
+		max_h *= 1.25
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_custom_data = true
@@ -818,8 +853,48 @@ var _loose: Array = []        # free-standing props: checked at the end so nothi
 # ---- 0.50: nothing may stand inside anything else -------------------------------------------------
 var _shape_aabb := {}
 ## The floor plan (x, z) of everything solid under a node, in world space.
+## (2026-11-27 overlaptest) low parts that still count: the forks of a forklift, a door torn off a
+## wreck and lying by it - a car or a drum used to be pushed onto them.
+const LOW_PARTS := ["v_forklift", "v_truck_wreck", "v_humvee_wreck", "v_car_burnt", "v_tractor", "v_snowmobile_wreck"]
+const VIS_PARTS := ["v_car_blue", "v_car_red", "v_car_beige", "v_radio_tower", "v_cross", "v_mil_crates", "v_stump", "v_scarecrow", "v_hay_bale", "v_drum_blue", "v_truck_wreck", "v_humvee_wreck", "v_car_burnt", "v_forklift", "v_snowmobile_wreck"]
+var _vis_aabb := {}
+
+## The visible outline of a model on the ground (its meshes up to 2 m; _hits shrinks it a little).
+func _vis_rect(m: Node3D) -> Rect2:
+	var key := String(m.get_meta("model"))
+	if not _vis_aabb.has(key):
+		var box := AABB()
+		var first := true
+		var inv := m.global_transform.affine_inverse()
+		for mi in m.find_children("*", "MeshInstance3D", true, false):
+			var a: AABB = inv * (mi as MeshInstance3D).global_transform * (mi as MeshInstance3D).get_aabb()
+			if a.position.y > 2.0:
+				continue
+			box = a if first else box.merge(a)
+			first = false
+		_vis_aabb[key] = box
+	var b: AABB = _vis_aabb[key]
+	if b.size == Vector3.ZERO:
+		return Rect2()
+	var w: AABB = m.global_transform * b
+	return Rect2(w.position.x, w.position.z, w.size.x, w.size.z)
 func _rects(n: Node) -> Array:
 	var out := []
+	var keep_low := false
+	var up: Node = n
+	for i in 4:
+		if up == null or up == root:
+			break
+		if up.has_meta("model"):
+			keep_low = String(up.get_meta("model")) in LOW_PARTS
+			break
+		up = up.get_parent()
+	if up != null and up != root and up.has_meta("model") and String(up.get_meta("model")) in VIS_PARTS:
+		# (overlaptest 27. 11.: crates into a stump, a hay bale into the scarecrow) these models look wider
+		# than their collision (FitCollision keeps only the old box) - the visible outline counts too
+		var vr := _vis_rect(up as Node3D)
+		if vr.size != Vector2.ZERO:
+			out.append(vr)
 	for cs in n.find_children("*", "CollisionShape3D", true, false):
 		var c := cs as CollisionShape3D
 		if c.shape == null or c.disabled:
@@ -828,7 +903,7 @@ func _rects(n: Node) -> Array:
 			var dm := c.shape.get_debug_mesh()
 			_shape_aabb[c.shape] = dm.get_aabb() if dm else AABB()
 		var a: AABB = c.global_transform * (_shape_aabb[c.shape] as AABB)
-		if a.end.y < 0.3 or a.size.x * a.size.z < 0.01:
+		if (a.end.y < 0.3 and not keep_low) or a.size.x * a.size.z < 0.01:
 			continue          # ground, floors, kerbs: you can stand there
 		if a.position.y > 2.0:
 			continue          # (0.72.3) overhead: a ceiling or a roof slab - since roof slabs are solid (_roof_slab) they pushed every bench and drum out of the hangar
@@ -919,8 +994,12 @@ func _untangle() -> void:
 			_bucket_add(roofs, r)
 	for d in info["doors"]:
 		var c: Vector3 = d["c"]
-		_bucket_add(grid, Rect2(c.x - 0.7, c.z - 0.7, 1.4, 1.4))     # keep the doorways clear
+		_bucket_add(grid, Rect2(c.x - 1.0, c.z - 1.0, 2.0, 2.0))     # keep the doorways clear (2026-11-27: 1.4 m let a rock stand in a door)
 	var size: float = info["size"]
+	# (Ari 27. 11., overlaptest: a hen-house in the hedge round the map) the edge of the map: the
+	# hedge / fence along it has no collision of its own (the border wall behind it holds)
+	for er in [Rect2(-2, -2, size + 4, 3.1), Rect2(-2, size - 1.1, size + 4, 3.1), Rect2(-2, -2, 3.1, size + 4), Rect2(size - 1.1, -2, 3.1, size + 4)]:      # (the hedge is 1 m thick)
+		_bucket_add(grid, er)
 	for n in _loose:
 		if not is_instance_valid(n):
 			continue
@@ -933,6 +1012,7 @@ func _untangle() -> void:
 			continue
 		var home: Vector3 = n.position
 		var outside := not _indoors([Rect2(home.x, home.z, 0, 0)], roofs)
+		var is_car := _cars.has(n)
 		var ok := false
 		for t in 14:
 			var step := 1.0 + t * 0.35
@@ -944,6 +1024,8 @@ func _untangle() -> void:
 			rs = _rects(n)
 			if outside and _indoors(rs + [Rect2(np.x, np.z, 0, 0)], roofs):
 				continue      # (a woodpile in the hall by the stairs)
+			if is_car and _by_door(np, 4.0):
+				continue      # (passcheck 2026-11-27: a car shoved in front of a door - _clear_doors tows only before this)
 			if not _hits(rs, grid):
 				ok = true
 				break
@@ -955,12 +1037,20 @@ func _untangle() -> void:
 		else:
 			n.position = home
 			_cars.erase(n)
+			if Game.autotest() != "": print("[MAP] untangle removed %s at %s" % [String(n.get_meta("model", n.name)), str(home.snapped(Vector3.ONE * 0.1))])
 			n.free()
 			gone += 1
 	if Game.autotest() != "": print("[MAP] untangled: moved %d, removed %d of %d" % [moved, gone, _loose.size()])
 	info["untangled"] = [moved, gone]
 ## A parked car right in front of a door, or with crates and pallets stuck in it: towed away
 ## (the streets are laid before the houses and the yards).
+func _by_door(p: Vector3, r: float) -> bool:
+	for dd in info["doors"]:
+		var c: Vector3 = dd["c"]
+		if Vector2(p.x - c.x, p.z - c.z).length() < r:
+			return true
+	return false
+
 func _clear_doors() -> void:
 	var towed := 0
 	for car in _cars:
@@ -981,6 +1071,10 @@ func _clear_doors() -> void:
 	if Game.autotest() != "": print("[MAP] cars %d, towed for crates %d" % [_cars.size(), towed])
 
 func _prop(name: String, p: Vector3, yaw := 0.0, cover := true) -> Node3D:
+	if not capturing:
+		name = _flora(name, p)
+		if name == "house_roof" and _flat_roofs():
+			return _flat_roof(p, cover)
 	var n: Node3D = Game.model("v_" + name)
 	root.add_child(n)
 	n.position = p
@@ -991,6 +1085,8 @@ func _prop(name: String, p: Vector3, yaw := 0.0, cover := true) -> Node3D:
 		FitCollision.fit(n)      # 0.61: hit what you see (no walls of thin air round the props)
 	if name.begins_with("car"):
 		_cars.append(n)
+	if name == "cross":
+		_crosses.append(n)      # (the saved road tile has one too: the wrecks keep off them)
 	if not name in ["house_roof", "window"]:
 		_loose.append(n)
 	if name == "house_roof":
@@ -1009,7 +1105,77 @@ func _prop(name: String, p: Vector3, yaw := 0.0, cover := true) -> Node3D:
 	return n
 
 var _cross_done := false
+var _cross_at := Vector3(-999, 0, -999)
+var _crosses: Array = []
+func _near_cross(p: Vector3, r: float) -> bool:
+	for cr in _crosses:
+		if is_instance_valid(cr) and Vector2((cr as Node3D).position.x - p.x, (cr as Node3D).position.z - p.z).length() < r:
+			return true
+	return false
 var _stop_done := false
+
+# ---- (Ari 27. 11.: „Sahara, teror a byl tam trávník a domečky“, „klidně přidej další biomy“) ------
+## The trees and bushes of the place: palms and cacti in the deserts, acacias on the dry steppe and
+## savanna, jungle trees and palms in the tropics. Picked by the spot (not by rng: the rest of the
+## map stays the same as before, every computer in co-op gets the same tree).
+const FLORA := {
+	"desert": [["tree_palm", "tree_palm2", "tree_palm", "dead_tree"], ["bush2", "bush", "dead_tree"]],
+	"desert_am": [["cactus", "cactus", "cactus2", "dead_tree"], ["cactus2", "bush2", "cactus2"]],
+	"dry": [["tree_acacia", "tree_acacia2", "tree_acacia", "tree_oak2", "tree_acacia2"], ["bush", "bush2"]],
+	"dry_am": [["tree_oak2", "cactus", "tree_acacia2", "dead_tree", "cactus2"], ["bush2", "cactus2", "bush"]],
+	"tropic": [["tree_jungle", "tree_palm", "tree_jungle", "tree_palm2", "tree_oak"], ["bush_jungle", "bush_jungle", "bush"]],
+}
+var flora := ""
+func _flora(name: String, p: Vector3) -> String:
+	if flora == "" or not (name.begins_with("tree_") or name in ["bush", "bush2"]):
+		return name
+	var pool: Array = FLORA[flora][0 if name.begins_with("tree_") else 1]
+	if name == "tree_fruit":
+		return name           # (an orchard stays an orchard)
+	var h := absi(int(floor(p.x * 7.3)) * 73856093 ^ int(floor(p.z * 7.3)) * 19349663 ^ rng.seed)
+	return String(pool[h % pool.size()])
+
+## (Ari 27. 11.) in the deserts the houses are plastered (no red brick)
+func _hot_wall(tex: String) -> String:
+	return "plaster" if terrain == "desert" and tex == "brick" else tex
+
+## Flat roofs on the houses of the hot dry lands (a parapet round a terrace, no tiles).
+func _flat_roofs() -> bool:
+	return terrain in ["desert", "dry"] and biome != "mountain"
+
+## In place of the pitched roof model (8 x 6 m at scale 1, the callers scale it to the house): a
+## concrete slab with a low parapet; solid, so the team stands on it and it stops shots from above.
+func _flat_roof(p: Vector3, _cover := false) -> Node3D:
+	var n := Node3D.new()
+	n.name = "FlatRoof"
+	root.add_child(n)
+	n.position = p
+	var m := Game.mat("plaster", 1.0)
+	var parts := [[Vector3(0, 0.12, 0), Vector3(8.3, 0.24, 6.3)],
+		[Vector3(0, 0.45, -3.08), Vector3(8.3, 0.5, 0.16)], [Vector3(0, 0.45, 3.08), Vector3(8.3, 0.5, 0.16)],
+		[Vector3(-4.08, 0.45, 0), Vector3(0.16, 0.5, 6.0)], [Vector3(4.08, 0.45, 0), Vector3(0.16, 0.5, 6.0)]]
+	var sb := StaticBody3D.new()
+	sb.name = "Flat_col"           # (kept by _roof_no_slab)
+	n.add_child(sb)
+	for pt in parts:
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = pt[1]
+		mi.mesh = bm
+		mi.material_override = m
+		mi.position = pt[0]
+		n.add_child(mi)
+		var cs := CollisionShape3D.new()
+		var sh := BoxShape3D.new()
+		sh.size = pt[1]
+		cs.shape = sh
+		cs.position = pt[0]
+		sb.add_child(cs)
+	n.set_meta("flat_roof", true)
+	if not capturing:
+		info["roofs"] = info["roofs"].filter(func(r): return Vector2(r.x - p.x, r.z - p.z).length() > 5.5 or absf(r.y - p.y) > 0.6)
+		info["roofs"].append(p + Vector3(0, 0.25, 0))
+	return n
 
 func _cover(p: Vector3) -> void:
 	info["cover"].append(p)
@@ -1138,7 +1304,16 @@ func _nature_skin(n: Node3D) -> void:
 			_retexture(n, {"VNeedles": Game.color_mat(Color(0.78, 0.82, 0.85)), "VLeaves": Game.color_mat(Color(0.75, 0.78, 0.8)),
 				"VMoss": Game.color_mat(Color(0.85, 0.88, 0.9)), "VBush": Game.color_mat(Color(0.7, 0.74, 0.76))})
 		"desert":
-			_retexture(n, {"VMoss": Game.color_mat(Color(0.6, 0.5, 0.32)), "VRock": Game.color_mat(Color(0.5, 0.4, 0.3))})
+			_retexture(n, {"VMoss": Game.color_mat(Color(0.6, 0.5, 0.32)), "VRock": Game.color_mat(Color(0.5, 0.4, 0.3)),
+				"VBush": Game.color_mat(Color(0.36, 0.33, 0.18))})
+		"dry":
+			# (Ari 27. 11.) steppe and savanna: dusty olive leaves, yellow-brown moss
+			_retexture(n, {"VLeaves": Game.color_mat(Color(0.3, 0.32, 0.12)), "VLeavesDark": Game.color_mat(Color(0.22, 0.25, 0.1)),
+				"VBush": Game.color_mat(Color(0.3, 0.29, 0.13)), "VMoss": Game.color_mat(Color(0.45, 0.4, 0.22)),
+				"VNeedles": Game.color_mat(Color(0.12, 0.18, 0.08))})
+		"tropic":
+			_retexture(n, {"VLeaves": Game.color_mat(Color(0.1, 0.3, 0.07)), "VLeavesDark": Game.color_mat(Color(0.06, 0.2, 0.05)),
+				"VBush": Game.color_mat(Color(0.08, 0.26, 0.06))})
 		"mars":
 			_retexture(n, {"VMoss": Game.color_mat(Color(0.45, 0.2, 0.12)), "VRock": Game.color_mat(Color(0.42, 0.2, 0.13))})
 
@@ -1393,7 +1568,10 @@ func _road(o: Vector3, ew := false, cross := false) -> void:
 			_prop("pole", _rp(o, Vector3(BLOCK / 2 - 2.6, 0, z), ew), PI / 2 + (PI / 2 if ew else 0.0), false)
 		if not _cross_done and rng.randf() < 0.6:
 			_cross_done = true
-			_prop("cross", _rp(o, Vector3(BLOCK / 2 + 3.0, 0, BLOCK / 2 + 3.5), ew), PI / 2 + (PI / 2 if ew else 0.0))
+			# (not by the stranded convoy: the lorries stand on the road and reach 3 m to the side)
+			if site != "convoy":
+				_cross_at = _rp(o, Vector3(BLOCK / 2 + 3.0, 0, BLOCK / 2 + 3.5), ew)
+				_prop("cross", _cross_at, PI / 2 + (PI / 2 if ew else 0.0))
 	info["waypoints"].append(o + Vector3(BLOCK / 2, 0, BLOCK / 2))
 
 ## Nothing much: open grass (snow, sand) - room to breathe, and nowhere to hide.
@@ -1450,7 +1628,22 @@ func _war_scars(grid: Array, params: Dictionary) -> void:
 					if biome == "desert":
 						wreck = "humvee_wreck"
 					var lp := Vector3(BLOCK / 2 + rng.randf_range(-0.8, 0.8), 0, rng.randf_range(3.0, 9.0))
-					_prop(wreck, _rp(o, lp, ew), (PI / 2 if ew else 0.0) + rng.randf_range(-0.5, 0.5))
+					var wyaw := (PI / 2 if ew else 0.0) + rng.randf_range(-0.5, 0.5)
+					if _rp(o, lp, ew).distance_to(_cross_at) < 6.0 or _near_cross(_rp(o, lp, ew), 6.0):
+						# (overlaptest: a lorry wreck across the wayside cross) - not on the cross's side
+						lp.z = 2.5
+						wyaw = (PI / 2 if ew else 0.0) + clampf(wyaw - (PI / 2 if ew else 0.0), -0.15, 0.15)
+					var wp := _rp(o, lp, ew)
+					var by_car := false
+					for car in _cars:
+						# (overlaptest: a burnt-out wreck rammed into a car parked in the street)
+						if is_instance_valid(car) and Vector2((car as Node3D).position.x - wp.x, (car as Node3D).position.z - wp.z).length() < 5.5:
+							by_car = true
+							break
+					if by_car:
+						rng.randf()         # (the same draws as with the wreck: the rest of the map stays)
+						continue
+					_prop(wreck, wp, wyaw)
 					if rng.randf() < 0.5:
 						_smolder(_rp(o, lp + Vector3(0, 0.6, 0.6), ew))
 					placed += 1
@@ -2185,7 +2378,7 @@ func _house2(o: Vector3) -> void:
 	var w := 8.4
 	var d := 8.0
 	var h := 3.0
-	var m := Game.mat("brick" if rng.randf() < 0.5 else "plaster", 0.5 if rng.randf() < 0.5 else 1.0)
+	var m := Game.mat(_hot_wall("brick" if rng.randf() < 0.5 else "plaster"), 0.5 if rng.randf() < 0.5 else 1.0)
 	var fl := Game.mat("planks", 0.5)
 	box(c + Vector3(w / 2, 0.05, d / 2), Vector3(w, 0.1, d), fl, false)
 	# ground floor
@@ -2220,7 +2413,9 @@ func _house2(o: Vector3) -> void:
 	rf.scale = Vector3(w / 8.0, 1.0, d / 6.0)
 	# furniture: kitchen table, sofa, wardrobe and beds upstairs
 	_table(c + Vector3(2.0, 0.1, 2.2), Vector2(1.6, 1.0))
-	for ch in [[Vector3(1.0, 0.1, 2.2), -PI / 2], [Vector3(3.0, 0.1, 2.2), PI / 2], [Vector3(2.0, 0.1, 1.4), PI]]:
+	# (2026-11-27 interiors: the third chair stood between the table and the front wall and shut off
+	# the corner by the window - now it is on the far side of the table)
+	for ch in [[Vector3(1.0, 0.1, 2.2), -PI / 2], [Vector3(3.0, 0.1, 2.2), PI / 2], [Vector3(2.0, 0.1, 3.0), 0.0]]:
 		_house_chair(c + (ch[0] as Vector3), float(ch[1]))
 	# the sofa stands against the partition in the big room (it used to stand behind the top of the
 	# stairs, half hidden and walled in by the steps)
@@ -2247,7 +2442,7 @@ func _ruin(o: Vector3) -> void:
 	_ground(o, "dirt")
 	_grass(o, 400, "dry", 0.4, 1.0)
 	var c := o + Vector3(2, 0, 2.5)
-	var m := Game.mat("brick" if rng.randf() < 0.5 else "plaster", 1.0)
+	var m := Game.mat(_hot_wall("brick" if rng.randf() < 0.5 else "plaster"), 1.0)
 	var w := 8.0
 	var d := 7.0
 	for side in 4:
@@ -3123,8 +3318,8 @@ func _parking(o: Vector3) -> void:
 	box(o + Vector3(6.0, 1.1, 6.0), Vector3(1.4, 2.2, 1.4), Game.color_mat(Color(0.75, 0.75, 0.7)))
 	box(o + Vector3(6.0, 2.27, 6.0), Vector3(1.7, 0.12, 1.7), Game.color_mat(Color(0.25, 0.3, 0.4)), false)      # the booth's roof
 	box(o + Vector3(6.0, 1.45, 5.29), Vector3(1.0, 0.6, 0.02), Game.color_mat(Color(0.3, 0.4, 0.45), true), false)   # its lit window
-	box(o + Vector3(6.8, 0.6, 5.0), Vector3(0.3, 1.2, 0.25), Game.color_mat(Color(0.7, 0.55, 0.1)), false)          # the ticket machine
-	box(o + Vector3(6.8, 1.0, 4.87), Vector3(0.2, 0.12, 0.02), Game.color_mat(Color(0.2, 0.6, 0.3), true), false)
+	box(o + Vector3(7.0, 0.6, 5.6), Vector3(0.3, 1.2, 0.25), Game.color_mat(Color(0.7, 0.55, 0.1)))          # the ticket machine (overlaptest 27. 11.: by the booth, out of the cars' bumpers)
+	box(o + Vector3(7.0, 1.0, 5.47), Vector3(0.2, 0.12, 0.02), Game.color_mat(Color(0.2, 0.6, 0.3), true), false)
 	for row in [1.8, 10.2]:
 		for k in 5:
 			box(o + Vector3(1.7 + k * 2.2, 0.06, row + (1.4 if row < 5 else -1.4)), Vector3(1.0, 0.12, 0.2), Game.mat("concrete", 0.5), false)   # wheel stops
@@ -3932,14 +4127,20 @@ func _convoy(c: Vector3) -> void:
 	var lorry := "truck_wreck"
 	if terrain == "snow":
 		lead = "snowmobile_wreck"
-	var rows := [[lead, -8.5], [lorry, -1.5], [lorry, 6.5]]
+	# (2026-11-27: the lorries are 8.6 m long - farther apart, so they do not go into each other)
+	var rows := [[lead, -12.0], [lorry, -2.0], [lorry, 8.5]]
+	for cr in _crosses:
+		# a wayside cross on the road tiles the column stands on (the saved road tile has one)
+		if is_instance_valid(cr) and absf((cr as Node3D).position.x - c.x) < 6.0 and absf((cr as Node3D).position.z - c.z) < 22.0:
+			(cr as Node3D).free()
 	for i in rows.size():
 		var z: float = rows[i][1] + rng.randf_range(-0.6, 0.6)
 		var p := c + Vector3(rng.randf_range(-0.4, 0.4), 0, z)
 		_prop(rows[i][0], p, rng.randf_range(-0.18, 0.18) + (PI if i == 0 and rng.randf() < 0.3 else 0.0))
 		if i > 0:
 			# the load: army crates stacked by the lorry (what we came for)
-			var cp := p + Vector3(2.7 * (1 if i == 1 else -1), 0, rng.randf_range(-1.0, 1.0))
+			# (on the left: the lorry model has its own spilled load on its right side)
+			var cp := p + Vector3(-4.0, 0, rng.randf_range(-1.0, 1.0))
 			var crate := _prop("mil_crates", cp, rng.randf() * TAU)
 			crate.add_to_group("cargo_crate")
 			info["cargo_nodes"].append(crate)       # (kept out of the merging: the Čáp takes them away)

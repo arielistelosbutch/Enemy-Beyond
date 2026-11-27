@@ -421,9 +421,9 @@ func _process(delta: float) -> void:
 	globe.basis = Basis(Vector3.RIGHT, tilt) * Basis(Vector3.UP, yaw)
 	cam.position = Vector3(0, 0, zoom)
 	cam.look_at(Vector3.ZERO, Vector3.UP)
-	# sun: the subsolar point (November: about 18 degrees south)
-	var sun_lon := -(Campaign.utc_hours() - 12.0) * 15.0
-	gmat.set_shader_parameter("sun_dir", latlon_to_local(Campaign.SUN_LAT, sun_lon))     # (the missions use the same sun: Campaign.sun_at)
+	# sun: the subsolar point (by the campaign's date: April +12 degrees, June +23, December -23)
+	var ss := Campaign.subsolar()
+	gmat.set_shader_parameter("sun_dir", latlon_to_local(ss.x, ss.y))     # (the missions use the same sun: Campaign.sun_at)
 	# time
 	if popup == null and not Campaign.viewer and not Campaign.data.get("lost", false) and not Campaign.base_picking():
 		var was := speed
@@ -971,9 +971,9 @@ func _update_text() -> void:
 	var dph := Campaign.day_phase(float(m["lon"]), float(m.get("lat", Campaign.BASE_LAT)))
 	var lh := Campaign.local_hour(float(m["lon"]))
 	var biome: String = {"farm": "venkov, farma", "forest": "lesy", "town": "městečko", "industrial": "průmyslový areál", "mountain": "hory, horská chata", "polar": "polární pustina", "desert": "poušť", "base": "naše základna", "mars": "Mars"}.get(String(m["biome"]), "krajina")
-	info_lbl.text = "%s\n%s  (%s)\nMístní čas %02d:%02d - %s\nVydrží ještě asi %d h\nOdhad posádky: %s\nOdměna: %d kr\n\n%s" % [
+	info_lbl.text = "%s\n%s  (%s)\nMístní čas %02d:%02d - %s\nPři příletu %s\nVydrží ještě asi %d h\nOdhad posádky: %s\nOdměna: %d kr\n\n%s" % [
 		Campaign.MTYPES[m["type"]]["name"].to_upper(), m["place"], biome, int(lh), int(fmod(lh, 1.0) * 60),
-		{"noc": "NOC", "svitani": "svítání", "den": "den", "soumrak": "soumrak"}.get(dph, "den"), int(left), ["malá", "střední", "velká", "obrovská"][clampi(int(m["extra_aliens"]), 0, 3)],
+		Campaign.PHASE_TEXT.get(dph, "den"), Campaign.arrival_text(m), int(left), ["malá", "střední", "velká", "obrovská"][clampi(int(m["extra_aliens"]), 0, 3)],
 		int(m["reward"]), Campaign.MTYPES[m["type"]]["text"]]
 
 func _selected_flight() -> Dictionary:
@@ -1188,8 +1188,8 @@ func _launch_transport(m: Dictionary) -> void:
 	var ready := Campaign.jets_ready()
 	_escort = mini(_escort, ready)
 	var box := _overlay("VYSLAT TÝM", 380)
-	_lbl(box, "%s - %s\n%s poletí asi %.1f h, hlášení vydrží asi %.1f h.%s" % [Campaign.MTYPES[m["type"]]["name"], m["place"], Campaign.CRAFT_NAMES[tk].capitalize(), eta, left,
-		"\nNESTIHNE TO - než dorazí, vetřelci budou pryč." if eta > left else ""], RED if eta > left else TEXT, 9)
+	_lbl(box, "%s - %s\n%s poletí asi %.1f h, hlášení vydrží asi %.1f h.\nNa místě v %s (místní čas).%s" % [Campaign.MTYPES[m["type"]]["name"], m["place"], Campaign.CRAFT_NAMES[tk].capitalize(), eta, left,
+		Campaign.arrival_text(m, tk), "\nNESTIHNE TO - než dorazí, vetřelci budou pryč." if eta > left else ""], RED if eta > left else TEXT, 9)
 	if tk == "heli":
 		_lbl(box, "Čáp je pomalý. Výzkum Transportér Kondor zkrátí lety asi na třetinu.", FRAME, 8)
 	_lbl(box, "Doprovod stíhaček (chrání transport, když ho cestou napadnou): %d / %d" % [_escort, ready], ACCENT, 9)

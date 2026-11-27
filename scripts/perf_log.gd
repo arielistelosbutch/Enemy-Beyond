@@ -81,6 +81,8 @@ func _open() -> void:
 	_prune()
 	var d := Time.get_datetime_dict_from_system()
 	_path = "user://logs/vykon_%04d-%02d-%02d_%02d-%02d-%02d.txt" % [d.year, d.month, d.day, d.hour, d.minute, d.second]
+	if Game.autotest() != "":      # (testy: víc her najednou na jednom počítači – každá svůj soubor)
+		_path = _path.replace(".txt", "_%s%s.txt" % [Game.autotest(), Game.cmd_arg("ci", "")])
 	_f = FileAccess.open(_path, FileAccess.WRITE)
 	if _f == null:
 		on = false

@@ -67,7 +67,9 @@ static func _terrain_tex(mg, tex: String) -> String:
 	match String(mg.terrain):
 		"mars": return "mars" if tex in ["grass", "dirt", "hay", "snow", "sand"] else tex
 		"snow": return "snow" if tex in ["grass", "dirt", "hay"] else tex
-		"desert": return "sand" if tex in ["grass", "dirt"] else tex
+		"desert": return "sand" if tex in ["grass", "dirt"] else ("plaster" if tex == "brick" else tex)
+		"dry": return "grass_dry" if tex == "grass" else tex          # (Ari 27. 11.) steppe, savanna
+		"tropic": return "grass_jungle" if tex == "grass" else tex
 	return tex
 
 # ---- taking a block down into data -------------------------------------------------------------------

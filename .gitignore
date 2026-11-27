@@ -84,3 +84,10 @@ animace/vr_zaznamy/
 # Godot a vygenerované zprávy na Ariho PC
 tools/*.exe
 kontrola_modelu.txt
+
+# 0.72.7: zdroje a zalohy jen na Ariho PC (hudba a zvuky jdou jen do .pck, stare balicky jsou v Releases)
+hudba/*.mp3
+hudba/*.mp3.import
+zvuky/
+zaloha_stare/
+update/*.pck

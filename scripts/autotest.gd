@@ -75,7 +75,9 @@ func _process(delta: float) -> void:
 		"solo", "campaign": _solo(p)
 		"perf": PERF.run(self, p)
 		"gunlag": PERF.gunlag(self, p)
+		"cperfhost", "cperfclient": PERF.cperf(self, p)
 		"deadcost": PERF.deadcost(self, p)
+		"firelag", "firehost", "fireclient": preload("res://scripts/autotest_fire.gd").run(self, p)
 		"groundtest": GT.run(self, p)
 		"kerbtest": KERB.run(self, p)
 		"rainshot": RAIN.run(self, p)
@@ -89,12 +91,16 @@ func _process(delta: float) -> void:
 		"ceiltest": CEIL.run(self, p)
 		"interiors": INTERIOR.run(self, p)
 		"yardtest": preload("res://scripts/autotest_yard.gd").run(self, p)
+		"overlaptest": preload("res://scripts/autotest_overlap.gd").run(self, p)
+		"wrecktest", "wreckhost", "wreckclient": preload("res://scripts/autotest_wreck.gd").run(self, p)
 		"spectate": preload("res://scripts/autotest_spectate.gd").run(self, p)
 		"alnadetest", "alnadehost", "alnadeclient": preload("res://scripts/autotest_alnade.gd").run(self, p)
+		"lasttest", "lasthost", "lastclient": preload("res://scripts/autotest_last.gd").run(self, p)
 		"shouldershot": preload("res://scripts/autotest_shoulder.gd").run(self, p)
 		"radiosprint": preload("res://scripts/autotest_shoulder.gd").radio(self, p)
 		"dazetest", "dazebase": preload("res://scripts/autotest_daze.gd").run(self, p)
 		"quiettest": preload("res://scripts/autotest_quiet.gd").run(self, p)
+		"sabretest": preload("res://scripts/autotest_sabre.gd").run(self, p)
 		"scantest": preload("res://scripts/autotest_scan.gd").run(self, p)
 		"debugkeys": preload("res://scripts/autotest_debugkeys.gd").run(self, p)
 		"quiethost", "quietclient": preload("res://scripts/autotest_quiet.gd").pair(self, p)
@@ -313,6 +319,7 @@ func _process(delta: float) -> void:
 		"passcheck": _passcheck(p)
 		"camoshot": _camoshot(p)
 		"lookshot": _lookshot(p)
+		"squadshot": _squadshot(p)
 		"soundcheck": _soundcheck(p)
 		"dronetest":
 			if Game.cmd_arg("shots", "") == "1":     # (0.70) the new model from close by
@@ -334,6 +341,7 @@ func _process(delta: float) -> void:
 		"leantest": _leantest(p)
 		"leaveany": _leaveany(p)
 		"skyshot": _skyshot(p)
+		"daynight", "dnhost", "dnclient": preload("res://scripts/autotest_daynight.gd").run(self, p)
 		"zfight": _zfight(p)
 		"suittest": _suittest(p)
 		"levgrab": _levgrab(p)
@@ -348,6 +356,7 @@ func _process(delta: float) -> void:
 		"strikeshot": _strikeshot(p)
 		"fpreload": _fpreload(p)
 		"quickcut": _quickcut(p)
+		"pronetest": _pronetest(p)
 		"civanim": _civanim(p)
 		"civdeath": _civdeath(p)
 		"tpwalk": _tpwalk(p)
@@ -456,7 +465,7 @@ func _process(delta: float) -> void:
 			if t > 25.0:
 				out("RESULT players=%d aliens=%d" % [m().players().size(), m().aliens().size()])
 				get_tree().quit()
-	if t > (300.0 if mode in ["sightshot", "scopelens"] else 120.0) and mode != "campaign" and mode != "tactics" and mode != "dirtest":
+	if t > (300.0 if mode in ["sightshot", "scopelens", "lasttest", "lasthost", "lastclient"] else 120.0) and mode != "campaign" and mode != "tactics" and mode != "dirtest":
 		out("TIMEOUT")
 		get_tree().quit()
 
@@ -6051,7 +6060,8 @@ func _lookshot(p: Node) -> void:
 		if String(mi.name).begins_with("Look_") or String(mi.name).begins_with("Gear_"):
 			pieces += 1
 	for need in ["Look_TopJacket", "Look_TopRolled", "Look_TopTee", "Look_TopTank", "Look_VestHarness", "Look_VestCarrier",
-			"Look_VestRig", "Gear_Beret", "Gear_Boonie", "Gear_Bandana", "Gear_Headset", "Look_Flag_cz", "Look_TatSkull", "Look_PaintFull"]:
+			"Look_VestRig", "Gear_Beret", "Gear_Boonie", "Gear_Bandana", "Gear_Headset", "Look_Flag_cz", "Look_TatSkull", "Look_PaintFull",
+			"Look_TopCutoff", "Look_VestBandolier", "Look_VestWeb", "Look_GlassAviator", "Gear_Headband"]:
 		if probe.find_child(need, true, false) == null:
 			bad += 1
 			out("[LOOK] CHYBA: v merc.glb chybí díl " + need)
@@ -6141,6 +6151,118 @@ func _lookshot(p: Node) -> void:
 	out("RESULT lookshot %d chyb" % bad)
 	get_tree().quit()
 
+## 0.72.7: the ready-made squad (Game.SQUAD) - all together and each one close up, on an own stage
+## (own world, the creator's light and stance tp_npc_idle when it is there).
+## Pictures user://parta_spolu_<zepredu|zezadu>.png, user://parta_<n>.png.  Run: --autotest=squadshot
+func _squadshot(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().go or m().hud._brief_t >= 0:
+		return
+	step = 1
+	p.set_physics_process(false)
+	p.hp = 5000.0
+	var bad := 0
+	for cl in get_tree().root.find_children("*", "CanvasLayer", true, false):
+		cl.visible = false
+	var vp := SubViewport.new()
+	vp.size = Vector2i(1600, 900)
+	vp.own_world_3d = true
+	vp.msaa_3d = Viewport.MSAA_4X
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(vp)
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.043, 0.055, 0.071)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.5, 0.55, 0.65)
+	env.ambient_light_energy = 0.6
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	var we := WorldEnvironment.new()
+	we.environment = env
+	vp.add_child(we)
+	var sun := DirectionalLight3D.new()
+	sun.light_energy = 1.3
+	sun.rotation = Vector3(-0.6, 0.6 + PI, 0)
+	sun.shadow_enabled = true
+	vp.add_child(sun)
+	var floor_ := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(30, 30)
+	floor_.mesh = pm
+	var fm := StandardMaterial3D.new()
+	fm.albedo_color = Color(0.09, 0.1, 0.11)
+	floor_.material_override = fm
+	vp.add_child(floor_)
+	var cam := Camera3D.new()
+	cam.fov = 30
+	vp.add_child(cam)
+	cam.current = true
+	var clip: Dictionary = {}
+	for id in ["tp_npc_idle", "tp_atease_vse"]:
+		clip = AnimClips.get_clip(id)
+		if not clip.is_empty():
+			break
+	var n: int = Game.SQUAD.size()
+	var men: Array = []
+	for k in n:
+		var mm: Node3D = Game.model("merc")
+		mm.scale = Vector3(-1, 1, 1)
+		vp.add_child(mm)
+		for mi in mm.find_children("Gear_*", "MeshInstance3D", true, false):
+			if not String(mi.name) in ["Gear_Helmet", "Gear_Cap", "Gear_Torch"]:
+				mi.visible = String(mi.name) in ["Gear_Belt0", "Gear_Belt1", "Gear_Holster"]
+		Game.apply_look(mm, Game.SQUAD[k]["look"])
+		mm.position = Vector3(-(k - (n - 1) / 2.0) * 0.95, 0, abs(k - (n - 1) / 2.0) * 0.25)
+		var an: AnimationPlayer = mm.find_child("AnimationPlayer", true, false)
+		var sk: Skeleton3D = mm.find_child("Skeleton3D", true, false)
+		if an:
+			an.stop()
+		if not clip.is_empty() and sk:
+			var t := 0.3 + 0.37 * k
+			var po := AnimClips.pose(clip, fmod(t, maxf(0.2, float(clip.get("delka", 1.0)) - 0.1)))
+			for bn in po:
+				var i := sk.find_bone(bn)
+				if i >= 0:
+					sk.set_bone_pose_rotation(i, sk.get_bone_rest(i).basis.get_rotation_quaternion() * Quaternion.from_euler(po[bn]))
+		elif an:
+			an.play("idle")
+		men.append(mm)
+		if String(Game.SQUAD[k]["name"]).find("„") < 0:
+			bad += 1
+	out("[SQUAD] postoj: %s" % ("afk" if not clip.is_empty() else "idle z modelu"))
+	for turn in [0, 1]:
+		var z := -8.2 if turn == 0 else 8.2
+		cam.look_at_from_position(Vector3(0, 1.25, z), Vector3(0, 0.92, 0), Vector3.UP)
+		for f in 10: await get_tree().process_frame
+		vp.get_texture().get_image().save_png("user://parta_spolu_%s.png" % ("zepredu" if turn == 0 else "zezadu"))
+	vp.size = Vector2i(900, 1100)
+	cam.fov = 28
+	for k in n:
+		var mm: Node3D = men[k]
+		for o in men:
+			o.visible = o == mm
+		var c: Vector3 = mm.position + Vector3(0, 1.05, 0)
+		cam.look_at_from_position(c + Vector3(-0.9, 0.25, -3.3), c, Vector3.UP)
+		for f in 8: await get_tree().process_frame
+		vp.get_texture().get_image().save_png("user://parta_%d.png" % (k + 1))
+		cam.look_at_from_position(c + Vector3(-0.25, 0.62, -1.15), c + Vector3(0, 0.6, 0), Vector3.UP)
+		for f in 6: await get_tree().process_frame
+		vp.get_texture().get_image().save_png("user://parta_%d_tvar.png" % (k + 1))
+	# the name generator: some names have a nickname, none is empty
+	var r := RandomNumberGenerator.new()
+	r.seed = 7
+	var nick := 0
+	for i in 400:
+		var nm := Game.random_name(i % 3 == 0, r)
+		if nm.strip_edges() == "":
+			bad += 1
+		if nm.find("„") >= 0:
+			nick += 1
+	if nick < 50 or nick > 160:
+		bad += 1
+	out("RESULT squadshot %d clenu, prezdivek %d/400, %d chyb" % [n, nick, bad])
+	get_tree().quit()
+
 ## Can a man walk through? Every door opened, every base doorway: a player-sized capsule swept
 ## from 0.9 m before to 0.9 m behind; anything it bumps into is reported (with the culprit's name).
 func _passcheck(p: Node) -> void:
@@ -6190,7 +6312,7 @@ func _passcheck(p: Node) -> void:
 					for h in r:
 						var o: Object = h["collider"]
 						var nm := String(o.name)
-						if o is Node and (o as Node).get_parent(): nm += "<" + String((o as Node).get_parent().name)
+						if o is Node and (o as Node).get_parent(): nm += "<" + String((o as Node).get_parent().name) + ("[%s]" % (o as Node).get_parent().get_meta("model") if (o as Node).get_parent().has_meta("model") else "")
 						for ch in (o as Node).get_children(): nm += "," + String(ch.name)
 						if o is Node and (o as Node).get_child_count() > 0 and (o as Node).get_child(-1) is MeshInstance3D:
 							var mi: MeshInstance3D = (o as Node).get_child(-1)
@@ -6741,4 +6863,65 @@ func _leantest(p: Node) -> void:
 	out("mate head sideways: upright %.2f, right %.2f, left %.2f" % [tilt[0.0], tilt[1.0], tilt[-1.0]])
 	var ok_b: bool = tilt[1.0] - tilt[0.0] > 0.1 and tilt[0.0] - tilt[-1.0] > 0.1
 	out("RESULT leantest %s" % ("ok" if ok_l and ok_r and absf(back) < 0.05 and (a == null or (not seen0 and seen1 and tgt_ok)) and ok_b else "FAIL"))
+	get_tree().quit()
+
+
+## (2026-11-27) A heavy gun cannot be held lying down - not even when the player takes it back
+## into the hands himself (key, inventory, pick-up). With a bipod it stays.
+func _pronetest(p: Node) -> void:
+	_skip_brief()
+	if p == null or step > 0 or not m().started():
+		return
+	step = 1
+	p.hp = 9999.0
+	for x in m().aliens():
+		x.global_position += Vector3(0, -60, 0)
+		x.set_physics_process(false)
+	await get_tree().create_timer(1.5).timeout
+	_skip_brief()
+	m().hud.inventory_open = false
+	for sl in ["rh", "lh", "back", "side", "b0", "b1", "b2", "b3"]:
+		p.inv.erase(sl)
+	p.inv["rh"] = {"id": "minigun", "loaded": 100}
+	p._update_held()
+	await get_tree().create_timer(0.3).timeout
+	# lie down: it goes on the back
+	Input.action_press("prone")
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	Input.action_release("prone")
+	await get_tree().create_timer(1.2).timeout
+	var stowed: bool = p.prone and p.held == "" and p.item_in("back").get("id", "") == "minigun"
+	# 1) key: draw it from the back
+	p.busy = 0.0
+	p.draw_slot("back")
+	await get_tree().create_timer(2.5).timeout
+	var by_key: String = p.held
+	# 2) inventory drag
+	p.busy = 0.0
+	p.timed_move("back", "rh")
+	await get_tree().create_timer(2.5).timeout
+	var by_inv: String = p.held
+	# 3) forced into the hands (debug, any other path): put away the same frame
+	p.inv["rh"] = p.inv["back"]
+	p.inv.erase("back")
+	p._update_held()
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var forced: String = p.held
+	var back_ok: bool = p.item_in("back").get("id", "") == "minigun"
+	# a rifle is fine lying down
+	p.busy = 0.0
+	p.inv["side"] = {"id": "pistol", "loaded": 12}
+	p.draw_slot("side")
+	await get_tree().create_timer(2.0).timeout
+	var pistol: String = p.held
+	# 4) standing up: it can be taken again
+	p.prone = false
+	await get_tree().physics_frame
+	p.busy = 0.0
+	p.draw_slot("back")
+	await get_tree().create_timer(3.0).timeout
+	var standing: String = p.held
+	out("RESULT pronetest stowed %s key %s inv %s forced %s back %s pistol %s standing %s" % [stowed, by_key == "", by_inv == "", forced == "", back_ok, pistol == "pistol", standing == "minigun"])
 	get_tree().quit()

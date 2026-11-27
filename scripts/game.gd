@@ -2,8 +2,8 @@ extends Node
 ## Enemy Beyond - global state: controls, the mercenary's profile, item rules,
 ## shared materials and sounds.
 
-const VERSION := "0.72.6 prototyp"
-const VERSION_NUM := "0.72.6"
+const VERSION := "0.72.7 prototyp"
+const VERSION_NUM := "0.72.7"
 
 # ---- items (like UFO: every item has weight; hands, belt and backpack hold them) ----
 const ITEMS := {
@@ -29,6 +29,9 @@ const ITEMS := {
 	"stun_baton": {"name": "Omračovací obušek", "short": "Obušek", "weight": 2, "type": "melee", "blunt": true, "damage": 4, "stun": 42, "reach": 2.1, "rate": 0.8, "sound": "zap"},
 	"knife": {"name": "Bojový nůž", "short": "Nůž", "weight": 1, "type": "melee", "damage": 38, "backstab": 3.0, "reach": 1.7, "rate": 0.45, "sound": "swish"},
 	"energo_nuz": {"name": "Energo nůž EN-01", "short": "Energo nůž", "weight": 1, "type": "melee", "damage": 38, "edge": 66, "backstab": 3.0, "reach": 1.7, "rate": 0.5, "sound": "swish"},
+	# 0.80 (Ari): SV-01, a sabre cut by laser from their alloy - a long reach, a hard cut that goes through
+	# half of their armour ("cut"); one-handed, so the shield stays in the left hand
+	"savle": {"name": "Šavle ze slitin SV-01", "short": "Šavle", "weight": 2, "type": "melee", "sabre": true, "damage": 75, "cut": 0.5, "backstab": 2.0, "reach": 2.45, "rate": 0.6, "sound": "swish"},
 	"rifle_clip": {"name": "Zásobník pušky", "short": "Zás. puška", "weight": 3, "type": "ammo", "rounds": 20},
 	"sniper_clip": {"name": "Zásobník odstřelovačky", "short": "Zás. odstř.", "weight": 1, "type": "ammo", "rounds": 5},
 	"pistol_clip": {"name": "Zásobník pistole", "short": "Zás. pistole", "weight": 1, "type": "ammo", "rounds": 15},
@@ -1095,23 +1098,29 @@ const EYE_COLORS := [["Hnědé", Color(0.3, 0.17, 0.07)], ["Tmavé", Color(0.1, 
 const SKIN_TONES := [["Světlá", Color(0.78, 0.6, 0.5)], ["Pleť", Color(0.62, 0.47, 0.38)], ["Snědá", Color(0.5, 0.35, 0.24)],
 	["Tmavší", Color(0.36, 0.24, 0.16)], ["Tmavá", Color(0.22, 0.14, 0.1)]]
 const HEADGEAR := [["helmet", "Helma se svítilnou"], ["cap", "Polní čepice"], ["none", "Nic (vlasy na odiv)"],
-	["beret", "Baret"], ["boonie", "Klobouk do buše"], ["bandana", "Šátek na hlavě"], ["headset", "Jen sluchátka"]]
+	["beret", "Baret"], ["boonie", "Klobouk do buše"], ["bandana", "Šátek na hlavě"], ["headset", "Jen sluchátka"],
+	["headband", "Čelenka"]]
 # ---- 0.57 facelift: clothes and trinkets chosen when the soldier is made ----
 # (all of it is only looks: new Look_*/Gear_* pieces of merc.glb on the same bones - the movements,
 #  the weapon grips and the Workshop anchors do not change. A missing key = the old look.)
 ## Indices into these lists are kept in merc["look"], so new entries go only at the END.
 const BERET_COLORS := [["Zelená", Color(0.16, 0.25, 0.12)], ["Vínová", Color(0.42, 0.07, 0.1)], ["Černá", Color(0.05, 0.05, 0.05)],
 	["Modrá", Color(0.14, 0.33, 0.6)], ["Písková", Color(0.6, 0.5, 0.33)], ["Šedá", Color(0.35, 0.36, 0.36)]]
-const TOPS := [["jacket", "Bunda"], ["rolled", "Ohrnuté rukávy"], ["tee", "Tričko"], ["bare", "Bez trička"]]
+const TOPS := [["jacket", "Bunda"], ["rolled", "Ohrnuté rukávy"], ["tee", "Tričko"], ["bare", "Bez trička"],
+	# 0.72.7 Komando Štír: košile s utrženými rukávy, tílko (i pro muže)
+	["cutoff", "Košile bez rukávů"], ["singlet", "Tílko"]]
+## Tops that leave the shoulders bare (no sleeve patch or flag - the armband instead)
+const BARE_ARMS := ["bare", "cutoff", "singlet"]
 const PANTS := [["pads", "Maskáče s chrániči"], ["cargo", "Maskáče"], ["plain", "Rovné kalhoty"], ["plain_pads", "Rovné s chrániči"]]
-const VESTS := [["harness", "Popruhy"], ["carrier", "Nosič plátů"], ["rig", "Hrudní nosič"], ["none", "Jen opasek"]]
+const VESTS := [["harness", "Popruhy"], ["carrier", "Nosič plátů"], ["rig", "Hrudní nosič"], ["none", "Jen opasek"],
+	["bandolier", "Náboje přes hruď"], ["web", "Polní popruhy s kapsami"]]
 const PAINTS := [["none", "Bez barvy"], ["eyes", "Pod očima"], ["stripes", "Pruhy na lících"], ["band", "Pás přes oči"], ["full", "Celý obličej"]]
 const TATTOOS := [["none", "Bez tetování"], ["skull", "Lebka"], ["anchor", "Kotva"], ["x", "Znak X"], ["tribal", "Pásy"], ["sleeve", "Rukáv"],
 	# 0.72 (Ari): díly Look_Tat_<id> v merc.glb (tools/blender/tattoo_art.py), nové jen NA KONEC
 	["zoldneri", "Žoldnéři"], ["mama", "Máma"], ["invaders", "Invaders must die"], ["krava", "Pomstím tě"],
 	["vetrelec", "Mrtvý vetřelec"], ["pivo", "Pivo"], ["tmy", "Bojím se tmy"], ["krull", "Krull"],
 	["ignorbris", "Ignorbris"], ["lovec", "Lovec UFO"]]
-const GLASSES := [["none", "Bez brýlí"], ["shades", "Sluneční brýle"], ["ballistic", "Střelecké brýle"]]
+const GLASSES := [["none", "Bez brýlí"], ["shades", "Sluneční brýle"], ["ballistic", "Střelecké brýle"], ["aviator", "Pilotky"]]
 const NECKS := [["none", "Nic"], ["shemagh", "Šátek kolem krku"], ["mask", "Šátek přes obličej"], ["tags", "Psí známky"]]
 const MOUTHS := [["none", "Nic"], ["cigar", "Doutník"], ["match", "Sirka"]]
 const _FW := Color(0.92, 0.92, 0.9)
@@ -1146,15 +1155,55 @@ func flag_index(code: String) -> int:
 ## The list index of a look key, kept in range (old looks without it: 0 = what they always wore).
 func look_i(look: Dictionary, key: String, list: Array) -> int:
 	return clampi(int(look.get(key, 0)), 0, list.size() - 1)
-const FIRST_M := ["Jan", "Petr", "Mirek", "Karel", "Ivo", "Lukáš", "Ota", "René", "Vlad", "Erik", "Tomáš", "Radek", "Bořek", "Zdeněk"]
-const FIRST_F := ["Dana", "Ema", "Sára", "Iva", "Klára", "Petra", "Zuzana", "Lenka", "Vendula", "Hana", "Jitka", "Bára"]
-const LAST_M := ["Novák", "Král", "Dvořák", "Holub", "Černý", "Marek", "Vlk", "Hrubý", "Sokol", "Kopecký", "Bárta", "Krejčí"]
-const LAST_F := ["Nováková", "Králová", "Dvořáková", "Holubová", "Černá", "Marková", "Vlková", "Hrubá", "Sokolová", "Kopecká", "Bártová", "Krejčí"]
+const FIRST_M := ["Jan", "Petr", "Mirek", "Karel", "Ivo", "Lukáš", "Ota", "René", "Vlad", "Erik", "Tomáš", "Radek", "Bořek", "Zdeněk",
+	"Viktor", "Igor", "Emil", "Bohouš", "Vašek", "Ludvík"]
+const FIRST_F := ["Dana", "Ema", "Sára", "Iva", "Klára", "Petra", "Zuzana", "Lenka", "Vendula", "Hana", "Jitka", "Bára", "Marta", "Renata"]
+const LAST_M := ["Novák", "Král", "Dvořák", "Holub", "Černý", "Marek", "Vlk", "Hrubý", "Sokol", "Kopecký", "Bárta", "Krejčí",
+	"Brabec", "Hruška", "Mráz", "Lacina", "Kolář", "Šimek", "Vrána"]
+const LAST_F := ["Nováková", "Králová", "Dvořáková", "Holubová", "Černá", "Marková", "Vlková", "Hrubá", "Sokolová", "Kopecká", "Bártová", "Krejčí",
+	"Brabcová", "Hrušková", "Mrázová", "Lacinová", "Kolářová", "Šimková", "Vránová"]
+
+## 0.72.7 (Ari): přezdívky ve stylu komand z 80. let - vlastní, ze žádného filmu.
+## Asi každý čtvrtý náhodný voják dostane přezdívku: Jméno „Přezdívka“ Příjmení.
+const NICKS := ["Kovadlina", "Buldok", "Sova", "Cvrček", "Ticho", "Rachot", "Jiskra", "Kladivo", "Pancíř",
+	"Hrom", "Štír", "Vlkodav", "Beton", "Šrapnel", "Kmín", "Bažina", "Mlha", "Koloběh", "Pražák", "Dynamit",
+	"Kapka", "Smola", "Motyka", "Tesák", "Kouř", "Švestka", "Bodák", "Blesk", "Ořech", "Vrána"]
+const NICK_CHANCE := 0.25
 
 func random_name(female: bool, r: RandomNumberGenerator) -> String:
-	if female:
-		return "%s %s" % [FIRST_F[r.randi() % FIRST_F.size()], LAST_F[r.randi() % LAST_F.size()]]
-	return "%s %s" % [FIRST_M[r.randi() % FIRST_M.size()], LAST_M[r.randi() % LAST_M.size()]]
+	var first: String = FIRST_F[r.randi() % FIRST_F.size()] if female else FIRST_M[r.randi() % FIRST_M.size()]
+	var last: String = LAST_F[r.randi() % LAST_F.size()] if female else LAST_M[r.randi() % LAST_M.size()]
+	if r.randf() < NICK_CHANCE:
+		return "%s „%s“ %s" % [first, NICKS[r.randi() % NICKS.size()], last]
+	return "%s %s" % [first, last]
+
+## 0.72.7 (Ari): hotová parta „Komando Štír“ - vlastní vojáci ve stylu akčních filmů z 80. let
+## (ne kopie žádného filmu). V tvorbě vojáka jsou mezi šablonami (vzhled + jméno, body ne);
+## smazat ani přepsat nejdou. Jména a přezdívky jsou i v generátoru (FIRST_*, LAST_*, NICKS).
+const SQUAD_NAME := "Komando Štír"
+const SQUAD := [
+	{"label": "Velitel", "name": "Viktor „Kovadlina“ Brabec", "look": {"female": false, "hair": "buzz", "hair_color": 1,
+		"beard": 2, "eye_color": 5, "skin": 1, "headgear": 3, "beret_color": 1, "top": 1, "pants": 1, "vest": 5,
+		"paint": 0, "tattoo": 6, "glasses": 3, "neck": 3, "mouth": 0, "flag": "cz"}},
+	{"label": "Kulometník", "name": "Igor „Buldok“ Hruška", "look": {"female": false, "hair": "none", "hair_color": 4,
+		"beard": 4, "eye_color": 4, "skin": 0, "headgear": 7, "beret_color": 0, "top": 3, "pants": 0, "vest": 4,
+		"paint": 2, "tattoo": 1, "glasses": 0, "neck": 0, "mouth": 2, "flag": "cz"}},
+	{"label": "Stopař", "name": "Emil „Sova“ Mráz", "look": {"female": false, "hair": "short", "hair_color": 2,
+		"beard": 1, "eye_color": 2, "skin": 3, "headgear": 4, "beret_color": 0, "top": 4, "pants": 1, "vest": 5,
+		"paint": 4, "tattoo": 0, "glasses": 0, "neck": 2, "mouth": 0, "flag": "sk"}},
+	{"label": "Radista", "name": "Ota „Cvrček“ Lacina", "look": {"female": false, "hair": "short", "hair_color": 5,
+		"beard": 0, "eye_color": 4, "skin": 0, "headgear": 6, "beret_color": 0, "top": 5, "pants": 2, "vest": 5,
+		"paint": 1, "tattoo": 0, "glasses": 2, "neck": 0, "mouth": 0, "flag": "cz"}},
+	{"label": "Odstřelovač", "name": "Bořek „Ticho“ Kolář", "look": {"female": false, "hair": "short", "hair_color": 7,
+		"beard": 3, "eye_color": 5, "skin": 1, "headgear": 7, "beret_color": 2, "top": 0, "pants": 3, "vest": 0,
+		"paint": 3, "tattoo": 0, "glasses": 0, "neck": 1, "mouth": 0, "flag": "pl"}},
+	{"label": "Ženista", "name": "Radek „Rachot“ Šimek", "look": {"female": false, "hair": "buzz", "hair_color": 2,
+		"beard": 1, "eye_color": 3, "skin": 0, "headgear": 0, "beret_color": 0, "top": 4, "pants": 0, "vest": 4,
+		"paint": 0, "tattoo": 2, "glasses": 0, "neck": 3, "mouth": 1, "flag": "cz"}},
+	{"label": "Zdravotnice", "name": "Hana „Jiskra“ Vránová", "look": {"female": true, "hair": "bun", "hair_color": 3,
+		"beard": 0, "eye_color": 3, "skin": 1, "headgear": 2, "beret_color": 0, "top": 3, "pants": 1, "vest": 5,
+		"paint": 1, "tattoo": 7, "glasses": 0, "neck": 1, "mouth": 0, "flag": "cz"}},
+]
 
 func random_look(female: bool, r: RandomNumberGenerator) -> Dictionary:
 	return {
@@ -1195,13 +1244,15 @@ func apply_look(model: Node, look: Dictionary) -> void:
 	var mouth: String = MOUTHS[look_i(look, "mouth", MOUTHS)][0]
 	var bc: Color = BERET_COLORS[look_i(look, "beret_color", BERET_COLORS)][1]
 	var flag: Array = FLAGS[flag_index(str(look.get("flag", "")))]
-	var bare := top == "bare"
+	var bare := top in BARE_ARMS
 	if neck == "mask":
 		beard = "none"            # (the scarf covers the chin)
 		mouth = "none"
 	# which piece shows what (a piece missing from an older merc.glb is simply not there)
 	var on := {
-		"Look_TopJacket": top == "jacket", "Look_TopRolled": top == "rolled", "Look_TopTee": top == "tee", "Look_TopTank": bare and female,
+		"Look_TopJacket": top == "jacket", "Look_TopRolled": top == "rolled", "Look_TopTee": top == "tee", "Look_TopTank": (top == "bare" and female) or top == "singlet",
+		"Look_TopCutoff": top == "cutoff", "Look_VestBandolier": vest == "bandolier", "Look_VestWeb": vest == "web",
+		"Look_GlassAviator": glasses == "aviator", "Gear_Headband": gear == "headband",
 		"Look_PatchL": not bare, "Look_PatchR": not bare and flag[0] == "", "Look_ArmbandL": bare, "Look_ArmbandR": bare,
 		"Look_PantsCargo": pants in ["pads", "cargo"], "Look_KneePads": pants in ["pads", "plain_pads"],
 		"Look_VestHarness": vest == "harness", "Look_VestCarrier": vest == "carrier", "Look_VestRig": vest == "rig",
@@ -1226,7 +1277,7 @@ func apply_look(model: Node, look: Dictionary) -> void:
 	for mi in model.find_children("*", "MeshInstance3D", true, false):
 		var nm := String(mi.name)
 		if nm.begins_with("Look_Hair"):
-			mi.visible = hair_nodes.get(hair, "") == nm and not (gear not in ["none", "headset"] and hair == "mohawk")
+			mi.visible = hair_nodes.get(hair, "") == nm and not (gear not in ["none", "headset", "headband"] and hair == "mohawk")
 		elif on.has(nm):
 			mi.visible = on[nm]
 			mi.set_meta("look_on", on[nm])       # (player._apply_gear: armour from the inventory hides a vest)
@@ -1286,7 +1337,7 @@ func dress_hands(n: Node, look: Dictionary) -> void:
 					if top != "jacket":
 						mi.set_surface_override_material(i, color_mat(sc))
 				"SleeveCuff":
-					if top == "tee" or top == "bare":
+					if top == "tee" or top in BARE_ARMS:
 						mi.set_surface_override_material(i, color_mat(sc))
 
 # ---- ranks, experience and permanent talents -------------------------------------------
@@ -2163,7 +2214,7 @@ const GLASS := 128
 const TEX_SURFACE := {"planks": "wood", "barn": "wood", "fence": "wood", "bark": "wood",
 	"metal": "metal", "skyranger": "metal", "ufo_floor": "alien", "ufo_hull": "alien", "ufo_wall": "alien", "water": "water", "gun": "metal",
 	"plaster": "hard", "roof": "hard", "dirt": "dirt", "hay": "dirt", "scorch": "dirt", "mars": "dirt",
-	"snow": "snow", "sand": "sand", "grass": "grass", "wheat": "grass", "leaves": "grass",
+	"snow": "snow", "sand": "sand", "grass": "grass", "grass_dry": "grass", "grass_jungle": "grass", "wheat": "grass", "leaves": "grass",
 	"concrete": "hard", "asphalt": "hard", "brick": "hard", "rock": "hard", "tiles": "hard", "wallpaper": "wood",
 	"corrugated": "metal", "container_red": "metal", "container_blue": "metal", "container_green": "metal",
 	"base_floor": "hard", "base_wall": "hard", "hangar_floor": "metal", "earth": "dirt", "alien_rock": "hard", "alien_panel": "alien"}
@@ -2420,7 +2471,7 @@ func camo_for(params: Dictionary) -> String:
 		return "mars"
 	if terr == "snow" or biome == "polar":
 		return "snow"
-	if terr == "desert" or biome == "desert":
+	if terr in ["desert", "dry"] or biome == "desert":
 		return "desert"
 	if biome in ["town", "industrial", "base"] or t == "base":
 		return "urban"
@@ -3182,7 +3233,7 @@ func tweak_id(id: String) -> String:
 
 func held_model(id: String, third := false) -> Node3D:
 	var m := model(id)
-	if ITEMS.get(id, {}).get("blunt", false):
+	if ITEMS.get(id, {}).get("blunt", false) or ITEMS.get(id, {}).get("sabre", false):
 		m.rotation.x = deg_to_rad(78.0)
 		m.position = Vector3(0, 0.01, 0.01)
 	elif id in ["knife", "energo_nuz"]:

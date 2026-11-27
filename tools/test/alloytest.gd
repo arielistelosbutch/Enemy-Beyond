@@ -47,7 +47,21 @@ func _initialize() -> void:
 		if String(e.get("id", "")) == "item_stit_x":
 			ency = String(e.get("unlock", "")) == "res:laser" and String(e.get("text", "")).contains("BSH-02")
 	print("[ALLOY] encyclopedia entry with the laser research: %s" % ency)
-	var t2: bool = locked and opens and no_al and made and paid and ency
+	# (0.80, Ari 2026-11-27) the alloy sabre SV-01: its own research after the laser, made from alloys
+	var sv_locked: bool = not C.unlocked("savle") and C.workshop_item("savle")
+	var sv_needs: bool = String(C.RESEARCH["savle"]["needs"].get("research", "")) == "laser" and not "savle" in Array(C.RESEARCH["plazma"]["needs"].get("research", []))
+	done.append("savle")
+	var sv_open: bool = C.unlocked("savle")
+	C.data["found"]["slitiny"] = 10
+	var sv_made: bool = C.make("savle") and C.alloys() == 10 - int(C.SHOP_AL["savle"])
+	var sv_ency := false
+	for e in ED.entries():
+		if String(e.get("id", "")) == "item_savle":
+			sv_ency = String(e.get("unlock", "")) == "res:savle" and String(e.get("text", "")).contains("SV-01")
+	var sv_item: bool = G.ITEMS.has("savle") and G.slot_refuse("rh", "savle") == "" and not G.two_handed("savle") \
+		and ResourceLoader.exists("res://assets/models/savle.glb") and FileAccess.file_exists("res://assets/icons/savle.png")
+	print("[ALLOY] sabre: locked %s, after laser %s, open %s, made %s, encyclopedia %s, item %s" % [sv_locked, sv_needs, sv_open, sv_made, sv_ency, sv_item])
+	var t2: bool = locked and opens and no_al and made and paid and ency and sv_locked and sv_needs and sv_open and sv_made and sv_ency and sv_item
 	if bak == null:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(F))
 	else:

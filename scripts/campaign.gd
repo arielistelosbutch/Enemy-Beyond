@@ -293,6 +293,9 @@ const RESEARCH := {
 		"desc": "X-WEP-001. Naše zbraň, jejich energetika: žádné náboje ani zásobníky, článek se po výstřelu sám nabije - a do té doby zbraň nevystřelí. Otevře výzkum jednotlivých laserových zbraní. Laserem jde konečně řezat i jejich slitinu: dílna z ní udělá štít BSH-02."},
 	"energo_nuz": {"name": "Energo nůž", "cost": 250, "days": 3.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "energo_nuz",
 		"desc": "X-WEP-002. EN-01: bojový nůž, jehož ostří rozžhaví laserové emitory. Pár silných zásahů, pak se článek několik vteřin nabíjí."},
+	# 0.80 (Ari): between the laser and the plasma - the laser cuts their alloy into a blade
+	"savle": {"name": "Šavle ze slitin", "cost": 350, "days": 4.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "savle",
+		"desc": "X-WEP-013. SV-01: laserem vyříznutá šavle z jejich slitiny. Delší dosah než nůž, prořízne i část jejich pancíře a drží se jednou rukou - štít zůstane v levé. Vyrábí ji dílna ze slitin z vraků."},
 	"laser_pistole": {"name": "Laserová pistole", "cost": 300, "days": 4.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "laser_pistol",
 		"desc": "X-WEP-003. Lehká laserová zbraň do jedné ruky. Krátký dobíjecí cyklus."},
 	"laser_puska": {"name": "Laserová puška", "cost": 400, "days": 5.0, "needs": {"research": "laser"}, "branch": "zbrane", "icon": "laser_rifle",
@@ -420,7 +423,7 @@ const GRID_H := 4
 const SHOP := {
 	"rifle_clip": 80, "pistol_clip": 50, "shells": 60, "slugs": 80, "beanbag": 90, "magnum_rounds": 70, "ac_clip": 160, "minigun_belt": 240,
 	"rocket": 300, "rocket_ap": 380, "rocket_inc": 340, "grenade": 120, "smoke_grenade": 100, "mine": 180, "flare": 40, "medkit": 320,
-	"laser_pistol": 600, "laser_rifle": 1200, "laser_cannon": 1800, "laser_minigun": 2200, "energo_nuz": 450,
+	"laser_pistol": 600, "laser_rifle": 1200, "laser_cannon": 1800, "laser_minigun": 2200, "energo_nuz": 450, "savle": 900,
 	"rifle": 500, "sniper": 900, "sniper_clip": 70, "shotgun": 500, "magnum": 440, "autocannon": 1200, "minigun": 1500, "rocket_launcher": 1300,
 	"knife": 120, "stun_baton": 360, "scanner": 600, "radio": 80, "nvg": 700, "plasma_rifle": 1800, "plasma_cell": 180, "plasma_pistol": 1200, "plasma_cannon": 3000, "plasma_minigun": 3200, "plasma_grenade": 400,
 	"vesta": 600, "stit": 700, "stit_x": 1400, "pancir": 1300, "sentry": 900,
@@ -431,12 +434,12 @@ const LOCKED_BY := {"mine": "zenijni", "sentry": "strazni_vez", "autocannon": "t
 	"plasma_rifle": "plazma_puska", "plasma_cell": "plazma", "plasma_pistol": "plazma_pistole", "plasma_grenade": "plazma_granat",
 	"plasma_cannon": "plazma_kanon", "plasma_minigun": "plazma_minigun",
 	"laser_pistol": "laser_pistole", "laser_rifle": "laser_puska", "laser_cannon": "laser_tezky",
-	"laser_minigun": "laser_minigun", "energo_nuz": "energo_nuz",
+	"laser_minigun": "laser_minigun", "energo_nuz": "energo_nuz", "savle": "savle",
 	"pancir": "pancir", "stit_x": "laser"}
 ## Alien-tech items also cost Moskovium 115 (the element that powers their ships).
 const SHOP_MK := {"plasma_rifle": 25, "plasma_cell": 3, "laser_cannon": 6, "laser_minigun": 6, "plasma_pistol": 12, "plasma_cannon": 40, "plasma_minigun": 40, "plasma_grenade": 4}
 ## ...and alloys from the wrecks (we cannot make them yet - Vetřelecké slitiny, X-MAT-001).
-const SHOP_AL := {"pancir": 6, "stit_x": 4, "laser_cannon": 4, "plasma_rifle": 4, "plasma_cannon": 6, "plasma_minigun": 6}
+const SHOP_AL := {"pancir": 6, "stit_x": 4, "savle": 3, "laser_cannon": 4, "plasma_rifle": 4, "plasma_cannon": 6, "plasma_minigun": 6}
 ## What the team brings home from a won mission (collected automatically).
 ## Machines that blow up when they fall: what is left are scraps. After this many won missions
 ## with one shot down the workshop puts a whole one together (that counts as the body for research).
@@ -478,6 +481,50 @@ func _land_img() -> Image:
 	if _land == null:
 		_land = (load("res://assets/textures/earth_land.png") as Texture2D).get_image()
 	return _land
+
+# ---- the world of 1990 (2026-11-27, Ari: „místo na glóbu u Egypta nesedí“, „Sahara a trávník“) ----------
+# earth_country.png / earth_climate.png and GeoData come from tools/geo/build_geo.py (GeoNames places,
+# the 1990 states). The place of a mission is its real country (and the region of a big one), the
+# ground of the mission is the climate of that place: desert, steppe/savanna, tropics, ice.
+const GeoData = preload("res://scripts/geo_data.gd")
+var _geo_imgs := {}
+var _iso_name := {}
+const REGION_MAX := 9.0          # degrees: further from every region of the country = just the country
+const CLIMATES := ["", "temperate", "dry", "desert", "tropic", "ice"]
+
+func _geo_img(which: String) -> Image:
+	if not _geo_imgs.has(which):
+		var t := load("res://assets/textures/earth_%s.png" % which) as Texture2D
+		_geo_imgs[which] = t.get_image() if t else null
+	return _geo_imgs[which]
+
+func _geo_px(img: Image, lat: float, lon: float) -> int:
+	var x := int(fposmod(lon + 180.0, 360.0) / 360.0 * img.get_width()) % img.get_width()
+	var y := clampi(int((90.0 - lat) / 180.0 * img.get_height()), 0, img.get_height() - 1)
+	return int(round(img.get_pixel(x, y).r * 255.0))
+
+## Index into GeoData.COUNTRIES (-1 = open sea / nobody's ice).
+func country_at(lat: float, lon: float) -> int:
+	var img := _geo_img("country")
+	return _geo_px(img, lat, lon) - 1 if img else -1
+
+func country_name(lat: float, lon: float) -> String:
+	var i := country_at(lat, lon)
+	return String(GeoData.COUNTRIES[i][0]) if i >= 0 and i < GeoData.COUNTRIES.size() else ""
+
+## temperate / dry (steppe, savanna) / desert / tropic / ice ("" at sea).
+func climate_at(lat: float, lon: float) -> String:
+	var img := _geo_img("climate")
+	if img == null:
+		return "temperate"
+	var v := _geo_px(img, lat, lon)
+	return CLIMATES[v] if v >= 0 and v < CLIMATES.size() else ""
+
+func _country_of_iso(iso: String) -> String:
+	if _iso_name.is_empty():
+		for c in GeoData.COUNTRIES:
+			_iso_name[String(c[1])] = String(c[0])
+	return String(_iso_name.get(iso, ""))
 
 func is_land(lat: float, lon: float) -> bool:
 	var img := _land_img()
@@ -734,24 +781,38 @@ func add_fallen(list: Array) -> void:
 		e["d"] = day
 		all.append(e)
 
-func utc_hours() -> float:
-	return fmod(float(data["day"]) * 24.0, 24.0)
+func utc_hours(ahead_h := 0.0) -> float:
+	return fposmod(float(data["day"]) * 24.0 + ahead_h, 24.0)
 
-func local_hour(lon: float) -> float:
-	return fposmod(utc_hours() + lon / 15.0, 24.0)
+func local_hour(lon: float, ahead_h := 0.0) -> float:
+	return fposmod(utc_hours(ahead_h) + lon / 15.0, 24.0)
 
 ## (0.62, Ari: "na misi je noc, ale svítí jako slunce, a obráceně") Den a noc podle skutečné výšky
-## slunce nad místem mise - stejně jako stín na glóbu (geoscape: slunce nad SUN_LAT). Dřív se den
+## slunce nad místem mise - stejně jako stín na glóbu (geoscape: slunce nad sun_lat()). Dřív se den
 ## a noc počítaly jen z hodiny (bez zeměpisné šířky): v listopadu v Evropě byla na glóbu v 17:00 tma
 ## a na misi plné slunce, na jižní polokouli v 19:00 na glóbu světlo a na misi noc.
-const SUN_LAT := -18.0       # November: the sun stands over 18 degrees south
+## (2026-11-27) Slunce stálo napevno nad 18° j. š. (listopad), i když kampaň začíná 24. dubna -
+## v dubnu a v létě bylo v Evropě večer o 3-4 hodiny dřív tma. Teď sklon slunce podle data kampaně.
 const SUN_NIGHT := -6.0      # below this the mission is night (the globe is dark there too)
 const SUN_DAY := 10.0        # above this full daylight; in between dawn or dusk
+const START_DOY := 113       # day 0 of the campaign = 24 April (day of the year from 1 January, 0-based)
 
-## The sun as seen from (lat, lon): Vector2(elevation, azimuth) in degrees (azimuth 0 north, 90 east).
-func sun_at(lat: float, lon: float) -> Vector2:
-	var sl := deg_to_rad(SUN_LAT)
-	var so := deg_to_rad(-(utc_hours() - 12.0) * 15.0)
+## Where the sun stands over the globe (its latitude = the declination) on the campaign day,
+## ahead_h hours from now: +23.4 in June, -23.4 in December, 0 at the equinoxes.
+func sun_lat(ahead_h := 0.0) -> float:
+	var doy := START_DOY + float(data.get("day", 0.0)) + ahead_h / 24.0
+	return -23.44 * cos(TAU / 365.0 * (doy + 10.0))
+
+## The point on the globe the sun stands over: Vector2(lat, lon).
+func subsolar(ahead_h := 0.0) -> Vector2:
+	return Vector2(sun_lat(ahead_h), -(utc_hours(ahead_h) - 12.0) * 15.0)
+
+## The sun as seen from (lat, lon) ahead_h hours from now: Vector2(elevation, azimuth) in degrees
+## (azimuth 0 north, 90 east).
+func sun_at(lat: float, lon: float, ahead_h := 0.0) -> Vector2:
+	var ss := subsolar(ahead_h)
+	var sl := deg_to_rad(ss.x)
+	var so := deg_to_rad(ss.y)
 	var s := Vector3(cos(sl) * sin(so), sin(sl), cos(sl) * cos(so))
 	var la := deg_to_rad(lat)
 	var lo := deg_to_rad(lon)
@@ -770,12 +831,31 @@ static func phase_of(elev: float, hour: float) -> String:
 		return "svitani" if hour < 12.0 else "soumrak"
 	return "den"
 
-func day_phase(lon: float, lat := BASE_LAT) -> String:
-	return phase_of(sun_at(lat, lon).x, local_hour(lon))
+func day_phase(lon: float, lat := BASE_LAT, ahead_h := 0.0) -> String:
+	return phase_of(sun_at(lat, lon, ahead_h).x, local_hour(lon, ahead_h))
 
 ## For the scenes that only know day or night (interception, escort): the sun below the horizon.
 func is_night(lon: float, lat := BASE_LAT) -> bool:
 	return sun_at(lat, lon).x < 0.0
+
+## (2026-11-27, Ari: "hra ukazovala den, ale ve hře byla noc") The globe showed the time of day at the
+## mission NOW, but the transport flies there for hours (Čáp up to a day): in 4 of 10 missions the team
+## landed into the other half of the day. What the team will find when it lands: "HH:MM - noc".
+func arrival_text(m: Dictionary, kind := "") -> String:
+	var lat := float(m.get("lat", base_lat()))
+	var lon := float(m["lon"])
+	var eta := eta_hours(kind if kind != "" else transport(), lat, lon)
+	# the transport already on its way there (or waiting on the spot): from where it is now
+	for c in crafts():
+		if String(c.get("ttype", "")) == "mission" and int(c.get("target", -1)) == int(m.get("id", -2)):
+			if String(c["state"]) == "out":
+				eta = arc_deg(float(c["lat"]), float(c["lon"]), lat, lon) / float(CRAFT_SPEED[c["kind"]]) * 24.0
+			elif String(c["state"]) != "back":
+				eta = 0.0
+	var lh := local_hour(lon, eta)
+	return "%02d:%02d - %s" % [int(lh), int(fmod(lh, 1.0) * 60), PHASE_TEXT.get(day_phase(lon, lat, eta), "den")]
+
+const PHASE_TEXT := {"noc": "NOC", "svitani": "svítání", "den": "den", "soumrak": "soumrak"}
 
 ## Moves time forward (days). Returns true if something happened that should
 ## stop the clock (new mission, research done, monthly report).
@@ -858,7 +938,7 @@ func advance(days: float) -> bool:
 		if float(f["until"]) < float(data["day"]):
 			data["flights"].erase(f)
 			if rng.randf() < 0.5 and is_land(float(f["lat"]), float(f["lon"])):
-				var m := generate_mission(Vector2(float(f["lat"]), float(f["lon"])))
+				var m := generate_mission(Vector2(float(f["lat"]), float(f["lon"])), "landed")
 				m["type"] = "landed"
 				# (0.7x zkušební) now and then a chance to follow it home instead
 				if _bug_ok(String(f["kind"])) and rng.randf() < BUG_CHANCE:
@@ -952,7 +1032,7 @@ func advance(days: float) -> bool:
 				data["trust"] = clampi(int(data["trust"]) + 2, 0, 100)
 				stop = true
 			if not already:
-				var bm := generate_mission()
+				var bm := generate_mission(Vector2(base_lat(), base_lon()), "crash")
 				bm["type"] = "base"
 				bm["lat"] = base_lat(); bm["lon"] = base_lon()
 				bm["place"] = "Základna - " + base_place()
@@ -1051,11 +1131,8 @@ func _strike_tick(days: float) -> bool:
 				_log("Bitevní loď visela nad oblastí %s a odletěla. Maskující jádro nás skrylo." % base_place())
 			elif rng.randf() < minf(0.8, 0.12 * count("silo") + 0.2 * count("laser_vez") + 0.35 * count("plazma_vez")):
 				_log("Bitevní loď nad základnou nabíjela hlavní kanón - věže ji sestřelily dřív, než vystřelila!")
-				var m := generate_mission()
+				var m := generate_mission(Vector2(base_lat() + rng.randf_range(-0.6, 0.6), base_lon() + rng.randf_range(-0.8, 0.8)), "crash")
 				m["type"] = "crash"
-				m["lat"] = base_lat() + rng.randf_range(-0.6, 0.6); m["lon"] = base_lon() + rng.randf_range(-0.8, 0.8)
-				m["place"] = nearest_place(float(m["lat"]), float(m["lon"]))
-				m["terrain"] = terrain_at(float(m["lat"]), float(m["lon"]))
 				m["size"] = UFO_SIZES["battleship"]
 				m["ufo"] = "battleship"
 				m["extra_aliens"] = UFO_ALIENS["battleship"]
@@ -1403,7 +1480,7 @@ func intercept_done(id: int, outcome: String, kind: String, jet_hp: float, lost 
 			var at := nearest_land(lat, lon, float(f.get("heading", 0.0)))
 			var at_sea := not is_land(lat, lon)
 			lat = at.x; lon = at.y
-			var m := generate_mission(at)
+			var m := generate_mission(at, "crash")
 			m["type"] = "crash"
 			m["size"] = UFO_SIZES[kind]
 			m["ufo"] = kind            # the wreck is the ship you shot down
@@ -1466,20 +1543,6 @@ func intercept_done(id: int, outcome: String, kind: String, jet_hp: float, lost 
 # ---- missions ---------------------------------------------------------------------------------------
 ## `at` (lat, lon): where it has to be (a crashed or landed UFO); otherwise a random place on land.
 func generate_mission(at := Vector2.INF, force := "") -> Dictionary:
-	var lat := 0.0
-	var lon := 0.0
-	for tries in (0 if at != Vector2.INF else 200):
-		# more often closer to home (the radar network is European)
-		if rng.randf() < 0.55:
-			lat = base_lat() + rng.randf_range(-14, 14)
-			lon = base_lon() + rng.randf_range(-25, 25)
-		else:
-			lat = rad_to_deg(asin(rng.randf_range(-0.85, 0.95)))
-			lon = rng.randf_range(-180, 180)
-		if is_land(lat, lon):
-			break
-	if at != Vector2.INF:
-		lat = at.x; lon = at.y
 	var types := ["crash", "crash", "landed", "abduction", "terror", "rescue", "sabotage", "convoy", "radar"]
 	if float(data["day"]) < 4.0:
 		types = ["crash", "crash", "landed", "abduction", "rescue"]
@@ -1488,26 +1551,50 @@ func generate_mission(at := Vector2.INF, force := "") -> Dictionary:
 	var t: String = types[rng.randi() % types.size()]
 	if force != "":
 		t = force
+	var lat := 0.0
+	var lon := 0.0
+	var city := []
+	if at != Vector2.INF:
+		lat = at.x; lon = at.y
+	elif t in ["terror", "quarantine"]:
+		# (2026-11-27) terror hits a real city: the place on the globe is the city itself
+		city = pick_city()
+		lat = float(city[2]) + rng.randf_range(-0.06, 0.06)
+		lon = float(city[3]) + rng.randf_range(-0.06, 0.06)
+	else:
+		for tries in 200:
+			# more often closer to home (the radar network is European)
+			if rng.randf() < 0.55:
+				lat = base_lat() + rng.randf_range(-14, 14)
+				lon = base_lon() + rng.randf_range(-25, 25)
+			else:
+				lat = rad_to_deg(asin(rng.randf_range(-0.85, 0.95)))
+				lon = rng.randf_range(-180, 180)
+			if is_land(lat, lon):
+				break
 	var info: Dictionary = MTYPES[t]
-	var terr0 := terrain_at(lat, lon)
+	var clim := climate_at(lat, lon)
+	var terr := terrain_at(lat, lon)
 	var biome := "farm"
 	var roll := rng.randf()
 	if t == "terror":
 		biome = "town" if roll < 0.75 else "industrial"
 	elif t == "quarantine":
 		biome = "town"
-	elif abs(lat) > 63:
+	elif abs(lat) > 63 or clim == "ice":
 		biome = "polar"
-	elif terr0 == "snow" or abs(lat) > 55:
+	elif terr == "snow" or abs(lat) > 55:
 		biome = "mountain" if roll < 0.5 else "forest"
-	elif roll < 0.22:
-		biome = "forest"
-	elif roll < 0.36:
-		biome = "industrial"
-	elif roll < 0.46:
-		biome = "town"
-	elif roll < 0.54:
-		biome = "mountain"
+	else:
+		var fp := 0.34 if terr == "tropic" else 0.22       # (in the tropics more of the jungle)
+		if roll < fp:
+			biome = "forest"
+		elif roll < fp + 0.14:
+			biome = "industrial"
+		elif roll < fp + 0.24:
+			biome = "town"
+		elif roll < fp + 0.32:
+			biome = "mountain"
 	# map size: terror = the whole town (huge), a big landed ship = large
 	var size := "medium"
 	match t:
@@ -1521,22 +1608,26 @@ func generate_mission(at := Vector2.INF, force := "") -> Dictionary:
 		"radar": size = "large"
 		"bug": size = "medium" if rng.randf() < 0.6 else "large"
 		"quarantine": size = "large"
-	var terr := terrain_at(lat, lon)
 	if biome == "polar":
 		terr = "snow"
 	if terr == "desert" and biome in ["farm", "forest", "mountain", "polar"]:
 		biome = "desert"       # sand, rocks, ruins - not fields and cows
 	if t == "pilot" and biome in ["town", "industrial", "farm"]:
 		biome = "forest" if rng.randf() < 0.6 else "mountain"     # (he came down in the woods)
+	if t == "pilot" and terr == "desert":
+		biome = "desert"
 	if t == "radar":
 		biome = "base"         # the station: hangars, barracks, the tower (desert sand stays on the ground)
 	if t == "convoy" and biome in ["town", "industrial", "polar"]:
 		biome = "forest" if rng.randf() < 0.5 else "farm"     # (a convoy on a country road)
+		if terr == "desert":
+			biome = "desert"
 	var id := int(data["next_id"])
 	data["next_id"] = id + 1
 	var exp_days: float = float(info["expire"]) * (1.0 + 0.4 * count("radar")) * bloc_k("radar") * radar_cover(lat, lon) * rng.randf_range(0.8, 1.3)
+	var place := "%s, %s" % [city[0], city[1]] if not city.is_empty() else nearest_place(lat, lon)
 	return {
-		"id": id, "type": t, "lat": lat, "lon": lon, "place": nearest_place(lat, lon),
+		"id": id, "type": t, "lat": lat, "lon": lon, "place": place,
 		"expires": float(data["day"]) + exp_days, "biome": biome, "race": "grey", "size": size, "terrain": terr,
 		"extra_aliens": int(info["aliens"]) + int(float(data["day"]) / 20.0),
 		"reward": int(info["reward"]), "seed": rng.randi() % 1000000,
@@ -1545,16 +1636,18 @@ func generate_mission(at := Vector2.INF, force := "") -> Dictionary:
 ## Ground by place and season (the campaign starts at the end of April): snow in the north and
 ## the mountains, sand in the great deserts, otherwise the usual fields and woods.
 func terrain_at(lat: float, lon: float) -> String:
-	var desert := (lat > 15 and lat < 33 and lon > -15 and lon < 55) or (lat > -30 and lat < -19 and lon > 115 and lon < 145) \
-		or (lat > 25 and lat < 37 and lon > -118 and lon < -105) or (lat > 36 and lat < 45 and lon > 55 and lon < 75)
-	if desert:
-		return "desert"
+	# (2026-11-27) the real climate of the place (earth_climate.png), no more boxes round the deserts
+	var clim := climate_at(lat, lon)
+	match clim:
+		"desert": return "desert"
+		"tropic": return "tropic"
+		"ice": return "snow"
 	var month := int((float(data.get("day", 0)) + 23.0) / 30.5) % 12      # 0 = April
 	var north_winter := month >= 7          # (November - March)
 	var south_winter := month >= 2 and month <= 4
 	if absf(lat) > 62 or (north_winter and lat > 50) or (south_winter and lat < -50):
 		return "snow"
-	return "temperate"
+	return "dry" if clim == "dry" else "temperate"
 
 ## The last mission appears on the globe at the base: the Orel takes off from there.
 # ---- the aliens learn: what each mercenary keeps bringing, they learn to answer -------------------
@@ -1686,7 +1779,7 @@ func _add_alien_base(why := "") -> void:
 	for mm in data["missions"]:
 		if mm["type"] == "alienbase":
 			return
-	var m := generate_mission()
+	var m := generate_mission(Vector2.INF, "alienbase")
 	m["type"] = "alienbase"
 	m["size"] = "large"
 	m["extra_aliens"] = int(MTYPES["alienbase"]["aliens"]) + int(float(data["day"]) / 15.0)
@@ -1709,15 +1802,44 @@ func _add_final() -> void:
 func won() -> bool:
 	return bool(data.get("won", false))
 
+## The name of the place: the country (as in 1990), in a big country with its region
+## ("Texas, USA", "Sibiř, SSSR"; at home in Czechoslovakia just the region: "Vysočina").
 func nearest_place(lat: float, lon: float) -> String:
+	var cn := country_name(lat, lon)
+	if cn == "":
+		return _old_place(lat, lon)
+	var best := ""
+	var bd := REGION_MAX
+	for r in GeoData.REGIONS:
+		if _country_of_iso(String(r[1])) != cn:
+			continue
+		var d := arc_deg(lat, lon, float(r[2]), float(r[3]))
+		if d < bd:
+			bd = d
+			best = String(r[0])
+	if best == "":
+		return cn
+	return best if cn == "Československo" else "%s, %s" % [best, cn]
+
+## (before 2026-11-27, still the fallback at sea) the nearest of the few PLACES.
+func _old_place(lat: float, lon: float) -> String:
 	var best := ""
 	var bd := 1e9
 	for p in PLACES:
-		var d: float = pow(p[1] - lat, 2) + pow(fposmod(p[2] - lon + 180.0, 360.0) - 180.0, 2) * cos(deg_to_rad(lat))
+		var d := arc_deg(lat, lon, float(p[1]), float(p[2]))
 		if d < bd:
 			bd = d
 			best = p[0]
 	return best
+
+## A real city for a terror mission: near home more often (the radar network is European).
+func pick_city() -> Array:
+	var near := []
+	for c in GeoData.CITIES:
+		if absf(float(c[2]) - base_lat()) < 14.0 and absf(wrapf(float(c[3]) - base_lon(), -180.0, 180.0)) < 25.0:
+			near.append(c)
+	var pool: Array = near if not near.is_empty() and rng.randf() < 0.55 else GeoData.CITIES
+	return pool[rng.randi() % pool.size()]
 
 ## Parameters handed to the mission scene (and to every client).
 func mission_params(m: Dictionary) -> Dictionary:

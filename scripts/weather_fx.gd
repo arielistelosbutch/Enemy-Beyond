@@ -261,11 +261,15 @@ func shift(to: String, instant := false) -> void:
 		put(env, moon, raw_env)
 	m.weather = to
 	m._weather_env()
+	# (2026-11-27) the NVG / Night Eye light rides on top of the weather's (see mission.light_extra)
+	var extra: float = m.light_extra()
+	env.ambient_light_energy += extra
+	m._amb_base += extra
 	var tgt := snap(env, moon)
 	var wind1: float = m._wind_base
 	put(env, moon, cur)
 	m._wind_base = wind0
-	_blend = {"a": cur, "b": tgt, "k": 0.0, "dur": 0.2 if instant else float(Game.cmd_arg("wxblend", str(BLEND_TIME))), "w0": wind0, "w1": wind1}
+	_blend = {"a": cur, "b": tgt, "k": 0.0, "dur": 0.2 if instant else float(Game.cmd_arg("wxblend", str(BLEND_TIME))), "w0": wind0, "w1": wind1, "extra": extra}
 	# the rain
 	var rains := to in ["rain", "storm", "snow"]
 	var rained := was in ["rain", "storm", "snow"]
@@ -321,6 +325,8 @@ func _blend_tick(delta: float) -> void:
 	_blend["k"] = k
 	var s := smoothstep(0.0, 1.0, k)
 	var d := mix(_blend["a"], _blend["b"], s)
+	# the NVG switched on or off while the weather turns: keep its share
+	d["amb"] = float(d["amb"]) + m.light_extra() - float(_blend.get("extra", 0.0))
 	if m._flash_t <= 0.0:
 		put(m.env, m.moon, d)
 	m._moon_base = d["moon"]; m._amb_base = d["amb"]; m._fog_base = d["fog"]; m._bg_base = d["bg"]

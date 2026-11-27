@@ -936,6 +936,13 @@ static func afk_scene(race_id: String) -> Node3D:
 	if lib == null:
 		holder.free()
 		return null
+	# (2026-11-27) the clip library is shared by every instance of the scene: the clips under the
+	# game's names are made once per mission (copying ~40 clips cost 30-50 ms at every spawn - the
+	# stall when the reinforcements landed)
+	var done_key := "eb_afk_" + race_id
+	if lib.has_meta(done_key):
+		return holder
+	lib.set_meta(done_key, true)
 	var map: Dictionary = AFK_MODELS[race_id] if AFK_MODELS.has(race_id) else AFK_MODELS[AFK_SKIN[race_id]]
 	for cn: String in map:
 		var srcs: Array = map[cn] if map[cn] is Array else [map[cn]]
@@ -1810,6 +1817,8 @@ func taken(dmg: float) -> float:
 		arm = lerpf(arm, 1.0, float(EASY_SOFT[race][1]))
 	if kind == "slug":
 		arm = lerpf(arm, 1.0, 0.3)    # a solid slug carries through more of the armour
+	if mission and mission.hit_cut > 0.0:
+		arm = lerpf(arm, 1.0, mission.hit_cut)    # (0.80) the alloy sabre cuts through part of it
 	if R.has("joints") and kind in ["laser", "plasma"]:
 		arm = lerpf(arm, 1.0, 0.5)    # the beam finds the joints between the plates (Pitva Bijce)
 	return dmg * (lerpf(arm, 1.0, 0.6) if armor_broken else arm) * k
@@ -2322,6 +2331,9 @@ func _pl_think(delta: float) -> void:
 				react = rng.randf_range(0.35, 0.7)
 	elif (state != S.COMBAT or phase == "hide" or phase == "flank") and _try_drag():
 		return
+	if escape_to != Vector3.INF and state != S.DRAG and (state != S.COMBAT or (seen == null and unseen_t > 5.0)):
+		_escape_tick(delta)
+		return          # (2026-11-27: the last one runs for the ship - alien_last.gd)
 	if seen == null and state != S.COMBAT and state != S.DRAG and AM.civ_tick(self, delta):
 		return          # (0.64: a terror - it shoots the people it sees)
 	match state:
@@ -2371,6 +2383,32 @@ func _pl_think(delta: float) -> void:
 				_go_lurk(true)
 		S.COMBAT:
 			_combat(delta, seen)
+
+## (2026-11-27, Ari) The last alien left gives up hiding and runs for the ship that came for it
+## (mission -> alien_last.gd sets escape_to). In a fight it fights; out of it, it runs on.
+var escape_to := Vector3.INF
+var _esc_hold := 0.0
+var _esc_mine := false
+func _escape_tick(delta: float) -> void:
+	if state == S.COMBAT:
+		state = S.LURK          # (unseen for a while: it does not dig in, it goes on)
+	lurking = false
+	alert = true
+	if activity != 0:
+		activity = 0
+	var flat := Vector2(global_position.x - escape_to.x, global_position.z - escape_to.z).length()
+	if flat < 1.4:
+		velocity.x = 0; velocity.z = 0
+		return
+	_esc_hold -= delta
+	if goal.distance_to(escape_to) > 1.0:
+		if _esc_mine:
+			_esc_mine = false
+			_esc_hold = 1.5          # (stuck: _walk sent it a step aside - let it take that step)
+		elif _esc_hold <= 0.0:
+			_go(escape_to)
+			_esc_mine = true
+	_walk(run_spd, delta)
 
 ## Spotted someone: the others nearby close in from the sides (the officer's voice carries further).
 func _call_squad(seen: Node) -> void:
@@ -3645,6 +3683,7 @@ void fragment() {
 }"""
 
 var _cloak_snd := false
+static var _shimmer_sh: Shader
 func _cloak_tick(delta: float) -> void:
 	if not R.has("cloak"):
 		return
@@ -3659,9 +3698,12 @@ func _cloak_tick(delta: float) -> void:
 			if c != eye_glint:
 				_cloak_meshes.append(c)
 		_shimmer = ShaderMaterial.new()
-		var sh := Shader.new()
-		sh.code = SHIMMER
-		_shimmer.shader = sh
+		# (2026-11-27) one shader for all of them: a new one each alien was compiled anew - a stall
+		# the moment a Ještěřan first cloaked
+		if _shimmer_sh == null:
+			_shimmer_sh = Shader.new()
+			_shimmer_sh.code = SHIMMER
+		_shimmer.shader = _shimmer_sh
 		_cloak_eyes = Node3D.new()
 		var col: Color = (R.get("glint", [Vector3.ZERO, Color(1, 0.6, 0.1)]) as Array)[1]
 		for sx in [-0.065, 0.065]:

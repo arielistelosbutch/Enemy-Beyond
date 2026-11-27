@@ -7,6 +7,7 @@ const AlienScript := preload("res://scripts/alien.gd")
 const MeleeScript := preload("res://scripts/melee_alien.gd")
 const DroneScript := preload("res://scripts/drone_alien.gd")
 const BossScript := preload("res://scripts/boss.gd")
+const AL := preload("res://scripts/alien_last.gd")     # (2026-11-27: the last alien does not hide for ever)
 const AD := preload("res://scripts/ai_director.gd")     # (0.64: tension instead of fixed times; the players' styles)
 const CivScript := preload("res://scripts/civilian.gd")
 const MapGen := preload("res://scripts/map_gen.gd")
@@ -26,6 +27,7 @@ var next_alien_id := 0
 var civs_total := 0
 var crew_names := []
 var crew_group := ""
+var hit_cut := 0.0          # (0.80) the hit right now cuts through this share of the armour (alloy sabre SV-01)
 var hit_quiet := false      # (0.72.5) the hit right now is silent: a silenced shot, a knife, a baton
 var hit_kind := ""          # what is hitting an alien right now: bullet / plasma / explosion        # races on this mission (for the result / archive)
 var t := 0.0
@@ -49,6 +51,15 @@ var _hallu_t := 20.0
 
 ## Weather: chosen from the mission seed (every machine picks the same) unless the
 ## mission says. storm = rain + lightning, rain, fog, overcast, clear (moonlit).
+## (2026-11-27) The briefing said "jasno, svítí měsíc" / "zataženo, tma" even at noon: by the time of day.
+func weather_name() -> String:
+	var ph := phase()
+	if ph == "noc" or not WEATHER_DAY.has(weather):
+		return WEATHER_NAMES.get(weather, weather)
+	return WEATHER_DAY[weather] if ph == "den" else WEATHER_DUSK.get(weather, WEATHER_DAY[weather])
+
+const WEATHER_DAY := {"clear": "jasno", "overcast": "zataženo"}
+const WEATHER_DUSK := {"clear": "jasno, slunce nízko nad obzorem", "overcast": "zataženo, šero"}
 const WEATHER_NAMES := {"snow": "sněží", "storm": "bouřka", "rain": "déšť", "fog": "hustá mlha", "overcast": "zataženo, tma", "clear": "jasno, svítí měsíc"}
 var weather := "storm"
 var _moon_base := 0.12
@@ -201,7 +212,10 @@ func _pl_prep_tick(delta: float) -> void:
 		_door.rotation.x = minf(_door.rotation.x + delta * 1.6, PI / 2 + 0.18)
 		var lamp: OmniLight3D = get_node_or_null("Lamp")
 		if lamp:
+			# (2026-11-27, živý test) zelená jen jako kontrolka: dřív 1,4 / 4 m zbarvila celou kabinu
 			lamp.light_color = Color(0.2, 1.0, 0.3)
+			lamp.light_energy = 0.35
+			lamp.omni_range = 2.2
 		if _door.rotation.x >= PI / 2 + 0.17:
 			_door.queue_free()
 			_door = null
@@ -282,6 +296,8 @@ func calm() -> bool:
 
 func _ready() -> void:
 	name = "Mission"
+	if not _oldfx():
+		get_tree().node_added.connect(_fx_no_shadow)
 	_local = bool(Net.mission_params.get("local", false))
 	if not _local:
 		# (a left-over offline branch from a base walk must never swallow a real mission)
@@ -376,6 +392,9 @@ func _ready() -> void:
 	wx.raw_env = _env_raw
 	add_child(wx)
 	wx.setup(self)
+	wreck = WreckScript.new()
+	add_child(wreck)
+	wreck.setup(self)
 	_build_door()
 	_ufo_ambience()
 	_ship_engine()
@@ -401,7 +420,7 @@ func _ready() -> void:
 		brief_done()
 		_home_hello()
 	else:
-		hud.briefing(_briefing_text() + "\nPočasí: " + WEATHER_NAMES[weather] + ".")
+		hud.briefing(_briefing_text() + "\nPočasí: " + weather_name() + ".")
 	multiplayer.peer_disconnected.connect(_on_peer_left)
 	Net.note.connect(_on_note)
 	multiplayer.server_disconnected.connect(func(): _leave("Spojení s hostitelem bylo ztraceno."))
@@ -607,6 +626,8 @@ func rain_db() -> float:
 ## (2026-11-17) Weather that lives through the mission: changes, wet ground, wind, tracks (scripts/weather_fx.gd).
 const WX := preload("res://scripts/weather_fx.gd")
 var wx: Node
+const WreckScript := preload("res://scripts/wreck.gd")
+var wreck: Node            # (27. 11.) stromy a auta: hoří, padají, vybuchují
 var under_roof := false      # the local camera is under a roof (rain drums on it, the sights fog up)
 var _env_raw := {}
 var _rain_out: AudioStreamPlayer
@@ -641,7 +662,7 @@ func _briefing_text() -> String:
 			"recovery": "Tady padl náš tým. Těla leží tam, kde boj skončil, a s nimi všechno, co nesli. Vetřelci, kteří je zabili, odsud neodešli všichni - a vědí, že si pro ně někdo přijde.",
 			"terror": "Vetřelci vtrhli do městečka. Spojení s místními je přerušeno. Poslední hovor na tísňovou linku: \"Je to černé, je to rychlé, a ti, co to zabilo, zase vstávají.\"\nZachraň, koho můžeš (F u vyděšeného civilisty - půjde za tebou do Kondoru).",
 		}
-		var terr: String = {"snow": "\nTerén: sníh.", "desert": "\nTerén: poušť."}.get(mp.get("terrain", ""), "")
+		var terr: String = {"snow": "\nTerén: sníh.", "desert": "\nTerén: poušť.", "dry": "\nTerén: vyprahlá step.", "tropic": "\nTerén: tropy."}.get(mp.get("terrain", ""), "")
 		var task := "ÚKOL: zneškodnit posádku a vrátit se do Kondoru.\nOmráčení vetřelci mají pro výzkum velkou cenu. Co vetřelci upustí, posbíráme při odletu."
 		match String(mp.get("type", "")):
 			"mars": task = "ÚKOL: zničit tři pylony štítu a Velký mozek. Návrat není."
@@ -703,6 +724,12 @@ var nvg_ir := false
 var _nvg_layer: CanvasLayer
 var _nvg_mat: ShaderMaterial
 var _nvg_amb := 0.0
+var _eyes_amb := 0.0      # (the Night Eye talent's share of the ambient light)
+
+## (2026-11-27) What this machine adds to the weather's ambient light (the tube, the Night Eye):
+## a weather change has to carry it over, otherwise turning the NVG off leaves the night pitch black.
+func light_extra() -> float:
+	return _nvg_amb + _eyes_amb
 func set_nvg(on: bool, ir := false) -> void:
 	if on == nvg_on and (ir and on) == nvg_ir:
 		return
@@ -880,6 +907,7 @@ func nvg_flash(at: Vector3, k: float) -> void:
 ## The Night Eye talent: the eyes get used to the dark (only on this machine).
 func night_eyes() -> void:
 	var add: float = {"noc": 0.18, "soumrak": 0.08, "svitani": 0.08}.get(phase(), 0.0)
+	_eyes_amb += add
 	_amb_base += add
 	env.ambient_light_energy += add
 
@@ -1042,6 +1070,9 @@ func _environment() -> void:
 	_env_raw = WX.snap(env, moon)
 	_weather_env()
 
+const MOON_CLEAR := 0.22     # the moon on a clear night (was 0.35)
+const AMB_CLEAR := 0.22      # the sky's light on a clear night (was 0.3)
+
 ## Light, fog and wind by the weather (night values; day keeps its flat grey light).
 func _weather_env() -> void:
 	var vol := volumetric_on()
@@ -1051,9 +1082,12 @@ func _weather_env() -> void:
 	match weather:
 		"clear":
 			# a cold moon: you see further - and so do they
+			# (2026-11-27, Ari: "měsíc svítil až přehnaně jasně") 0.35 / 0.3 read as a grey day with
+			# sharp shadows; a clear night is still a night: you see shapes, not colours
 			if nw > 0.0:
-				moon.light_energy = lerpf(moon.light_energy, 0.35, nw)
-				env.ambient_light_energy = lerpf(env.ambient_light_energy, 0.3, nw)
+				moon.light_energy = lerpf(moon.light_energy, MOON_CLEAR, nw)
+				env.ambient_light_energy = lerpf(env.ambient_light_energy, AMB_CLEAR, nw)
+				moon.light_volumetric_fog_energy = lerpf(moon.light_volumetric_fog_energy, 0.05, nw)
 				env.background_color = env.background_color.lerp(Color(0.03, 0.045, 0.09), nw)
 			env.fog_density = 0.006 if vol else 0.03
 			env.volumetric_fog_density = 0.008
@@ -1389,6 +1423,49 @@ func spawn_alien(race: String, pos: Vector3) -> void:
 	if not race in crew_names:
 		crew_names.append(race)
 
+## (2026-11-27, trhání v co-opu) The first alien of a race built in a mission loads its model, its
+## guns and makes its clips - 30-60 ms, a stall when it came only with reinforcements (its officer,
+## a Líhavec hatching). So while the mission still loads (each machine for itself, behind the
+## loading screen / briefing), every race of the crew's group is made ready once; the scenes are held
+## for the whole mission so they are not unloaded and loaded again between two drops.
+var _warmed := {}
+var _warm_keep := []
+func _warm_group(race: String) -> void:
+	if _warmed.has(race):
+		return
+	var todo := [race]
+	for g: Dictionary in GROUPS.values():
+		var rs := [g["soldier"], g["officer"], g["beast"], g["terror"]]
+		if race in rs:
+			todo.append_array(rs)
+	if "lihnoun" in todo or mtype() == "quarantine":
+		todo.append("lihnoun")          # (hatching from a victim / a carrier)
+	if "nador" in todo or "zombie" in todo:
+		todo.append("zombie")           # (a victim rising)
+	for r: String in todo:
+		_warm_race(r)
+
+func _warm_race(r: String) -> void:
+	if _warmed.has(r) or not AlienScript.RACES.has(r):
+		return
+	_warmed[r] = true
+	var _pt := PerfLog.t0()
+	var R: Dictionary = AlienScript.RACES[r]
+	var ap := AlienScript.afk_path(r)
+	if ap != "":
+		_warm_keep.append(load(ap))
+		var h: Node = AlienScript.afk_scene(r)
+		if h:
+			h.free()
+	elif R.has("model"):
+		Game.model(String(R["model"])).free()
+	var guns: Array = (R.get("guns", []) as Array) + (AlienScript.GUNS_LATE.get(r, []) as Array)
+	for gid in guns:
+		var it := AlienScript.gun_item(r, String(gid))
+		if it != "" and ResourceLoader.exists("res://assets/models/%s.glb" % it):
+			Game.model(it).free()
+	PerfLog.took("příprava rasy", _pt)
+
 func _spawn(data: Variant) -> Node:
 	var _pt := PerfLog.t0()
 	var _pr = _pl_spawn(data)
@@ -1411,6 +1488,8 @@ func _pl_spawn(data: Variant) -> Node:
 		return c
 	var a := CharacterBody3D.new()
 	var race: String = data.get("race", "grey")
+	if not started() or _warmed.is_empty():
+		_warm_group(race)      # (a client gets its first aliens only as the mission starts)
 	if race in ["lihnoun", "zombie", "ohar"]:
 		a.set_script(MeleeScript)
 	elif race == "diskoll" or race == "kolos":
@@ -1696,6 +1775,12 @@ func _pl_electric(delta: float) -> void:
 	# (2026-11-17, Ari) by day nobody leaves the lamps on: street lamps, lights in houses, the
 	# bulbs and the moths around them stay dark (dawn and dusk: on while it is still dim)
 	var daylight := phase() == "den" or (phase() != "noc" and twilight() > 0.6)
+	# (2026-11-27) poloha živých vetřelců jednou za krok, ne znovu u každé lampy (1,5-2 ms v noci)
+	var alien_at: Array = []
+	if not daylight:
+		for a in aliens():
+			if not a.dead:
+				alien_at.append(a.global_position)
 	for l in map.get("elec_lights", []):
 		if not is_instance_valid(l) or l.get_meta("shot", false):
 			continue
@@ -1713,9 +1798,9 @@ func _pl_electric(delta: float) -> void:
 			l.visible = true
 		var base: float = l.get_meta("base", 1.0)
 		var near := 99.0
-		for a in aliens():
-			if not a.dead:
-				near = min(near, a.global_position.distance_to(l.global_position))
+		var lp: Vector3 = l.global_position
+		for ap in alien_at:
+			near = min(near, lp.distance_to(ap))
 		var e := base
 		if _power_out and not l.get_meta("powered", false):
 			e = 0.0
@@ -2208,6 +2293,7 @@ func _pl_explode(p: Vector3, radius: float, dmg: float, by: String, big: bool) -
 	noise(p, 50.0 if big else 30.0)
 	blast_shock(p, 14.0 if big else 10.0)
 	blast_breakables(p, radius, dmg)
+	if wreck: wreck.blast(p, radius, dmg, by)
 	_cargo_blast(p, radius, dmg)
 	# a blast near anything that burns may set it alight
 	if randf() < (0.75 if _flammable_near(p, radius + 1.0) else 0.12):
@@ -2332,7 +2418,7 @@ func blast_breakables(p: Vector3, radius: float, dmg: float) -> void:
 	if not multiplayer.is_server():
 		return
 	var arr: Array = map.get("breakables", [])
-	for i in arr.size():
+	for i in breakables_near(p, radius + 1.0):
 		var n = arr[i]
 		if is_instance_valid(n) and not n.get_meta("broken", false):
 			var d: float = n.global_position.distance_to(p)
@@ -2542,15 +2628,7 @@ func _pl_add_smoke(p: Vector3) -> void:
 	c.initial_velocity_max = 0.4
 	c.scale_amount_min = 2.0
 	c.scale_amount_max = 4.0
-	var qm := QuadMesh.new()
-	qm.size = Vector2(1.6, 1.6)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.55, 0.56, 0.58, 0.55)
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	qm.material = mat
-	c.mesh = qm
+	c.mesh = _smoke_quad(Color(0.55, 0.56, 0.58, 0.55), 1.6)
 	add_child(c)
 	c.global_position = p + Vector3(0, 1.2, 0)
 	get_tree().create_timer(28.0).timeout.connect(func(): if is_instance_valid(c): c.emitting = false)
@@ -2565,7 +2643,9 @@ var _fire_t := 0.0
 const FIRE_MAX := 24
 
 func _flammable_near(p: Vector3, r: float) -> bool:
-	for b in map.get("breakables", []):
+	var arr: Array = map.get("breakables", [])
+	for i in breakables_near(p, r):
+		var b = arr[i]
 		if is_instance_valid(b) and not b.get_meta("broken", false) and String(b.get_meta("break_kind", "")) in ["wood", "crate"] \
 				and (b as Node3D).global_position.distance_to(p) < r:
 			return true
@@ -2578,7 +2658,9 @@ func ignite_around(p: Vector3, r: float, chance: float, most: int) -> int:
 		return 0
 	var lit := 0
 	var near: Array = []
-	for b in map.get("breakables", []):
+	var arr: Array = map.get("breakables", [])
+	for i in breakables_near(p, r):
+		var b = arr[i]
 		if is_instance_valid(b) and String(b.get_meta("break_kind", "")) in ["wood", "crate"] \
 				and (b as Node3D).global_position.distance_to(p) < r:
 			near.append(b)
@@ -2619,6 +2701,13 @@ func _pl_fire_on(id: int, p: Vector3, size: float, life: float) -> void:
 	var n := Node3D.new()
 	add_child(n)
 	n.global_position = p
+	# (2026-11-27 výkon) ohně těsně u sebe (hořící dům) kreslí jeden společný sloup kouře:
+	# 24 sloupů po 50 průhledných čtvercích až 9 m velkých se kreslily přes sebe (přes celou obrazovku)
+	var crowd := 0
+	if not _oldfx():
+		for f0 in fires.values():
+			if (f0["pos"] as Vector3).distance_to(p) < FIRE_PLUME_GAP:
+				crowd += 1
 	var fl := CPUParticles3D.new()
 	fl.amount = int(36 * size)
 	fl.lifetime = 0.9
@@ -2638,18 +2727,12 @@ func _pl_fire_on(id: int, p: Vector3, size: float, life: float) -> void:
 	fl.color_ramp = grad
 	var qm := QuadMesh.new()
 	qm.size = Vector2(0.55, 0.75) * size
-	var fm := StandardMaterial3D.new()
-	fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	fm.vertex_color_use_as_albedo = true
-	fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	fm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	qm.material = fm
+	qm.material = _flame_mat()
 	fl.mesh = qm
 	n.add_child(fl)
 	# black smoke: a tall, wide column
 	var sm := CPUParticles3D.new()
-	sm.amount = 50
+	sm.amount = 50 if crowd == 0 else (FIRE_PLUME_THIN if crowd < 3 else 6)
 	sm.lifetime = 7.0
 	sm.preprocess = 3.0
 	sm.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
@@ -2661,15 +2744,7 @@ func _pl_fire_on(id: int, p: Vector3, size: float, life: float) -> void:
 	sm.initial_velocity_max = 1.2
 	sm.scale_amount_min = 2.5
 	sm.scale_amount_max = 5.0
-	var sq := QuadMesh.new()
-	sq.size = Vector2(1.8, 1.8)
-	var smat := StandardMaterial3D.new()
-	smat.albedo_color = Color(0.09, 0.085, 0.08, 0.6)
-	smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	smat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	smat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	sq.material = smat
-	sm.mesh = sq
+	sm.mesh = _smoke_quad(Color(0.09, 0.085, 0.08, 0.6))
 	n.add_child(sm)
 	sm.position = Vector3(0, 1.6, 0)
 	var l := OmniLight3D.new()
@@ -2678,9 +2753,13 @@ func _pl_fire_on(id: int, p: Vector3, size: float, life: float) -> void:
 	l.omni_range = 9.0 * size
 	l.shadow_enabled = true
 	Game.shadow_light(l)
+	if not _oldfx():
+		l.shadow_enabled = false          # (stín dostanou jen nejbližší ohně, _fire_shadows)
+		_fire_shadow_t = 0.0
 	n.add_child(l)
 	l.position = Vector3(0, 1.0, 0)
 	var snd := AudioStreamPlayer3D.new()
+	snd.name = "Crackle"
 	snd.stream = Game.loop_stream("fire_crackle")
 	snd.unit_size = 4.0
 	snd.max_distance = 40.0
@@ -2709,6 +2788,146 @@ func _fire_off(id: int) -> void:
 	scorch_at(f["pos"] as Vector3, float(f["size"]))
 
 static var _soot_tex: ImageTexture = null
+
+# ---- (2026-11-27, Ari: „lagy při větším požáru domů a více efektech") ---------------------------
+## Stresový test firelag (24 ohňů a granát každých 1,5 s) ukázal, že procesor drží (7 ms), brzdí
+## kreslení: (1) žádné částice (plameny, kouř, úlomky, jiskry) neměly vypnutý stín - každý
+## pohybující se čtvereček se každý snímek kreslil do stínu měsíce/slunce a do stínu každé lampy
+## a ohně v dosahu, a protože se hýbou, stíny všech těch světel se přepočítávaly každý snímek;
+## (2) každý oheň měl světlo se stínem (bodové světlo = 6 pohledů na scénu); teď stín jen nejbližší
+## FIRE_SHADOWS ohně u kamery; (3) ohně u sebe kreslily každý svůj sloup kouře; (4) každý oheň měl
+## vlastní materiál (žádné sdílení); (5) výbuch a šíření ohně procházely všechny rozbitelné kusy mapy
+## (ve městě 2 400) - teď mřížka po 8 m. --oldfire=1 = postaru (A/B). Nic se nemění po síti.
+static var _old_fx := -1
+static func _oldfx() -> bool:
+	if _old_fx < 0:
+		_old_fx = 1 if Game.cmd_arg("oldfire", "") == "1" else 0
+	return _old_fx == 1
+const FIRE_PLUME_GAP := 5.0      # oheň blíž než tohle k jinému = jen slabý dým navíc
+const FIRE_PLUME_THIN := 14
+const FIRE_SHADOWS := [0, 2, 4]   # podle Nastavení → Stíny (nízké / střední / vysoké)
+var _fire_shadow_t := 0.0
+static var _fx_mats := {}
+
+func _fx_no_shadow(n: Node) -> void:
+	if n is CPUParticles3D or n is GPUParticles3D:
+		(n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+static func _flame_mat() -> StandardMaterial3D:
+	if _fx_mats.has("flame") and not _oldfx():
+		return _fx_mats["flame"]
+	var fm := StandardMaterial3D.new()
+	fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fm.vertex_color_use_as_albedo = true
+	fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	fm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	_fx_mats["flame"] = fm
+	return fm
+
+static func _smoke_quad(col: Color, sz := 1.8) -> QuadMesh:
+	var key := "smoke_%s_%.2f" % [col.to_html(), sz]
+	if _fx_mats.has(key) and not _oldfx():
+		return _fx_mats[key]
+	var sq := QuadMesh.new()
+	sq.size = Vector2(sz, sz)
+	var smat := StandardMaterial3D.new()
+	smat.albedo_color = col
+	smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	smat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	smat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	sq.material = smat
+	_fx_mats[key] = sq
+	return sq
+
+## (pod načítací obrazovkou) Plameny, kouř a úlomky se na pár snímků ukážou před kamerou, ať se
+## jejich shadery připraví předem - první oheň nebo rozbitá zeď jinak sekla (kompilace).
+func warm_fx(holder: Node3D) -> void:
+	if _oldfx():
+		return
+	var meshes := [null, _smoke_quad(Color(0.09, 0.085, 0.08, 0.6)), _smoke_quad(Color(0.55, 0.56, 0.58, 0.55), 1.6), null]
+	var fq := QuadMesh.new()
+	fq.size = Vector2(0.5, 0.7)
+	fq.material = _flame_mat()
+	meshes[0] = fq
+	var chunk := BoxMesh.new()
+	chunk.size = Vector3(0.18, 0.1, 0.14)
+	chunk.material = Game.color_mat(Color(0.4, 0.3, 0.2))
+	meshes[3] = chunk
+	for i in meshes.size():
+		var c := CPUParticles3D.new()
+		c.amount = 2
+		c.lifetime = 0.5
+		c.mesh = meshes[i]
+		if i == 0:
+			var grad := Gradient.new()
+			grad.set_color(0, Color(1.0, 0.85, 0.3, 1.0))
+			grad.set_color(1, Color(0.7, 0.1, 0.02, 0.0))
+			c.color_ramp = grad
+		holder.add_child(c)
+		c.position = Vector3(-0.3 + 0.2 * i, 0, 0)
+		c.scale = Vector3.ONE * 0.05
+	var d := scorch_at(holder.global_position, 0.2)
+	get_tree().create_timer(0.3).timeout.connect(func(): if is_instance_valid(d): d.queue_free())
+
+## Stín vrhá jen pár ohňů nejblíž kameře (ostatní svítí bez stínu; daleké stíny stejně mizí).
+func _fire_shadows() -> void:
+	var cam := get_viewport().get_camera_3d()
+	var budget: int = FIRE_SHADOWS[clampi(Game.shadows, 0, 2)]
+	var order := []
+	for f in fires.values():
+		if is_instance_valid(f["light"]):
+			order.append([(f["pos"] as Vector3).distance_squared_to(cam.global_position) if cam else 0.0, f["light"]])
+	order.sort_custom(func(x, y): return x[0] < y[0])
+	for i in order.size():
+		var l: OmniLight3D = order[i][1]
+		var on := i < budget
+		if l.shadow_enabled != on:
+			l.shadow_enabled = on
+			if on:
+				Game.shadow_light(l)
+
+## Mřížka rozbitelných kusů (8 m): výbuch, oheň a jeho šíření hledají jen kusy kolem sebe.
+## Staví se znovu, když se změní počet kusů, a nejpozději po 5 s (spadlé střechy se hýbou).
+const BK_CELL := 8.0
+var _bk_grid := {}
+var _bk_n := -1
+var _bk_at := 0
+func breakables_near(p: Vector3, r: float) -> PackedInt32Array:
+	var arr: Array = map.get("breakables", [])
+	if _oldfx():
+		var all := PackedInt32Array()
+		all.resize(arr.size())
+		for i in arr.size(): all[i] = i
+		return all
+	var now := Time.get_ticks_msec()
+	if _bk_n != arr.size() or now - _bk_at > 5000:
+		_bk_n = arr.size()
+		_bk_at = now
+		_bk_grid.clear()
+		for i in arr.size():
+			var b = arr[i]
+			if not is_instance_valid(b):
+				continue
+			if not (b as Node3D).is_inside_tree():
+				_bk_n = -1      # (map still being built - positions not valid yet, build again next time)
+				continue
+			var bp: Vector3 = (b as Node3D).global_position
+			var k := Vector2i(floori(bp.x / BK_CELL), floori(bp.z / BK_CELL))
+			if not _bk_grid.has(k):
+				_bk_grid[k] = []      # (Array, ne PackedInt32Array: to je hodnota a append by šel do kopie)
+			(_bk_grid[k] as Array).append(i)
+	var out := PackedInt32Array()
+	var x0 := floori((p.x - r) / BK_CELL)
+	var x1 := floori((p.x + r) / BK_CELL)
+	var z0 := floori((p.z - r) / BK_CELL)
+	var z1 := floori((p.z + r) / BK_CELL)
+	for x in range(x0, x1 + 1):
+		for z in range(z0, z1 + 1):
+			var c = _bk_grid.get(Vector2i(x, z))
+			if c != null:
+				out.append_array(PackedInt32Array(c))
+	return out
 
 ## Soot on the ground at @a p (a Decal: it lies on whatever floor is there, fades on walls, ragged edge).
 func scorch_at(p: Vector3, size: float) -> Decal:
@@ -2762,6 +2981,11 @@ func _fires_tick(delta: float) -> void:
 
 func _pl_fires_tick(delta: float) -> void:
 	_smoke_tick()
+	if not _oldfx() and not fires.is_empty():
+		_fire_shadow_t -= delta
+		if _fire_shadow_t <= 0.0:
+			_fire_shadow_t = 0.5
+			_fire_shadows()
 	var wn := wind_now()
 	for f in fires.values():
 		var l: OmniLight3D = f["light"]
@@ -2812,7 +3036,7 @@ func _pl_fires_tick(delta: float) -> void:
 ## Indexy hořlavých kusů (dřevo, bedny, sklo) do 4,8 m od ohně - jednou za život ohně.
 func _fire_near(p: Vector3, arr: Array) -> PackedInt32Array:
 	var out := PackedInt32Array()
-	for i in arr.size():
+	for i in breakables_near(p, 4.8):
 		var b = arr[i]
 		if not is_instance_valid(b):
 			continue
@@ -3532,6 +3756,8 @@ func quality(success: bool) -> float:
 	q += 0.08 * mini(caps, 3)
 	if success and _done_once and _kill_all() and alive_aliens() > 0:
 		q -= 0.35         # (0.69, Ari) the job done, but the reinforcements were left standing
+	if success:
+		q -= 0.2 * mini(escaped, 2)   # (2026-11-27) the last one got away aboard its ship
 	return clampf(q, 0.25, 1.5)
 
 static func quality_name(q: float) -> String:
@@ -5376,6 +5602,7 @@ func _pl_late_tick(delta: float) -> void:
 	if not _nem_done and t > 4.0:
 		_nem_done = true
 		_nemesis_start()
+	AL.tick(self, delta)
 	var late := clampf((float(Net.mission_params.get("day", 0.0)) - 15.0) / 90.0, 0.0, 1.0)
 	if Game.cmd_arg("late", "") != "":
 		late = float(Game.cmd_arg("late", "0"))
@@ -5456,11 +5683,26 @@ func reinf_drop(at: Vector3, races: Array, rng: RandomNumberGenerator) -> void:
 	get_tree().create_timer(DROP_IN + DROP_BEAM).timeout.connect(func():
 		if not is_instance_valid(self):
 			return
-		_drops_pending = maxi(0, _drops_pending - races.size())
 		if finished:
+			_drops_pending = maxi(0, _drops_pending - races.size())
 			return
-		for i in races.size():
-			spawn_alien(String(races[i]), spots[i]))
+		# (2026-11-27) one after another down the beam, not all in one frame: every alien built costs
+		# each machine 10-25 ms, five at once made the stall everybody saw when the ship landed
+		_drop_one(races, spots, 0))
+
+func _drop_one(races: Array, spots: Array, i: int) -> void:
+	if not is_instance_valid(self) or i >= races.size():
+		return
+	_drops_pending = maxi(0, _drops_pending - 1)     # (it counts as alive till it is here)
+	if finished:
+		_drops_pending = maxi(0, _drops_pending - (races.size() - i - 1))
+		return
+	spawn_alien(String(races[i]), spots[i])
+	if i + 1 < races.size():
+		get_tree().create_timer(DROP_STAGGER).timeout.connect(func():
+			if is_instance_valid(self):
+				_drop_one(races, spots, i + 1))
+const DROP_STAGGER := 0.18
 
 @rpc("authority", "call_local", "reliable")
 func _drop_fx(at: Vector3, from: Vector3) -> void:
@@ -5531,6 +5773,136 @@ func _drop_fx(at: Vector3, from: Vector3) -> void:
 	tw.parallel().tween_property(spot, "light_energy", 0.0, 0.6)
 	tw.tween_property(ship, "global_position", hover - from * 300.0 + Vector3(0, 90.0, 0), DROP_OUT).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	tw.tween_callback(root.queue_free)
+
+# ---- (2026-11-27, Ari) the ship that comes for the last alien (alien_last.gd): it flies in, hangs
+# over the spot with its beam down and the engine going, until the host sends it off. Every machine.
+var escaped := 0              # aliens that got away aboard (every machine: quality() counts them)
+var _pick_root: Node3D = null
+var pickups_seen := 0         # (tests)
+
+@rpc("authority", "call_local", "reliable")
+func _pickup_fx(at: Vector3, from: Vector3) -> void:
+	pickups_seen += 1
+	if is_instance_valid(_pick_root):
+		_pick_root.queue_free()
+	var root := Node3D.new()
+	root.name = "LastPickup"
+	add_child(root)
+	_pick_root = root
+	var ship := Node3D.new()
+	ship.name = "Ship"
+	root.add_child(ship)
+	var m: Node3D = Game.model("ufo_scout")
+	if m:
+		ship.add_child(m)
+		m.scale = Vector3.ONE * 1.4
+	var hover := at + Vector3(0, DROP_ALT, 0)
+	ship.global_position = hover + from * 260.0 + Vector3(0, 40.0, 0)
+	root.set_meta("hover", hover)
+	root.set_meta("from", from)
+	var lamp := OmniLight3D.new()
+	lamp.light_color = Color(0.6, 1.0, 0.7)
+	lamp.light_energy = 3.0
+	lamp.omni_range = 18.0
+	lamp.shadow_enabled = false
+	ship.add_child(lamp)
+	lamp.position = Vector3(0, -2.0, 0)
+	var snd := AudioStreamPlayer3D.new()
+	snd.stream = Game.sound("ufo_engine")
+	snd.unit_size = 40.0
+	snd.max_distance = 400.0
+	snd.volume_db = 6.0
+	snd.bus = "SFX"
+	ship.add_child(snd)
+	if snd.stream:
+		snd.play()
+		snd.finished.connect(func(): if is_instance_valid(snd) and snd.is_inside_tree(): snd.play())
+	var beam := MeshInstance3D.new()
+	beam.name = "Beam"
+	var cm := CylinderMesh.new()
+	cm.top_radius = 1.1
+	cm.bottom_radius = 3.4
+	cm.height = DROP_ALT - 1.5
+	cm.radial_segments = 24
+	cm.cap_top = false
+	cm.cap_bottom = false
+	beam.mesh = cm
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.disable_fog = true
+	mat.albedo_color = Color(0.45, 1.0, 0.6, 0.0)
+	beam.material_override = mat
+	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(beam)
+	beam.global_position = at + Vector3(0, (DROP_ALT - 1.5) / 2.0, 0)
+	var spot := SpotLight3D.new()
+	spot.light_color = Color(0.55, 1.0, 0.65)
+	spot.light_energy = 0.0
+	spot.spot_range = DROP_ALT + 6.0
+	spot.spot_angle = 9.0
+	spot.shadow_enabled = false
+	root.add_child(spot)
+	spot.global_position = hover + Vector3(0, -1.0, 0)
+	spot.rotation = Vector3(-PI / 2.0, 0, 0)
+	root.set_meta("mat", mat)
+	root.set_meta("spot", spot)
+	var tw := create_tween().bind_node(root)
+	tw.tween_property(ship, "global_position", hover, DROP_IN).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw.tween_property(mat, "albedo_color:a", 0.33, 0.5)
+	tw.parallel().tween_property(spot, "light_energy", 6.0, 0.5)
+
+## Every machine: the ship flies over to a new spot (its alien got stuck on the way), the beam goes with it.
+@rpc("authority", "call_local", "reliable")
+func _pickup_move(at: Vector3) -> void:
+	var root := _pick_root
+	if not is_instance_valid(root):
+		return
+	var ship: Node3D = root.get_node_or_null("Ship")
+	var beam: Node3D = root.get_node_or_null("Beam")
+	var mat: StandardMaterial3D = root.get_meta("mat")
+	var spot: SpotLight3D = root.get_meta("spot")
+	var hover := at + Vector3(0, DROP_ALT, 0)
+	root.set_meta("hover", hover)
+	var tw := create_tween().bind_node(root)
+	tw.tween_property(mat, "albedo_color:a", 0.0, 0.4)
+	tw.parallel().tween_property(spot, "light_energy", 0.0, 0.4)
+	if ship:
+		tw.tween_property(ship, "global_position", hover, 3.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_callback(func():
+		if beam:
+			beam.global_position = at + Vector3(0, (DROP_ALT - 1.5) / 2.0, 0)
+		spot.global_position = hover + Vector3(0, -1.0, 0))
+	tw.tween_property(mat, "albedo_color:a", 0.33, 0.5)
+	tw.parallel().tween_property(spot, "light_energy", 6.0, 0.5)
+
+## Every machine: the ship flies off (with the alien aboard, or without it).
+@rpc("authority", "call_local", "reliable")
+func _pickup_leave() -> void:
+	var root := _pick_root
+	_pick_root = null
+	if not is_instance_valid(root):
+		return
+	var ship: Node3D = root.get_node_or_null("Ship")
+	var mat: StandardMaterial3D = root.get_meta("mat")
+	var spot: SpotLight3D = root.get_meta("spot")
+	var hover: Vector3 = root.get_meta("hover")
+	var from: Vector3 = root.get_meta("from")
+	var tw := create_tween().bind_node(root)
+	tw.tween_property(mat, "albedo_color:a", 0.0, 0.6)
+	tw.parallel().tween_property(spot, "light_energy", 0.0, 0.6)
+	if ship:
+		tw.tween_property(ship, "global_position", hover - from * 300.0 + Vector3(0, 90.0, 0), DROP_OUT).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	tw.tween_callback(root.queue_free)
+
+## Every machine: the last alien got away aboard (a fact the team saw - no hint).
+@rpc("authority", "call_local", "reliable")
+func _escaped_fx(_race: String) -> void:
+	escaped += 1
+	if hud:
+		hud.message("Poslední vetřelec unikl paprskem na palubu lodi.", 5.0)
 
 ## Host, at the start: the marked ones learn they are hunted; some aliens go straight for them.
 func _nemesis_start() -> void:

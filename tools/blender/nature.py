@@ -345,6 +345,157 @@ def dune(fname="dune", seed=32):
     col.append(colbox("Dune", (0, 0, 0.15), (4.6, 1.9, 0.6)))
     save("Dune", vis, col, fname)
 
+
+# ---- (Ari 27. 11.) hot climates: palms, acacias, jungle trees, cacti ----------------------------------
+def frond(m, base, ang, length, droop, width, seed, lean=0.35):
+    """A palm frond: a bent spine out from the crown, a V of leaflets along it, ragged edge, both sides."""
+    rr = random.Random(seed)
+    me = bpy.data.meshes.new("frond")
+    bm = bmesh.new()
+    base = Vector(base)
+    n = 9
+    d = Vector((math.cos(ang), math.sin(ang), 0))
+    side = Vector((-d.y, d.x, 0))
+    spine, left, right = [], [], []
+    for i in range(n + 1):
+        t = i / n
+        p = base + d * (length * t) + Vector((0, 0, length * (lean * t - droop * t * t)))
+        w = width * math.sin(math.pi * min(1.0, t * 1.15)) * (0.75 + 0.25 * rr.random())
+        if i % 2 and i < n:
+            w *= 0.7        # ragged
+        spine.append(bm.verts.new(p))
+        left.append(bm.verts.new(p + side * w + Vector((0, 0, -w * 0.35))))
+        right.append(bm.verts.new(p - side * w + Vector((0, 0, -w * 0.35))))
+    for i in range(n):
+        for a, b in ((left, spine), (spine, right)):
+            f = (a[i], a[i + 1], b[i + 1], b[i]) if a is left else (a[i], a[i + 1], b[i + 1], b[i])
+            bm.faces.new(f)
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new("frond", me)
+    bpy.context.collection.objects.link(o)
+    return _finish(o, m, (0, 0, 0), (0, 0, 0), (1, 1, 1))
+
+def palm(fname="tree_palm", h=7.5, seed=40, lean=0.9):
+    """A date / coconut palm: a curved ringed trunk, a tuft of drooping fronds, a cluster of fruit."""
+    reset(); m = M(); vis = []; col = []
+    bark = mat2("VBarkPalm", (0.36, 0.28, 0.19), 0.95)
+    rr = random.Random(seed)
+    pts = []
+    for i in range(7):
+        t = i / 6
+        pts.append((lean * t * t, 0.15 * math.sin(t * 2.0), -0.15 + h * t))
+    radii = [0.3, 0.22, 0.2, 0.19, 0.18, 0.17, 0.16]
+    vis.append(bark_tube(bark, pts, radii, 9, seed, 0.12, 0.25))
+    top = Vector(pts[-1])
+    for k in range(5):          # rings of old leaf bases
+        t = 0.25 + k * 0.14
+        i = int(t * 6)
+        c = Vector(pts[i]).lerp(Vector(pts[min(6, i + 1)]), t * 6 - i)
+        vis.append(disc(bark, c, radii[i] * 1.18, 0.09, verts=9))
+    vis.append(lump(m["leaves2"], top + Vector((0, 0, 0.1)), 0.42, (1, 1, 0.8), seed, 0.2, 2))
+    for k in range(9):
+        ang = k / 9 * TAU + rr.uniform(-0.2, 0.2)
+        vis.append(frond(m["leaves"] if k % 2 else m["leaves2"], top + Vector((0, 0, 0.15)), ang,
+                         rr.uniform(2.8, 3.4), rr.uniform(1.0, 1.25), rr.uniform(0.5, 0.62), seed * 10 + k, 0.7))
+    for k in range(3):          # a few up, young
+        ang = k / 3 * TAU + 0.5
+        vis.append(frond(m["leaves"], top + Vector((0, 0, 0.2)), ang, 1.6, 0.2, 0.25, seed * 20 + k, 0.9))
+    fruit = mat2("VDates", (0.42, 0.22, 0.08), 0.8)
+    for k in range(4):
+        a = k / 4 * TAU
+        vis.append(ball(fruit, top + Vector((math.cos(a) * 0.3, math.sin(a) * 0.3, -0.25)), 0.14, seg=8, rings=6))
+    col.append(colbox("Trunk", (lean * 0.3, 0, h * 0.35), (0.5, 0.5, h * 0.7)))
+    save("Palm", vis, col, fname)
+
+def acacia(fname="tree_acacia", h=5.5, seed=42):
+    """A savanna acacia: a short leaning trunk forking low into long boughs, a flat wide umbrella crown."""
+    reset(); m = M(); vis = []; col = []
+    pts = [(0, 0, -0.15), (0.05, 0, 0.4), (0.2, 0.05, h * 0.35)]
+    vis.append(bark_tube(m["bark2"], pts, [0.32, 0.24, 0.19], 9, seed, 0.12, 0.35))
+    rr = random.Random(seed)
+    fork = Vector(pts[-1])
+    cz = h * 0.92
+    for k in range(5):
+        ang = k / 5 * TAU + rr.uniform(-0.3, 0.3)
+        tip = Vector((math.cos(ang) * 2.4, math.sin(ang) * 2.4, cz - 0.25))
+        vis.append(branch(m["bark2"], fork, tip, 0.13, 0.05, seed + k, 6, 4, 0.3))
+        vis.append(lump(m["leaves"] if k % 2 else m["leaves2"], tip + Vector((0, 0, 0.2)), 1.35, (1.3, 1.3, 0.22),
+                        seed * 10 + k, 0.2, 3, under=m["leaves2"]))
+    vis.append(lump(m["leaves"], (0, 0, cz + 0.15), 1.9, (1.4, 1.4, 0.2), seed * 10 + 9, 0.18, 3, under=m["leaves2"]))
+    col.append(colbox("Trunk", (0.1, 0, h * 0.25), (0.55, 0.55, h * 0.5)))
+    save("Acacia", vis, col, fname)
+
+def jungle(fname="tree_jungle", h=10.0, seed=44):
+    """A tall rainforest tree: buttress roots, a straight pale trunk, lianas, layered dark crown."""
+    reset(); m = M(); vis = []; col = []
+    pale = mat2("VBarkPale", (0.38, 0.34, 0.27), 0.95)
+    pts = [(0, 0, -0.15), (0.02, 0, 0.6), (0.06, 0.02, h * 0.4), (0.1, 0, h * 0.75)]
+    vis.append(bark_tube(pale, pts, [0.7, 0.4, 0.33, 0.26], 12, seed, 0.1, 0.9))
+    rr = random.Random(seed)
+    for k in range(4):       # buttresses: flat fins out from the foot
+        a = k / 4 * TAU + rr.uniform(-0.3, 0.3)
+        o = bx(pale, (math.cos(a) * 0.55, math.sin(a) * 0.55, 0.45), (1.1, 0.12, 1.0), 0.0, (0, 0, a))
+        for v in o.data.vertices:
+            if v.co.z > 0 and v.co.x > 0:
+                v.co.z -= 0.7
+        vis.append(o)
+    liana = mat2("VLiana", (0.18, 0.22, 0.1), 0.95)
+    for k in range(3):
+        a = k / 3 * TAU + 0.4
+        vis.append(branch(liana, (math.cos(a) * 1.6, math.sin(a) * 1.6, h * 0.78), (math.cos(a) * 0.9, math.sin(a) * 0.9, 0.3), 0.04, 0.03, seed + k, 5, 5, 0.25))
+    cz = h * 0.8
+    for k in range(5):
+        ang = k / 5 * TAU + rr.uniform(-0.3, 0.3)
+        tip = Vector((math.cos(ang) * 2.0, math.sin(ang) * 2.0, cz + rr.uniform(-0.5, 0.4)))
+        vis.append(branch(pale, (0.1, 0, cz - 1.0), tip, 0.18, 0.07, seed + k, 6, 3, 0.2))
+        vis.append(lump(m["leaves2"] if k % 2 else m["leaves"], tip, 1.6, (1.2, 1.2, 0.6), seed * 10 + k, 0.24, 3, under=m["leaves2"]))
+    vis.append(lump(m["leaves2"], (0.1, 0, cz + 0.9), 2.2, (1.2, 1.2, 0.55), seed * 10 + 8, 0.2, 3, under=m["leaves2"]))
+    col.append(colbox("Trunk", (0.05, 0, h * 0.35), (0.85, 0.85, h * 0.7)))
+    save("Jungle", vis, col, fname)
+
+def bush_jungle(fname="bush_jungle", seed=46):
+    """A big-leaved undergrowth clump (banana-like leaves fanning out of a low heart)."""
+    reset(); m = M(); vis = []
+    rr = random.Random(seed)
+    vis.append(lump(m["bush"], (0, 0, 0.3), 0.55, (1.2, 1.2, 0.7), seed, 0.2, 2))
+    for k in range(8):
+        ang = k / 8 * TAU + rr.uniform(-0.25, 0.25)
+        vis.append(frond(m["leaves"] if k % 2 else m["bush"], (0, 0, 0.35), ang, rr.uniform(1.1, 1.5),
+                         rr.uniform(0.6, 0.9), rr.uniform(0.28, 0.38), seed * 10 + k, 0.9))
+    save("JungleBush", vis, [], fname)
+
+def cactus(fname="cactus", h=3.2, seed=48, arms=2):
+    """A saguaro-like column cactus: ribbed column, arms bending up; a pad cactus at its foot."""
+    reset(); m = M(); vis = []; col = []
+    green = mat2("VCactus", (0.22, 0.32, 0.16), 0.85)
+    rib = mat2("VCactusRib", (0.3, 0.4, 0.22), 0.85)
+    rr = random.Random(seed)
+    def column(a, b, r):
+        o = tb(green, a, b, r, verts=10)
+        for i, v in enumerate(o.data.vertices):
+            pass
+        vis.append(o)
+        vis.append(ball(green, b, r, seg=10, rings=6))
+        for k in range(5):
+            ang = k / 5 * TAU
+            off = Vector((math.cos(ang) * r * 0.92, math.sin(ang) * r * 0.92, 0))
+            vis.append(tb(rib, Vector(a) + off, Vector(b) + off * 0.98, r * 0.13, verts=4))
+    column((0, 0, -0.1), (0, 0, h), 0.24)
+    for k in range(arms):
+        side = 1 if k == 0 else -1
+        z = h * rr.uniform(0.35, 0.55)
+        out = Vector((side * 0.62, rr.uniform(-0.1, 0.1), z + 0.15))
+        vis.append(tb(green, (0, 0, z), out, 0.15, verts=8))
+        vis.append(ball(green, out, 0.155, seg=8, rings=6))
+        column(out, out + Vector((0, 0, rr.uniform(0.7, 1.1))), 0.15)
+    pad = mat2("VCactusPad", (0.28, 0.36, 0.15), 0.85)
+    for k in range(3):
+        a = k * 2.1
+        vis.append(ball(pad, (0.6 * math.cos(a) + 0.4, 0.6 * math.sin(a), 0.18 + 0.1 * k), 0.2, (1, 0.35, 1.2), 8, 6, (0, 0, a)))
+    col.append(colbox("Trunk", (0, 0, h * 0.5), (0.5, 0.5, h)))
+    save("Cactus", vis, col, fname)
+
 ALL = dict(
     tree_spruce=lambda: spruce("tree_spruce", 7.5, 1), tree_spruce2=lambda: spruce("tree_spruce2", 5.5, 11),
     tree_pine=lambda: pine("tree_pine", 9.0, 2), tree_oak=lambda: oak("tree_oak", 6.5, 3),
@@ -353,6 +504,10 @@ ALL = dict(
     rock_a=lambda: rock("rock_a", 1.0, (1.3, 1.0, 0.8), 21), rock_b=lambda: rock("rock_b", 0.7, (1.0, 1.2, 1.1), 22),
     rock_c=lambda: rock("rock_c", 1.6, (1.4, 1.1, 0.95), 23), rock_d=lambda: rock("rock_d", 0.45, (1.2, 1.0, 1.15), 24, False),
     stump=stump, log=log, reeds=reeds, ice_shard=ice_shard, tree_fruit=fruit_tree, hay_bale=hay_bale, dune=dune,
+    tree_palm=lambda: palm("tree_palm", 7.5, 40, 0.9), tree_palm2=lambda: palm("tree_palm2", 5.8, 41, 0.35),
+    tree_acacia=lambda: acacia("tree_acacia", 5.5, 42), tree_acacia2=lambda: acacia("tree_acacia2", 4.4, 43),
+    tree_jungle=lambda: jungle("tree_jungle", 10.0, 44), bush_jungle=lambda: bush_jungle("bush_jungle", 46),
+    cactus=lambda: cactus("cactus", 3.2, 48, 2), cactus2=lambda: cactus("cactus2", 2.2, 49, 1),
 )
 for k, f in ALL.items():
     if not ONLY or k in ONLY:
